@@ -33,6 +33,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 from capability_probe import EDGE_M, OUT, load  # noqa: E402
 from carry_time import section as creep  # noqa: E402
+from carry_time import skill_constant  # noqa: E402
 
 from locomani.scene_discovery import feasibility, scene_file  # noqa: E402
 from locomani.scene_discovery.predicates import parse  # noqa: E402
@@ -45,6 +46,7 @@ REACH_ATT_DEG = 10.0
 BUCKET1_RATE = 0.50
 PROBE_SRC = "scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/"
 PLAN_SRC = "docs/handoff/scene-rsi-plan-20261016.md §9"
+CAL_SRC = "docs/handoff/scene-rsi-plan-20261016.md §12.3 (calibrate.py): a calibration sample, current catalog"
 
 
 def reach_ok(r: dict) -> bool:
@@ -154,18 +156,26 @@ def sealed_rounds(sandbox: Path, family: str, rounds: Path | None = None) -> tup
     )
 
 
-def held(sandbox: Path, family: str, checker, rounds: Path | None = None) -> tuple[list, list, dict]:
+def held(
+    sandbox: Path, family: str, checker, rounds: Path | None = None, pool: Path | None = None
+) -> tuple[list, list, dict]:
     """A pick family's sealed pool (`sealed_rounds`), per held(X) task: a measured grasp setting or a failure. A
     setting names its object and surface: the checker takes that measurement for that object where it rests, whatever
     its geometric proxies say (the coffee table has no approach edge in the scene file, yet the remote went 10/10). The
-    inboard range and `stance_xy` come from the successful rounds."""
-    per, rdir, pool, version, rate = sealed_rounds(sandbox, family, rounds)
+    inboard range and `stance_xy` come from the successful rounds. `pool`: the starts' dir, when not the family's
+    sealed pool (a calibration sample's); tasks with no held(X) are left to the other readers."""
+    per, rdir, sealed_pool, version, rate = sealed_rounds(sandbox, family, rounds)
+    pool = sealed_pool if pool is None else pool
     fam = json.loads((sandbox / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
     rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
     src = f"{PLAN_SRC} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
     settings, failures, deepest, routes = [], [], 0.0, []
     for tid, frac_s in sorted(per.items()):
-        x = next(p for p in map(parse, rows[tid]["goal"]) if p.name == "held").args[0]
+        goal = list(map(parse, rows[tid]["goal"]))
+        hp = [p for p in goal if p.name == "held"]
+        if len(hp) != 1 or any(p.name in ("on", "in", "near", "in_room") for p in goal):  # held(X) [+ upright(X)]
+            continue
+        x = hp[0].args[0]
         o = checker.objects[x]
         half, _ = checker.box(x)
         s_key = o["surface"]
@@ -208,12 +218,13 @@ def put_on(
     """A put-down family's final incumbent on its sealed pool, per one-object on(X, S) task: (put-down settings,
     put-down failures, grasp settings for the objects it lifted and carried in >= BUCKET1_RATE of the rounds and
     `picked` lacks, the longest occupancy-map route from the pick stance to the put-down stance among successes,
-    summary). A task with two objects gives no (object, surface) setting."""
+    summary, with each object's longest success route in its tasks at >= BUCKET1_RATE). A task with two objects
+    gives no (object, surface) setting."""
     per, rdir, _pool, final, rate = sealed_rounds(loop_root, family, rounds)
     fam = json.loads((loop_root / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
     rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
     src = f"{PLAN_SRC.replace('§9', '§10')} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
-    settings, failures, grasps, longest = [], [], [], 0.0
+    settings, failures, grasps, longest, by_object = [], [], [], 0.0, {}
     for tid, frac_s in sorted(per.items()):
         ons = [p for p in map(parse, rows[tid]["goal"]) if p.name == "on"]
         if len(ons) != 1:
@@ -234,6 +245,8 @@ def put_on(
                 if np.isfinite(d):
                     routes.append(float(d))
         longest = max([longest, *routes])
+        if n and ok / n >= BUCKET1_RATE:  # a measured task's carries
+            by_object[x] = max([by_object.get(x, 0.0), *routes])
         setting = f"ADT apartment (mars): {x} from {o['surface']} onto {s_key}, placement and yaw random on its surface, robot spawned 1-3 m away ({family} sealed pool); {final}"
         entry = dict(name=f"{family}.{tid}", status="measured", objects=[x], surface=s_key, from_surface=o["surface"],
                      setting=setting, success=f"{ok}/{n}", support_top=[round(float(checker.surfaces[s_key]["top"]), 3)] * 2,
@@ -253,7 +266,7 @@ def put_on(
                                object_height=[round(float(2 * half[2]), 3)] * 2,
                                mass_max=float((o.get("semantic") or {}).get("mass_kg", 0.0)), inboard=None,
                                stance_xy=None, source=src))  # fmt: skip
-    return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per)
+    return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per, routes=by_object)
 
 
 def into(
@@ -267,7 +280,7 @@ def into(
     fam = json.loads((loop_root / "scripts/experiments/scene_rsi_20261016/families" / f"{family}.json").read_text())
     rows = {json.loads(line)["id"]: json.loads(line) for line in (REPO / fam["tasks_file"]).read_text().splitlines() if line.strip()}  # fmt: skip
     src = f"{PLAN_SRC.replace('§9', '§10')} ({family}, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/{family}/sealed/summary.json"
-    settings, failures, grasps, longest = [], [], [], 0.0
+    settings, failures, grasps, longest, by_object = [], [], [], 0.0, {}
     for tid, frac_s in sorted(per.items()):
         ins = [p for p in map(parse, rows[tid]["goal"]) if p.name == "in"]
         if len(ins) != 1:
@@ -290,6 +303,8 @@ def into(
                 if np.isfinite(d):
                     routes.append(float(d))
         longest = max([longest, *routes])
+        if n and ok / n >= BUCKET1_RATE:  # a measured task's carries
+            by_object[x] = max([by_object.get(x, 0.0), *routes])
         setting = f"ADT apartment (mars): {x} from {o['surface']} into {c}, placement and yaw random on its surface, robot spawned 1-3 m away ({family} sealed pool); {final}"
         entry = dict(name=f"{family}.{tid}", status="measured", objects=[x], surface=c, from_surface=o["surface"],
                      setting=setting, success=f"{ok}/{n}", rim_height=[round(float(checker.top(c)), 3)] * 2,
@@ -309,7 +324,7 @@ def into(
                                object_height=[round(float(2 * half[2]), 3)] * 2,
                                mass_max=float((o.get("semantic") or {}).get("mass_kg", 0.0)), inboard=None,
                                stance_xy=None, source=src))  # fmt: skip
-    return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per)
+    return settings, failures, grasps, longest, dict(final=final, rate=rate, per_task=per, routes=by_object)
 
 
 def whole_goals(loop_root: Path, family: str, rounds: Path | None = None) -> tuple[list, list, dict]:
@@ -331,10 +346,18 @@ def whole_goals(loop_root: Path, family: str, rounds: Path | None = None) -> tup
 
 
 def build(
-    loop_root: Path, place_loops=(), held_loops=(), pick_rounds: Path | None = None, into_loops=(), near_loops=()
+    loop_root: Path,
+    place_loops=(),
+    held_loops=(),
+    pick_rounds: Path | None = None,
+    into_loops=(),
+    near_loops=(),
+    calibrations=(),
 ) -> dict:
     """`place_loops` / `held_loops` / `into_loops` / `near_loops`: (sandbox, family, rounds dir or None) per family;
-    `pick_rounds`: the pick_single sealed pool re-run under the current catalog (None: its final incumbent's rounds)."""
+    `pick_rounds`: the pick_single sealed pool re-run under the current catalog (None: its final incumbent's rounds);
+    `calibrations`: (sandbox, sample, rounds dir, pool dir) per calibration sample (calibrate.py), whose held(X), on(X,
+    S) and in(X, C) tasks count as a pick, put-down and put-in family's (user 2026-10-19, plan §12.3)."""
     old = yaml.safe_load(OLD.read_text())
     meta = scene_file.load(str(ADT / "scene_meta.json"))
     checker = feasibility.Checker(meta, dict(old, robot=dict(old["robot"], body_radius=0.35)))
@@ -352,21 +375,34 @@ def build(
         ps["route_max"] = max(ps["route_max"], summ["route_max"])
         loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
                              bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
+    for root, name, rounds, pool in calibrations:
+        ok, bad, summ = held(root, name, checker, rounds, pool)
+        settings, failures = settings + ok, failures + bad
+        ps["deepest_success"] = max(ps["deepest_success"], summ["deepest_success"])
+        ps["route_max"] = max(ps["route_max"], summ["route_max"])
+        loops[name] = dict(calibration=str(rounds), rate=summ["rate"], per_task=summ["per_task"],
+                           source=CAL_SRC)  # fmt: skip
     picked = {x for e in settings for x in e["objects"]}
-    placed, place_failed, carry_max = [], [], 0.0
-    for root, family, rounds in place_loops:
-        ok, bad, grasps, longest, summ = put_on(root, family, checker, picked, rounds)
-        placed, place_failed, carry_max = placed + ok, place_failed + bad, max(carry_max, longest)
-        settings = settings + grasps
-        loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
-                             bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
+    placed, place_failed, carry_max, routes = [], [], 0.0, collections.defaultdict(float)
     put_in, put_in_failed = [], []
-    for root, family, rounds in into_loops:
-        ok, bad, grasps, longest, summ = into(root, family, checker, picked, rounds)
-        put_in, put_in_failed, carry_max = put_in + ok, put_in_failed + bad, max(carry_max, longest)
+    calibration_loops = [(root, name, rounds) for root, name, rounds, _pool in calibrations]
+    for kind, root, family, rounds in ([("on", *x) for x in [*place_loops, *calibration_loops]]
+                                       + [("in", *x) for x in [*into_loops, *calibration_loops]]):  # fmt: skip
+        ok, bad, grasps, longest, summ = (put_on if kind == "on" else into)(root, family, checker, picked, rounds)
+        if kind == "on":
+            placed, place_failed = placed + ok, place_failed + bad
+        else:
+            put_in, put_in_failed = put_in + ok, put_in_failed + bad
+        carry_max = max(carry_max, longest)
         settings = settings + grasps
-        loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
-                             bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
+        for x, d in summ["routes"].items():
+            routes[x] = max(routes[x], d)
+        if family not in loops:
+            loops[family] = dict(final_incumbent=summ["final"], sealed_rate=summ["rate"], per_task=summ["per_task"],
+                                 bucket1=summ["rate"] >= BUCKET1_RATE, source=f"{PLAN_SRC.replace('§9', '§10')}")  # fmt: skip
+    flat, low = skill_constant("pick", "TOP_FLAT_M"), skill_constant("pick", "TOP_SURFACE_MAX_M")
+    pinched = {x: d for x, d in routes.items() if d > 0 and checker.box(x)[0][2] < flat
+               and checker.surfaces[checker.objects[x]["surface"]]["top"] < low}  # fmt: skip
 
     goals_ok, goals_failed = [], []
     for root, family, rounds in near_loops:
@@ -487,6 +523,14 @@ def build(
                 route_measured_max=round(carry_max, 2) if carry_max else None,
                 route_measured_source="the longest occupancy-map route from the pick stance to the put-down stance among a put-down family's sealed successes (place.on_surface_single.measured_tasks)",
                 creep=creep(),
+                top_pinch=dict(
+                    rule="a low flat object on a low surface is picked by the top-down pinch (pick.is_top: box half height under half_height_max, its surface's top under support_top_max); it is carried only as far as one was measured",
+                    half_height_max=flat,
+                    support_top_max=low,
+                    route_measured_max=round(max(pinched.values()), 2) if pinched else None,
+                    objects=sorted(pinched),
+                    source="src/locomani/tasks/scene/skills/pick.py; the longest occupancy-map route from the pick stance to the put-down stance among the successes of a top-pinched object's put-down and put-in tasks at >= 50 %",
+                ),
                 source=PROBE_SRC + "grip/",
             ),  # fmt: skip
             "bimanual_box": dict(status="untested", usable_distance=0.0, note="no bimanual skill"),
@@ -495,6 +539,9 @@ def build(
             "into_container_single_arm": dict(
                 status="measured",
                 setting="the put-in families' sealed pools: each setting is one object into one container (the checker takes it for that pair whatever the ranges say); the rim range spans the settings, the opening is the smallest one measured",
+                release_as_held=True,
+                release_as_held_source="src/locomani/tasks/scene/skills/into.py: the hand opens over the container with the object as it was grasped (it rested so), its footprint release_margin_m inside the inner box (into.release_fit)",
+                release_margin_m=skill_constant("into", "RELEASE_MARGIN_M"),
                 rim_height_measured=[min(e["rim_height"][0] for e in put_in), max(e["rim_height"][0] for e in put_in)],
                 opening_measured=[min(e["opening"][0] for e in put_in), min(e["opening"][1] for e in put_in)],
                 measured_tasks=put_in,
@@ -597,7 +644,10 @@ HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scen
 #   place.into_container_single_arm.measured_tasks are the same for put-in families (one object into one container).
 #   goals_measured are whole goals the checker has no step for (held + near: a carry-to), measured end to end.
 #   carry.single_arm.creep is the put-down's creep refusal (a skill's rule, not a measurement) with carry_time.py's
-#     planned lift-to-release time from the route: the checker's carry_single.creep gap.
+#     planned lift-to-release time from the route: the checker's carry_single.creep gap. carry.single_arm.top_pinch
+#     bounds a top-pinched object's carry by the longest measured (carry_single.top_pinch_distance).
+#   place.into_container_single_arm.release_* is how the put-in lets go (as held, release_margin_m inside the box).
+#   Calibration samples (calibrate.py, --calibration) count as measured tasks like a family's sealed pool.
 #   Every skill the library does not have yet (bimanual) is untested: a gap, never bucket 1.
 """
 
@@ -614,6 +664,8 @@ def main(argv=None) -> int:
     ap.add_argument("--near-loop", action="append", default=[], metavar="SANDBOX:FAMILY[:ROUNDS]",
                     help="a finished carry-to family (held + near; repeatable): measured whole goals")  # fmt: skip
     ap.add_argument("--pick-rounds", type=Path, help="pick_single's sealed pool re-run under the current catalog")
+    ap.add_argument("--calibration", action="append", default=[], metavar="SANDBOX:SAMPLE:ROUNDS:POOL",
+                    help="a calibration sample's rounds and pool (repeatable): its tasks count as measured")  # fmt: skip
     ap.add_argument("--out", type=Path, default=DST)
     a = ap.parse_args(argv)
     import datetime
@@ -622,8 +674,9 @@ def main(argv=None) -> int:
         parts = v.split(":")
         return Path(parts[0]), parts[1], Path(parts[2]) if len(parts) > 2 else None
 
+    cal = [(Path(r), n, Path(d), Path(p)) for r, n, d, p in (v.split(":") for v in a.calibration)]
     cap = build(a.loop_root, [loop(v) for v in a.place_loop], [loop(v) for v in a.held_loop], a.pick_rounds,
-                [loop(v) for v in a.into_loop], [loop(v) for v in a.near_loop])  # fmt: skip
+                [loop(v) for v in a.into_loop], [loop(v) for v in a.near_loop], cal)  # fmt: skip
 
     class NoAlias(yaml.SafeDumper):  # the same list in two places stays two lists, not an anchor
         def ignore_aliases(self, data):

@@ -69,12 +69,10 @@ def section(catalog: Path = CATALOG, fit: Path | None = None) -> dict | None:
         return None
     m = json.loads(fit.read_text())["model"]
     return dict(
-        rule="a side-grasped object's pad margin (box half height + centre z - pad_half_m) under rate_m_s x T_est: the put-down's pick is refused before contact (place._refusal); T_est = base + per_m x route + put_in for in(X, C), near_drop for a put-in on X's own surface",
+        rule="a side-grasped object's pad margin (box half height + centre z - pad_half_m) under rate_m_s x T_est: the put-down's pick is refused before contact (place._refusal); T_est = base + per_m x route + put_in for in(X, C), near_drop for a put-in on X's own surface; carry.single_arm.top_pinch is exempt",
         rate_m_s=skill_constant("place", "CREEP_RATE_M_S", catalog),
         pad_half_m=skill_constant("grasp_program", "PAD_Z", catalog),
         put_in=bool(skill_constant("into", "CREEP", catalog)),
-        top_pinch=dict(half_height_max=skill_constant("pick", "TOP_FLAT_M", catalog),
-                       support_top_max=skill_constant("pick", "TOP_SURFACE_MAX_M", catalog)),
         t_est_s={k: m[k] for k in ("base", "per_m", "put_in", "near_drop")},
         t_est_fit=dict(tasks=m["tasks"], near_tasks=m["near_tasks"], residual_sd_s=m["residual_sd_s"]),
         source="src/locomani/tasks/scene/skills/{place,grasp_program,pick,into}.py; outputs/scene_rsi_20261016/capability/carry_time/fit.json (carry_time.py, plan §12.3)",
@@ -82,14 +80,19 @@ def section(catalog: Path = CATALOG, fit: Path | None = None) -> dict | None:
 
 
 def sources() -> list[tuple[Path, dict]]:
-    """(rounds dir, {task id: goal}) for every registered family's last sealed rounds and every calibration sample."""
+    """(rounds dir, {task id: goal}) for every registered family's last rounds and every calibration sample not
+    registered."""
     out = []
     reg = json.loads(REGISTRY.read_text()) if REGISTRY.exists() else {}
     for family, row in sorted(reg.items()):
         fam = json.loads((HERE / "families" / f"{family}.json").read_text())
         goals = {t["id"]: t["goal"] for t in map(json.loads, (REPO / fam["tasks_file"]).read_text().splitlines()) if t}
-        out.append((Path(row["sandbox"]) / HIDDEN / family / "sealed" / row["last"], goals))
+        base = Path(row["dir"]) if row.get("dir") else Path(row["sandbox"]) / HIDDEN / family / "sealed"
+        out.append((base / row["last"], goals))
+    registered = {d.resolve() for d, _ in out}
     for d in sorted(CALIBRATION.glob("*/rounds")):
+        if d.resolve() in registered:
+            continue
         goals = {t["id"]: t["goal"] for t in map(json.loads, (d.parent / "tasks.jsonl").read_text().splitlines()) if t}
         out.append((d, goals))
     return out

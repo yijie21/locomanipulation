@@ -7,8 +7,10 @@ write-back and each scene change (wb3_regress.sh ... upright_regress.sh by hand 
     PYTHONPATH=src $PY scripts/experiments/scene_rsi_20261016/regress.py add <family> <sandbox> <kind> [--pool <dir>]
 
 The registry, outputs/scene_rsi_20261016/outer/registry.json, lists per family its sandbox, its sealed pool (the
-sandbox's, or a filtered copy), its kind for capability_write.py (pick / held / place / into / near / none) and the
-tag of its last recorded rounds (`<sandbox>/<hidden>/<family>/sealed/<tag>/`). `run` re-runs them all into `<tag>`
+sandbox's, or a filtered copy), its kind for capability_write.py (pick / held / place / into / near / calibration /
+none) and the tag of its last recorded rounds (`<sandbox>/<hidden>/<family>/sealed/<tag>/`). A calibration sample
+(calibrate.py; user 2026-10-19, its tasks count as measured) is registered with its pool and `--dir` (its sample
+dir: the first rounds are tag `rounds`), so a write-back re-runs it too. `run` re-runs them all into `<tag>`
 (one batch; the machine-wide simulation slots share the processes), prints per family the recorded and new successes
 with Wilson intervals, b, c and the one-sided McNemar p both ways, writes `<registry dir>/regress_<tag>.json`, and --
 unless a family is worse at p <= 0.05 -- moves every family's `last` to `<tag>`. `capability_args` gives
@@ -42,7 +44,8 @@ def load() -> dict:
 
 
 def rounds_dir(family: str, row: dict, tag: str) -> Path:
-    return Path(row["sandbox"]) / HIDDEN / family / "sealed" / tag
+    """`<sandbox>/<hidden>/<family>/sealed/<tag>`; a calibration sample's `<dir>/<tag>` (its first rounds: `rounds`)."""
+    return Path(row["dir"]) / tag if row.get("dir") else Path(row["sandbox"]) / HIDDEN / family / "sealed" / tag
 
 
 def pool_of(family: str, row: dict) -> Path:
@@ -100,6 +103,8 @@ def capability_args(reg: dict | None = None) -> list[str]:
             args += ["--loop-root", row["sandbox"], "--pick-rounds", d]
         elif row["kind"] in FLAG:
             args += [FLAG[row["kind"]], f"{row['sandbox']}:{f}:{d}"]
+        elif row["kind"] == "calibration":
+            args += ["--calibration", f"{row['sandbox']}:{f}:{d}:{pool_of(f, row)}"]
     return args
 
 
@@ -115,16 +120,19 @@ def main(argv=None) -> int:
     a_ = sub.add_parser("add")
     a_.add_argument("family")
     a_.add_argument("sandbox")
-    a_.add_argument("kind", choices=("pick", *FLAG, "none"))
+    a_.add_argument("kind", choices=("pick", *FLAG, "calibration", "none"))
     a_.add_argument("--pool")
     a_.add_argument("--last", default="seed")
+    a_.add_argument("--dir", help="where the tags' rounds dirs are, when not <sandbox>/<hidden>/<family>/sealed")
     sub.add_parser("capability-args")
     a = ap.parse_args(argv)
     if a.cmd == "run":
         run(a.tag, a.families.split(",") if a.families else None, a.procs, a.gpus, a.catalog)
     elif a.cmd == "add":
         reg = load()
-        reg[a.family] = dict(sandbox=a.sandbox, kind=a.kind, pool=a.pool, last=a.last)
+        reg[a.family] = dict(
+            sandbox=a.sandbox, kind=a.kind, pool=a.pool, last=a.last, **({"dir": a.dir} if a.dir else {})
+        )
         REGISTRY.parent.mkdir(parents=True, exist_ok=True)
         REGISTRY.write_text(json.dumps(reg, indent=1))
     else:

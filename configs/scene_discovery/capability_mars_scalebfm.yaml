@@ -14,7 +14,10 @@
 #   place.into_container_single_arm.measured_tasks are the same for put-in families (one object into one container).
 #   goals_measured are whole goals the checker has no step for (held + near: a carry-to), measured end to end.
 #   carry.single_arm.creep is the put-down's creep refusal (a skill's rule, not a measurement) with carry_time.py's
-#     planned lift-to-release time from the route: the checker's carry_single.creep gap.
+#     planned lift-to-release time from the route: the checker's carry_single.creep gap. carry.single_arm.top_pinch
+#     bounds a top-pinched object's carry by the longest measured (carry_single.top_pinch_distance).
+#   place.into_container_single_arm.release_* is how the put-in lets go (as held, release_margin_m inside the box).
+#   Calibration samples (calibrate.py, --calibration) count as measured tasks like a family's sealed pool.
 #   Every skill the library does not have yet (bimanual) is untested: a gap, never bucket 1.
 
 robot:
@@ -92,7 +95,7 @@ locomotion:
     status: measured_one
     setting: ADT apartment, occupancy-map routes at body radius 0.35 m from a random spawn 1-3 m from the object to its stand
       (pick_single sealed pool, 80 rounds, 0 falls)
-    route_max_measured: 6.97
+    route_max_measured: 7.01
     source: docs/handoff/scene-rsi-plan-20261016.md §9 (7.10)
   cross_room:
     status: untested
@@ -482,15 +485,14 @@ reach_single_arm:
     - 0.755
     - 1.498
     source: docs/handoff/scene-rsi-plan-20261016.md §9 (r1_slide_then_grasp, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_slide_then_grasp/sealed/summary.json
-  - name: r1_on_single.hand_soap_to_bathroom_sink.pick
+  - name: cal_r2.b1_pick_HandSoap_1
     status: measured
     objects:
     - HandSoap_1
     surface: ApartmentEnv__6
-    setting: 'ADT apartment (mars): HandSoap_1 from ApartmentEnv__6 onto ApartmentEnv__3, placement and yaw random on its
-      surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/upright_20261019):
-      lifted and carried away'
-    success: 7/8
+    setting: 'ADT apartment (mars): HandSoap_1 on ApartmentEnv__6, placement and yaw random on that surface, robot spawned
+      1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+    success: 8/8
     support_top:
     - 0.918
     - 0.918
@@ -501,18 +503,21 @@ reach_single_arm:
     - 0.183
     - 0.183
     mass_max: 0.4
-    inboard: null
-    stance_xy: null
-    source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
-  - name: r1_on_single.vase_centerpiece.pick
+    inboard:
+    - 0.077
+    - 0.302
+    stance_xy:
+    - 2.093
+    - -3.501
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+  - name: cal_r2.b1_pick_WhiteVaseMedium_1
     status: measured
     objects:
     - WhiteVaseMedium_1
     surface: DisplayUnit_1__1
-    setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
-      on its surface, robot spawned 1-3 m away (r1_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/upright_20261019):
-      lifted and carried away'
-    success: 7/8
+    setting: 'ADT apartment (mars): WhiteVaseMedium_1 on DisplayUnit_1__1, placement and yaw random on that surface, robot
+      spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+    success: 4/8
     support_top:
     - 0.727
     - 0.727
@@ -523,17 +528,70 @@ reach_single_arm:
     - 0.124
     - 0.124
     mass_max: 0.3
-    inboard: null
-    stance_xy: null
-    source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/summary.json
-  - name: r2_on_single.big_white_vase_to_tv_stand.pick
+    inboard:
+    - 0.075
+    - 0.236
+    stance_xy:
+    - -3.483
+    - -4.622
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+  - name: cal_r2.b2_pick_RedClock
+    status: measured
+    objects:
+    - RedClock
+    surface: KitchIsland__0
+    setting: 'ADT apartment (mars): RedClock on KitchIsland__0, placement and yaw random on that surface, robot spawned 1-3
+      m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+    success: 6/8
+    support_top:
+    - 0.896
+    - 0.896
+    object_width:
+    - 0.052
+    - 0.052
+    object_height:
+    - 0.098
+    - 0.098
+    mass_max: 0.2
+    inboard:
+    - 0.054
+    - 0.552
+    stance_xy:
+    - 0.199
+    - -2.451
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+  - name: cal_r3.b1_pick_GreenApple_A
+    status: measured
+    objects:
+    - GreenApple_A
+    surface: ExtendableTable__0
+    setting: 'ADT apartment (mars): GreenApple_A on ExtendableTable__0, placement and yaw random on that surface, robot spawned
+      1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+    success: 6/8
+    support_top:
+    - 0.747
+    - 0.747
+    object_width:
+    - 0.085
+    - 0.085
+    object_height:
+    - 0.083
+    - 0.083
+    mass_max: 0.18
+    inboard:
+    - 0.108
+    - 0.298
+    stance_xy:
+    - -1.161
+    - -3.825
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+  - name: cal_r3.b1_pick_WhiteVaseBig_1
     status: measured
     objects:
     - WhiteVaseBig_1
     surface: DisplayUnit_1__1
-    setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto TVUnit__2, placement and yaw random on its surface,
-      robot spawned 1-3 m away (r2_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/sealed/upright_20261019):
-      lifted and carried away'
+    setting: 'ADT apartment (mars): WhiteVaseBig_1 on DisplayUnit_1__1, placement and yaw random on that surface, robot spawned
+      1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
     success: 7/8
     support_top:
     - 0.727
@@ -545,31 +603,59 @@ reach_single_arm:
     - 0.161
     - 0.161
     mass_max: 0.45
-    inboard: null
-    stance_xy: null
-    source: docs/handoff/scene-rsi-plan-20261016.md §10 (r2_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r2_on_single/sealed/summary.json
-  - name: r1_in_single.apple_in_black_bowl.pick
+    inboard:
+    - 0.221
+    - 0.231
+    stance_xy:
+    - -3.501
+    - -4.448
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+  - name: cal_r3.b2_pick_CandlePattern02_1
     status: measured
     objects:
-    - GreenApple_A
-    surface: ExtendableTable__0
-    setting: 'ADT apartment (mars): GreenApple_A from ExtendableTable__0 into BlackCeramicBowl, placement and yaw random on
-      its surface, robot spawned 1-3 m away (r1_in_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/sealed/upright_20261019):
-      lifted and carried away'
-    success: 7/10
+    - CandlePattern02_1
+    surface: BlackCoffeeTable__1
+    setting: 'ADT apartment (mars): CandlePattern02_1 on BlackCoffeeTable__1, placement and yaw random on that surface, robot
+      spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+    success: 8/8
     support_top:
-    - 0.747
-    - 0.747
+    - 0.454
+    - 0.454
     object_width:
-    - 0.085
-    - 0.085
+    - 0.077
+    - 0.077
     object_height:
-    - 0.083
-    - 0.083
-    mass_max: 0.18
+    - 0.05
+    - 0.05
+    mass_max: 0.2
     inboard: null
-    stance_xy: null
-    source: docs/handoff/scene-rsi-plan-20261016.md §10 (r1_in_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r1_in_single/sealed/summary.json
+    stance_xy:
+    - -1.31
+    - 1.423
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+  - name: cal_r4.b2_pick_CandlePattern04_1
+    status: measured
+    objects:
+    - CandlePattern04_1
+    surface: BlackCoffeeTable__1
+    setting: 'ADT apartment (mars): CandlePattern04_1 on BlackCoffeeTable__1, placement and yaw random on that surface, robot
+      spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+    success: 8/8
+    support_top:
+    - 0.454
+    - 0.454
+    object_width:
+    - 0.077
+    - 0.077
+    object_height:
+    - 0.05
+    - 0.05
+    mass_max: 0.2
+    inboard: null
+    stance_xy:
+    - -1.52
+    - 1.4
+    source: docs/handoff/scene-rsi-plan-20261016.md §9 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
   grasp_failures:
   - name: pick_single.mug_pickup
     gap: grasp_single.mug_pickup
@@ -767,24 +853,31 @@ carry:
     creep:
       rule: 'a side-grasped object''s pad margin (box half height + centre z - pad_half_m) under rate_m_s x T_est: the put-down''s
         pick is refused before contact (place._refusal); T_est = base + per_m x route + put_in for in(X, C), near_drop for
-        a put-in on X''s own surface'
+        a put-in on X''s own surface; carry.single_arm.top_pinch is exempt'
       rate_m_s: 0.00062
       pad_half_m: 0.014
       put_in: true
-      top_pinch:
-        half_height_max: 0.02
-        support_top_max: 0.6
       t_est_s:
-        base: 32.1
-        per_m: 8.13
-        put_in: 25.3
+        base: 36.0
+        per_m: 7.23
+        put_in: 21.7
         near_drop: 22.6
       t_est_fit:
-        tasks: 43
-        near_tasks: 6
-        residual_sd_s: 19.3
+        tasks: 96
+        near_tasks: 7
+        residual_sd_s: 19.2
       source: src/locomani/tasks/scene/skills/{place,grasp_program,pick,into}.py; outputs/scene_rsi_20261016/capability/carry_time/fit.json
         (carry_time.py, plan §12.3)
+    top_pinch:
+      rule: 'a low flat object on a low surface is picked by the top-down pinch (pick.is_top: box half height under half_height_max,
+        its surface''s top under support_top_max); it is carried only as far as one was measured'
+      half_height_max: 0.02
+      support_top_max: 0.6
+      route_measured_max: 1.36
+      objects:
+      - TvRemote_1
+      source: src/locomani/tasks/scene/skills/pick.py; the longest occupancy-map route from the pick stance to the put-down
+        stance among the successes of a top-pinched object's put-down and put-in tasks at >= 50 %
     source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
   bimanual_box:
     status: untested
@@ -795,6 +888,10 @@ place:
     status: measured
     setting: 'the put-in families'' sealed pools: each setting is one object into one container (the checker takes it for
       that pair whatever the ranges say); the rim range spans the settings, the opening is the smallest one measured'
+    release_as_held: true
+    release_as_held_source: 'src/locomani/tasks/scene/skills/into.py: the hand opens over the container with the object as
+      it was grasped (it rested so), its footprint release_margin_m inside the inner box (into.release_fit)'
+    release_margin_m: 0.01
     rim_height_measured:
     - 0.547
     - 0.832
@@ -859,6 +956,25 @@ place:
       - 0.19
       - 1.3
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r2_in_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r2_in_single/sealed/summary.json
+    - name: cal_r4.b1_put_WhiteVaseBig_1_in_WhiteTrashBin
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: WhiteTrashBin
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 into WhiteTrashBin, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 6/8
+      rim_height:
+      - 0.547
+      - 0.547
+      opening:
+      - 0.266
+      - 0.365
+      carry_route:
+      - 3.9
+      - 3.91
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
     failed_tasks:
     - name: r1_in_single.banana_in_wooden_bowl
       gap: place_into.banana_in_wooden_bowl
@@ -970,6 +1086,171 @@ place:
       setting: 'ADT apartment (mars): Wallet_1 from DisplayShelves_1__2 into WoodenBoxSmall, placement and yaw random on its
         surface, robot spawned 1-3 m away (r2_in_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r2-in-a/outputs/scene_rsi_20261016_hidden/r2_in_single/sealed/upright_20261019)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r2_in_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r2_in_single/sealed/summary.json
+    - name: cal_r2.b1_canister_into_trash
+      gap: place_into.b1_canister_into_trash
+      objects:
+      - CoffeeCanisterLarge
+      surface: WhiteTrashBin
+      pilots:
+      - b1_canister_into_trash
+      success: 0/8
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 into WhiteTrashBin, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_CandlePattern03_1_in_WhiteTrashBin
+      gap: place_into.b1_put_CandlePattern03_1_in_WhiteTrashBin
+      objects:
+      - CandlePattern03_1
+      surface: WhiteTrashBin
+      pilots:
+      - b1_put_CandlePattern03_1_in_WhiteTrashBin
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern03_1 from BlackCoffeeTable__1 into WhiteTrashBin, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_CarKey_2_in_WhiteTrashBin
+      gap: place_into.b1_put_CarKey_2_in_WhiteTrashBin
+      objects:
+      - CarKey_2
+      surface: WhiteTrashBin
+      pilots:
+      - b1_put_CarKey_2_in_WhiteTrashBin
+      success: 0/8
+      setting: 'ADT apartment (mars): CarKey_2 from ApartmentEnv__6 into WhiteTrashBin, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_DisplayWolf_in_WhiteTrashBin
+      gap: place_into.b1_put_DisplayWolf_in_WhiteTrashBin
+      objects:
+      - DisplayWolf
+      surface: WhiteTrashBin
+      pilots:
+      - b1_put_DisplayWolf_in_WhiteTrashBin
+      success: 0/8
+      setting: 'ADT apartment (mars): DisplayWolf from CornerDisplayShelves_1__1 into WhiteTrashBin, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_Jam_Anon_in_BlackCeramicBowl
+      gap: place_into.b1_put_Jam_Anon_in_BlackCeramicBowl
+      objects:
+      - Jam_Anon
+      surface: BlackCeramicBowl
+      pilots:
+      - b1_put_Jam_Anon_in_BlackCeramicBowl
+      success: 0/8
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 into BlackCeramicBowl, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_NIT_CoffeeCan_Anon_in_BlackCeramicBowl
+      gap: place_into.b1_put_NIT_CoffeeCan_Anon_in_BlackCeramicBowl
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: BlackCeramicBowl
+      pilots:
+      - b1_put_NIT_CoffeeCan_Anon_in_BlackCeramicBowl
+      success: 0/8
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 into BlackCeramicBowl, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_Jam_Anon_in_CatWaterBowlGrey_1
+      gap: place_into.b2_put_Jam_Anon_in_CatWaterBowlGrey_1
+      objects:
+      - Jam_Anon
+      surface: CatWaterBowlGrey_1
+      pilots:
+      - b2_put_Jam_Anon_in_CatWaterBowlGrey_1
+      success: 0/8
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 into CatWaterBowlGrey_1, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r3.b1_put_CoffeeCanisterLarge_in_BlackCeramicBowl
+      gap: place_into.b1_put_CoffeeCanisterLarge_in_BlackCeramicBowl
+      objects:
+      - CoffeeCanisterLarge
+      surface: BlackCeramicBowl
+      pilots:
+      - b1_put_CoffeeCanisterLarge_in_BlackCeramicBowl
+      success: 0/8
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 into BlackCeramicBowl, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_CoffeeCanisterLarge_in_WhiteUtensilTray
+      gap: place_into.b1_put_CoffeeCanisterLarge_in_WhiteUtensilTray
+      objects:
+      - CoffeeCanisterLarge
+      surface: WhiteUtensilTray
+      pilots:
+      - b1_put_CoffeeCanisterLarge_in_WhiteUtensilTray
+      success: 0/8
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 into WhiteUtensilTray, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_Jam_Anon_in_WhiteUtensilTray
+      gap: place_into.b1_put_Jam_Anon_in_WhiteUtensilTray
+      objects:
+      - Jam_Anon
+      surface: WhiteUtensilTray
+      pilots:
+      - b1_put_Jam_Anon_in_WhiteUtensilTray
+      success: 0/8
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 into WhiteUtensilTray, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_TvRemote_1_in_WhiteTrashBin
+      gap: place_into.b1_put_TvRemote_1_in_WhiteTrashBin
+      objects:
+      - TvRemote_1
+      surface: WhiteTrashBin
+      pilots:
+      - b1_put_TvRemote_1_in_WhiteTrashBin
+      success: 0/8
+      setting: 'ADT apartment (mars): TvRemote_1 from BlackCoffeeTable__1 into WhiteTrashBin, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseBig_1_in_BlackCeramicBowl
+      gap: place_into.b1_put_WhiteVaseBig_1_in_BlackCeramicBowl
+      objects:
+      - WhiteVaseBig_1
+      surface: BlackCeramicBowl
+      pilots:
+      - b1_put_WhiteVaseBig_1_in_BlackCeramicBowl
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 into BlackCeramicBowl, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_PlateHolder_in_LaundryBasket_1
+      gap: place_into.b2_put_PlateHolder_in_LaundryBasket_1
+      objects:
+      - PlateHolder
+      surface: LaundryBasket_1
+      pilots:
+      - b2_put_PlateHolder_in_LaundryBasket_1
+      success: 0/8
+      setting: 'ADT apartment (mars): PlateHolder from ApartmentEnv__6 into LaundryBasket_1, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r4.b1_put_Jam_Anon_in_WhiteTrashBin
+      gap: place_into.b1_put_Jam_Anon_in_WhiteTrashBin
+      objects:
+      - Jam_Anon
+      surface: WhiteTrashBin
+      pilots:
+      - b1_put_Jam_Anon_in_WhiteTrashBin
+      success: 3/8
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 into WhiteTrashBin, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_CandlePattern02_1_in_WoodenBoxSmall
+      gap: place_into.b2_put_CandlePattern02_1_in_WoodenBoxSmall
+      objects:
+      - CandlePattern02_1
+      surface: WoodenBoxSmall
+      pilots:
+      - b2_put_CandlePattern02_1_in_WoodenBoxSmall
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern02_1 from BlackCoffeeTable__1 into WoodenBoxSmall, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
     source: docs/handoff/scene-rsi-plan-20261016.md §10
   put_down_bimanual:
     status: untested
@@ -1137,6 +1418,614 @@ place:
       - 0.81
       - 0.81
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r2_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r2_on_single/sealed/summary.json
+    - name: cal_r2.b1_canister_to_island
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: KitchIsland__0
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto KitchIsland__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 6/8
+      support_top:
+      - 0.896
+      - 0.896
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 3.05
+      - 3.24
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_CoffeeCanisterLarge_on_BlackRoundTable__0
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: BlackRoundTable__0
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto BlackRoundTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 8/8
+      support_top:
+      - 0.519
+      - 0.519
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 1.7
+      - 1.83
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_CoffeeCanisterLarge_on_ExtendableTable__0
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: ExtendableTable__0
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto ExtendableTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 6/8
+      support_top:
+      - 0.747
+      - 0.747
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 6.36
+      - 6.59
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_Jam_Anon_on_BlackBarStool_B__0
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: BlackBarStool_B__0
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto BlackBarStool_B__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 6/8
+      support_top:
+      - 0.646
+      - 0.646
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 0.37
+      - 3.53
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_Jam_Anon_on_BlackRoundTable__0
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: BlackRoundTable__0
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto BlackRoundTable__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 5/8
+      support_top:
+      - 0.519
+      - 0.519
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 4.33
+      - 7.37
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_NIT_CoffeeCan_Anon_on_CoatRackShoeBench__2
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: CoatRackShoeBench__2
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto CoatRackShoeBench__2, placement and
+        yaw random on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 8/8
+      support_top:
+      - 0.514
+      - 0.514
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 3.22
+      - 6.95
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_NIT_CoffeeCan_Anon_on_ConsoleTable__1
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: ConsoleTable__1
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto ConsoleTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 6/8
+      support_top:
+      - 0.697
+      - 0.697
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 1.42
+      - 5.88
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_WhiteVaseBig_1_on_ExtendableTable__0
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: ExtendableTable__0
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 5/8
+      support_top:
+      - 0.747
+      - 0.747
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 1.04
+      - 1.09
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_WhiteVaseBig_1_on_UtilityCart__2
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: UtilityCart__2
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto UtilityCart__2, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      success: 4/8
+      support_top:
+      - 0.702
+      - 0.702
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 5.3
+      - 5.35
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r3.b1_coffee_can_to_round_table
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: BlackRoundTable__0
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto BlackRoundTable__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 8/8
+      support_top:
+      - 0.519
+      - 0.519
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 2.55
+      - 5.83
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_hand_soap_to_bathroom_sink
+      status: measured
+      objects:
+      - HandSoap_1
+      surface: ApartmentEnv__3
+      from_surface: ApartmentEnv__6
+      setting: 'ADT apartment (mars): HandSoap_1 from ApartmentEnv__6 onto ApartmentEnv__3, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 6/8
+      support_top:
+      - 0.817
+      - 0.817
+      object_height:
+      - 0.183
+      - 0.183
+      carry_route:
+      - 1.45
+      - 3.01
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_CoffeeCanisterLarge_on_ConsoleTable__1
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: ConsoleTable__1
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto ConsoleTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 7/8
+      support_top:
+      - 0.697
+      - 0.697
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 3.3
+      - 3.53
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_Jam_Anon_on_ApartmentEnv__2
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: ApartmentEnv__2
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto ApartmentEnv__2, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 5/8
+      support_top:
+      - 0.752
+      - 0.752
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 1.19
+      - 2.33
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_Jam_Anon_on_CoatRackShoeBench__2
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: CoatRackShoeBench__2
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto CoatRackShoeBench__2, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 6/8
+      support_top:
+      - 0.514
+      - 0.514
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 2.57
+      - 4.33
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_Jam_Anon_on_ConsoleTable__1
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: ConsoleTable__1
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto ConsoleTable__1, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 5/8
+      support_top:
+      - 0.697
+      - 0.697
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 5.91
+      - 6.84
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: ApartmentEnv__3
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto ApartmentEnv__3, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 6/8
+      support_top:
+      - 0.817
+      - 0.817
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 2.39
+      - 4.33
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_NIT_CoffeeCan_Anon_on_BlackRoundTable__0
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: BlackRoundTable__0
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto BlackRoundTable__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 8/8
+      support_top:
+      - 0.519
+      - 0.519
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 2.66
+      - 6.36
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseBig_1_on_BlackBarStool_B__0
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: BlackBarStool_B__0
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto BlackBarStool_B__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 6/8
+      support_top:
+      - 0.646
+      - 0.646
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 4.26
+      - 4.26
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseBig_1_on_BlackRoundTable__0
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: BlackRoundTable__0
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto BlackRoundTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 5/8
+      support_top:
+      - 0.519
+      - 0.519
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 5.1
+      - 5.15
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseBig_1_on_ConsoleTable__1
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: ConsoleTable__1
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto ConsoleTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 6/8
+      support_top:
+      - 0.697
+      - 0.697
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 2.88
+      - 2.93
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_WhiteVaseBig_1_on_GlassCabinet__1
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: GlassCabinet__1
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto GlassCabinet__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      success: 5/8
+      support_top:
+      - 0.769
+      - 0.769
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 6.66
+      - 6.66
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r4.b1_canister_to_dining_table
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: ExtendableTable__0
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto ExtendableTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 7/8
+      support_top:
+      - 0.747
+      - 0.747
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 6.36
+      - 6.59
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_canister_to_round_table
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: BlackRoundTable__0
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto BlackRoundTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 8/8
+      support_top:
+      - 0.519
+      - 0.519
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 1.7
+      - 1.83
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_jam_to_dining_table
+      status: measured
+      objects:
+      - Jam_Anon
+      surface: ExtendableTable__0
+      from_surface: KitchIsland__0
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto ExtendableTable__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 4/8
+      support_top:
+      - 0.747
+      - 0.747
+      object_height:
+      - 0.187
+      - 0.187
+      carry_route:
+      - 1.41
+      - 3.46
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: BlackBarStool_B__0
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto BlackBarStool_B__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 7/8
+      support_top:
+      - 0.646
+      - 0.646
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 0.73
+      - 0.87
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_CoffeeCanisterLarge_on_BlackCoffeeTable__1
+      status: measured
+      objects:
+      - CoffeeCanisterLarge
+      surface: BlackCoffeeTable__1
+      from_surface: UtilityCart__2
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto BlackCoffeeTable__1, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 7/8
+      support_top:
+      - 0.454
+      - 0.454
+      object_height:
+      - 0.196
+      - 0.196
+      carry_route:
+      - 2.72
+      - 2.89
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_DisplayWolf_on_UtilityCart__2
+      status: measured
+      objects:
+      - DisplayWolf
+      surface: UtilityCart__2
+      from_surface: CornerDisplayShelves_1__1
+      setting: 'ADT apartment (mars): DisplayWolf from CornerDisplayShelves_1__1 onto UtilityCart__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 8/8
+      support_top:
+      - 0.702
+      - 0.702
+      object_height:
+      - 0.095
+      - 0.095
+      carry_route:
+      - 2.19
+      - 2.19
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__2
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: ApartmentEnv__2
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto ApartmentEnv__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 5/8
+      support_top:
+      - 0.752
+      - 0.752
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 0.98
+      - 6.69
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_NIT_CoffeeCan_Anon_on_BlackBarStool_B__0
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: BlackBarStool_B__0
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto BlackBarStool_B__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 6/8
+      support_top:
+      - 0.646
+      - 0.646
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 2.15
+      - 4.54
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0
+      status: measured
+      objects:
+      - NIT_CoffeeCan_Anon
+      surface: KitchIsland__0
+      from_surface: ExtendableTable__0
+      setting: 'ADT apartment (mars): NIT_CoffeeCan_Anon from ExtendableTable__0 onto KitchIsland__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 4/8
+      support_top:
+      - 0.896
+      - 0.896
+      object_height:
+      - 0.159
+      - 0.159
+      carry_route:
+      - 3.93
+      - 6.21
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_WhiteVaseBig_1_on_CoatRackShoeBench__2
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: CoatRackShoeBench__2
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto CoatRackShoeBench__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 4/8
+      support_top:
+      - 0.514
+      - 0.514
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 5.93
+      - 5.93
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_WhiteVaseBig_1_on_KitchIsland__0
+      status: measured
+      objects:
+      - WhiteVaseBig_1
+      surface: KitchIsland__0
+      from_surface: DisplayUnit_1__1
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto KitchIsland__0, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      success: 4/8
+      support_top:
+      - 0.896
+      - 0.896
+      object_height:
+      - 0.161
+      - 0.161
+      carry_route:
+      - 4.25
+      - 6.34
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
     failed_tasks:
     - name: r1_on_single.clock_to_console_table
       gap: place_on_surface.clock_to_console_table
@@ -1248,6 +2137,578 @@ place:
       setting: 'ADT apartment (mars): CandlePattern04_2 from DisplayUnit_1__2 onto ExtendableTable__0, placement and yaw random
         on its surface, robot spawned 1-3 m away (r2_on_single sealed pool); catalog re-run (/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/sealed/upright_20261019)'
       source: docs/handoff/scene-rsi-plan-20261016.md §10 (r2_on_single, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/r2_on_single/sealed/summary.json
+    - name: cal_r2.b1_orange_to_dining_table
+      gap: place_on_surface.b1_orange_to_dining_table
+      objects:
+      - Orange_A
+      surface: ExtendableTable__0
+      pilots:
+      - b1_orange_to_dining_table
+      success: 0/8
+      setting: 'ADT apartment (mars): Orange_A from KitchIsland__0 onto ExtendableTable__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_CandlePattern03_1_on_ConsoleTable__1
+      gap: place_on_surface.b1_put_CandlePattern03_1_on_ConsoleTable__1
+      objects:
+      - CandlePattern03_1
+      surface: ConsoleTable__1
+      pilots:
+      - b1_put_CandlePattern03_1_on_ConsoleTable__1
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern03_1 from BlackCoffeeTable__1 onto ConsoleTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_DisplayWolf_on_ConsoleTable__1
+      gap: place_on_surface.b1_put_DisplayWolf_on_ConsoleTable__1
+      objects:
+      - DisplayWolf
+      surface: ConsoleTable__1
+      pilots:
+      - b1_put_DisplayWolf_on_ConsoleTable__1
+      success: 0/8
+      setting: 'ADT apartment (mars): DisplayWolf from CornerDisplayShelves_1__1 onto ConsoleTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_GreenApple_A_on_BlackBarStool_B__0
+      gap: place_on_surface.b1_put_GreenApple_A_on_BlackBarStool_B__0
+      objects:
+      - GreenApple_A
+      surface: BlackBarStool_B__0
+      pilots:
+      - b1_put_GreenApple_A_on_BlackBarStool_B__0
+      success: 0/8
+      setting: 'ADT apartment (mars): GreenApple_A from ExtendableTable__0 onto BlackBarStool_B__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_GreenApple_A_on_UtilityCart__2
+      gap: place_on_surface.b1_put_GreenApple_A_on_UtilityCart__2
+      objects:
+      - GreenApple_A
+      surface: UtilityCart__2
+      pilots:
+      - b1_put_GreenApple_A_on_UtilityCart__2
+      success: 0/8
+      setting: 'ADT apartment (mars): GreenApple_A from ExtendableTable__0 onto UtilityCart__2, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_TvRemote_1_on_ConsoleTable__1
+      gap: place_on_surface.b1_put_TvRemote_1_on_ConsoleTable__1
+      objects:
+      - TvRemote_1
+      surface: ConsoleTable__1
+      pilots:
+      - b1_put_TvRemote_1_on_ConsoleTable__1
+      success: 2/8
+      setting: 'ADT apartment (mars): TvRemote_1 from BlackCoffeeTable__1 onto ConsoleTable__1, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b1_put_WhiteVaseMedium_1_on_BlackCoffeeTable__1
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_BlackCoffeeTable__1
+      objects:
+      - WhiteVaseMedium_1
+      surface: BlackCoffeeTable__1
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_BlackCoffeeTable__1
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto BlackCoffeeTable__1, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_Banana_A_on_DisplayShelves01_1__2
+      gap: place_on_surface.b2_put_Banana_A_on_DisplayShelves01_1__2
+      objects:
+      - Banana_A
+      surface: DisplayShelves01_1__2
+      pilots:
+      - b2_put_Banana_A_on_DisplayShelves01_1__2
+      success: 0/8
+      setting: 'ADT apartment (mars): Banana_A from KitchIsland__0 onto DisplayShelves01_1__2, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_Banana_A_on_DisplayShelves_1__1
+      gap: place_on_surface.b2_put_Banana_A_on_DisplayShelves_1__1
+      objects:
+      - Banana_A
+      surface: DisplayShelves_1__1
+      pilots:
+      - b2_put_Banana_A_on_DisplayShelves_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): Banana_A from KitchIsland__0 onto DisplayShelves_1__1, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_BookFiction9_01_on_CornerDisplayShelves_1__1
+      gap: place_on_surface.b2_put_BookFiction9_01_on_CornerDisplayShelves_1__1
+      objects:
+      - BookFiction9_01
+      surface: CornerDisplayShelves_1__1
+      pilots:
+      - b2_put_BookFiction9_01_on_CornerDisplayShelves_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): BookFiction9_01 from Bookcase__1 onto CornerDisplayShelves_1__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_BookFiction9_01_on_WireShelvingUnitBlack_1__2
+      gap: place_on_surface.b2_put_BookFiction9_01_on_WireShelvingUnitBlack_1__2
+      objects:
+      - BookFiction9_01
+      surface: WireShelvingUnitBlack_1__2
+      pilots:
+      - b2_put_BookFiction9_01_on_WireShelvingUnitBlack_1__2
+      success: 0/8
+      setting: 'ADT apartment (mars): BookFiction9_01 from Bookcase__1 onto WireShelvingUnitBlack_1__2, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_CandlePattern02_1_on_CoatRackShoeBench__1
+      gap: place_on_surface.b2_put_CandlePattern02_1_on_CoatRackShoeBench__1
+      objects:
+      - CandlePattern02_1
+      surface: CoatRackShoeBench__1
+      pilots:
+      - b2_put_CandlePattern02_1_on_CoatRackShoeBench__1
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern02_1 from BlackCoffeeTable__1 onto CoatRackShoeBench__1, placement and
+        yaw random on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_CandlePattern04_1_on_BlackBarStool_B__0
+      gap: place_on_surface.b2_put_CandlePattern04_1_on_BlackBarStool_B__0
+      objects:
+      - CandlePattern04_1
+      surface: BlackBarStool_B__0
+      pilots:
+      - b2_put_CandlePattern04_1_on_BlackBarStool_B__0
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern04_1 from BlackCoffeeTable__1 onto BlackBarStool_B__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_CandlePattern04_1_on_Bookcase__3
+      gap: place_on_surface.b2_put_CandlePattern04_1_on_Bookcase__3
+      objects:
+      - CandlePattern04_1
+      surface: Bookcase__3
+      pilots:
+      - b2_put_CandlePattern04_1_on_Bookcase__3
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern04_1 from BlackCoffeeTable__1 onto Bookcase__3, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_GreenPear_A_on_DisplayUnit_1__0
+      gap: place_on_surface.b2_put_GreenPear_A_on_DisplayUnit_1__0
+      objects:
+      - GreenPear_A
+      surface: DisplayUnit_1__0
+      pilots:
+      - b2_put_GreenPear_A_on_DisplayUnit_1__0
+      success: 0/8
+      setting: 'ADT apartment (mars): GreenPear_A from KitchIsland__0 onto DisplayUnit_1__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_Wallet_1_on_DisplayShelves_1__0
+      gap: place_on_surface.b2_put_Wallet_1_on_DisplayShelves_1__0
+      objects:
+      - Wallet_1
+      surface: DisplayShelves_1__0
+      pilots:
+      - b2_put_Wallet_1_on_DisplayShelves_1__0
+      success: 0/8
+      setting: 'ADT apartment (mars): Wallet_1 from DisplayShelves_1__2 onto DisplayShelves_1__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r2.b2_put_WoodenSpoon_on_DisplayShelves01_1__0
+      gap: place_on_surface.b2_put_WoodenSpoon_on_DisplayShelves01_1__0
+      objects:
+      - WoodenSpoon
+      surface: DisplayShelves01_1__0
+      pilots:
+      - b2_put_WoodenSpoon_on_DisplayShelves01_1__0
+      success: 0/8
+      setting: 'ADT apartment (mars): WoodenSpoon from KitchIsland__0 onto DisplayShelves01_1__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r2 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r2, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r2/sealed/summary.json
+    - name: cal_r3.b1_put_DisplayWolf_on_BlackRoundTable__0
+      gap: place_on_surface.b1_put_DisplayWolf_on_BlackRoundTable__0
+      objects:
+      - DisplayWolf
+      surface: BlackRoundTable__0
+      pilots:
+      - b1_put_DisplayWolf_on_BlackRoundTable__0
+      success: 0/8
+      setting: 'ADT apartment (mars): DisplayWolf from CornerDisplayShelves_1__1 onto BlackRoundTable__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseMedium_1_on_BlackBarStool_B__0
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_BlackBarStool_B__0
+      objects:
+      - WhiteVaseMedium_1
+      surface: BlackBarStool_B__0
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_BlackBarStool_B__0
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto BlackBarStool_B__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseMedium_1_on_ConsoleTable__1
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_ConsoleTable__1
+      objects:
+      - WhiteVaseMedium_1
+      surface: ConsoleTable__1
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_ConsoleTable__1
+      success: 3/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ConsoleTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseMedium_1_on_KitchIsland__0
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_KitchIsland__0
+      objects:
+      - WhiteVaseMedium_1
+      surface: KitchIsland__0
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_KitchIsland__0
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto KitchIsland__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_put_WhiteVaseMedium_1_on_UtilityCart__2
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_UtilityCart__2
+      objects:
+      - WhiteVaseMedium_1
+      surface: UtilityCart__2
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_UtilityCart__2
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto UtilityCart__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b1_remote_on_sofa
+      gap: place_on_surface.b1_remote_on_sofa
+      objects:
+      - TvRemote_1
+      surface: GreySofa__2
+      pilots:
+      - b1_remote_on_sofa
+      success: 0/8
+      setting: 'ADT apartment (mars): TvRemote_1 from BlackCoffeeTable__1 onto GreySofa__2, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_Banana_A_on_DisplayShelves01_1__0
+      gap: place_on_surface.b2_put_Banana_A_on_DisplayShelves01_1__0
+      objects:
+      - Banana_A
+      surface: DisplayShelves01_1__0
+      pilots:
+      - b2_put_Banana_A_on_DisplayShelves01_1__0
+      success: 0/8
+      setting: 'ADT apartment (mars): Banana_A from KitchIsland__0 onto DisplayShelves01_1__0, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_Banana_A_on_DisplayShelves_1__0
+      gap: place_on_surface.b2_put_Banana_A_on_DisplayShelves_1__0
+      objects:
+      - Banana_A
+      surface: DisplayShelves_1__0
+      pilots:
+      - b2_put_Banana_A_on_DisplayShelves_1__0
+      success: 0/8
+      setting: 'ADT apartment (mars): Banana_A from KitchIsland__0 onto DisplayShelves_1__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_CandlePattern01_1_on_ConsoleTable__0
+      gap: place_on_surface.b2_put_CandlePattern01_1_on_ConsoleTable__0
+      objects:
+      - CandlePattern01_1
+      surface: ConsoleTable__0
+      pilots:
+      - b2_put_CandlePattern01_1_on_ConsoleTable__0
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern01_1 from BlackCoffeeTable__1 onto ConsoleTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_CandlePattern02_1_on_DisplayShelves_1__0
+      gap: place_on_surface.b2_put_CandlePattern02_1_on_DisplayShelves_1__0
+      objects:
+      - CandlePattern02_1
+      surface: DisplayShelves_1__0
+      pilots:
+      - b2_put_CandlePattern02_1_on_DisplayShelves_1__0
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern02_1 from BlackCoffeeTable__1 onto DisplayShelves_1__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_CandlePattern04_1_on_BlackWallShelf__0
+      gap: place_on_surface.b2_put_CandlePattern04_1_on_BlackWallShelf__0
+      objects:
+      - CandlePattern04_1
+      surface: BlackWallShelf__0
+      pilots:
+      - b2_put_CandlePattern04_1_on_BlackWallShelf__0
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern04_1 from BlackCoffeeTable__1 onto BlackWallShelf__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_CandlePattern04_1_on_DisplayShelves_1__1
+      gap: place_on_surface.b2_put_CandlePattern04_1_on_DisplayShelves_1__1
+      objects:
+      - CandlePattern04_1
+      surface: DisplayShelves_1__1
+      pilots:
+      - b2_put_CandlePattern04_1_on_DisplayShelves_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern04_1 from BlackCoffeeTable__1 onto DisplayShelves_1__1, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_GreenPear_A_on_DisplayUnit_1__1
+      gap: place_on_surface.b2_put_GreenPear_A_on_DisplayUnit_1__1
+      objects:
+      - GreenPear_A
+      surface: DisplayUnit_1__1
+      pilots:
+      - b2_put_GreenPear_A_on_DisplayUnit_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): GreenPear_A from KitchIsland__0 onto DisplayUnit_1__1, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_Wallet_1_on_Bookcase__3
+      gap: place_on_surface.b2_put_Wallet_1_on_Bookcase__3
+      objects:
+      - Wallet_1
+      surface: Bookcase__3
+      pilots:
+      - b2_put_Wallet_1_on_Bookcase__3
+      success: 0/8
+      setting: 'ADT apartment (mars): Wallet_1 from DisplayShelves_1__2 onto Bookcase__3, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r3.b2_put_WoodenSpoon_on_DisplayShelves01_1__1
+      gap: place_on_surface.b2_put_WoodenSpoon_on_DisplayShelves01_1__1
+      objects:
+      - WoodenSpoon
+      surface: DisplayShelves01_1__1
+      pilots:
+      - b2_put_WoodenSpoon_on_DisplayShelves01_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): WoodenSpoon from KitchIsland__0 onto DisplayShelves01_1__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r3 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r3, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r3/sealed/summary.json
+    - name: cal_r4.b1_jam_to_cart
+      gap: place_on_surface.b1_jam_to_cart
+      objects:
+      - Jam_Anon
+      surface: UtilityCart__2
+      pilots:
+      - b1_jam_to_cart
+      success: 1/8
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto UtilityCart__2, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_CoffeeCanisterLarge_on_GreySofa__2
+      gap: place_on_surface.b1_put_CoffeeCanisterLarge_on_GreySofa__2
+      objects:
+      - CoffeeCanisterLarge
+      surface: GreySofa__2
+      pilots:
+      - b1_put_CoffeeCanisterLarge_on_GreySofa__2
+      success: 2/8
+      setting: 'ADT apartment (mars): CoffeeCanisterLarge from UtilityCart__2 onto GreySofa__2, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_DisplayWolf_on_GreySofa__2
+      gap: place_on_surface.b1_put_DisplayWolf_on_GreySofa__2
+      objects:
+      - DisplayWolf
+      surface: GreySofa__2
+      pilots:
+      - b1_put_DisplayWolf_on_GreySofa__2
+      success: 0/8
+      setting: 'ADT apartment (mars): DisplayWolf from CornerDisplayShelves_1__1 onto GreySofa__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_Jam_Anon_on_ApartmentEnv__3
+      gap: place_on_surface.b1_put_Jam_Anon_on_ApartmentEnv__3
+      objects:
+      - Jam_Anon
+      surface: ApartmentEnv__3
+      pilots:
+      - b1_put_Jam_Anon_on_ApartmentEnv__3
+      success: 3/8
+      setting: 'ADT apartment (mars): Jam_Anon from KitchIsland__0 onto ApartmentEnv__3, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_RedClock_on_BlackRoundTable__0
+      gap: place_on_surface.b1_put_RedClock_on_BlackRoundTable__0
+      objects:
+      - RedClock
+      surface: BlackRoundTable__0
+      pilots:
+      - b1_put_RedClock_on_BlackRoundTable__0
+      success: 0/8
+      setting: 'ADT apartment (mars): RedClock from KitchIsland__0 onto BlackRoundTable__0, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_RedClock_on_UtilityCart__2
+      gap: place_on_surface.b1_put_RedClock_on_UtilityCart__2
+      objects:
+      - RedClock
+      surface: UtilityCart__2
+      pilots:
+      - b1_put_RedClock_on_UtilityCart__2
+      success: 1/8
+      setting: 'ADT apartment (mars): RedClock from KitchIsland__0 onto UtilityCart__2, placement and yaw random on its surface,
+        robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1
+      gap: place_on_surface.b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1
+      objects:
+      - WhiteVaseBig_1
+      surface: BlackCoffeeTable__1
+      pilots:
+      - b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1
+      success: 3/8
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto BlackCoffeeTable__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0
+      objects:
+      - WhiteVaseMedium_1
+      surface: BlackRoundTable__0
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto BlackRoundTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2
+      gap: place_on_surface.b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2
+      objects:
+      - WhiteVaseMedium_1
+      surface: CoatRackShoeBench__2
+      pilots:
+      - b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto CoatRackShoeBench__2, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b1_vase_centerpiece
+      gap: place_on_surface.b1_vase_centerpiece
+      objects:
+      - WhiteVaseMedium_1
+      surface: ExtendableTable__0
+      pilots:
+      - b1_vase_centerpiece
+      success: 1/8
+      setting: 'ADT apartment (mars): WhiteVaseMedium_1 from DisplayUnit_1__1 onto ExtendableTable__0, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_Banana_A_on_DisplayShelves_1__2
+      gap: place_on_surface.b2_put_Banana_A_on_DisplayShelves_1__2
+      objects:
+      - Banana_A
+      surface: DisplayShelves_1__2
+      pilots:
+      - b2_put_Banana_A_on_DisplayShelves_1__2
+      success: 0/8
+      setting: 'ADT apartment (mars): Banana_A from KitchIsland__0 onto DisplayShelves_1__2, placement and yaw random on its
+        surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2
+      gap: place_on_surface.b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2
+      objects:
+      - CandlePattern01_1
+      surface: CornerDisplayShelves_1__2
+      pilots:
+      - b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern01_1 from BlackCoffeeTable__1 onto CornerDisplayShelves_1__2, placement
+        and yaw random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_CandlePattern02_1_on_DisplayShelves_1__1
+      gap: place_on_surface.b2_put_CandlePattern02_1_on_DisplayShelves_1__1
+      objects:
+      - CandlePattern02_1
+      surface: DisplayShelves_1__1
+      pilots:
+      - b2_put_CandlePattern02_1_on_DisplayShelves_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern02_1 from BlackCoffeeTable__1 onto DisplayShelves_1__1, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_CandlePattern04_1_on_DisplayUnit_1__1
+      gap: place_on_surface.b2_put_CandlePattern04_1_on_DisplayUnit_1__1
+      objects:
+      - CandlePattern04_1
+      surface: DisplayUnit_1__1
+      pilots:
+      - b2_put_CandlePattern04_1_on_DisplayUnit_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern04_1 from BlackCoffeeTable__1 onto DisplayUnit_1__1, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_CandlePattern04_1_on_YellowArmChair__0
+      gap: place_on_surface.b2_put_CandlePattern04_1_on_YellowArmChair__0
+      objects:
+      - CandlePattern04_1
+      surface: YellowArmChair__0
+      pilots:
+      - b2_put_CandlePattern04_1_on_YellowArmChair__0
+      success: 0/8
+      setting: 'ADT apartment (mars): CandlePattern04_1 from BlackCoffeeTable__1 onto YellowArmChair__0, placement and yaw
+        random on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_PlateHolder_on_DisplayShelves_1__1
+      gap: place_on_surface.b2_put_PlateHolder_on_DisplayShelves_1__1
+      objects:
+      - PlateHolder
+      surface: DisplayShelves_1__1
+      pilots:
+      - b2_put_PlateHolder_on_DisplayShelves_1__1
+      success: 0/8
+      setting: 'ADT apartment (mars): PlateHolder from ApartmentEnv__6 onto DisplayShelves_1__1, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_RedClock_on_CoatRackShoeBench__1
+      gap: place_on_surface.b2_put_RedClock_on_CoatRackShoeBench__1
+      objects:
+      - RedClock
+      surface: CoatRackShoeBench__1
+      pilots:
+      - b2_put_RedClock_on_CoatRackShoeBench__1
+      success: 0/8
+      setting: 'ADT apartment (mars): RedClock from KitchIsland__0 onto CoatRackShoeBench__1, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_Wallet_1_on_CoatRackShoeBench__2
+      gap: place_on_surface.b2_put_Wallet_1_on_CoatRackShoeBench__2
+      objects:
+      - Wallet_1
+      surface: CoatRackShoeBench__2
+      pilots:
+      - b2_put_Wallet_1_on_CoatRackShoeBench__2
+      success: 0/8
+      setting: 'ADT apartment (mars): Wallet_1 from DisplayShelves_1__2 onto CoatRackShoeBench__2, placement and yaw random
+        on its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_WhiteVaseBig_1_on_NightStand__0
+      gap: place_on_surface.b2_put_WhiteVaseBig_1_on_NightStand__0
+      objects:
+      - WhiteVaseBig_1
+      surface: NightStand__0
+      pilots:
+      - b2_put_WhiteVaseBig_1_on_NightStand__0
+      success: 0/8
+      setting: 'ADT apartment (mars): WhiteVaseBig_1 from DisplayUnit_1__1 onto NightStand__0, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
+    - name: cal_r4.b2_put_WoodenSpoon_on_HybridMattress__0
+      gap: place_on_surface.b2_put_WoodenSpoon_on_HybridMattress__0
+      objects:
+      - WoodenSpoon
+      surface: HybridMattress__0
+      pilots:
+      - b2_put_WoodenSpoon_on_HybridMattress__0
+      success: 0/8
+      setting: 'ADT apartment (mars): WoodenSpoon from KitchIsland__0 onto HybridMattress__0, placement and yaw random on
+        its surface, robot spawned 1-3 m away (cal_r4 sealed pool); catalog re-run (/workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds)'
+      source: docs/handoff/scene-rsi-plan-20261016.md §10 (cal_r4, sealed pool); <loop sandbox>/outputs/scene_rsi_20261016_hidden/cal_r4/sealed/summary.json
     source: docs/handoff/scene-rsi-plan-20261016.md §10
   motor_put_back:
     status: measured_one
@@ -1421,6 +2882,128 @@ inner_loops:
       pick_wallet: 0/40
     bucket1: true
     source: docs/handoff/scene-rsi-plan-20261016.md §10
+  cal_r2:
+    calibration: /workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r2/rounds
+    rate: 0.257
+    per_task:
+      b1_canister_into_trash: 0/8
+      b1_canister_to_island: 6/8
+      b1_orange_to_dining_table: 0/8
+      b1_pick_HandSoap_1: 8/8
+      b1_pick_WhiteVaseMedium_1: 4/8
+      b1_put_CandlePattern03_1_in_WhiteTrashBin: 0/8
+      b1_put_CandlePattern03_1_on_ConsoleTable__1: 0/8
+      b1_put_CarKey_2_in_WhiteTrashBin: 0/8
+      b1_put_CoffeeCanisterLarge_on_BlackRoundTable__0: 8/8
+      b1_put_CoffeeCanisterLarge_on_ExtendableTable__0: 6/8
+      b1_put_DisplayWolf_in_WhiteTrashBin: 0/8
+      b1_put_DisplayWolf_on_ConsoleTable__1: 0/8
+      b1_put_GreenApple_A_on_BlackBarStool_B__0: 0/8
+      b1_put_GreenApple_A_on_UtilityCart__2: 0/8
+      b1_put_Jam_Anon_in_BlackCeramicBowl: 0/8
+      b1_put_Jam_Anon_on_BlackBarStool_B__0: 6/8
+      b1_put_Jam_Anon_on_BlackRoundTable__0: 5/8
+      b1_put_NIT_CoffeeCan_Anon_in_BlackCeramicBowl: 0/8
+      b1_put_NIT_CoffeeCan_Anon_on_CoatRackShoeBench__2: 8/8
+      b1_put_NIT_CoffeeCan_Anon_on_ConsoleTable__1: 6/8
+      b1_put_TvRemote_1_on_ConsoleTable__1: 2/8
+      b1_put_WhiteVaseBig_1_on_ExtendableTable__0: 5/8
+      b1_put_WhiteVaseBig_1_on_UtilityCart__2: 4/8
+      b1_put_WhiteVaseMedium_1_on_BlackCoffeeTable__1: 0/8
+      b2_pick_RedClock: 6/8
+      b2_put_Banana_A_on_DisplayShelves01_1__2: 0/8
+      b2_put_Banana_A_on_DisplayShelves_1__1: 0/8
+      b2_put_BookFiction9_01_on_CornerDisplayShelves_1__1: 0/8
+      b2_put_BookFiction9_01_on_WireShelvingUnitBlack_1__2: 0/8
+      b2_put_CandlePattern02_1_on_CoatRackShoeBench__1: 0/8
+      b2_put_CandlePattern04_1_on_BlackBarStool_B__0: 0/8
+      b2_put_CandlePattern04_1_on_Bookcase__3: 0/8
+      b2_put_GreenPear_A_on_DisplayUnit_1__0: 0/8
+      b2_put_Jam_Anon_in_CatWaterBowlGrey_1: 0/8
+      b2_put_Wallet_1_on_DisplayShelves_1__0: 0/8
+      b2_put_WoodenSpoon_on_DisplayShelves01_1__0: 0/8
+    source: 'docs/handoff/scene-rsi-plan-20261016.md §12.3 (calibrate.py): a calibration sample, current catalog'
+  cal_r3:
+    calibration: /workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r3/rounds
+    rate: 0.337
+    per_task:
+      b1_coffee_can_to_round_table: 8/8
+      b1_hand_soap_to_bathroom_sink: 6/8
+      b1_pick_GreenApple_A: 6/8
+      b1_pick_WhiteVaseBig_1: 7/8
+      b1_put_CoffeeCanisterLarge_in_BlackCeramicBowl: 0/8
+      b1_put_CoffeeCanisterLarge_in_WhiteUtensilTray: 0/8
+      b1_put_CoffeeCanisterLarge_on_ConsoleTable__1: 7/8
+      b1_put_DisplayWolf_on_BlackRoundTable__0: 0/8
+      b1_put_Jam_Anon_in_WhiteUtensilTray: 0/8
+      b1_put_Jam_Anon_on_ApartmentEnv__2: 5/8
+      b1_put_Jam_Anon_on_CoatRackShoeBench__2: 6/8
+      b1_put_Jam_Anon_on_ConsoleTable__1: 5/8
+      b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3: 6/8
+      b1_put_NIT_CoffeeCan_Anon_on_BlackRoundTable__0: 8/8
+      b1_put_TvRemote_1_in_WhiteTrashBin: 0/8
+      b1_put_WhiteVaseBig_1_in_BlackCeramicBowl: 0/8
+      b1_put_WhiteVaseBig_1_on_BlackBarStool_B__0: 6/8
+      b1_put_WhiteVaseBig_1_on_BlackRoundTable__0: 5/8
+      b1_put_WhiteVaseBig_1_on_ConsoleTable__1: 6/8
+      b1_put_WhiteVaseMedium_1_on_BlackBarStool_B__0: 0/8
+      b1_put_WhiteVaseMedium_1_on_ConsoleTable__1: 3/8
+      b1_put_WhiteVaseMedium_1_on_KitchIsland__0: 0/8
+      b1_put_WhiteVaseMedium_1_on_UtilityCart__2: 0/8
+      b1_remote_on_sofa: 0/8
+      b2_pick_CandlePattern02_1: 8/8
+      b2_put_Banana_A_on_DisplayShelves01_1__0: 0/8
+      b2_put_Banana_A_on_DisplayShelves_1__0: 0/8
+      b2_put_CandlePattern01_1_on_ConsoleTable__0: 0/8
+      b2_put_CandlePattern02_1_on_DisplayShelves_1__0: 0/8
+      b2_put_CandlePattern04_1_on_BlackWallShelf__0: 0/8
+      b2_put_CandlePattern04_1_on_DisplayShelves_1__1: 0/8
+      b2_put_GreenPear_A_on_DisplayUnit_1__1: 0/8
+      b2_put_PlateHolder_in_LaundryBasket_1: 0/8
+      b2_put_Wallet_1_on_Bookcase__3: 0/8
+      b2_put_WhiteVaseBig_1_on_GlassCabinet__1: 5/8
+      b2_put_WoodenSpoon_on_DisplayShelves01_1__1: 0/8
+    source: 'docs/handoff/scene-rsi-plan-20261016.md §12.3 (calibrate.py): a calibration sample, current catalog'
+  cal_r4:
+    calibration: /workspace/code/locomanipulation/outputs/scene_rsi_20261016_hidden/calibration/cal_r4/rounds
+    rate: 0.329
+    per_task:
+      b1_canister_to_dining_table: 7/8
+      b1_canister_to_round_table: 8/8
+      b1_jam_to_cart: 1/8
+      b1_jam_to_dining_table: 4/8
+      b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0: 7/8
+      b1_put_CoffeeCanisterLarge_on_BlackCoffeeTable__1: 7/8
+      b1_put_CoffeeCanisterLarge_on_GreySofa__2: 2/8
+      b1_put_DisplayWolf_on_GreySofa__2: 0/8
+      b1_put_DisplayWolf_on_UtilityCart__2: 8/8
+      b1_put_Jam_Anon_in_WhiteTrashBin: 3/8
+      b1_put_Jam_Anon_on_ApartmentEnv__3: 3/8
+      b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__2: 5/8
+      b1_put_NIT_CoffeeCan_Anon_on_BlackBarStool_B__0: 6/8
+      b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0: 4/8
+      b1_put_RedClock_on_BlackRoundTable__0: 0/8
+      b1_put_RedClock_on_UtilityCart__2: 1/8
+      b1_put_WhiteVaseBig_1_in_WhiteTrashBin: 6/8
+      b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1: 3/8
+      b1_put_WhiteVaseBig_1_on_CoatRackShoeBench__2: 4/8
+      b1_put_WhiteVaseBig_1_on_KitchIsland__0: 4/8
+      b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0: 0/8
+      b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2: 0/8
+      b1_vase_centerpiece: 1/8
+      b2_pick_CandlePattern04_1: 8/8
+      b2_put_Banana_A_on_DisplayShelves_1__2: 0/8
+      b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2: 0/8
+      b2_put_CandlePattern02_1_in_WoodenBoxSmall: 0/8
+      b2_put_CandlePattern02_1_on_DisplayShelves_1__1: 0/8
+      b2_put_CandlePattern04_1_on_DisplayUnit_1__1: 0/8
+      b2_put_CandlePattern04_1_on_YellowArmChair__0: 0/8
+      b2_put_PlateHolder_on_DisplayShelves_1__1: 0/8
+      b2_put_RedClock_on_CoatRackShoeBench__1: 0/8
+      b2_put_Wallet_1_on_CoatRackShoeBench__2: 0/8
+      b2_put_WhiteVaseBig_1_on_NightStand__0: 0/8
+      b2_put_WoodenSpoon_on_HybridMattress__0: 0/8
+    source: 'docs/handoff/scene-rsi-plan-20261016.md §12.3 (calibrate.py): a calibration sample, current catalog'
   r1_on_single:
     final_incumbent: catalog re-run (/workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/sealed/upright_20261019)
     sealed_rate: 0.287

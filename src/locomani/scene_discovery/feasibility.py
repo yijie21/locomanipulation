@@ -14,7 +14,9 @@ hard as a failed pilot (`grasp_failures`) carries that failure's skill gap. Ever
 nothing above it; a spot under another surface's slab closer than `overhead.open_above` (a bookcase or cabinet cell)
 is outside them all. Only the extracted surfaces count: they are the furniture's collision geometry in MuJoCo. A
 side-grasped object whose pad margin is short of the creep over the planned carry is refused by the put-down's skill
-before contact (`carry.single_arm.creep`, gap `carry_single.creep`).
+before contact (`carry.single_arm.creep`, gap `carry_single.creep`); a top-down pinch is carried only as far as one
+was measured. A put-in lets the object go as it rests: its footprint inside the opening by the release margin, its
+centre standing on the container's floor under the rim.
 
 Bucket 3 = any blocked check; bucket 2 = any untested (the strict rule the user approved: an extrapolation never
 counts as composable); bucket 1 = everything ok. `bucket(..., policy="pilot")` is the alternative where untested
@@ -380,21 +382,32 @@ class Checker:
             c = self.cap["carry"]["single_arm"]
             longest = max([*c["straight_or_backward"]["distance"], c.get("route_measured_max") or 0.0])
             out.append(self._max(step, "carry_distance", d, longest, "carry_single.distance"))
+            if self.top_pinch(x):  # it slides out of the pinch on long carries (the remote, cal_r3: 0.4 m measured)
+                bound = c["top_pinch"].get("route_measured_max")
+                ok = bound is not None and d <= bound + TOL
+                out.append(Check(step, "top_pinch_route", OK if ok else UNTESTED, round(d, 2), bound,
+                                 "" if ok else "carry_single.top_pinch_distance"))  # fmt: skip
             self.creep(x, d, "on" if target in self.surfaces else "in", step, out)
         return goal
+
+    def top_pinch(self, x: str) -> bool:
+        """X is picked by the top-down pinch (`carry.single_arm.top_pinch`, pick.is_top): a low flat object on a low
+        surface."""
+        tp = ((self.cap.get("carry") or {}).get("single_arm") or {}).get("top_pinch")
+        if not tp:
+            return False
+        support = float(self.surfaces[self.objects[x]["surface"]]["top"])
+        return self.box(x)[0][2] < tp["half_height_max"] and support < tp["support_top_max"]
 
     def creep(self, x: str, d: float | None, move: str, step: str, out: list) -> None:
         """A side-grasped object slides down the pads while it is carried: the put-down's pick is refused before contact
         when X's pad margin is short of the creep over the planned lift-to-release time (`carry.single_arm.creep`;
         place._refusal in the skills). The time comes from the route `d` (None: a put-in on X's own surface, into's
-        near drop). A top-down pinch is exempt."""
+        near drop). The top-down pinch (`top_pinch`) is exempt."""
         c = ((self.cap.get("carry") or {}).get("single_arm") or {}).get("creep")
-        if not c or (move == "in" and not c["put_in"]):
+        if not c or (move == "in" and not c["put_in"]) or self.top_pinch(x):
             return
         half, centre = self.box(x)
-        support = float(self.surfaces[self.objects[x]["surface"]]["top"])
-        if half[2] < c["top_pinch"]["half_height_max"] and support < c["top_pinch"]["support_top_max"]:
-            return
         t = c["t_est_s"]
         seconds = t["near_drop"] if d is None else t["base"] + t["per_m"] * d + (t["put_in"] if move == "in" else 0.0)
         margin, slide = float(half[2] + centre[2] - c["pad_half_m"]), c["rate_m_s"] * seconds
@@ -443,6 +456,18 @@ class Checker:
         if p.get("status") == "untested":
             out.append(Check(step, "skill", UNTESTED, gap="place_into.single"))
             return
+        # the put-in lets X go as it was held -- as it rested -- once its footprint is release_margin_m inside the
+        # inner box (into.release_fit); standing on C's floor its centre must be under the rim (cal_r3: the coffee
+        # canister and the jam stood 5 cm above the utensil tray's; under_rim above lays X on its thinnest side)
+        if p.get("release_as_held"):
+            foot, inner = lint.resting_footprint(self.objects[x]), opening - 2 * p["release_margin_m"]
+            ok = bool(np.all(foot <= inner + 1e-9))
+            out.append(Check(step, "release_margin", OK if ok else UNTESTED, foot.round(3).tolist(),
+                             inner.round(3).tolist(), "" if ok else "place_into.release_margin"))  # fmt: skip
+            standing = self.top(c) - 2 * cx[2] + wall + lint.resting_half_height(self.objects[x])
+            ok = standing <= self.top(c) + 1e-3
+            out.append(Check(step, "upright_depth", OK if ok else UNTESTED, round(standing, 3), round(self.top(c), 3),
+                             "" if ok else "place_into.depth"))  # fmt: skip
         out.append(self._range(step, "rim_height", self.top(c), p["rim_height_measured"], "place_into.rim_height"))
         measured = np.sort(np.asarray(p["opening_measured"], dtype=float))
         ok = bool(np.all(opening >= measured - TOL))

@@ -60,6 +60,14 @@ def resting_half_height(o: dict) -> float:
     return float(half[int(np.argmax(np.abs(r[2])))])
 
 
+def resting_footprint(o: dict) -> np.ndarray:
+    """The object's footprint as it rests, sorted (m): its box's full extents along the two body axes other than the
+    one nearest the world vertical (`resting_half_height`'s), at the yaw that aligns them with a box."""
+    half = np.asarray((o.get("box") or {}).get("half_extent") or (0.0, 0.0, 0.0), dtype=float)
+    up = int(np.argmax(np.abs(adt.quat_to_matrix(o["init_quat"])[2])))
+    return np.sort(2 * np.delete(half, up))
+
+
 def flat_objects(meta: dict, pad_half: float = DEX1_PAD_HALF_M) -> dict[str, dict]:
     """{key: {half_height, pad_half, margin, support_top}} for the free objects whose resting half height is at most
     `pad_half`: closing a side grasp at their mid height puts the pads' lower edge at or under the surface."""

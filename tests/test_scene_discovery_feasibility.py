@@ -391,8 +391,8 @@ def test_a_flat_object_above_every_measured_flat_pick_is_a_pick_gap():
     assert "grasp_single.flat" not in gaps_of(["held(bottle)"])[1]
 
 
-CREEP = dict(rate_m_s=0.00062, pad_half_m=0.014, put_in=True, top_pinch=dict(half_height_max=0.02, support_top_max=0.6),
-             t_est_s=dict(base=32.1, per_m=8.13, put_in=25.3, near_drop=22.6))  # fmt: skip
+CREEP = dict(rate_m_s=0.00062, pad_half_m=0.014, put_in=True, t_est_s=dict(base=32.1, per_m=8.13, put_in=25.3, near_drop=22.6))  # fmt: skip
+TOP_PINCH = dict(half_height_max=0.02, support_top_max=0.6, route_measured_max=None)
 
 
 def test_a_carry_longer_than_the_pad_margin_allows_is_a_creep_gap():
@@ -402,7 +402,7 @@ def test_a_carry_longer_than_the_pad_margin_allows_is_a_creep_gap():
     cap = copy.deepcopy(CAP)
     r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["on(candle, HIGH)"]})
     assert not any(c.name == "creep_margin" for c in r.checks)  # a table without the creep section: no rule
-    cap["carry"]["single_arm"]["creep"] = CREEP
+    cap["carry"]["single_arm"].update(creep=CREEP, top_pinch=dict(TOP_PINCH, route_measured_max=100.0))
     check = feasibility.Checker(copy.deepcopy(meta), cap).check
     r = check({"id": "t", "goal": ["on(candle, HIGH)"]})
     (c,) = [c for c in r.checks if c.name == "creep_margin"]
@@ -420,3 +420,43 @@ def test_a_carry_longer_than_the_pad_margin_allows_is_a_creep_gap():
     cap["carry"]["single_arm"]["creep"] = dict(CREEP, put_in=False)  # into.CREEP off: put-ins are not refused
     r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["in(candle, basket)"]})
     assert "carry_single.creep" not in r.gaps
+
+
+def test_a_top_pinch_is_carried_only_as_far_as_one_was_measured():
+    meta = copy.deepcopy(META)
+    meta["objects"]["remote"] = obj([-2.0, -0.24], 0.10, [0.02, 0.08, 0.01], surface="LOW")
+    goal = {"id": "t", "goal": ["on(remote, T)"]}
+    assert not any(
+        c.name == "top_pinch_route" for c in feasibility.Checker(copy.deepcopy(meta), CAP).check(goal).checks
+    )
+    cap = copy.deepcopy(CAP)
+    cap["carry"]["single_arm"]["top_pinch"] = dict(TOP_PINCH, route_measured_max=0.5)
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check(goal)
+    (c,) = [c for c in r.checks if c.name == "top_pinch_route"]
+    assert c.outcome == feasibility.UNTESTED and c.measured > 0.5 and "carry_single.top_pinch_distance" in r.gaps
+    cap["carry"]["single_arm"]["top_pinch"] = dict(TOP_PINCH, route_measured_max=None)  # none measured: a gap too
+    assert "carry_single.top_pinch_distance" in feasibility.Checker(copy.deepcopy(meta), cap).check(goal).gaps
+    cap["carry"]["single_arm"]["top_pinch"] = dict(TOP_PINCH, route_measured_max=100.0)
+    assert "carry_single.top_pinch_distance" not in feasibility.Checker(copy.deepcopy(meta), cap).check(goal).gaps
+    r = feasibility.Checker(copy.deepcopy(META), cap).check({"id": "t", "goal": ["on(bottle, HIGH)"]})
+    assert not any(c.name == "top_pinch_route" for c in r.checks)  # a side grasp
+
+
+def test_a_put_in_lets_the_object_go_as_it_rests():
+    meta = copy.deepcopy(META)
+    meta["objects"]["tray"] = obj([0.35, -0.15], 0.62, [0.151, 0.1025, 0.02], grasp="none", container=True)  # 4 cm deep
+    cap = copy.deepcopy(CAP)
+    check = feasibility.Checker(copy.deepcopy(meta), cap).check
+    r = check({"id": "t", "goal": ["in(bottle, tray)"]})
+    assert not {c.name for c in r.checks} & {"release_margin", "upright_depth"}  # a table without the release rules
+    cap["place"]["into_container_single_arm"].update(release_as_held=True, release_margin_m=0.01)
+    check = feasibility.Checker(copy.deepcopy(meta), cap).check
+    r = check({"id": "t", "goal": ["in(bottle, tray)"]})  # standing on the tray's floor, 5 cm over its rim
+    (c,) = [c for c in r.checks if c.name == "upright_depth"]
+    assert c.outcome == feasibility.UNTESTED and c.measured == 0.71 and c.bound == 0.66 and "place_into.depth" in r.gaps
+    assert not r.blocked  # lying down it would be under the rim: a skill gap, not a block
+    r = check({"id": "t", "goal": ["in(bottle, cup)"]})  # a 4.5 cm footprint, a 6 cm opening: 1 cm short each side
+    (c,) = [c for c in r.checks if c.name == "release_margin"]
+    assert c.outcome == feasibility.UNTESTED and c.measured == [0.045, 0.045] and "place_into.release_margin" in r.gaps
+    r = check({"id": "t", "goal": ["in(bottle, basket)"]})
+    assert r.bucket() == 1 and {c.name for c in r.checks} >= {"release_margin", "upright_depth"}

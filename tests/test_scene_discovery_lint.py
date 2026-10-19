@@ -38,6 +38,8 @@ def test_an_object_whose_resting_half_height_is_under_a_pad_is_flat():
 def test_the_resting_height_is_along_the_body_axis_nearest_up():
     book = scene()["objects"]["book"]
     assert lint.resting_half_height(book) == pytest.approx(0.10)  # body y is up
+    half = book["box"]["half_extent"]
+    assert lint.resting_footprint(book) == pytest.approx(sorted([2 * half[0], 2 * half[2]]))  # the other two axes
 
 
 def test_an_upright_axis_off_the_resting_pose_is_reported_without_changing_the_scene():

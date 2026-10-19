@@ -547,6 +547,27 @@ class CreepSection(unittest.TestCase):
         self.assertEqual(c["t_est_s"], dict(base=30.0, per_m=8.0, put_in=25.0, near_drop=22.0))
 
 
+class CalibrationRegistry(unittest.TestCase):
+    """A calibration sample registered like a family (regress.py; its tasks count as measured, user 2026-10-19)."""
+
+    def test_its_rounds_live_in_its_sample_dir_and_capability_write_reads_them_with_its_pool(self):
+        saved = {k: sys.modules.pop(k, None) for k in ("gate",)}
+        try:
+            rg = _fresh("scene_rsi_regress", "regress.py")
+        finally:
+            for k, v in saved.items():
+                sys.modules.pop(k, None)
+                if v is not None:
+                    sys.modules[k] = v
+        cal = dict(sandbox="/r", kind="calibration", pool="/r/cal/c1/pool", last="rounds", dir="/r/cal/c1")
+        fam = dict(sandbox="/s", kind="place", pool=None, last="t0")
+        self.assertEqual(rg.rounds_dir("c1", cal, "wb8"), Path("/r/cal/c1/wb8"))
+        self.assertEqual(rg.rounds_dir("f", fam, "t0"), Path("/s") / rg.HIDDEN / "f" / "sealed" / "t0")
+        args = rg.capability_args({"c1": cal, "f": fam})
+        self.assertEqual(args[args.index("--calibration") + 1], "/r:c1:/r/cal/c1/rounds:/r/cal/c1/pool")
+        self.assertIn("--place-loop", args)
+
+
 class Calibrate(unittest.TestCase):
     """The checker's calibration sample (calibrate.py, plan section 12.3)."""
 

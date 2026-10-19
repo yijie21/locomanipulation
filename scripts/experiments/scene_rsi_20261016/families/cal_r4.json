@@ -1,0 +1,50 @@
+{
+ "name": "cal_r4",
+ "about": "checker calibration (plan \u00a712.3): 24 bucket-1 and 12 bucket-2 tasks no family ran",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "outputs/scene_rsi_20261016_hidden/calibration/cal_r4/tasks.jsonl",
+ "tasks": [
+  "b1_put_Jam_Anon_in_WhiteTrashBin",
+  "b1_put_WhiteVaseBig_1_in_WhiteTrashBin",
+  "b1_jam_to_dining_table",
+  "b1_vase_centerpiece",
+  "b1_jam_to_cart",
+  "b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0",
+  "b1_put_DisplayWolf_on_UtilityCart__2",
+  "b1_put_Jam_Anon_on_ApartmentEnv__3",
+  "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__2",
+  "b1_put_NIT_CoffeeCan_Anon_on_BlackBarStool_B__0",
+  "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0",
+  "b1_put_RedClock_on_BlackRoundTable__0",
+  "b1_put_RedClock_on_UtilityCart__2",
+  "b1_put_WhiteVaseBig_1_on_CoatRackShoeBench__2",
+  "b1_put_WhiteVaseBig_1_on_KitchIsland__0",
+  "b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0",
+  "b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2",
+  "b1_put_CoffeeCanisterLarge_on_BlackCoffeeTable__1",
+  "b1_put_CoffeeCanisterLarge_on_GreySofa__2",
+  "b1_put_DisplayWolf_on_GreySofa__2",
+  "b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1",
+  "b1_canister_to_round_table",
+  "b1_canister_to_dining_table",
+  "b2_pick_CandlePattern04_1",
+  "b2_put_CandlePattern02_1_in_WoodenBoxSmall",
+  "b2_put_Banana_A_on_DisplayShelves_1__2",
+  "b2_put_CandlePattern02_1_on_DisplayShelves_1__1",
+  "b2_put_CandlePattern04_1_on_DisplayUnit_1__1",
+  "b2_put_PlateHolder_on_DisplayShelves_1__1",
+  "b2_put_RedClock_on_CoatRackShoeBench__1",
+  "b2_put_Wallet_1_on_CoatRackShoeBench__2",
+  "b2_put_WhiteVaseBig_1_on_NightStand__0",
+  "b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2",
+  "b2_put_CandlePattern04_1_on_YellowArmChair__0",
+  "b2_put_WoodenSpoon_on_HybridMattress__0"
+ ],
+ "new_skills": [],
+ "pools": {
+  "sealed": {
+   "seed": 8200000,
+   "n": 280
+  }
+ }
+}
