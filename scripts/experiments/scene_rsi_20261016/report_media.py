@@ -195,6 +195,14 @@ def plan(sc: V.Scene, rounds: list[Rd], dest) -> list[dict]:
 
 def frames(sc: V.Scene, r: Rd, p: dict, speed: int, size=V.PANEL, dist=1.3, el=-26.0):
     """One round at `speed` x real time (25 fps): the camera eases from the pick to the destination after the lift."""
+    for i, cam in track(sc, r, p, speed, dist, el):
+        ghosts = [r.z["ref_wrists"][i, k] for k in range(2)]
+        yield sc.render(cam, size, ghosts=ghosts), float(r.z["t"][i])
+
+
+def track(sc: V.Scene, r: Rd, p: dict, speed: int, dist=1.3, el=-26.0):
+    """(tick, MuJoCo free camera) per frame of `frames`, with the scene set to that tick (report_unreal.py films
+    the same track)."""
     look = dist_s = az = None
     for i in range(0, r.n, 2 * speed):
         sc.set(r, i)
@@ -207,9 +215,7 @@ def frames(sc: V.Scene, r: Rd, p: dict, speed: int, size=V.PANEL, dist=1.3, el=-
         look = lk if look is None else look + 0.06 * (lk - look)
         dist_s = ds if dist_s is None else dist_s + 0.06 * (ds - dist_s)
         az = az_t if az is None else az + 0.04 * wrap(az_t - az)
-        cam = dict(lookat=look, distance=dist_s, azimuth=az, elevation=el)
-        ghosts = [r.z["ref_wrists"][i, k] for k in range(2)]
-        yield sc.render(cam, size, ghosts=ghosts), float(r.z["t"][i])
+        yield i, dict(lookat=look, distance=dist_s, azimuth=az, elevation=el)
 
 
 def held(img: np.ndarray, text: str) -> np.ndarray:
@@ -220,18 +226,24 @@ def outcome(r: Rd, fail: str | None) -> tuple[str, tuple]:
     return ("成功", (90, 220, 120)) if r.rec["ok"] else (fail or "失败", (255, 110, 100))
 
 
-def card(lines: list[str], W: int, H: int) -> np.ndarray:
+GHOST_NOTE = "半透明紫球：指令给的手腕位置"
+
+
+def card(lines: list[str], W: int, H: int, note: str = GHOST_NOTE) -> np.ndarray:
     blocks = [(lines[0], 38, V.FG)] + [(t, 24, (255, 210, 120)) for t in lines[1:-1]] + [(lines[-1], 21, V.DIM)]
-    blocks.append(("半透明紫球：指令给的手腕位置", 19, V.DIM))
+    if note:
+        blocks.append((note, 19, V.DIM))
     return np.asarray(V.text_block(blocks, W, H, pad=48).convert("RGB"))
 
 
-def compose(sc, out: Path, panels: list, caps: list, lines: list[str], speed: int, size=V.PANEL) -> Path:
-    """`panels`: per panel a frame generator or a held image."""
+def compose(
+    sc, out: Path, panels: list, caps: list, lines: list[str], speed: int, size=V.PANEL, note: str = GHOST_NOTE
+) -> Path:
+    """`panels`: per panel a frame generator or a held image; `note` closes the card."""
     strip = np.hstack([dv.caption_strip(c, size[0]) for c in caps])
     W, H = size[0] * len(panels), size[1] + strip.shape[0]
     w = dv.Writer(out, W, H)
-    w.write(card(lines, W, H), int(6 * dv.FPS))
+    w.write(card(lines, W, H, note), int(6 * dv.FPS))
     last = [p if isinstance(p, np.ndarray) else None for p in panels]
     frame = None
     while True:
