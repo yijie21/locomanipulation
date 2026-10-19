@@ -147,7 +147,8 @@ def resting_upright(objects: dict, max_deg: float = UPRIGHT_OFF_DEG) -> dict[str
         out[key] = (sem.get("upright_axis"), new)
         sem["upright_axis_adt"] = sem.get("upright_axis")
         sem["upright_axis"] = new
-        (o.setdefault("provenance", {}))["upright_axis"] = "rule (resting pose)"
+        prov = o.setdefault("provenance", {})
+        prov["upright_axis"], prov["upright_axis_adt"] = "rule", "adt"  # scene_file.SOURCES
     return out
 
 

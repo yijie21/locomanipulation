@@ -33,6 +33,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+from gate import wilson  # noqa: E402
+
 from locomani.scene_discovery.predicates import parse  # noqa: E402
 
 CAL_SEED = 8_000_000  # no pool's block comes near it (rounds' blocks are 1,1x0,000 + 1,000,000 per round)
@@ -121,16 +123,6 @@ def sample(name: str, runs: list[Path], n1: int, n2: int, per_task: int, seed: i
     print(f"[cal] {len(picked)} tasks ({sum(t['bucket'] == 1 for t in picked)} bucket 1) of candidates "
           f"{summary['candidates']}; measured goals left out {len(measured)}")  # fmt: skip
     return summary
-
-
-def wilson(k: int, n: int, z: float = 1.96) -> list[float]:
-    """The Wilson score interval of k successes in n."""
-    if n == 0:
-        return [0.0, 1.0]
-    p = k / n
-    c = (p + z * z / (2 * n)) / (1 + z * z / n)
-    h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
-    return [round(max(0.0, c - h), 3), round(min(1.0, c + h), 3)]
 
 
 def summarize(rows: list[dict]) -> dict:

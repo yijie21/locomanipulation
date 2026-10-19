@@ -375,3 +375,17 @@ def test_an_object_whose_centre_cannot_get_under_the_rim_is_bucket_3():
     bucket, _, blocked, _ = gaps_of(["in(bottle, dish)"], meta)
     assert bucket == 3 and blocked == ["place(bottle in dish): its centre cannot get under the rim"]
     assert gaps_of(["in(bottle, basket)"])[0] != 3  # the deep basket: the rule leaves it to the put-in checks
+
+
+def test_a_flat_object_above_every_measured_flat_pick_is_a_pick_gap():
+    meta = copy.deepcopy(META)
+    meta["objects"]["card"] = obj([-0.1, -0.24], 0.62, [0.04, 0.03, 0.008])  # 1.6 cm tall: no pad margin
+    r = feasibility.Checker(copy.deepcopy(meta), CAP).check({"id": "t", "goal": ["held(card)"]})
+    assert "grasp_single.flat" in r.gaps  # no flat object was ever picked
+    cap = copy.deepcopy(CAP)
+    flat = dict(cap["reach_single_arm"]["grasp_settings"][0], name="key", object_height=[0.015, 0.015],
+                support_top=[0.62, 0.62])  # fmt: skip
+    cap["reach_single_arm"]["grasp_settings"].append(flat)
+    r = feasibility.Checker(copy.deepcopy(meta), cap).check({"id": "t", "goal": ["held(card)"]})
+    assert "grasp_single.flat" not in r.gaps  # a flat pick measured at this height
+    assert "grasp_single.flat" not in gaps_of(["held(bottle)"])[1]

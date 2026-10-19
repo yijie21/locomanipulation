@@ -38,7 +38,7 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 | `movable` | rule + claude | 仿真里是否做成自由体。ADT 的 `static` 只表示录制时没动过（书架上的书也是 `static`），所以按类别判：家具、柜体部件、墙饰 → 固定；其余 → 可移动 |
 | `part_of` | rule | 柜门 / 抽屉这类部件属于哪个家具（按名字前缀和位姿归属）；第一轮只记录，不做关节（#6） |
 | `mass_kg`、`friction` | claude → measured | Claude 按类别和尺寸估，设上下界；掉落测试后实测稳定才算通过 |
-| `upright_axis` | adt / rule | 物体系里朝上的轴，判 `upright` 用。原来取 ADT 的 `canonical_pose.up_vector`，但 64 个自由物体里有 28 个照它算是躺着的：书架里竖着的书、盆栽、水果、钥匙、遥控器、钱包，都比它们静置的姿态偏了 80–126°。所以 2026-10-18（用户定，TODO 19.15）起，凡是偏离静置朝上方向超过 30° 的，改取离静置朝上方向最近的物体轴（±x、±y、±z）。见 `adt.resting_upright`；沉降之后由 `scene_settle.py` 做，已沉降的场景用 `--upright-only`。ADT 原来的值留在 `upright_axis_adt`。物体斜着放、离哪根轴都超过 30° 的（ADT 里就斜着 36° 的两个收纳盒），轴不变，由 `scripts/scene_lint.py` 报警告 |
+| `upright_axis` | adt / rule | 物体系里朝上的轴，判 `upright` 用。原来取 ADT 的 `canonical_pose.up_vector`，但 64 个自由物体里有 28 个照它算是躺着的：书架里竖着的书、盆栽、水果、钥匙、遥控器、钱包，都比它们静置的姿态偏了 80–126°。所以 2026-10-18（用户定，TODO 19.15）起，凡是偏离静置朝上方向超过 30° 的，改取离静置朝上方向最近的物体轴（±x、±y、±z）。见 `adt.resting_upright`；沉降之后由 `scene_settle.py` 做，已沉降的场景用 `--upright-only`。ADT 原来的值留在 `upright_axis_adt`（出处 `adt`；改过的 `upright_axis` 出处 `rule`）。物体斜着放、离哪根轴都超过 30° 的（ADT 里就斜着 36° 的两个收纳盒），轴不变，由 `scripts/scene_lint.py` 报警告 |
 | `graspable` | rule | `single` / `bimanual` / `none`，按 `capability.yaml` 的夹爪开口、箱宽、重量算 |
 | `container` | claude + rule | `{is: bool, opening_half_extent, rim_height}`；Claude 判"是不是容器"，规则核对包围盒和开口尺寸 |
 | `support` | rule | 这个物体本身能不能当台面（顶面够平够大），能的话在 `surfaces` 里有对应项 |

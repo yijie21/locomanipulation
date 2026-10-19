@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 5, 2026-10-18)
+# Rules for the scene RSI loop (TODO 27, version 6, 2026-10-19)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -77,3 +77,8 @@ rule is a new version of this file, committed, and counted as one human interven
     so a candidate that changes one task is judged on that task's starts too. Against an incumbent with no success
     on the pool, a candidate may drop up to half its successes (otherwise, as before, the incumbent's drops + 1). The
     D13.4 stop counts only when the starts outside the parked tasks are at least half the acceptance pool.
+
+26. When task-wide parks cover more than half the acceptance pool, the gate judges on an acceptance pool of the same
+    size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a
+    candidate's gain on the live tasks can be told from chance. Parked starts still count in the sealed pool and in
+    the diagnostic pool (version 6, user 2026-10-19).

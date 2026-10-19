@@ -81,6 +81,18 @@ def shape(row: dict, meta: dict) -> str:
     return f"{'+'.join(sorted(moves))}_{h}"
 
 
+def group(row: dict, meta: dict) -> str:
+    """The gap a bucket-2 task waits on: its pick's, `held_<hands>`, when the checker finds a gap in the grasp step
+    (the first step of every move), else its goal's shape. Until 2026-10-19 every task went by its goal's shape:
+    r2_in_single took the wallet and the car key, which no pick could lift (too flat for the pads), and parked both
+    after 80 USD (TODO 27.10.4, plan §12)."""
+    for c in row.get("checks") or ():
+        if c.get("outcome") != "ok" and c.get("gap") and c["step"].startswith("grasp_"):
+            hands = c["step"].split("(")[0].removeprefix("grasp_")
+            return f"held_{hands}"
+    return shape(row, meta)
+
+
 def family_skills(fam: dict) -> list[str]:
     """The new skills a family was made to build: its `new_skills`, or (round 1's files) the list its `about` names."""
     if "new_skills" in fam:
@@ -96,7 +108,7 @@ def select(round_dir: Path, loops: list[Path]) -> dict:
     groups: dict = collections.defaultdict(list)
     for r in rows:
         if r["bucket"] == 2:
-            groups[shape(r, meta)].append(r)
+            groups[group(r, meta)].append(r)
     gaps = []
     for name, tasks in groups.items():
         gap_count = collections.Counter(g for t in tasks for g in t["gaps"])

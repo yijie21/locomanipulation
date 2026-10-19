@@ -48,6 +48,7 @@ def test_an_upright_axis_far_off_the_resting_up_takes_the_nearest_body_axis():
     assert sorted(fixed) == ["book", "leaning"]
     assert objects["book"]["semantic"]["upright_axis"] == [0.0, 0.0, 1.0]
     assert objects["book"]["semantic"]["upright_axis_adt"] == [0.0, 1.0, 0.0]
+    assert objects["book"]["provenance"] == {"upright_axis": "rule", "upright_axis_adt": "adt"}  # scene_file's sources
     assert objects["leaning"]["semantic"]["upright_axis"] == [0.0, 0.0, 1.0]  # the body axis nearest its resting up
     assert objects["mug"]["semantic"]["upright_axis"] == [0.0, 0.1, 1.0]
     assert objects["table"]["semantic"]["upright_axis"] == [0.0, 1.0, 0.0]  # furniture: not a free object

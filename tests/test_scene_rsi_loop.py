@@ -365,6 +365,33 @@ class Infeasibility(unittest.TestCase):
             (g["pre-grasp tilt"]["tasks"], g["pre-grasp tilt"]["starts"]), (["book_pickup", "mug_pickup"], 2)
         )
 
+    def test_parks_over_half_the_pool_redraw_it_from_the_live_tasks(self):
+        from unittest import mock
+
+        lp, root = self.lp, Path(self.tmp.name)
+        for x in ["book_pickup_s7", "book_pickup_s8", "mug_pickup_s9"]:
+            (root / "pool_accept" / f"{x}.json").write_text("{}")
+        lp.jdump(lp.STATE / "parked.json", {"book": dict(task="book_pickup", scope="task", starts=["book_pickup_s1"])})
+        self.assertEqual(lp.accept_pool(), root / "pool_accept")  # nothing drawn yet
+        fam = dict(name="pick_single", tasks=["book_pickup", "mug_pickup"], rows={"book_pickup": {}, "mug_pickup": {}},
+                   pools={"accept": dict(seed=1200000, n=3)})  # fmt: skip
+
+        def draw(f, pool, out):
+            out.mkdir()
+            self.assertEqual((f["tasks"], f["pools"]["accept"]), (["mug_pickup"], dict(seed=1205000, n=3)))
+            for i in range(3):
+                (out / f"mug_pickup_s{1205000 + i}.json").write_text("{}")
+            return dict(written=3, unavailable={})
+
+        with mock.patch.object(lp.F, "load", return_value=fam), mock.patch.object(lp.F, "draw", side_effect=draw):
+            lp.redraw_accept()
+            lp.redraw_accept()  # drawn once
+        pool = lp.accept_pool()
+        self.assertTrue(pool.name.startswith("pool_accept_") and len(lp.B.pool_labels(pool)) == 3)
+        self.assertEqual([e["tasks"] for e in lp.entries() if e["step"] == "redraw_accept"], [["mug_pickup"]])
+        lp.jdump(lp.STATE / "parked.json", {})  # the park lifted: the family's own pool again
+        self.assertEqual(lp.accept_pool(), root / "pool_accept")
+
 
 class ClaimCheck(unittest.TestCase):
     def test_a_broken_check_does_not_hold(self):
@@ -414,6 +441,22 @@ class Digest(unittest.TestCase):
         self.assertNotIn("knocked_cm", tr["box"])
 
 
+class OuterGroups(unittest.TestCase):
+    def test_a_task_whose_pick_has_a_gap_joins_the_pick_family(self):
+        sys.path.insert(0, str(HERE))
+        try:
+            outer = _load("scene_rsi_outer", HERE / "outer.py")
+        finally:
+            sys.path.remove(str(HERE))
+        meta = {"objects": {"wallet": {"semantic": {"graspable": "single"}}, "box": {}}}
+        row = dict(goal=["in(wallet, box)"], checks=[
+            dict(step="grasp_single(wallet)", name="object_size", outcome="untested", gap="grasp_single.object_size"),
+            dict(step="place(wallet in box)", name="rim_height", outcome="untested", gap="place_into.rim_height")])  # fmt: skip
+        self.assertEqual(outer.group(row, meta), "held_single")
+        row["checks"][0].update(outcome="ok", gap="")
+        self.assertEqual(outer.group(row, meta), "in_single")
+
+
 class Calibrate(unittest.TestCase):
     """The checker's calibration sample (calibrate.py, plan section 12.3)."""
 
@@ -427,9 +470,10 @@ class Calibrate(unittest.TestCase):
 
     def test_wilson_interval(self):
         cal = _fresh("scene_rsi_calibrate", "calibrate.py")
-        self.assertEqual(cal.wilson(0, 0), [0.0, 1.0])
-        lo, hi = cal.wilson(8, 8)
+        self.assertEqual(gate.wilson(0, 0), [0.0, 1.0])
+        lo, hi = gate.wilson(8, 8)
         self.assertTrue(0.6 < lo < 0.7 and hi == 1.0)
+        self.assertEqual(gate.wilson(4, 8), [0.215, 0.785])
         self.assertEqual(cal.kind(["held(x)", "near(x, y, 0.3)", "upright(x)"]), "held+near+upright")
 
 

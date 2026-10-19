@@ -32,7 +32,7 @@ import json
 import shutil
 import sys
 import time
-from math import comb
+from math import comb, sqrt
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -52,6 +52,17 @@ SEED_SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 def mcnemar_one_sided(b: int, c: int) -> float:
     n = b + c
     return 1.0 if n == 0 else sum(comb(n, i) for i in range(b, n + 1)) / 2**n
+
+
+def wilson(k: int, n: int, z: float = 1.96) -> list[float]:
+    """The 95% Wilson score interval of k successes in n: every success rate a report gives carries one (plan
+    §12, TODO 27.10.5; 8 sealed starts per task leave 4/8 anywhere in 0.22-0.78)."""
+    if n == 0:
+        return [0.0, 1.0]
+    p = k / n
+    c = (p + z * z / (2 * n)) / (1 + z * z / n)
+    h = z * sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
+    return [round(max(0.0, c - h), 3), round(min(1.0, c + h), 3)]
 
 
 def candidate_hash(cand: Path) -> str:

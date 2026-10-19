@@ -276,6 +276,13 @@ class Checker:
                 if inboard >= f["inboard_min"] and grip - support <= f.get("grip_above_support_max", np.inf):
                     out.append(Check(step, f["name"], UNTESTED, [round(inboard, 3), round(grip - support, 3)],
                                      f["pilots"], f["gap"]))  # fmt: skip
+            flat = lint.resting_half_height(o)
+            if flat <= lint.DEX1_PAD_HALF_M:  # no pad margin for a side grasp: only what flat picks reached counts
+                top = max((s["support_top"][1] for s in c.get("grasp_settings") or ()
+                           if (s.get("object_height") or [np.inf])[0] <= 2 * lint.DEX1_PAD_HALF_M), default=None)  # fmt: skip
+                if top is None or support > top + TOL:
+                    limits.append(Check(step, "flat", UNTESTED, [round(2 * flat, 3), round(support, 3)],
+                                        [2 * lint.DEX1_PAD_HALF_M, top], "grasp_single.flat"))  # fmt: skip
             dims = {
                 "support_top": support,
                 "object_size": (float(2 * min(half[:2])), float(2 * half[2])),

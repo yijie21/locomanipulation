@@ -14,7 +14,8 @@ voids the call and is restored. On a rejection the package goes back to the incu
 Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, gate calls >= 12,
 wall clock >= MAX_WALL_H, model cost >= COST_CAP, 3 rejections in a row with no new hypothesis, a Manager `stop`; and
 (D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
-least UNPARKED_MIN of the pool.
+least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
+tasks (`accept_pool`, rule 26).
 
 Infeasibility (plan §8, D13): a Reviewer's claim that some starts cannot be done with the present actions must give the
 actions it assumed, a hard constraint as a check file (claim_check.py), exits, what would refute it, and 1-3 attempts.
@@ -35,6 +36,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import re
@@ -67,6 +69,7 @@ MAX_HYPOTHESES = 4
 MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
 STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
+REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
 # (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
 PROCS = 12
 GPUS = "0,1"
@@ -213,8 +216,42 @@ def entries() -> list[dict]:
     return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
 
 
+def _live_pool() -> tuple[Path, list[str], list[str]]:
+    """(the redrawn acceptance pool's path, the tasks it holds, the task-wide parked tasks) -- the path is the
+    family's own pool when the parks leave at least UNPARKED_MIN of it (or nothing)."""
+    base = HIDDEN / "pool_accept"
+    labels = B.pool_labels(base) if base.exists() else []
+    parked = sorted({p["task"] for p in jload(STATE / "parked.json", {}).values() if p["scope"] == "task"})
+    live = sorted({task_of(x) for x in labels} - set(parked))
+    keep = [x for x in labels if task_of(x) in live]
+    if not parked or not keep or len(keep) >= UNPARKED_MIN * len(labels):
+        return base, live, parked
+    return HIDDEN / f"pool_accept_{hashlib.sha256(json.dumps(live).encode()).hexdigest()[:8]}", live, parked
+
+
 def accept_pool() -> Path:
-    return HIDDEN / "pool_accept"
+    """The acceptance pool the gate judges on: the family's, or the one `redraw_accept` drew for the present parks."""
+    pool, _, _ = _live_pool()
+    return pool if pool.exists() else HIDDEN / "pool_accept"
+
+
+def redraw_accept() -> None:
+    """Rule 26 (user 2026-10-19, plan §12): once task-wide parks cover more than 1 - UNPARKED_MIN of the acceptance
+    pool, a pool of the same size drawn afresh (seeds + REDRAW_SEED) from the tasks they leave -- r2_in_single had 36
+    of its 60 starts on parked tasks, and its candidates were 3-5 net wins better four times, never significant. A
+    new set of parked tasks draws a new pool; the gate runs the incumbent on starts it has not seen. Parked starts
+    still count in the sealed and diagnostic pools."""
+    pool, live, parked = _live_pool()
+    if pool.exists():
+        return
+    fam = F.load(FAMILY)
+    fam["tasks"], fam["rows"] = live, {t: fam["rows"][t] for t in live}
+    spec = fam["pools"]["accept"]
+    fam["pools"]["accept"] = dict(spec, seed=int(spec["seed"]) + REDRAW_SEED)
+    res = F.draw(fam, "accept", pool)
+    ledger(
+        dict(step="redraw_accept", tasks=live, parked_tasks=parked, n=res["written"], unavailable=res["unavailable"])
+    )
 
 
 def stop_reason(meta: dict) -> str | None:
@@ -821,6 +858,7 @@ def after_engineer(
         return None
     if reopen and not reopen_test(n, it_dir, cand, reopen):
         return None
+    redraw_accept()
     gate_args = [str(SIM_PY), str(HERE / "gate.py"), FAMILY, "--gate", str(GATE_DIR), "--pool", str(accept_pool()),
                  "--candidate", str(cand), "--gpus", GPUS]  # fmt: skip
     if stub:

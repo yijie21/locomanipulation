@@ -2,7 +2,8 @@
 ends, run under the seed and under the gate's accepted incumbents (each one's skills snapshot and overrides, exactly
 as the gate judged it). The final incumbent and the seed run first; with --all the intermediate incumbents follow, for
 the growth curve. Rounds land in <hidden>/sealed/<name>/ (a rerun skips rounds already written); the summary --
-per-version and per-task wins, falls and drops, the final against the seed paired by start -- goes to
+per-version and per-task wins with their 95% Wilson intervals, falls and drops, the final against the seed paired by
+start -- goes to
 <hidden>/sealed/summary.json. D8: a family whose final incumbent wins >= 50% of the sealed pool enters bucket 1.
 
 Run it in the loop's sandbox checkout, detached (nohup setsid), like the gate:
@@ -24,7 +25,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import batch as B  # noqa: E402
 import family as F  # noqa: E402
-from gate import mcnemar_one_sided, overrides  # noqa: E402
+from gate import mcnemar_one_sided, overrides, wilson  # noqa: E402
 
 BUCKET1_RATE = 0.50
 
@@ -44,9 +45,11 @@ def tally(rounds: dict) -> dict:
     for r in rounds.values():
         per[r["task"]][0] += bool(r["ok"])
         per[r["task"]][1] += 1
-    return dict(ok=sum(r["ok"] for r in rounds.values()), n=len(rounds), fell=sum(r["fell"] for r in rounds.values()),
+    ok = sum(r["ok"] for r in rounds.values())
+    return dict(ok=ok, n=len(rounds), ci=wilson(ok, len(rounds)), fell=sum(r["fell"] for r in rounds.values()),
                 dropped=sum(r["dropped"] for r in rounds.values()),
-                per_task={k: f"{a}/{n}" for k, (a, n) in sorted(per.items())})  # fmt: skip
+                per_task={k: f"{a}/{n}" for k, (a, n) in sorted(per.items())},
+                per_task_ci={k: wilson(a, n) for k, (a, n) in sorted(per.items())})  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -72,8 +75,9 @@ def main(argv=None) -> int:
     b = sum(final[k]["ok"] and not seed[k]["ok"] for k in keys)
     c = sum(seed[k]["ok"] and not final[k]["ok"] for k in keys)
     rate = sum(final[k]["ok"] for k in keys) / max(len(keys), 1)
+    k_ok = sum(final[k]["ok"] for k in keys)
     summary.update(final=order[0][0], final_vs_seed=dict(n=len(keys), b=b, c=c, p_one_sided=mcnemar_one_sided(b, c)),
-                   final_rate=round(rate, 3), bucket1=rate >= BUCKET1_RATE)  # fmt: skip
+                   final_rate=round(rate, 3), final_rate_ci=wilson(k_ok, len(keys)), bucket1=rate >= BUCKET1_RATE)  # fmt: skip
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
     return 0
