@@ -1,7 +1,7 @@
-# STATE — 2026-10-20 12:00（主线：场景 RSI。用户 11:46 让暂停所有在跑的任务；机器空闲，两张卡都没人用）
+# STATE — 2026-10-20 13:10（主线：场景 RSI。在跑：TODO 31 抓取类从原子技能进化的内环，沙盒 `/workspace/code/rsi-scene/grasp-atomic-a`，12:47 UTC 起、墙钟上限 5 h）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-20 11:20）：已推送到 origin/main = `35f235c`（用户“先推送到 github”，合并了 henry-zhao 的 12 个提交）。之后 `58d1dc5`（走路速度）和 handoff 提交只在本地，用户没说推。
+已确认（10-20 13:10）：已推送到 origin/main = `f5fb27c`（用户“先把目前的改动 push 到远端”；远端没有新提交，不用合并）。
 已确认：henry-zhao 直接推 origin/main，可能自带检查失败；推之前先 `git fetch` 再合并。
 
 ## 提交与磁盘
@@ -11,6 +11,8 @@
 - 删除预告（10-20 12:00 记，10-21 12:00 以后可删，TODO 29.9）：`/workspace/tmp/fresh_rsi_20261020/`（3.8 GB）、`/workspace/code/rsi-scene/pick-repro/`（1.4 GB）。删之前把 `report.md`、`progress.txt` 拷进 `outputs/`。
 
 ## 当前进度（全部已确认）
+
+- 31（在跑）：任务族 `grasp_atomic`，10 个客厅物体的 `held(X)`，客厅里随机出生；技能目录从空种子起步，沙盒剥掉旧技能、记录和旧抓取程序（`c6a3139`）。内环 `loop.py run grasp_atomic`（`RSI_MAX_WALL_H=5`，日志 `/workspace/tmp/grasp_atomic_loop.log`）。参照线（封存集 50 局、0.5 m/s）：旧种子 2/50，当前目录 24/50（`outputs/scene_rsi_20261016/grasp_atomic_refs/`）。内环停后：沙盒里 `sealed.py grasp_atomic --all`，`evolution_media.py` 出视频和总图，做进化页面；用户要求约 8 小时内（21:00 UTC 前后）给结果。
 
 - 27.14：台面高度改按面积、视频按实测手指画，已改并重测：8 族 188 → 187 / 632，标定 101 → 106 / 856，做成的任务 30 → 31。报告视频在新场景重跑、Unreal 重渲（10 局因 10-19 补碰撞变失败，用户定保留原起点）。报告网页第 4 版：https://claude.ai/artifact/1YY339VYjnSk8FTG1WCfBN （分享设置是“任何拿到链接的人”，原来就是）。
 - 29：文档主线换成 RSI（`docs/rsi.md` 命令、`docs/rsi_design.md` 原理），VLA 文档原地归档；代码在 `scripts/rsi/`；复现材料 `rsi_kit/` 进了 git（用户推翻场景发现方案第 17 条），`git archive` 里没有它。
