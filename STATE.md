@@ -8,7 +8,7 @@
 ## 提交与磁盘
 
 - 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`。STATE.md 上限 60 行。
-- 已确认（10-20 01:00）：`/workspace` 剩 132 GiB（88%）。用户 10-20 批准清理报告里的“一”“二”两类并免掉 24 小时，已执行（80 → 132 GiB，TODO 9.14，`outputs/cleanup_20261020/`）。跑仿真 / pytest 前先 `export TMPDIR=/workspace/tmp`。副本 `/workspace/code/rsi-phase4/arm-{a,b,a2,b2}` 共约 10 GB，作证据保留。
+- 已确认（10-20 01:00）：`/workspace` 剩 132 GiB（88%）。用户 10-20 批准清理报告里的“一”“二”两类并免掉 24 小时，已执行（80 → 132 GiB，TODO 9.14，`outputs/cleanup_20261020/`）；根分区 `/` 同日清理，1.8 → 15 GB。跑仿真 / pytest 前先 `export TMPDIR=/workspace/tmp`。副本 `/workspace/code/rsi-phase4/arm-{a,b,a2,b2}` 共约 10 GB，作证据保留。
 
 ## 当前进度
 
