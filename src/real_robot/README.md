@@ -12,10 +12,14 @@
 - 机器人侧的 ZMQ 端口沿用官方默认：状态 `g1_debug` 5557、相机 5555、动作 `pose` 5556、键盘 5580。换了端口就在下面的命令里传对应参数。
 - 本机已完成[安装](../../docs/setup.md)第 0–4 步（SONIC 的 `.venv_sim`）。策略服务器那台机器要第 5 步（GR00T 训练环境）。
 
-## 1. 起策略服务器（GPU 机器）
+## 1. 起策略服务器（GPU workstation PC）
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/runs/<run>/checkpoint-<step>
+# example
+cd ~/workspace/locomanipulation
+CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh \
+    --model-path ~/Checkpoints/gr00t-locomani-logistic-unreal_20261010_033747/checkpoint-30000
 ```
 
 服务器是 [run_gr00t_server.py](run_gr00t_server.py)，仿照 NVIDIA Isaac-GR00T 官方的 `gr00t/eval/run_gr00t_server.py`（本仓库原样 vendor 在 `src/gr00t/eval/run_gr00t_server.py`），参数名和官方一致，跑在 Isaac-GR00T 的 `.venv` 里、用本仓库的 `src/gr00t`。真机部署不用仿真评测的 `scripts/run_vla_server.sh`：那个脚本从运行目录读评测配置，带 RTC 和仿真用的种子，真机都用不上。
@@ -36,18 +40,78 @@ CUDA_VISIBLE_DEVICES=0 bash scripts/run_gr00t_server.sh --model-path outputs/run
 ## 2. 起机器人侧（机器人控制电脑）
 
 按机器人上现有的流程启动 C++ deploy 和相机服务器。本客户端只要求它们监听上面的端口。
+```bash
+# Install camera server
+cd ~/ether-onboard/third_party/GR00T-WholeBodyControl
+bash install_scripts/install_camera_server.sh
+```
 
-## 3. 起客户端
+```bash
+# Run Unitree G1 robot
+# Connect Unitree G1
+ssh unitree@172.28.36.54 #WIFI
+ssh unitree@192.168.123.164 #Ethernet
+# Calibrate pan-tilt head camera
+sudo systemctl stop g1_comp_servo.service
+cd ~/g1_comp_servo_service/build # then move the camera to the bottom right position
+./test_calibration # then wait several seconds, and the camera will pan
+sudo systemctl start g1_comp_servo.service # then wait several seconds, and the camera will tilt
+# Check camera
+sudo systemctl status composed_camera_server.service
+# Set camera position 
+sudo systemctl stop g1_comp_servo.service
+bash ~/set_head_camera.sh
+# Launch three camera
+sudo systemctl restart composed_camera_server
+journalctl -u composed_camera_server -n 20 --no-pager   # "All 3 cameras ready" and FPS 
+
+# Check gripper
+sudo systemctl status dex1_gripper.service
+cd && cd dex1_1_service/bin && ./test_dex1_1_gripper_server -l -r
+
+# Set gripper 
+sudo systemctl restart dex1_gripper.service
+```
+
+## 3. SONIC C++ deploy
+
+```bash
+# Run local workstation
+cd ~/Unitree_G1_Robot/GR00T-WholeBodyControl/gear_sonic_deploy && source scripts/setup_env.sh
+./deploy.sh --input-type zmq_manager real --zmq-host localhost --hand-type dex1_1
+# wait for "Init done"
+```
+
+## 4. 起客户端
 
 ```bash
 bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera-host <机器人地址> --state-zmq-host <机器人地址> \
     --init-token-file configs/deployment/warehouse_initial_token.json --prompt "pick up the box"
+# example
+cd /home/henry.zhao/workspace/locomanipulation
+bash scripts/run_real_robot_inference.sh \
+    --host localhost \
+    --camera-host 192.168.123.164 --camera-port 5555 \
+    --state-zmq-host localhost \
+    --init-token-file configs/deployment/warehouse_initial_token.json \
+    --prompt "pick up the box"
 ```
 
 做什么：连接策略服务器，核对 checkpoint 字段顺序；订阅机器人状态和三路相机；在 5556 端口发布 protocol v4 的 token 消息；启动时处于暂停状态。
 得到什么：终端打印 `PolicyServer is reachable.` 和 `Starting the policy loop with language prompt: ...`，暂停期间不断打印 `Pausing...`。放开后每到一个 chunk 打印一行 `New action chunk (prompt: ..., latency: ...)`，每 50 帧打印一行 `ZMQ: Sent latent action`，带帧号、chunk 下标和两只夹爪的值。`--help` 列出全部参数及说明。
 
-键盘（另开一个终端跑 SONIC 的键盘发布器）：
+## 5. 键盘发布器（另开一个终端跑 SONIC 的键盘发布器）：
+
+```bash
+~/workspace/locomanipulation/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -c "
+import zmq
+ctx = zmq.Context(); pub = ctx.socket(zmq.PUB); pub.bind('tcp://localhost:5580')
+print('k=start/stop  i=init pose  p=pause/resume  t <text>=prompt  [ ]=left/right gripper toggle')
+while True:
+    key = input()
+    pub.send_string('prompt:' + key[2:] if key.startswith('t ') else key)
+"
+```
 
 | 键 | 作用 |
 |---|---|
@@ -60,7 +124,19 @@ bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera
 
 第一次上真机的顺序：`k` 起控制环，`i` 到初始姿势，用 `]` 和 `i` 看右夹爪是不是 5.5 开、0 闭（方向错了就是 Dex1 驱动读的单位不同，停下来查），再 `p` 放开策略。
 
-## 4. 参数
+## 6. 可选：录制评估数据
+
+```bash
+cd ~/workspace/locomanipulation/third_party/GR00T-WholeBodyControl && source .venv_data_collection/bin/activate
+python gear_sonic/scripts/run_data_exporter.py \
+    --state-zmq-host localhost \
+    --camera-host 192.168.123.164 --camera-port 5555 \
+    --record-wrist-cameras --wrist-camera-sides both \
+    --task-prompt "pick up the box"
+```
+录制时在终端 4 用 c 开始、s 成功结束、f 失败结束。
+
+## 7. 参数
 
 | 参数 | 默认 | 含义 |
 |---|---|---|
@@ -78,11 +154,11 @@ bash scripts/run_real_robot_inference.sh --host <策略服务器地址> --camera
 | `--action-zmq-host` | * | 动作 PUB socket 绑定的地址。官方是 localhost（客户端和 deploy 同机）；`*` 让另一台机器上的 deploy 也能连 |
 | `--verbose-timing` | 关 | 每帧打印 Telemetry 计时（默认只在一帧超时时打印） |
 
-## 5. sim2sim
+## 8. sim2sim
 
 同一个客户端对接本仓库的 MuJoCo 仿真栈（实例 0 的端口正是上面的默认值）：`bash scripts/start_stack.sh eval` 起栈和相机流，策略服务器照第 1 步（`scripts/run_vla_server.sh <run>` 也提供 `get_action` 和 `identity`，也能用），客户端加 `--hand-wire sim`。仿真桥读米制的指爪位，`--hand-wire sim` 把 Dex1 值换算回去。用 `sim_m` 单位训练的 checkpoint 另加 `--gripper-units sim_m`。
 
-## 6. 常见错误
+## 9. 常见错误
 
 - `PolicyServer not reachable at ...`：第 1 步没起，或 `--host` / `--port` 不对。官方客户端这时只警告；这里直接退出，因为字段顺序要靠服务器来核对。
 - 服务器报 `does not exist here; pass backbone_path`：checkpoint 是别的机器训的，而 `COSMOS_BACKBONE_PATH`（默认 `~/Checkpoints/Cosmos-Reason2-2B`）下没有权重，脚本启动时也会先打印一行提示。把权重放到那里，或在 `locomani.local.sh` 里改 `COSMOS_BACKBONE_PATH`，或直接加 `--backbone-path`。

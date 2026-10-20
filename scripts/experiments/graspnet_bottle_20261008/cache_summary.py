@@ -2,7 +2,9 @@
 the 21.3.4 graspnet rounds (summary.json: IK 16/65, one round per object).
 
 Reads <scene>/grasp_cache_summary.json, outputs/runs/gnb_obj_XXX<tag>/grasp_planned/round_*/record.json (the
-`ik` rounds of run_grasp.py --grasp-source cache --planners ik) and the graspnet summary. Each cache round is
+`ik` rounds of run_grasp.py --grasp-source cache --planners ik) and, when present, the graspnet summary
+(outputs/graspnet_bottle_20261008/summary.json, written by make_videos.py; without it the graspnet column reads
+`-`, the rest of the report is unaffected). Each cache round is
 classed: `lifted`; `no_candidate` (nothing validated fits at this pose); `no_path` (the IK planner reached none);
 `execution` (a validated grasp was reached and the expert's entry / close / lift still failed -- the pose is cleared,
 the execution is not) with the expert's failure text. Works for runs of either grasp source (graspnet rounds have no
@@ -41,7 +43,12 @@ def classify(rec: dict | None, manifest_row: dict | None) -> tuple[str, str]:
 
 def main(tag: str = "_cache") -> int:
     objects = json.loads((ROOT / "objects.json").read_text())["objects"]
-    graspnet = {s["id"]: s for s in json.loads((ROOT / "summary.json").read_text())}
+    # The 21.3.4 graspnet rounds are a comparison column, not an input: a machine that never ran make_videos.py
+    # (or did not sync its outputs) has no summary.json, and the cache report must still come out.
+    graspnet_summary = ROOT / "summary.json"
+    graspnet = {s["id"]: s for s in json.loads(graspnet_summary.read_text())} if graspnet_summary.exists() else {}
+    if not graspnet:
+        print(f"[cache_summary] {graspnet_summary} not found: the graspnet IK column reads '-'", file=sys.stderr)
     rows = []
     for o in objects:
         oid = o["id"]
@@ -85,6 +92,12 @@ def main(tag: str = "_cache") -> int:
                 graspnet_ik=dict(ok=gn.get("ok"), why=gn.get("why"), tier=gn.get("tier")),
             )
         )  # fmt: skip
+    if not any(r["rounds"] for r in rows):
+        print(
+            f"[cache_summary] no grasp_planned rounds under {REPO / 'outputs' / 'runs'}/gnb_obj_XXX{tag}: "
+            "nothing ran with this tag, or the runs live on another machine",
+            file=sys.stderr,
+        )
     out = ROOT / "cache"
     out.mkdir(exist_ok=True)
     stem = "summary" if tag == "_cache" else f"summary{tag}"
