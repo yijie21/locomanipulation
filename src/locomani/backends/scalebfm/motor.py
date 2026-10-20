@@ -17,6 +17,7 @@ class or a scene layout: skills (task level) decide where to walk, what to reach
 Modes (network.py's mode table): a walk runs in mode 2 (pelvis + wrists; the policy places its own steps); everything
 stationary runs in mode 4 (pelvis + wrists + both ankles, the ankles pinned where they stand). Standing 15 s in the ADT
 apartment, mode 2 widened the stance 27.7 -> 36.1 cm and mode 4 26.5 -> 28.0 cm (2026-10-16, scratch stand_smoke).
+A walk's speed sets the gait mode 2 chooses: below about 0.4 m/s it shuffles, from 0.5 m/s it steps (MotorConfig.walk_speed).
 Arm keypoints are FK of the reference joints (as bfm_expert_warehouse); the jaw-centre + wrist-attitude integral servo
 of controller-compare 25.3 (`pad_servo` there) shifts the wrist keypoint toward the reference's jaw centre.
 """
@@ -45,7 +46,10 @@ FF_SPEEDS, FF_SHORT = (0.25, 0.35, 0.55), (0.045, 0.036, 0.016)  # plan program'
 
 @dataclass(frozen=True)
 class MotorConfig:
-    walk_speed: float = 0.25  # m/s, the warehouse expert's visual.walk_speed
+    # m/s. 0.25 (the warehouse expert's visual.walk_speed) until 2026-10-20: mode 2 then shuffles -- 15 cm steps, 2 cm
+    # foot lift, 34-40 % of foot travel sliding on the floor; at 0.5 it steps (48 cm, 3-5 cm, 7-9 %; user 2026-10-20,
+    # outputs/scene_rsi_20261016/gait/)
+    walk_speed: float = 0.5
     walk_acc: float = 0.6  # m/s^2 (runtime.WALK_ACC)
     turn_rate: float = 0.8  # rad/s peak of an in-place turn
     face_travel_deg: float = 20.0  # a walk longer than face_travel_min_m first turns toward its goal past this

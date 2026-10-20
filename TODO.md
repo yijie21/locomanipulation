@@ -1068,7 +1068,17 @@
 - [x] 29.2 `docs/rsi.md`（命令：建场景、L0、核对已记录结果、L1–L3、视频、常见错误）和 `docs/rsi_design.md`（怎么工作、为什么）；`setup.md` 加第 9–12 步；术语表、文档维护规则、开发者索引跟着改
 - [x] 29.3 代码搬到 `scripts/rsi/`（数据目录名不变；搬之前建的沙盒保留旧布局，`outer.py select` 两处都读）
 - [x] 29.4 复现材料 `rsi_kit/`（`scripts/rsi/kit.py pack / restore / seed`，`export-ignore`，`loop.py` 记录检查查它）：6.5 MB、3899 个文件，结局取 `surfaces_20261020`；`git archive HEAD` 里没有它；恢复到空目录试过两次
-- [ ] 29.5 新读者测试：没看过项目的 Claude 在干净环境里只照 README 和 `docs/rsi.md` 跑建场景、L0、核对一个任务族、L1（pick_single）；卡住的地方改文档
+- [ ] 29.5（10-20 11:46 用户让暂停；状态见 `/workspace/tmp/fresh_rsi_20261020/PAUSED.md`，已做完 0–4 节和 5.1，找到 7 处偏差；走路速度改了，下次从新克隆重跑）新读者测试：没看过项目的 Claude 在干净环境里只照 README 和 `docs/rsi.md` 跑建场景、L0、核对一个任务族、L1（pick_single）；卡住的地方改文档
 - [x] 29.6 种子技能目录（`801a28c^`，和 pick-a 沙盒开局的技能目录逐字节相同）在今天的运行器上能跑：pick_single 两个封存起点和 10-16 一样失败（摔倒；手没碰到遥控器）
 - [ ] 29.7 空地场景 `outputs/scene/walk_mars`（动作层探针、`motor_check.py` 用）没有登记构建命令，要补进 `configs/scenes.yaml`
 - [ ] 29.8 测试 `test_scalebfm_rsi_phase4.py::Restore` 在工作树的提交钩子里继承了 `GIT_DIR`，临时仓库的 `git init` 把共享的 `.git/config` 改成 `bare = true`（10-20 09:06，已改回 `false`，测试已清掉 `GIT_*`）；别的测试里还有没有同样在钩子里跑 git 的，待查
+
+## 30. 动作层默认走路速度 0.5 m/s（用户 2026-10-20：“左右脚蹭着前进”；DECISIONS 2026-10-20 TODO 30；`outputs/scene_rsi_20261016/gait/`）
+
+- [x] 30.1 量步态：空地直走 4 m，0.25 / 0.5 / 0.8 m/s；场景里三局；SONIC 对照。0.25 m/s 碎步（15 cm、抬脚 2 cm、34–40% 滑行），0.5 m/s 正常迈步。对比视频（私有）：https://claude.ai/artifact/Ss5X8HZdbX1f9RFZiqjfAe
+- [x] 30.2 `MotorConfig.walk_speed` 0.25 → 0.5；`rules.md` 第 7 版；`test_plan_for` 按配置的速度算停步短缺
+- [ ] 30.3 按 0.5 m/s 重测 8 个任务族和 3 个标定样本（`regress.py run`，约 2.5 h），和 0.25 m/s 的记录逐局比，特别看拿着东西走的掉落、窄路、停步精度（用户让先暂停，待用户开口）
+- [ ] 30.4 重测后：`kit.py pack` 更新复现材料，改 `docs/rsi.md`、报告里的数字；检查器的搬运时长规则（按 0.25 m/s 拟合，T = 32.1 + 8.13 d + 25.3·[into]）在 0.5 m/s 下偏保守，要不要重新拟合
+- [ ] 30.5 重测后从新克隆重跑新读者测试（29.5）
+- [ ] 30.6 可选：拐点处“原地转身再直走”改成边走边转（转身时也在蹭）
+

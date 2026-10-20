@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 6, 2026-10-19)
+# Rules for the scene RSI loop (TODO 27, version 7, 2026-10-20)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -38,7 +38,8 @@ rule is a new version of this file, committed, and counted as one human interven
 14. Open loop, ScaleBFM's hands land 2-9 cm and 10-30 deg off at grasp poses; the motor layer's reach servo (jaw centre
     + wrist attitude integral) brings them to about 1 cm. During a fast entry the hand lags the command by up to 10 cm.
 15. Standing in mode 2 the feet slide apart (27.7 -> 36.1 cm in 15 s); mode 4 pins them.
-16. Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks straight lines only;
+16. Walks run at 0.5 m/s (version 7, user 2026-10-20: at the earlier 0.25 m/s ScaleBFM shuffled, its feet sliding on the
+    floor). Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks straight lines only;
     `navigate.walk_path` plans around furniture on the occupancy map (body radius 0.35 m: at 0.26 m an arm caught the
     kitchen island and the robot fell).
 17. Furniture collides with the robot only below its lowest surface; free objects rest on surface slabs.

@@ -20,6 +20,8 @@ RSI 是 recursive self-improvement 的缩写：系统自己提出任务，自己
 | 谓词与成功判据 | `held`、`on`、`in`、`near`、`upright` 等 | 不能改 | `src/locomani/scene_discovery/predicates.py` |
 | 场景 | ADT 公寓的 MuJoCo 版 | 循环里不能改；人改了要重测 | `outputs/scene_discovery/adt_apartment_mars/` |
 
+走路默认 0.5 m/s（`MotorConfig.walk_speed`，2026-10-20 起）。ScaleBFM 在模式 2 下只拿到骨盆和手腕的目标，步子由它自己迈；0.25 m/s 时它碎步、抬脚 2 cm、脚贴地滑，0.5 m/s 时正常迈步（`outputs/scene_rsi_20261016/gait/`）。2026-10-20 之前的所有结果都是 0.25 m/s 下测的。
+
 起始的技能目录（种子）只有动作层和两个从旧专家移植来的抓取程序。放下、放进容器、拿着走、推开再抓，都是循环自己写出来的。种子在 git 里是第一次写回之前的那一版（`801a28c^`）。
 
 ## 3. 一局怎么跑

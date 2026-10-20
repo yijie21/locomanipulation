@@ -17,7 +17,7 @@ import numpy as np
 
 import locomani.tasks.scene.skills as skills
 from locomani.backends.scalebfm import runtime as R
-from locomani.backends.scalebfm.motor import FF_SHORT, MotorConfig, Outcome, Profile, expmap, turn_seconds
+from locomani.backends.scalebfm.motor import FF_SHORT, FF_SPEEDS, MotorConfig, Outcome, Profile, expmap, turn_seconds
 from locomani.primitives.navigator import build
 from locomani.tasks.scene.skills import clearance, grasp_program, held, pick, place
 
@@ -295,7 +295,8 @@ class DropGuards(unittest.TestCase):
 class CreepBudget(unittest.TestCase):
     def test_walk_seconds_are_walk_tos_turns_and_profiles_plus_the_leg_settle(self):
         cfg = MotorConfig()
-        leg = Profile(cfg.walk_speed, cfg.walk_acc, 1.0 + FF_SHORT[0]).t_end
+        ff = float(np.interp(cfg.walk_speed, FF_SPEEDS, FF_SHORT))  # the stop shortfall at the default walk speed
+        leg = Profile(cfg.walk_speed, cfg.walk_acc, 1.0 + ff).t_end
         straight = place.walk_seconds(cfg, [0.0, 0.0], 0.0, [[0.0, 0.0], [1.0, 0.0]], 0.0)
         self.assertAlmostEqual(straight, leg + place.LEG_SETTLE_S)
         # facing +y: turn to the leg first (past face_travel_deg), then to the goal yaw at its end
@@ -303,9 +304,7 @@ class CreepBudget(unittest.TestCase):
         self.assertAlmostEqual(turned, straight + turn_seconds(np.pi / 2, cfg.turn_rate) * 2)
         # a step back keeps the heading: no turn
         back = place.walk_seconds(cfg, [0.0, 0.0], 0.0, [[0.0, 0.0], [-0.3, 0.0]], 0.0, fixed=True)
-        self.assertAlmostEqual(
-            back, Profile(cfg.walk_speed, cfg.walk_acc, 0.3 + FF_SHORT[0]).t_end + place.LEG_SETTLE_S
-        )
+        self.assertAlmostEqual(back, Profile(cfg.walk_speed, cfg.walk_acc, 0.3 + ff).t_end + place.LEG_SETTLE_S)
 
     def test_lift_to_release_adds_lift_hold_back_off_carry_reach_over_and_lowering(self):
         cfg = MotorConfig()
