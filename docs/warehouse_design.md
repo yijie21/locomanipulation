@@ -1,5 +1,7 @@
 # warehouse 详解
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](rsi.md)。
+
 怎么跑在 [warehouse runbook](warehouse.md)；逐次实测数字在 [双臂台账](ledger/crate.md)；每次改动的理由在 [DECISIONS](../DECISIONS.md) 2026-09-22 起的各节。
 warehouse 和 crate 是同一条管线：同一个 `tasks/crate` 视觉专家、同一套脚本、同一个双臂评测器。专家本身的设计见[双臂详解](bimanual_design.md)，这一页只写 warehouse 不一样的地方。
 

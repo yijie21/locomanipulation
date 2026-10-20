@@ -9,7 +9,8 @@ instances.json, scene_objects.csv, 3d_bounding_box.csv) and the Digital Twin Cat
 (~11 MB median .glb, CC BY-SA). The signed link files come from the Project Aria site (one per user, never in git)
 and live in `<root>/links/`; everything lands under `<root>` (default /workspace/datasets/adt), outside the repo:
 the sequence data is licensed for non-commercial research and may not be redistributed
-(docs/handoff/scene-discovery-plan-20261002.md, decision 17). Every file is checked against its sha1 and skipped
+(docs/handoff/scene-discovery-plan-20261002.md, decision 17; the user overrode it for the scene RSI kit `rsi_kit/`,
+DECISIONS 2026-10-20). Every file is checked against its sha1 and skipped
 when already present, so a rerun resumes.
 """
 

@@ -4,6 +4,8 @@
 
 # 实验总表(2026-08-25 → 2026-09-03)
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](../rsi.md)。
+
 所有成功率均从 `outputs/eval/<arm>/closed_loop.manifest.jsonl` 重算(≥14 局的臂才收),配对检验是同 seed、同出生分布的臂逐轮 McNemar(x:y = 只有前者成功 : 只有后者成功)。失败细分来自 `tools/failure_taxonomy.py`(只对有 trace 的臂;部分臂 trace 少于 manifest 局数,细分按 trace 子集)。
 
 **deploy 状态**这一列是理解全表的钥匙:`退化` = production 二进制 + planner settle 后 enter_streamed,行走 token 只按 1/3 幅度执行(2026-09-02 发现);`干净` = nvdef 二进制 + SONIC_AUTO_START,全程不碰 planner;`lockstep` = 仿真时钟步进。退化 deploy 上的数字彼此可比,但不可迁移到真机,也不能和干净协议的数字直接比。

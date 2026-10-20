@@ -2,11 +2,29 @@
 
 各 runbook 直接使用下面这些词，不再逐页解释。每个词一行：意思，以及在仓库里的落点。
 
+## 场景 RSI
+
+| 词 | 意思 |
+|---|---|
+| 技能目录（catalog） | `src/locomani/tasks/scene/skills/`：拿起、放下、放进容器等技能和把目标翻成计划的 `plan_for`。内环改的就是它；种子是第一次写回之前那一版 |
+| 任务族（family） | 一组要一起改进的任务和它们的三个起点池，一个文件 `scripts/rsi/families/<名字>.json`；一个内环只跑一个任务族 |
+| 起点 / 起点池 | 起点：机器人位姿加物体摆放的一个 JSON。诊断池 50 个（角色看得到）、验收池 60 个（只有验收门用）、封存集 80 个（内环结束后跑一次） |
+| 现任 / 候选 | 现任（incumbent）：最近一次被接受的技能目录加参数；候选（candidate）：Engineer 交出的新版本 |
+| 验收门（gate） | `gate.py`：候选和现任在验收池上逐个起点配对比较，按固定规则判接受或拒绝 |
+| 内环 / 外环 | 内环：一个任务族里反复“看记录、提假设、写代码、验收”。外环：发现任务、分桶、选缺口、为每个缺口建任务族跑内环、写回 |
+| 分桶 / 缺口 | 分桶：程序判一个任务现有技能能做（第 1 桶）、缺点什么（第 2 桶）还是做不了（第 3 桶）。缺口：第 2 桶里缺的那一项 |
+| 沙盒（sandbox） | 一个任务族专用的代码副本（`/workspace/code/rsi-scene/<名字>`），从当前提交导出，内环在里面跑 |
+| 搁置（park） | 声明“现有动作做不到”的起点，经程序检查和闭环尝试成立后不再当修理目标，但仍算失败 |
+| 写回 / 回归 / 登记表 | 写回：把内环最终的现任合并进主仓库的技能目录。回归：用当前技能目录重跑登记表 `outputs/scene_rsi_20261016/outer/registry.json` 里每个任务族的封存集，和上次逐局比较 |
+| 标定样本 | 从没练过的任务里按桶抽的样本（cal_r2–cal_r4），量检查器判“能做”的准确率 |
+| 能力表 | `configs/scene_discovery/capability_mars_scalebfm.yaml`：动作层探针和各技能封存集的实测范围，分桶读它 |
+| 复现材料（kit） | `rsi_kit/`：大模型生成或在当时的场景上抽出的输入（任务清单、起点池、场景文件、逐局结局），`scripts/rsi/kit.py restore` 放回 `outputs/` |
+
 ## 运行与产物
 
 | 词 | 意思 |
 |---|---|
-| 线（line） | 一种任务从建场景到评测的整套流程。主线有三条：bottle（单臂抓瓶）、crate（双臂抓筐）、warehouse（双臂抓纸箱），每条一页 runbook（[README](../../README.md#三条主线)）。脚本只分两套：`scripts/single_arm/` 给 bottle，`scripts/bimanual/` 给 crate 和 warehouse（`run_overnight.sh --line bimanual`） |
+| 线（line） | 一种任务从建场景到评测的整套流程。现在的主线是场景 RSI（[runbook](../rsi.md)）；2026-10-20 归档的 VLA 线有三条：bottle（单臂抓瓶）、crate（双臂抓筐）、warehouse（双臂抓纸箱），每条一页 runbook（[README](../../README.md#归档vla-数据采集与训练2026-10-20-起暂不使用)）。脚本只分两套：`scripts/single_arm/` 给 bottle，`scripts/bimanual/` 给 crate 和 warehouse（`run_overnight.sh --line bimanual`） |
 | 实验文件 | `configs/experiments/<name>.yaml`，一次运行读的**全部**配置，没有继承；新实验 = 复制一份改几行 |
 | `locomani.local.sh` | `$LOCOMANI_WORKSPACE/locomani.local.sh`：这台机器专用、不进 Git 的设置（例如 deploy 编在别处时的 `SONIC_DEPLOY_ROOT`），`scripts/paths.sh` 先读它 |
 | 场景名 | 实验文件里的 `scene.name`，在 `configs/scenes.yaml` 里查到场景目录和构建命令；`bash scripts/build_scene.sh <场景名>` 按它建场景 |

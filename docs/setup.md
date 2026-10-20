@@ -1,6 +1,6 @@
 # 安装
 
-从零装好运行三条主线（bottle、crate、warehouse）所需的环境。每一步依次写命令、做什么、怎么确认装好了。
+从零装好运行[场景 RSI](rsi.md)和已归档的三条 VLA 线（bottle、crate、warehouse）所需的环境。每一步依次写命令、做什么、怎么确认装好了。
 所有命令都在仓库根目录的 bash 里执行；踩过的坑和背后的原因集中在最后一节「[安装排错与说明](#安装排错与说明)」。
 
 ## 要装哪几步
@@ -10,15 +10,19 @@
 | 准备 | 系统软件包、克隆本仓库 | 所有人 | 几分钟 |
 | 0 | 路径变量 | 所有人 | 1 分钟 |
 | 1 | 克隆上游仓库 GR00T-WholeBodyControl | 所有人 | 5 分钟 |
-| 2 | 两个 Python 环境、SONIC 权重、补丁 | 所有人 | 20 分钟 |
-| 3 | 编译 SONIC 的 C++ 控制器（deploy） | 所有人 | 主要看网速，要下载 3.9 GB |
+| 2 | 两个 Python 环境、SONIC 权重、补丁 | 所有人（场景 RSI 只用其中的 `.venv_sim`） | 20 分钟 |
+| 3 | 编译 SONIC 的 C++ 控制器（deploy） | VLA 线 | 主要看网速，要下载 3.9 GB |
 | 4 | 场景源资产 | 所有人 | 5 秒 |
 | 5 | GR00T 训练环境 | 要训练或评测 VLA（三条主线都要） | 按上游 README |
 | 6 | conda 训练环境、EmbodiedGen | 只有训练 SONIC 本身或重新生成场景才要 | 1 小时以上 |
 | 7 | Isaac 渲染环境 | warehouse 选 Isaac 出图时，以及 Isaac 重渲 | 约 20 GB 下载 |
-| 8 | Unreal 渲染环境 | warehouse 默认用它出图（实验文件写 `images.source: unreal`） | 引擎约 26 GB 下载，编译约 9 分钟 |
+| 8 | Unreal 渲染环境 | warehouse 默认用它出图（实验文件写 `images.source: unreal`）；场景 RSI 只在渲染报告视频时用 | 引擎约 26 GB 下载，编译约 9 分钟 |
+| 9 | 场景脚本的 Python 环境 `/venv/main` | 场景 RSI | 2 分钟 |
+| 10 | ADT 数据 | 场景 RSI | 约 5 GB 下载 |
+| 11 | ScaleBFM 权重 | 场景 RSI | 1 分钟 |
+| 12 | Claude CLI | 场景 RSI 的 L1 以上（内环的角色调用它） | 2 分钟 |
 
-做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 8 步（Unreal，默认）或第 7 步（Isaac）。
+场景 RSI 要做准备、第 0–2 步、第 4 步和第 9–12 步，第 3、5、6、7 步不用。VLA 线：做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 8 步（Unreal，默认）或第 7 步（Isaac）。
 
 ## 准备
 
@@ -342,6 +346,51 @@ blender --background assets/blender/logistics_room.blend --python scripts/unreal
 ```
 
 做什么：第一条用 PATH 上的 Blender 5.x（`blender`，装法见上面链接的页面；不在 PATH 上就写它的完整路径）把物流房间的程序化材质烘成贴图，连同灯光导出成 `room.glb` 和 `room_scene.json`，约 7 分钟。第二条在运行中的编辑器里把它建成房间关卡 `/Game/Levels/Warehouse`。成功时命令正常退出，烘焙目录里的 `unreal_level_report.json` 写着 `"ok": true`；失败时命令报错退出。之后每个场景的关卡在 [warehouse runbook](warehouse.md) 第 1 步建，哪些场景有关卡看 `configs/scenes.yaml` 的 `unreal` 条目。
+
+## 9. 场景脚本的 Python 环境（场景 RSI）
+
+```bash
+[ -x /venv/main/bin/python ] || uv venv /venv/main --python 3.12
+uv pip install --python /venv/main/bin/python trimesh==4.12.2 opencv-python-headless numpy scipy matplotlib pyyaml ruff==0.16.1 huggingface_hub
+```
+
+做什么：建场景的脚本（`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 等）和写回时的代码格式化用这个环境，不用 `.venv_sim`。Vast 的基础镜像自带 `/venv/main`，第一条会跳过。
+
+验证：`/venv/main/bin/python -c "import trimesh, cv2; print(trimesh.__version__)"` 输出 `4.12.2`。
+
+## 10. ADT 数据（场景 RSI）
+
+```bash
+python3 scripts/adt_download.py sequences Apartment_release_clean_seq131_M1292
+python3 scripts/adt_download.py objects
+```
+
+做什么：先在 Project Aria 网站申请 Aria Digital Twin 的下载链接（每人一份，不进 git），把 `ADT_download_urls.json` 和 `DTC_objects_ADT_download_urls.json` 放进 `/workspace/datasets/adt/links/`。第一条下载公寓那段序列的真值（约 20 MB），第二条下载序列里出现的所有物体模型（约 4.6 GB）。每个文件都按 sha1 校验，中断后重跑会接着下载。数据只能用于非商业研究，不能再分发。
+
+验证：`ls /workspace/datasets/adt/sequences/Apartment_release_clean_seq131_M1292` 里有 `instances.json`，`/workspace/datasets/adt/objects/` 下有几百个物体目录。
+
+## 11. ScaleBFM 权重（场景 RSI）
+
+```bash
+/venv/main/bin/python -c "from huggingface_hub import hf_hub_download as d; d('WeishuaiZeng/ScaleBFM', 'checkpoint/humanoid_transformer_m/model_22200.pt', local_dir='/workspace/tmp/scalebfm')"
+mkdir -p /workspace/models/scalebfm
+mv /workspace/tmp/scalebfm/checkpoint/humanoid_transformer_m/model_22200.pt /workspace/models/scalebfm/humanoid_transformer_m_22200.pt
+```
+
+做什么：下载场景 RSI 用的全身控制器 ScaleBFM（M 型号、第 22200 步，73 MB），放到代码默认读的位置（`ScaleBfmBackendConfig.checkpoint`）。它的模式表和元数据在仓库的 `assets/scalebfm/` 里，不用下载。
+
+验证：`sha256sum /workspace/models/scalebfm/humanoid_transformer_m_22200.pt` 以 `88d5a79946c03ed2` 开头。
+
+## 12. Claude CLI（场景 RSI 的 L1 以上）
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+claude
+```
+
+做什么：第一条安装 Claude Code 的命令行工具；第二条第一次运行时按提示登录，然后输入 `/exit` 退出。内环的 Reviewer、Manager、Engineer 和外环的任务发现都用 `claude -p` 调用它，模型由 `RSI_MODEL` 指定，默认 `claude-opus-5-5`。L0 冒烟和核对不需要它。
+
+验证：`claude -p "say ok" --model claude-opus-5-5` 打印 `ok`。
 
 ## 安装排错与说明
 

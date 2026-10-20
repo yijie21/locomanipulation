@@ -1,5 +1,7 @@
 # 真机部署：GR00T 策略 + SONIC 控制器跑在 G1 上
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](../../docs/rsi.md)。
+
 把本仓库训练出的 GR00T checkpoint 部署到实验室的真机 G1（29 自由度、Dex1 夹爪、头部 D455 和双腕 D405）。推理客户端 [inference.py](inference.py) 按 NVIDIA 官方的 `gear_sonic/scripts/run_vla_inference.py` 逐个函数对照着写，参数名、键盘、打印信息都和官方一致；不同的只有观测和动作格式（本仓库数据集的）和 Dex1 夹爪。策略服务器 [run_gr00t_server.py](run_gr00t_server.py) 仿照 Isaac-GR00T 官方的 `gr00t/eval/run_gr00t_server.py`。两边的来源和改动见 [UPSTREAM.md](UPSTREAM.md)。设计和决策见[设计文档](../../docs/handoff/real-robot-sim2real-plan-20261006.md)。
 
 需要三台角色，可以是同一台机器：机器人本体的控制电脑（跑 SONIC C++ deploy 和相机服务器）、一台 GPU 机器（跑策略服务器）、一台跑本客户端的机器（装了 SONIC 的 `.venv_sim`）。

@@ -1,5 +1,7 @@
 # 可拼接的技能（skills）：plan 入口、agent 规划器、新物体标定
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](rsi.md)。
+
 `src/locomani/skills/` 把三条已调顺的专家线切成 agent 能拼的 primitive（设计与决策在
 [primitive 契约设计](handoff/primitive-contracts-design-20260928.md)，本页只讲怎么跑）。一个 primitive 是一个阻塞执行、
 自带时序的动作（走近、抓、搬、放），读 [session](handoff/primitive-contracts-design-20260928.md#3-session-对象) 与特权状态，

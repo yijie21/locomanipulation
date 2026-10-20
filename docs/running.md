@@ -1,5 +1,7 @@
 # 运行机制
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](rsi.md)。
+
 三条主线（[bottle](single_arm.md)、[crate](bimanual.md)、[warehouse](warehouse.md)）共用同一套运行规则，都写在这一页。
 runbook 只列命令；想改参数、并行跑、重跑某个阶段，或者弄清命令背后怎么运转时，读这一页。名词见[术语表](reference/glossary.md)。
 

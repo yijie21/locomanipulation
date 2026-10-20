@@ -1,6 +1,6 @@
 # 历史记录与开发者索引
 
-三条主线、通用文档、支线和台账的清单在[仓库 README](../README.md)。这一页只收 README 不列的东西：给开发者的入口，以及按时间留下的交接记录和归档。
+主线（场景 RSI）的文档和已归档的 VLA 文档清单都在[仓库 README](../README.md)。这一页只收 README 不列的东西：给开发者的入口，以及按时间留下的交接记录和归档。
 
 ## 开发者入口
 
@@ -14,7 +14,7 @@
 
 ## 台账
 
-每一轮实验的实测数字和结论：[bottle](ledger/bottle.md)、[crate 与 warehouse](ledger/crate.md)、[pick-and-place](ledger/pick_place.md)、[ScaleBFM](ledger/scalebfm.md)、[Blender 场景](ledger/blender_scenes.md)、[上一次重构](ledger/refactor.md)。
+场景 RSI 的实测数字和结论在[进展报告](handoff/scene-rsi-report-20261019.md)和[方案](handoff/scene-rsi-plan-20261016.md)里。已归档的 VLA 线，每一轮实验的实测数字和结论：[bottle](ledger/bottle.md)、[crate 与 warehouse](ledger/crate.md)、[pick-and-place](ledger/pick_place.md)、[ScaleBFM](ledger/scalebfm.md)、[Blender 场景](ledger/blender_scenes.md)、[上一次重构](ledger/refactor.md)。
 
 ## 排查线索
 

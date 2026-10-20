@@ -5,11 +5,11 @@ Each kind of material has one home; other documents link to it. Moved here from
 
 | Material to add or change | Owning document / update rule |
 |---|---|
-| Project summary, the three main lines, the one-line list of every other document | [Root README](../../README.md). A new document gets one line there saying what it is for; a new main line gets a table row and a runbook |
-| **How to run a main line**: commands, what each does, what it produces, the few common errors | That line's runbook ([bottle](../single_arm.md), [crate](../bimanual.md), [warehouse](../warehouse.md)); commands and results only, no design reasoning, no dated history, no default values the field table owns |
-| Shared mechanics: experiment files, CLI arguments, skip/resume, parallel runs, the stack, the eval clock | [Running](../running.md); runbooks link to it instead of repeating it |
-| **Why a line is built this way**, its extra troubleshooting, and detail the runbook leaves out | That line's design page ([bottle](../single_arm_design.md), [crate](../bimanual_design.md), [warehouse](../warehouse_design.md)) |
-| **What a run produced on a given day** | That line's ledger ([bottle](../ledger/bottle.md), [crate and warehouse](../ledger/crate.md)) |
+| Project summary, the main line (scene RSI since 2026-10-20), the one-line list of every other document, the archive section | [Root README](../../README.md). A new document gets one line there saying what it is for. Archived pages (the VLA collection and training line, 2026-10-20) stay where they are, carry a one-line archive note at the top, are listed only in the README's archive section and are not updated with the code |
+| **How to run the main line**: commands, what each does, what it produces, the few common errors | [Scene RSI runbook](../rsi.md); commands and results only, no design reasoning, no dated history. The archived VLA runbooks ([bottle](../single_arm.md), [crate](../bimanual.md), [warehouse](../warehouse.md)) keep their old rule |
+| Shared mechanics of the archived VLA line: experiment files, CLI arguments, skip/resume, parallel runs, the stack, the eval clock | [Running](../running.md) (archived) |
+| **Why the main line is built this way**, its extra troubleshooting, and detail the runbook leaves out | [Scene RSI design](../rsi_design.md); the dated decisions stay in the [plan](../handoff/scene-rsi-plan-20261016.md) |
+| **What a run produced on a given day** | Scene RSI: the [progress report](../handoff/scene-rsi-report-20261019.md) and the plan; the archived lines' ledgers ([bottle](../ledger/bottle.md), [crate and warehouse](../ledger/crate.md)) |
 | Installation | [Setup](../setup.md): each step is the command, what it does and how to verify it; pitfalls go in its closing troubleshooting section |
 | A term the guides use without explaining | [Glossary](../reference/glossary.md); define it once and link it |
 | Configuration fields and defaults | Owning code; regenerate the [field reference](../reference/config_fields.md) with `make config-doc` |

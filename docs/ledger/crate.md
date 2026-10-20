@@ -4,6 +4,8 @@
 
 # 台账:crate(双臂搬箱)线
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](../rsi.md)。
+
 ## 2026-09-07 wall pilot 验收判据(来自 `docs/bimanual_design.md` §5,表格原样保留在教程里)
 
 `run_wall_pilot.sh` 10 集 pilot 的验收表,`WALL_FEATURE=rail`:

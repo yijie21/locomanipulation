@@ -32,11 +32,15 @@ GUIDES = {
     "docs/bimanual.md": 125,
     "docs/warehouse.md": 300,  # 2026-10-04 (user): raised from 220 (2026-09-30: + step 8 wrap-up, stop_unreal.sh)
     "docs/running.md": 180,
-    "docs/setup.md": 440,  # 2026-09-29: + step 8 (Unreal) in the steps' format and its troubleshooting
-    "docs/warehouse_design.md": 120,
+    "docs/setup.md": 490,  # 2026-09-29: + step 8 (Unreal); 2026-10-20: + steps 9-12 (scene RSI: /venv/main, ADT, ScaleBFM, Claude CLI)
+    "docs/warehouse_design.md": 122,  # 2026-10-20: + the archive note
     # 2026-10-12: the GraspNet-object line (grasp cache or graspnet), a side line with its own runbook and design page
     "docs/object_grasp.md": 130,
     "docs/object_grasp_design.md": 95,
+    # 2026-10-20 (user): the scene RSI line is the main line; its runbook (four levels, the check of recorded results)
+    # and its design page. The VLA pages above are archived in place.
+    "docs/rsi.md": 215,
+    "docs/rsi_design.md": 150,
     "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,
     "docs/reference/change-map-bottle.md": 45,
@@ -64,6 +68,7 @@ COMMAND_DOCUMENTS = (
     "docs/warehouse.md",
     "docs/running.md",
     "docs/object_grasp.md",
+    "docs/rsi.md",  # 2026-10-20: the main line's runbook
 )
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")

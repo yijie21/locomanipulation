@@ -1,5 +1,7 @@
 # pick_place 台账
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](../rsi.md)。
+
 走到桌前,右手抓起罐头,放进左边的篮子。设计见 `docs/handoff/pick_place_plan.md`,实现在
 `src/locomani/tasks/bottle/place_phase.py`(bottle 专家的 1–3 步原样复用,lift 之后由
 `BottleTaskConfig.goal` 切到 place 阶段),Task 注册为 `pick_place`(`src/locomani/tasks/pick_place/`),

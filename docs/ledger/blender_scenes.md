@@ -3,6 +3,8 @@
 
 # Blender 场景导入台账
 
+> **已归档（2026-10-20）**：VLA 数据采集与训练这一系列暂不使用，这一页不再随代码更新，命令可能已经跑不通。现在的主线是[场景 RSI](../rsi.md)。
+
 ## 1. 物流间首次贯通:四个单位错误,以及一个没解开的渲染差异(2026-09-19/20, 本 session)
 
 **素材**:`assets/blender/logistics_room.blend`(102 MB)与 `NOR_CAL_Box_Refined_V2.blend`(50 MB)。

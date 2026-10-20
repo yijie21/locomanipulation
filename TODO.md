@@ -1060,4 +1060,15 @@
 - [x] 28.1 AMO 接进我们的仿真（`src/locomani/backends/amo/runtime.py`）：SIMPLE 自带的 AMO 权重（RSS 2025，下层 RL 策略只出腿 12 + 腰 3，读肩肘 8 个角；`adapter_jit` 把高度和躯干指令换成腿腰参考角），观测与 SIMPLE `AMO_Policy` 逐拍对上（误差 2e-7）。准入（mars G1，平地，各 10 次）：站 30 s、走、转 90°、下蹲到 0.65 / 0.55 / 0.45、前倾 0.5 / 1.0 rad 全部不摔；但只交付约一半速度指令，0.45 m 高度指令落在 0.58 m（`scripts/experiments/amo_compare_20261020/admission.py`）
 - [x] 28.2 AMO 版动作层（`src/locomani/backends/amo/motor.py`，接口同 ScaleBFM 的 `Motor`，技能代码不改；`SceneWorld(controller="amo")`、`scene_round.py --controller amo`）：腿腰走 AMO 指令（位置闭环 + 速度死区补偿），手臂每拍按实测躯干解 IK。平地基本动作（`motor_check.py loco --controller amo`）：走路、转身、侧移停位 1.1–1.4 cm（ScaleBFM 1.2–2.0）；下蹲时躯干不前倾（ScaleBFM 0.6 m 时前倾 25–54°）；伸手 1.15 m 高处 1.0 cm、中低处 0.7–4.6 cm、0.35 m 低处 6.3 cm（ScaleBFM 0.75–1.0）。全身 IK 必须锁住腰的偏航和侧倾（`waist_dofs="pitch"`）：放开时参考姿势扭腰 23°、侧倾 17°，ScaleBFM 不跟踪躯干所以没事，AMO 照做就往后退 30 cm 到 1.5 m（一度误判成“手臂举高 AMO 自己走开”）。另外 AMO 站着时腰会弯到 0.52 rad 上限，站立参考的腿腰要固定用复位姿势，否则参考越来越前倾
 - [x] 28.3 场景任务冒烟（`tasks.py --smoke`，10 个任务各 1 个封存起点，同起点同技能配对，`stability.py`）：第 4 轮 AMO 2 / 10、ScaleBFM 8 / 10（p 0.016），AMO 掉物 3 次；任务里躯干角速度 p95 59–79 对 40–57 °/s，站着时漂移更大——不更稳。主因是技能在 ScaleBFM 上长成（例：拿书要前倾 60°，AMO 手前伸时最多 36°）
-- [ ] 28.4 待用户定：停在这里，或让 RSI 在 AMO 上重学一族（如 `pick_single`，约 5 h）再比；整套 92 局配对（`tasks.py run`，约 2 h）只在要更多数字时跑
+- [x] 28.4 用户 10-20 定：还是用 ScaleBFM（“就还是用 scalebfm 吧”），AMO 不再往下做。原文：待用户定：停在这里，或让 RSI 在 AMO 上重学一族（如 `pick_single`，约 5 h）再比；整套 92 局配对（`tasks.py run`，约 2 h）只在要更多数字时跑
+
+## 29. 文档以场景 RSI 为主线，别的开发者能照着复现进化（用户 2026-10-20；DECISIONS 2026-10-20 TODO 29）
+
+- [x] 29.1 README 主线换成场景 RSI；VLA 采集和训练的文档原地归档（每页顶部一句，README 末尾一节）
+- [x] 29.2 `docs/rsi.md`（命令：建场景、L0、核对已记录结果、L1–L3、视频、常见错误）和 `docs/rsi_design.md`（怎么工作、为什么）；`setup.md` 加第 9–12 步；术语表、文档维护规则、开发者索引跟着改
+- [x] 29.3 代码搬到 `scripts/rsi/`（数据目录名不变；搬之前建的沙盒保留旧布局，`outer.py select` 两处都读）
+- [x] 29.4 复现材料 `rsi_kit/`（`scripts/rsi/kit.py pack / restore / seed`，`export-ignore`，`loop.py` 记录检查查它）：6.5 MB、3899 个文件，结局取 `surfaces_20261020`；`git archive HEAD` 里没有它；恢复到空目录试过两次
+- [ ] 29.5 新读者测试：没看过项目的 Claude 在干净环境里只照 README 和 `docs/rsi.md` 跑建场景、L0、核对一个任务族、L1（pick_single）；卡住的地方改文档
+- [x] 29.6 种子技能目录（`801a28c^`，和 pick-a 沙盒开局的技能目录逐字节相同）在今天的运行器上能跑：pick_single 两个封存起点和 10-16 一样失败（摔倒；手没碰到遥控器）
+- [ ] 29.7 空地场景 `outputs/scene/walk_mars`（动作层探针、`motor_check.py` 用）没有登记构建命令，要补进 `configs/scenes.yaml`
+- [ ] 29.8 测试 `test_scalebfm_rsi_phase4.py::Restore` 在工作树的提交钩子里继承了 `GIT_DIR`，临时仓库的 `git init` 把共享的 `.git/config` 改成 `bare = true`（10-20 09:06，已改回 `false`，测试已清掉 `GIT_*`）；别的测试里还有没有同样在钩子里跑 git 的，待查
