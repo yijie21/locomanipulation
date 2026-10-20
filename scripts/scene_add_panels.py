@@ -91,6 +91,8 @@ def main(argv=None) -> int:
         n_free = 0
         for key in free:  # the free body's colliders: its hull, or a free container's boxes
             s, n = re.subn(rf'(<geom name="adt_obj_{re.escape(key)}_[^"]*" (?![^>]*conaffinity)[^>]*?)( ?/>)', rf'\1 conaffinity="{bits}"\2', s)  # fmt: skip
+            if not n:  # a scene whose panels scene_fix_surface_heights.py took out keeps its free colliders' bits
+                n = len(re.findall(rf'<geom name="adt_obj_{re.escape(key)}_[^"]*" [^>]*conaffinity="{bits}"', s))
             assert n >= 1, (name, key)
             n_free += n
         path.write_text(s)

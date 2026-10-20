@@ -55,6 +55,8 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
     m.reset(start.robot_xy, start.robot_yaw)
     for k, (pos, quat) in start.placements.items():
         m.place(world.meta["objects"][k]["body"], pos, quat)
+    seated = {k: round(world.seat(k), 4) for k in start.placements}  # placements drawn on older surface heights
+    seated = {k: v for k, v in seated.items() if v > 0}
     ctx = SkillContext(world, task, np.random.default_rng(start.seed))
     ctx.note("settle", m.hold(SETTLE_S))
     try:
@@ -76,6 +78,7 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         error=error,
         steps=ctx.log,
         fell=fell,
+        seated=seated,
         t_end=round(m.t, 2),
         wall_s=round(time.time() - wall, 1),
     )

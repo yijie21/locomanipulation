@@ -12,6 +12,7 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import mujoco
 import numpy as np
 
 from locomani.backends.scalebfm import runtime as R
@@ -19,6 +20,7 @@ from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.scalebfm.motor import Motor, MotorConfig
 from locomani.primitives.navigator import build as build_navigation
 from locomani.scene_discovery.predicates import compile_goal, parse
+from locomani.scene_discovery.scene_file import to_surface_frame
 
 GRIP_LAW = dict(grip_kp=1.5, grip_kd=0.1, grip_clip=20.0)
 # navigation inflation: the navigator's 0.26 m (arms tucked, SONIC) let a path run 0.33 m from the kitchen island's
@@ -100,6 +102,12 @@ def physics_scene(scene_dir) -> Path:
     return dst
 
 
+SEAT_BAND_M = 0.05  # SceneWorld.seat lifts an object whose underside is up to this far into a surface it is over
+# ... and deeper than this: the pools' placements already start their hulls up to 0.9 cm into the slab (the hull is a
+# little larger than the object; the settle hold pushes them out), and at 1.2 cm none of 1496 is lifted (2026-10-20)
+SEAT_TOLERANCE_M = 0.012
+
+
 class SceneWorld:
     """`scene_dir` holds scene_meta.json + scene_locomani.xml (scripts/adt_to_scene.py mujoco); the sim runs its
     physics copy (`physics_scene`). `controller` "amo" runs AMO (backends/amo, TODO 28) under the same motor
@@ -147,6 +155,47 @@ class SceneWorld:
         if key not in self._goals:
             self._goals[key] = compile_goal(list(goal), self.meta)
         return self._goals[key]
+
+    def underside(self, key: str) -> float:
+        """World z of the lowest vertex of a free object's colliders (mesh hulls; other shapes by their bounding box)."""
+        m, d = self.sim.m, self.sim.d
+        mujoco.mj_kinematics(m, d)
+        low = np.inf
+        for g in range(m.ngeom):
+            if m.geom_bodyid[g] != self.free[key] or not (m.geom_contype[g] or m.geom_conaffinity[g]):
+                continue
+            R_g = d.geom_xmat[g].reshape(3, 3)
+            if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH:
+                a, k = m.mesh_vertadr[m.geom_dataid[g]], m.mesh_vertnum[m.geom_dataid[g]]
+                low = min(low, float((d.geom_xpos[g] + m.mesh_vert[a : a + k] @ R_g.T)[:, 2].min()))
+            else:
+                low = min(
+                    low, float(d.geom_xpos[g][2] + R_g[2] @ m.geom_aabb[g, :3] - np.abs(R_g[2]) @ m.geom_aabb[g, 3:])
+                )
+        return low
+
+    def seat(self, key: str) -> float:
+        """Lift a free object a start placed into a surface's slab onto the slab's top; returns the lift (m, 0 when it
+        rests on or above every surface it is over). The pools' placements were drawn on the surface heights of their
+        day: 17 of them were 0.5-3.7 cm low until 2026-10-20 (TODO 27.14), and a placement at the old height starts
+        inside the raised slab, from which the solver may push it either way."""
+        low = self.underside(key)
+        b = self.free[key]
+        xy = self.sim.d.xpos[b][:2]
+        tops = [
+            float(s["top"])
+            for s in self.meta["surfaces"].values()
+            if np.all(np.abs(to_surface_frame(xy, s)) <= np.asarray(s["half_extent"][:2], float))
+            and float(s["top"]) - SEAT_BAND_M < low < float(s["top"]) - SEAT_TOLERANCE_M
+        ]
+        if not tops:
+            return 0.0
+        lift = max(tops) - low + 0.0005
+        m = self.sim.m
+        adr = int(m.jnt_qposadr[m.body_jntadr[b]])
+        self.sim.d.qpos[adr + 2] += lift
+        mujoco.mj_forward(m, self.sim.d)
+        return float(lift)
 
     def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         """(pos, quat) of a free object now, or a static one's scene-file pose."""

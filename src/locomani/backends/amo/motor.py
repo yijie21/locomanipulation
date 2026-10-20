@@ -259,6 +259,7 @@ class AmoMotor(Motor):
                 ref_wrists=np.array([self.cmd_jaw[s][0] - self.cmd_jaw[s][1] @ R.OFF for s in SIDES]),
                 wrists=np.array([sim.body(WRIST[s])[0] for s in SIDES]),
                 jaw=self.jaw.copy(),
+                fingers=sim.d.qpos[sim.gq].copy(),
                 objects={n: np.r_[sim.d.xpos[b], sim.d.xquat[b]] for n, b in self.track.items()},
                 cmd=np.array(
                     [

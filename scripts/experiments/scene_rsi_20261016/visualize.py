@@ -44,6 +44,7 @@ VERSIONS = [("b897126e9dde", "种子"), ("7ec46c87bf5c", "第 0 轮后"), ("e8ce
             ("acd864174766", "第 2 轮后"), ("0109bde905a8", "第 3 轮后")]  # fmt: skip
 OBJECT = {"canister": "CoffeeCanisterLarge", "mug": "Mug_2", "jam": "Jam_Anon", "orange": "Orange_A",
           "dish_soap": "DishSoap_1", "tv_remote": "TvRemote_1", "thick_novel": "BookFiction1_01", "wallet": "Wallet_1"}  # fmt: skip
+FINGER_RANGE = (-0.02, 0.0245)  # the dex1 finger slide joints
 JAW_X, PALM_X = 0.1515, 0.1108  # wrist frame: jaw centre, front face of the gripper base (robot.xml collision mesh)
 PANEL = (640, 400)
 SPEED = 2  # video plays the round at this multiple of real time
@@ -188,7 +189,11 @@ class Scene:
         a = self.obj_qadr(r.key[4:])
         q[a : a + 7] = z[r.key][i]
         for s, side in enumerate(("left", "right")):
-            q[self.grip[side]] = z["jaw"][i, s]
+            # the measured fingers (traces from 2026-10-20 on); before, only the command was kept: it is past the joint
+            # limit while gripping (-0.06), so drawn as is the fingers crossed outside the object (TODO 27.14)
+            q[self.grip[side]] = (
+                z["fingers"][i, 2 * s : 2 * s + 2] if "fingers" in z else np.clip(z["jaw"][i, s], *FINGER_RANGE)
+            )
         self.d.qpos[:] = q
         mujoco.mj_kinematics(self.m, self.d)
 

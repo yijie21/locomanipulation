@@ -103,6 +103,15 @@ def test_shelf_boards_split_by_height_and_small_or_downward_faces_drop():
     assert sorted(r["top"] for r in regions) == pytest.approx([0.301, 0.70], abs=0.002)
 
 
+def test_a_board_outweighs_its_finely_tessellated_trim():
+    # the ADT TV stand: a top board of two large triangles over hundreds of small trim faces 1 cm lower, one level
+    board = _box_top(0, 0, 0.7, 0.2, 0, 0.545)
+    trim = np.concatenate([_box_top(0.7 - 0.01 * k, 0.21, 0.004, 0.004, 0, 0.535) for k in range(150)])
+    tris = np.concatenate([board, trim])
+    assert surfaces.horizontal_regions(tris)[0]["top"] == pytest.approx(0.545, abs=1e-3)
+    assert surfaces.horizontal_regions(tris, height="count")[0]["top"] == pytest.approx(0.535, abs=1e-3)
+
+
 def test_a_seat_inside_its_sofa_still_gets_its_front_edge():
     grid, walls, _ = plan()
     sofa = grid.polygons([[[5.0, 3.0], [7.0, 3.0], [7.0, 3.9], [5.0, 3.9]]])  # against the top wall

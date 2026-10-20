@@ -114,7 +114,7 @@ def run(
             )
             rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
                        plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
-                       t_end=ex["t_end"])  # fmt: skip
+                       t_end=ex["t_end"], seated=ex["seated"])  # fmt: skip
             if npz:
                 np.savez_compressed(out / f"{label}.npz", **arrays)
         rec.update(

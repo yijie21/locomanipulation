@@ -387,6 +387,7 @@ class Motor:
                 ref_wrists=np.array([fut[WRIST[s]][0][0] for s in SIDES]),
                 wrists=np.array([sim.body(WRIST[s])[0] for s in SIDES]),
                 jaw=self.jaw.copy(),
+                fingers=sim.d.qpos[sim.gq].copy(),
                 objects={n: np.r_[sim.d.xpos[b], sim.d.xquat[b]] for n, b in self.track.items()},
             )
         )
@@ -794,12 +795,14 @@ class Motor:
     # -- record -----------------------------------------------------------------------------------------------------
     def arrays(self) -> dict:
         """The trace as arrays (npz-ready): t, mode, robot (pelvis xyz + quat), joints, ref_pelvis, ref_wrists, wrists,
-        jaw, primitive (index into `primitives`), one array per tracked object (xyz + quat)."""
+        jaw (the gripper command: past the finger joints' -0.02 limit while gripping), fingers (the four finger joints as
+        measured, left 1, 2, right 1, 2: what a replay draws, TODO 27.14), primitive (index into `primitives`), one array
+        per tracked object (xyz + quat)."""
         rows = self.trace
         names = sorted({r["primitive"] for r in rows})
         out = {
             k: np.array([r[k] for r in rows], dtype=np.float32)
-            for k in ("t", "mode", "robot", "joints", "ref_pelvis", "ref_wrists", "wrists", "jaw")
+            for k in ("t", "mode", "robot", "joints", "ref_pelvis", "ref_wrists", "wrists", "jaw", "fingers")
         }
         out["primitive"] = np.array([names.index(r["primitive"]) for r in rows], dtype=np.int16)
         out["primitives"] = np.array(names)

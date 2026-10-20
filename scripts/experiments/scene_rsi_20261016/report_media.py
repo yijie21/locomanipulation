@@ -306,11 +306,27 @@ def solo(sc: V.Scene, name: str, out_dir: Path) -> Path:
     return compose(sc, out_dir / f"{name}.mp4", panels, caps, [lines[0], meta, "用现在的技能目录跑的一局"], speed, size)
 
 
+def use_rounds(name: str | None) -> None:
+    """Read the videos' rounds from `report/<name>/` (report_rerun.py's tree: `diag/<step family>/`,
+    `untrained/`) instead of the loops' own directories."""
+    global UNTRAINED
+    if not name:
+        return
+    base = REPO / "outputs" / "scene_rsi_20261016" / "report" / name
+    for k in DIAG:
+        DIAG[k] = base / "diag" / k
+    UNTRAINED = base / "untrained"
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--only", default="")
+    ap.add_argument(
+        "--rounds", default="", help="read the rounds from report/<name>/ (report_rerun.py), e.g. rounds_20261020"
+    )
     a = ap.parse_args(argv)
+    use_rounds(a.rounds)
     names = [n for n in [*STEPS, *SOLOS] if not a.only or n in a.only.split(",")]
     sc = V.Scene()
     for n in names:

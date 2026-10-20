@@ -2,7 +2,8 @@
 
 Input is world-frame triangles (z up) of one piece of furniture; output is one oriented rectangle per flat,
 large-enough horizontal region: `{top, xy, half_extent, yaw, area, fill}`. Heights are clustered (a top
-modelled as several slightly offset sheets is one surface), each height level is rasterised at `res` and split
+modelled as several slightly offset sheets is one surface; its height is the level's area-weighted median, so a board
+outweighs its finely tessellated trim), each height level is rasterised at `res` and split
 into connected regions, and each region gets its minimum-area rectangle. `fill` (region area over rectangle
 area) says how well the rectangle describes it; an L-shaped desk scores low and is dropped below `min_fill`.
 Pure numpy / cv2; the glb reading is in `scripts/adt_to_scene.py`.
@@ -23,7 +24,12 @@ def horizontal_regions(
     min_side: float = 0.15,
     z_range: tuple = (0.10, 1.30),
     min_fill: float = 0.6,
+    height: str = "area",
 ) -> list[dict]:
+    """`height`: a level's `top` is its triangles' area-weighted median z ("area"), or the median over the triangles
+    counted one by one ("count", what every scene up to 2026-10-20 was built with). Counted, the densely tessellated
+    trim outvotes the two triangles of a board top: the ADT TV stand's top board is at 0.543-0.545 m and came out
+    0.512, and objects rested inside it (TODO 27.14)."""
     tris = np.asarray(tris, dtype=float).reshape(-1, 3, 3)
     if len(tris) == 0:
         return []
@@ -32,15 +38,27 @@ def horizontal_regions(
     up = (length > 0) & (normal[:, 2] / np.maximum(length, 1e-12) >= min_normal_z)
     z = tris[:, :, 2].mean(axis=1)
     up &= (z >= z_range[0]) & (z <= z_range[1])
-    tris, z = tris[up], z[up]
+    tris, z, area = tris[up], z[up], 0.5 * length[up]
     if len(tris) == 0:
         return []
     order = np.argsort(z)
     breaks = np.flatnonzero(np.diff(z[order]) > gap) + 1
     out = []
     for group in np.split(order, breaks):
-        out.extend(_regions(tris[group], float(np.median(z[group])), res, min_area, min_side, min_fill))
+        out.extend(
+            _regions(tris[group], level_height(z[group], area[group], height), res, min_area, min_side, min_fill)
+        )
     return out
+
+
+def level_height(z: np.ndarray, area: np.ndarray, how: str = "area") -> float:
+    """One height level's z: the area-weighted median of its triangles (`z` sorted ascending), or their plain median."""
+    if how == "count":
+        return float(np.median(z))
+    if how != "area":
+        raise ValueError(f"height must be 'area' or 'count', not {how!r}")
+    cum = np.cumsum(area) / max(float(area.sum()), 1e-12)
+    return float(z[min(int(np.searchsorted(cum, 0.5)), len(z) - 1)])
 
 
 def _regions(tris, top, res, min_area, min_side, min_fill) -> list[dict]:

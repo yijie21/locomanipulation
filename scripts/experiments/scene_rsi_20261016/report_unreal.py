@@ -191,7 +191,14 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("names", nargs="+", help=f"videos, or `all`: {', '.join([*PS, *RM.STEPS, *RM.SOLOS])}")
     ap.add_argument("--out", type=Path, default=OUT)
+    ap.add_argument(
+        "--rounds", default="", help="read the rounds from report/<name>/ (report_rerun.py), e.g. rounds_20261020"
+    )
     a = ap.parse_args(argv)
+    global PICK
+    RM.use_rounds(a.rounds)
+    if a.rounds:
+        PICK = RM.REPO / "outputs" / "scene_rsi_20261016" / "report" / a.rounds / "pick"
     names = [*PS, *RM.STEPS, *RM.SOLOS] if a.names == ["all"] else a.names
     bad = [n for n in names if n not in PS and n not in RM.STEPS and n not in RM.SOLOS]
     if bad:
