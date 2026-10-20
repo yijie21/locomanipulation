@@ -1,7 +1,7 @@
 """TODO 27.2.4 (plan docs/handoff/scene-rsi-plan-20261016.md D7): a task family (families/<name>.json -- the scene, the
 tasks file, the task ids, the pools' seeds and sizes) and its start pools. A pool is a directory of one JSON per start,
 `<task>_s<seed>.json` = {"task", "start"}: start i of a pool takes the family's task i mod n and seed `seed + i`
-(start.sample_start; a start the scene cannot give -- no free spot, no reachable spawn -- or one where the goal already
+(start.sample_start, with the family's `spawn` option; a start the scene cannot give -- no free spot, no reachable spawn -- or one where the goal already
 holds (scene_discovery.lint.goal_holds, plan §12) moves on to the next seed and is recorded). The diagnostic pool lives in the loop's tree, the acceptance and sealed pools in its hidden tree, and the
 sealed pool is drawn only after the loop ends.
 
@@ -58,7 +58,14 @@ def draw(fam: dict, pool: str, out: Path) -> dict:
         for _ in range(SKIP_LIMIT):
             try:
                 st = sample_start(
-                    fam["meta"], occ, nav, list(t.objects), np.random.default_rng(seed), seed=seed, room=t.room
+                    fam["meta"],
+                    occ,
+                    nav,
+                    list(t.objects),
+                    np.random.default_rng(seed),
+                    seed=seed,
+                    room=t.room,
+                    spawn=fam.get("spawn"),
                 )
                 if goal_holds(fam["rows"][t.id]["goal"], fam["meta"], st.to_dict()):
                     raise RuntimeError("the goal holds at the start")

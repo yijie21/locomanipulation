@@ -1,0 +1,108 @@
+{
+ "name": "grasp_atomic",
+ "about": "TODO 31 (user 2026-10-20): held(X), one hand, 10 living-room objects chosen for their grasp situations (open tops at 0.45-0.93 m, flat objects, a low covered shelf, a 1.08 m top shelf, a corner shelf), the robot anywhere in the room it can walk from; the skills package starts empty (the motor layer only); new skills: pick",
+ "scene": "outputs/scene_discovery/adt_apartment_mars",
+ "tasks_file": "scripts/rsi/families/grasp_atomic_tasks.jsonl",
+ "tasks": [
+  "pick_Orange_A",
+  "pick_NIT_CoffeeCan_Anon",
+  "pick_DishSoap_1",
+  "pick_Mug_2",
+  "pick_TvRemote_1",
+  "pick_WoodenSpoon",
+  "pick_CandlePattern02_1",
+  "pick_VaseSmall_2",
+  "pick_Plant4_1",
+  "pick_DisplayWolf"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "pools": {
+  "diag": {
+   "seed": 410000,
+   "n": 30
+  },
+  "accept": {
+   "seed": 510000,
+   "n": 40
+  },
+  "sealed": {
+   "seed": 610000,
+   "n": 50
+  }
+ },
+ "plan": "scripts/rsi/plans/grasp_atomic.md",
+ "skills_note": "the incumbent's skills; the seed was empty (`__init__.py`: plan_for covers no goal), everything else in it the loop wrote",
+ "sandbox": {
+  "seed": "scripts/rsi/seeds/atomic",
+  "keep": [
+   "AGENTS.md",
+   "CLAUDE.md",
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "scripts/rsi/plans/grasp_atomic.md",
+   "scripts/rsi/families/grasp_atomic.json",
+   "scripts/rsi/families/grasp_atomic_tasks.jsonl",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "discovery",
+   "experiments",
+   "feasibility_stock_copy",
+   "unreal_room",
+   "unreal_room_bake.log",
+   "unreal_room_level.log",
+   "unreal_level_build.log",
+   "mujoco_build.log",
+   "lint.json"
+  ]
+ }
+}

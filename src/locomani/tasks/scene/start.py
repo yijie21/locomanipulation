@@ -121,8 +121,19 @@ def spawn_polygons(meta: dict, room: str | None) -> list:
     return [p for polys in spawn.values() for p in polys]
 
 
-def sample_start(meta: dict, occ, nav, objects, rng, *, seed: int, room: str | None = None) -> Start:
-    """`objects` = the task's movable objects (moved), the first one anchors the robot's spawn."""
+def sample_start(
+    meta: dict, occ, nav, objects, rng, *, seed: int, room: str | None = None, spawn: dict | None = None
+) -> Start:
+    """`objects` = the task's movable objects (moved), the first one anchors the robot's spawn. `spawn` (a task
+    family's option, TODO 31): {"rooms": "all"} draws the robot from every room's spawn region (the reachability check
+    keeps only the rooms the navigation map connects to the object), {"distance_m": [lo, hi]} replaces
+    SPAWN_DISTANCE_M (hi None: no upper limit). Without it every start is drawn as before."""
+    spawn = dict(spawn or {})
+    unknown = set(spawn) - {"rooms", "distance_m"}
+    if unknown or spawn.get("rooms", "all") != "all":
+        raise KeyError(f"spawn option: unknown {sorted(unknown) or spawn.get('rooms')}")
+    d_lo, d_hi = spawn.get("distance_m") or SPAWN_DISTANCE_M
+    d_hi = np.inf if d_hi is None else d_hi
     placements, taken = {}, []
     for k, o in meta["objects"].items():  # every object resting on a surface and not moved keeps its spot -- free or
         # not: a movable object that is not free still collides (its hull), and the canister placed on the utility
@@ -137,9 +148,12 @@ def sample_start(meta: dict, occ, nav, objects, rng, *, seed: int, room: str | N
         placements[k] = spot
         taken.append(footprint(meta["objects"][k], spot[0], spot[1]))
     anchor = placements[objects[0]][0][:2] if objects else None
-    polys = spawn_polygons(
-        meta, room or (meta["surfaces"][meta["objects"][objects[0]]["surface"]].get("room") if objects else None)
-    )
+    if spawn.get("rooms") == "all":
+        polys = spawn_polygons(meta, None)
+    else:
+        polys = spawn_polygons(
+            meta, room or (meta["surfaces"][meta["objects"][objects[0]]["surface"]].get("room") if objects else None)
+        )
     if not polys:
         raise RuntimeError("the scene file has no spawn region")
     pts = np.concatenate([np.asarray(p, float) for p in polys])
@@ -152,7 +166,7 @@ def sample_start(meta: dict, occ, nav, objects, rng, *, seed: int, room: str | N
             continue
         if anchor is not None:
             d = float(np.linalg.norm(xy - anchor))
-            if not (SPAWN_DISTANCE_M[0] <= d <= SPAWN_DISTANCE_M[1]) or not nav.reachable(xy):
+            if not (d_lo <= d <= d_hi) or not nav.reachable(xy):
                 continue
         return Start(seed, (float(xy[0]), float(xy[1])), float(rng.uniform(-np.pi, np.pi)), placements)
     raise RuntimeError("no reachable spawn point in the room's spawn region")

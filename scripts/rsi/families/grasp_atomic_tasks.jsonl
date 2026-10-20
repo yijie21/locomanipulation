@@ -1,0 +1,10 @@
+{"id": "pick_Orange_A", "goal": ["held(Orange_A)"], "prompts": ["pick up the orange", "grab the orange"], "room": "living_dining_kitchen"}
+{"id": "pick_NIT_CoffeeCan_Anon", "goal": ["held(NIT_CoffeeCan_Anon)"], "prompts": ["pick up the coffee can", "grab the coffee can"], "room": "living_dining_kitchen"}
+{"id": "pick_DishSoap_1", "goal": ["held(DishSoap_1)"], "prompts": ["pick up the dish soap bottle", "grab the dish soap bottle"], "room": "living_dining_kitchen"}
+{"id": "pick_Mug_2", "goal": ["held(Mug_2)"], "prompts": ["pick up the white mug", "grab the white mug"], "room": "living_dining_kitchen"}
+{"id": "pick_TvRemote_1", "goal": ["held(TvRemote_1)"], "prompts": ["pick up the TV remote", "grab the TV remote"], "room": "living_dining_kitchen"}
+{"id": "pick_WoodenSpoon", "goal": ["held(WoodenSpoon)"], "prompts": ["pick up the wooden spoon", "grab the wooden spoon"], "room": "living_dining_kitchen"}
+{"id": "pick_CandlePattern02_1", "goal": ["held(CandlePattern02_1)"], "prompts": ["pick up the first pattern-2 candle", "grab the first pattern-2 candle"], "room": "living_dining_kitchen"}
+{"id": "pick_VaseSmall_2", "goal": ["held(VaseSmall_2)"], "prompts": ["pick up the second small vase", "grab the second small vase"], "room": "living_dining_kitchen"}
+{"id": "pick_Plant4_1", "goal": ["held(Plant4_1)"], "prompts": ["pick up the tallest potted plant", "grab the tallest potted plant"], "room": "living_dining_kitchen"}
+{"id": "pick_DisplayWolf", "goal": ["held(DisplayWolf)"], "prompts": ["pick up the wolf figurine", "grab the wolf figurine"], "room": "living_dining_kitchen"}

@@ -1,8 +1,8 @@
 """The scene-task runner's pure parts (TODO 27.2.3, src/locomani/tasks/scene/): object placement stays on its surface and
 clear of what rests there (oriented footprints), the robot spawns free, in the spawn region, at the asked distance and
 with the object reachable; a walk is cut into straight legs that stay on traversable cells; a task names its free
-objects; the seed pick chooses an edge from which a side of the object fits the jaw. Live: scripts/experiments/
-scene_rsi_20261016/episode_check.py."""
+objects; a family's spawn option widens the spawn to every room and any distance. The skills catalog's own tests are
+in test_scene_skills_catalog.py (a sandbox with another seed drops them). Live: scripts/rsi/episode_check.py."""
 
 import unittest
 
@@ -12,7 +12,6 @@ from locomani.primitives.navigator import build
 from locomani.tasks.scene import start as S
 from locomani.tasks.scene.episode import goal_keys
 from locomani.tasks.scene.navigate import line_clear, path
-from locomani.tasks.scene.skills.pick import JAW_SPAN_M, facings, grasp_yaw
 from locomani.tasks.scene.world import Task
 
 
@@ -90,6 +89,26 @@ class Placement(unittest.TestCase):
         again = S.Start.from_dict(st.to_dict())
         np.testing.assert_allclose(again.placements["Can"][0], st.placements["Can"][0])
 
+    def test_spawn_option_takes_every_room_and_any_distance(self):
+        m = meta()
+        m["room"]["spawn"]["q"] = [[[3.0, 2.0], [3.0, 2.8], [2.0, 2.8], [2.0, 2.0]]]
+        m["surfaces"]["T"]["room"] = "q"  # the object's own room is the small corner: the default spawns only there
+        occ, nav = build(m)
+        can = None
+        for seed in range(10):
+            st = S.sample_start(m, occ, nav, ["Can"], np.random.default_rng(seed), seed=seed,
+                                spawn={"rooms": "all", "distance_m": [0.5, None]})  # fmt: skip
+            xy, can = np.asarray(st.robot_xy), st.placements["Can"][0][:2]
+            self.assertGreaterEqual(np.linalg.norm(xy - can), 0.5)
+            nav.set_goal_ring(can, *S.APPROACH_RING_M)
+            self.assertTrue(nav.reachable(xy))
+            if not (2.0 <= xy[0] <= 3.0 and 2.0 <= xy[1] <= 2.8):
+                break
+        else:
+            self.fail("every spawn fell in the object's own room")
+        with self.assertRaises(KeyError):
+            S.sample_start(m, occ, nav, ["Can"], np.random.default_rng(0), seed=0, spawn={"room": "all"})
+
 
 class Paths(unittest.TestCase):
     def test_path_goes_around_the_table_in_straight_clear_legs(self):
@@ -103,80 +122,12 @@ class Paths(unittest.TestCase):
         np.testing.assert_allclose(corners[-1], [2.0, 0.0])
 
 
-class TasksAndPick(unittest.TestCase):
+class Tasks(unittest.TestCase):
     def test_task_names_its_free_objects(self):
         t = Task.from_row({"id": "x", "goal": ["on(Can, T)", "near(Box, Tray, 0.2)", "upright(Can)"]}, meta())
         self.assertEqual(t.objects, ("Can", "Box"))
         self.assertEqual(goal_keys(t.goal), ["Can", "T", "Box", "Tray"])
 
-    def test_pick_faces_an_edge_whose_approach_closes_across_a_fitting_side(self):
-        m = meta()
-        f = facings(m["surfaces"]["T"], [0.3, 0.2])
-        self.assertEqual(len(f), 2)
-        self.assertLessEqual(f[0][1], f[1][1])
-        # 8 x 12 cm can lying along x: only an approach along x (from the +x edge, facing -x) closes across 8 cm
-        half = [0.06, 0.04, 0.09]
-        self.assertIsNone(grasp_yaw(yaw_quat(0.0), half, -np.pi / 2))  # from the -y edge, facing +y
-        self.assertAlmostEqual(abs(grasp_yaw(yaw_quat(0.0), half, np.pi)), np.pi)
-        self.assertEqual(grasp_yaw(yaw_quat(0.3), [JAW_SPAN_M / 2] * 3, 1.0), 1.0)  # both sides fit: face it
-
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class GraspProgram(unittest.TestCase):
-    """The ported hand program's laws (skills/grasp_program.py = bfm_grasp's)."""
-
-    def test_entry_command_stops_past_the_grip_by_the_overshoot(self):
-        from locomani.tasks.scene.skills.grasp_program import entry_captured, entry_command
-
-        d = np.array([1.0, 0.0, 0.0])
-        cmd, grip = np.zeros(3), np.array([0.05, 0.0, 0.0])
-        for _ in range(200):
-            cmd = entry_command(cmd, grip, d, 0.06, 0.02, 0.02)
-        np.testing.assert_allclose(cmd, [0.07, 0.0, 0.0])
-        self.assertTrue(entry_captured(np.array([0.045, 0, 0]), grip, d, 0.01))
-        self.assertFalse(entry_captured(np.array([0.035, 0, 0]), grip, d, 0.01))
-
-    def test_tracking_keeps_its_origin_and_moves_at_most_its_speed(self):
-        from locomani.tasks.scene.skills.grasp_program import TRACKING, Tracking
-
-        tr = Tracking()
-        first = tr.step(np.array([0.1, 0, 0]), np.zeros(3), 0.02)
-        np.testing.assert_allclose(first, [0.1, 0, 0])  # the first error is the origin, kept
-        prev = first.copy()
-        for _ in range(50):  # the hand now lags 3 cm more: the feedback follows, no faster than its speed
-            fb = tr.step(np.array([0.1, 0, 0]), np.array([-0.03, 0, 0]), 0.02)
-            self.assertLessEqual(np.linalg.norm(fb - prev), TRACKING["speed"] * 0.02 + 1e-12)
-            prev = fb.copy()
-        self.assertGreater(prev[0], 0.1)
-
-    def test_span_across_the_jaw(self):
-        from locomani.tasks.scene.skills.pick import span
-
-        half = [0.06, 0.04, 0.09]
-        self.assertAlmostEqual(span(yaw_quat(0.0), half, 0.0), 0.08)  # approach along x: closes across y (8 cm)
-        self.assertAlmostEqual(span(yaw_quat(0.0), half, np.pi / 2), 0.12)
-
-
-class SkillParameters(unittest.TestCase):
-    def test_apply_set_reaches_modules_and_dict_entries_and_refuses_typos(self):
-        import importlib
-
-        import locomani.tasks.scene.skills as skills
-
-        try:
-            done = skills.apply_set(skills, {"PLAN_HELD": "pick_simple", "pick.STAND_AHEAD_M": 0.38,
-                                             "grasp_program.ENTRY_GATE.lateral_m": 0.008})  # fmt: skip
-            self.assertEqual(len(done), 3)
-            self.assertEqual(skills.PLAN_HELD, "pick_simple")
-            self.assertEqual(skills.pick.STAND_AHEAD_M, 0.38)
-            self.assertEqual(skills.grasp_program.ENTRY_GATE["lateral_m"], 0.008)
-            for bad in ("pick.STAND_AHEAD", "grasp_program.ENTRY_GATE.lateral", "NOPE"):
-                with self.assertRaises(KeyError):
-                    skills.apply_set(skills, {bad: 1})
-            self.assertIn("grasp_program.DASH_SPEED", skills.parameters(skills))
-        finally:
-            for m in (skills.grasp_program, skills.pick, skills):
-                importlib.reload(m)

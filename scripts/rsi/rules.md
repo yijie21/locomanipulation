@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 7, 2026-10-20)
+# Rules for the scene RSI loop (TODO 27, version 8, 2026-10-20)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -83,3 +83,11 @@ rule is a new version of this file, committed, and counted as one human interven
     size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a
     candidate's gain on the live tasks can be told from chance. Parked starts still count in the sealed pool and in
     the diagnostic pool (version 6, user 2026-10-19).
+
+27. A family whose skills package starts from an empty seed (its file's `sandbox.seed`; `grasp_atomic`, TODO 31)
+    builds its goal's skills from the motor layer: the seed covers no goal and has no parameters, so the first
+    hypotheses are code (`needs_code`) with an empty parameter test, and the first candidates may be a plain
+    end-to-end version, improved one Engineer call at a time (rule 24 without an existing pick to reuse). Grasps are
+    computed from the scene's geometry (the object's box and mesh, its surface, the gripper's size). The sandbox holds
+    no earlier skill catalog, loop record or grasp program; do not look for them outside it (version 8, user
+    2026-10-20).

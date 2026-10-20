@@ -77,6 +77,10 @@ GPUS = "0,1"
 ORIGIN = (REPO / "third_party").resolve().parent  # a sandbox links third_party to the origin checkout
 SCRATCH_ROOT = Path("/workspace/tmp")
 ROLE_GRACE_S = 120  # after a role answers, its leftover processes get this long before the driver kills them
+SKILLS_NOTE = (
+    "the incumbent's skills; `pick.py` chooses the edge, the grasp yaw and the stance, `grasp_program.py` is the "
+    "ported closed-loop hand program"
+)
 ISOLATION = (
     "\n\nThis checkout ({REPO}) and your scratch directory ({TMP}) are the whole world for this run. Do not read "
     "anything outside them: no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
@@ -186,11 +190,31 @@ ENGINEER_SCHEMA = {
 
 
 def configure(family: str) -> None:
-    global FAMILY, LOOP, HIDDEN, STATE, GATE_DIR
+    global FAMILY, LOOP, HIDDEN, STATE, GATE_DIR, PLAN
     FAMILY = family
     LOOP = REPO / "outputs" / "scene_rsi_20261016" / family
     HIDDEN = REPO / "outputs" / "scene_rsi_20261016_hidden" / family  # acceptance / sealed pools and the gate
     STATE, GATE_DIR = LOOP / "loop", HIDDEN / "gate"
+    spec = family_spec()
+    PLAN = REPO / spec["plan"] if spec.get("plan") else REPO / "docs" / "handoff" / "scene-rsi-plan-20261016.md"
+
+
+def family_spec() -> dict:
+    p = HERE / "families" / f"{FAMILY}.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
+def prompt_vars() -> dict:
+    """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, and the
+    pool sizes. A family without them gets the text the prompts had before."""
+    spec = family_spec()
+    pools = spec.get("pools") or {}
+    return dict(
+        PLAN=PLAN,
+        SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
+        N_DIAG=(pools.get("diag") or {}).get("n", 50),
+        N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
+    )
 
 
 def now() -> str:
@@ -741,7 +765,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     unpark(base, n)
     digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
     digest.write_text(DG.build(base, FAMILY))
-    common = dict(RULES=RULES, PLAN=PLAN, LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+    common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp(), DIGEST=digest)  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
@@ -750,7 +774,8 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     jdump(ctx, context(inc, extra))
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", evidence="stub",
-                  delta={"set": {"PLAN_HELD": "pick_simple"}}, predicted_fixed=[], predicted_broken=[])])  # fmt: skip
+                  delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},
+                  predicted_fixed=[], predicted_broken=[])])  # fmt: skip
     hyps, acct = claude(
         "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
     )
@@ -911,7 +936,7 @@ def reprobe(n: int, stub: bool) -> str | None:
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
     unpark(base, n)
-    common = dict(RULES=RULES, PLAN=PLAN, LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+    common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp())  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus={},
