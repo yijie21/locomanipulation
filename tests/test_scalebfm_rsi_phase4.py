@@ -122,10 +122,16 @@ class Labels(unittest.TestCase):
 
 class Restore(unittest.TestCase):
     def test_rejected_edits_go_back_and_tracked_files_survive(self):
+        import os
         import subprocess
         import tempfile
+        from unittest import mock
 
-        with tempfile.TemporaryDirectory() as d:
+        # Run from a commit hook, git exports GIT_INDEX_FILE and friends: the scratch repository's commands (and the
+        # restore under test) would act on the committing worktree's index (2026-10-20, a worktree commit staged
+        # clean.py and dirty.py). Clear them for this test.
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        with tempfile.TemporaryDirectory() as d, mock.patch.dict(os.environ, clean, clear=True):
             repo = Path(d)
             git = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)  # noqa: E731
             git("init", "-q")

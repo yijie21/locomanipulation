@@ -25,7 +25,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-sys.path[:0] = [str(HERE), str(REPO / "scripts/experiments/scene_rsi_20261016"), str(REPO / "src")]
+sys.path[:0] = [str(HERE), str(REPO / "scripts/rsi"), str(REPO / "src")]
 
 import tasks as T  # noqa: E402
 

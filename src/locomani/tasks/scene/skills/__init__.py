@@ -4,7 +4,7 @@ plan for a goal shape. The loop's Engineer adds and changes skills here; the mot
 switches.
 
 The package is loaded both as `locomani.tasks.scene.skills` and, by the loop, from a candidate's snapshot directory
-under another name (scripts/experiments/scene_rsi_20261016/scene_round.py), so modules here import each other
+under another name (scripts/rsi/scene_round.py), so modules here import each other
 relatively. `apply_set` is how a probe or a candidate overrides a parameter without editing code."""
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-SCENE = REPO / "scripts/experiments/scene_rsi_20261016"
+SCENE = REPO / "scripts/rsi"
 sys.path[:0] = [str(HERE), str(SCENE), str(REPO / "src")]
 
 import batch as B  # noqa: E402

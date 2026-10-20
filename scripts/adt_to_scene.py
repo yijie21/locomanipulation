@@ -368,7 +368,7 @@ SURFACE_CLEAR_M = 0.02  # a holding piece's collider stops this far under its lo
 # to step at the runner's 5 ms, and resting objects turned by themselves (the wallet 2 deg/s, potted plants 4 deg/s;
 # torsional friction, elliptic cones and noslip did not stop it). Contacts found 1 mm early keep a steady set: it rests
 # 0.8 mm above the slab instead of 0.75 mm in it. On the slabs, not the objects, so jaw-object contacts are unchanged
-# (a contact takes the larger margin of its two geoms). scripts/experiments/scene_rsi_20261016/spin_check.py measures it.
+# (a contact takes the larger margin of its two geoms). scripts/rsi/spin_check.py measures it.
 SLAB_MARGIN = "0.001"
 OBJECT_ONLY_BIT = 2  # side panels (contype; scripts/scene_add_panels.py) and free objects (conaffinity): a contact the
 # robot never makes

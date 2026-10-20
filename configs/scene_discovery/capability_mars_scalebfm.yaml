@@ -1,5 +1,5 @@
 # What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scene RSI plan D10, TODO 27.3; phase 1, 2026-10-19).
-# Written by scripts/experiments/scene_rsi_20261016/capability_write.py from the phase-1 probes and the inner loops'
+# Written by scripts/rsi/capability_write.py from the phase-1 probes and the inner loops'
 # sealed results -- edit the probes or the writer, not this file. The SONIC table of 2026-10-03 stays in
 # capability.yaml; scripts/scene_feasibility.py --capability picks one.
 #
@@ -47,7 +47,7 @@ locomotion:
     yaw_err_deg:
     - 0.1
     - 1.9
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
   step_back:
     status: measured
     n: 2
@@ -59,7 +59,7 @@ locomotion:
     yaw_err_deg:
     - 0.0
     - 0.6
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
   sidestep:
     status: measured
     n: 6
@@ -71,7 +71,7 @@ locomotion:
     yaw_err_deg:
     - 1.0
     - 3.8
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
   turn_in_place:
     status: measured
     n: 5
@@ -83,14 +83,14 @@ locomotion:
     yaw_err_deg:
     - 0.9
     - 5.9
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
   stand_30s:
     status: measured
     ok: true
     drift_cm: 0.6
     feet_cm: 31.0
     note: mode 4 pins the ankles; mode 2 standing spreads the feet (plan 7.1)
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/loco/
   navigation:
     status: measured_one
     setting: ADT apartment, occupancy-map routes at body radius 0.35 m from a random spawn 1-3 m from the object to its stand
@@ -182,7 +182,7 @@ reach_single_arm:
         '0.65': 0.3
       cells: 180
       ok: 20
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/reach/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/reach/
   grip_height_accepted:
   - 0.25
   - 1.25
@@ -820,7 +820,7 @@ reach_single_arm:
       1.10/0.02: 0/3
       1.10/0.05: 0/3
     note: 'the motor layer under an ideal placement, no skill: the hard limits of bucket 3; what a skill reaches is in grasp_settings'
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
 reach_bimanual:
   box_grasp:
     status: untested
@@ -878,7 +878,7 @@ carry:
       - TvRemote_1
       source: src/locomani/tasks/scene/skills/pick.py; the longest occupancy-map route from the pick stance to the put-down
         stance among the successes of a top-pinched object's put-down and put-in tasks at >= 50 %
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
   bimanual_box:
     status: untested
     usable_distance: 0.0
@@ -2729,7 +2729,7 @@ place:
     support_top_placed:
     - 0.3
     - 0.8
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/grip/
 posture:
   squat:
     status: measured
@@ -2779,7 +2779,7 @@ posture:
     lowest_pelvis_delivered: 0.609
     hands_lowest: 0.15
     hands_lowest_source: 'reach_single_arm.hand_envelope: the lowest jaw height any probed attitude and posture reached'
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/posture/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/posture/
   lean:
     status: measured
     per_ref_deg:
@@ -2799,7 +2799,7 @@ posture:
         delivered_deg: 17.8
         fell: false
     note: 'mode 4 tracks no torso keypoint: the controller sets the waist'
-    source: scripts/experiments/scene_rsi_20261016/capability_probe.py; outputs/scene_rsi_20261016/capability/posture/
+    source: scripts/rsi/capability_probe.py; outputs/scene_rsi_20261016/capability/posture/
 overhead:
   status: untested
   open_above: 0.6

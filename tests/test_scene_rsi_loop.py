@@ -1,4 +1,4 @@
-"""The scene RSI loop's gate arithmetic and candidate identity (TODO 27.2.4, scripts/experiments/scene_rsi_20261016/):
+"""The scene RSI loop's gate arithmetic and candidate identity (TODO 27.2.4, scripts/rsi/):
 the paired tally counts wins, losses, falls and drops over the shared starts; the exact one-sided McNemar test; a
 candidate's hash covers its code and its overrides and ignores byte caches."""
 
@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-HERE = REPO / "scripts" / "experiments" / "scene_rsi_20261016"
+HERE = REPO / "scripts" / "rsi"
 
 
 def _load(name: str, path: Path):

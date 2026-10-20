@@ -65,9 +65,9 @@ TODO 9.5。方法的输入是一份场景文件（[决策记录](scene-discovery
 - 升高台面上的物体跟着抬高；
 - 拿掉面板和碰撞盒，由后面几步按新高度重建。
 
-改动前的文件备份在 `<场景目录>.bak_20261020_before_surface_heights/`，新旧高度记在 `<场景目录>/surface_heights.json`。`scripts/experiments/scene_rsi_20261016/surface_height_audit.py` 逐个台面比较 `top`、按面积的中位数和最高的大块朝上面。改完后只有书架中层（DisplayShelves_1__1）差 0.8 cm，它本身是两级的面。
+改动前的文件备份在 `<场景目录>.bak_20261020_before_surface_heights/`，新旧高度记在 `<场景目录>/surface_heights.json`。`scripts/rsi/surface_height_audit.py` 逐个台面比较 `top`、按面积的中位数和最高的大块朝上面。改完后只有书架中层（DisplayShelves_1__1）差 0.8 cm，它本身是两级的面。
 
-MuJoCo 里每个台面是一块 2 cm 厚的板（`adt_slab_<key>`，`mjcf.SLAB`），物体和机器人都碰。板带 1 mm 接触余量（`adt_to_scene.py` 的 `SLAB_MARGIN`，2026-10-18）。没有余量时，物体凸包落在板上只有 1–4 个接触点，在运行器的 5 ms 步长下每步都变，静置的物体会自己转：钱包 2°/s，盆栽 4°/s；加扭转摩擦、椭圆摩擦锥、noslip 都止不住。有了余量，接触点集稳定，物体停在板上方约 0.8 mm，原来是陷进去 0.75 mm。余量只加在板上，不加在物体上：一次接触取两个 geom 中较大的余量，所以爪和物体的接触不变。`scripts/experiments/scene_rsi_20261016/spin_check.py` 测每个物体静置 30 s 转过的角度和滑动的距离，结果在 `outputs/scene_rsi_20261016/physics/`。
+MuJoCo 里每个台面是一块 2 cm 厚的板（`adt_slab_<key>`，`mjcf.SLAB`），物体和机器人都碰。板带 1 mm 接触余量（`adt_to_scene.py` 的 `SLAB_MARGIN`，2026-10-18）。没有余量时，物体凸包落在板上只有 1–4 个接触点，在运行器的 5 ms 步长下每步都变，静置的物体会自己转：钱包 2°/s，盆栽 4°/s；加扭转摩擦、椭圆摩擦锥、noslip 都止不住。有了余量，接触点集稳定，物体停在板上方约 0.8 mm，原来是陷进去 0.75 mm。余量只加在板上，不加在物体上：一次接触取两个 geom 中较大的余量，所以爪和物体的接触不变。`scripts/rsi/spin_check.py` 测每个物体静置 30 s 转过的角度和滑动的距离，结果在 `outputs/scene_rsi_20261016/physics/`。
 
 建完 MuJoCo 场景后还有四步（2026-10-18，方案 §10.2；碰撞盒和检查 2026-10-19）：
 - **家具面板**（`scripts/scene_add_panels.py`，`/venv/main`）：家具碰撞体只和机器人碰，而且只到最低台面以下，所以书架上一排书在端头没有东西挡，往外倒；往后也一直滑，最后从背面掉下去。脚本在每个台面周围的家具网格里找面板：两个短端只要网格有面板就加；两条长边只在机器人不从那边靠近时才加（场景文件和可站边覆盖文件的 `approach_edges`，机器人干活的那一面保持敞开，和“门按开着处理”一致）。每块面板是 1 cm 厚的盒子，只和自由物体碰（contype 2；自由物体的碰撞体 conaffinity 3）。视觉被换成凸包的家具（`FURNITURE_FACES` 以上）不加面板。现在这个场景有 52 块，分在 15 件家具上，见 `<场景目录>/panels.json`。

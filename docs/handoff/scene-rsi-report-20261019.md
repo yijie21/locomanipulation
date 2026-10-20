@@ -1,6 +1,6 @@
 # 场景 RSI 进化记录（2026-10-19）
 
-网页版（带视频和图）：https://claude.ai/artifact/1YY339VYjnSk8FTG1WCfBN（私密，分享要在网页的 Share 里给权限）。网页上的视频用 Unreal Engine 5.7 渲染，文件在 `outputs/scene_rsi_20261016/report/media_unreal/`（不进 git，≤ 500 KB 的预览在 `previews/`），由 `scripts/experiments/scene_rsi_20261016/report_unreal.py` 生成；同机位的 MuJoCo 版在 `outputs/scene_rsi_20261016/report/media/`（`report_media.py`）。下文的视频路径指 MuJoCo 版，同名文件的 Unreal 版在 `media_unreal/`。任务统计由 `scripts/experiments/scene_rsi_20261016/successes.py` 生成。
+网页版（带视频和图）：https://claude.ai/artifact/1YY339VYjnSk8FTG1WCfBN（私密，分享要在网页的 Share 里给权限）。网页上的视频用 Unreal Engine 5.7 渲染，文件在 `outputs/scene_rsi_20261016/report/media_unreal/`（不进 git，≤ 500 KB 的预览在 `previews/`），由 `scripts/rsi/report_unreal.py` 生成；同机位的 MuJoCo 版在 `outputs/scene_rsi_20261016/report/media/`（`report_media.py`）。下文的视频路径指 MuJoCo 版，同名文件的 Unreal 版在 `media_unreal/`。任务统计由 `scripts/rsi/successes.py` 生成。
 
 给机器人一个公寓场景和一个现成的全身控制器，系统自己找任务、自己写技能、自己测。四天里它写出了“放到台面上”“放进容器”“拿着走到某物旁”等技能，经过 15 次被采纳的改动，现在 30 个任务做得成，另有 15 个偶尔能成。这份报告讲它每一步是根据什么变好的，变好的版本和之前差在哪。
 
@@ -449,6 +449,6 @@ Unreal 截图（旧轨迹）：`outputs/scene_rsi_20261016/report/media/clip_soa
 - **需要新动作的**：书和盆栽要蹲下伸手、双手搬书或先推倒再拿，一次改动放不下，要单独成组。
 - **局限**：全部在仿真里，物体位置用仿真真值；只有一个场景；每个任务多数只测了 8 局；到 10-19 才发现并补上墙和家具上部的碰撞，之前学的技能有一部分靠穿模。
 
-数据：方案文档 `docs/handoff/scene-rsi-plan-20261016.md`；任务统计 `scripts/experiments/scene_rsi_20261016/successes.py`；视频 `report_unreal.py`（Unreal 渲染，网页版用）和 `report_media.py`（同机位的 MuJoCo 版）。每个任务组的记录在 `/workspace/code/rsi-scene/` 下各自的沙盒里。
+数据：方案文档 `docs/handoff/scene-rsi-plan-20261016.md`；任务统计 `scripts/rsi/successes.py`；视频 `report_unreal.py`（Unreal 渲染，网页版用）和 `report_media.py`（同机位的 MuJoCo 版）。每个任务组的记录在 `/workspace/code/rsi-scene/` 下各自的沙盒里。
 
 2026-10-19

@@ -98,7 +98,7 @@ ScaleBFM 已知的实测（controller-compare §22、§21、S1）：
 
 ### 7.1 motor 层（27.2.1，第一版，2026-10-16）
 
-- 代码 `src/locomani/backends/scalebfm/motor.py`（后端层，不依赖任何任务代码），单测 `tests/test_scalebfm_motor.py`，实测脚本 `scripts/experiments/scene_rsi_20261016/{motor_check,switch_check}.py`，结果在 `outputs/scene_rsi_20261016/motor_check/`。
+- 代码 `src/locomani/backends/scalebfm/motor.py`（后端层，不依赖任何任务代码），单测 `tests/test_scalebfm_motor.py`，实测脚本 `scripts/rsi/{motor_check,switch_check}.py`，结果在 `outputs/scene_rsi_20261016/motor_check/`。
 - 8 个原语：`walk_to`、`turn`、`sidestep`、`posture`、`reach`（单手或双手，路点上做全身 IK，爪中心 + 手腕姿态积分伺服）、`grip`、`release`、`hold`。另有 `place`（开局摆物体）和逐拍的 `tick`。
 - **mode**：走路 mode 2（骨盆 + 双腕，步子由策略自己迈）；原地一律 mode 4（骨盆 + 双腕 + 双踝，踝钉在站的位置）。证据：ADT 公寓里站 15 s，mode 2 站宽 27.7 → 36.1 cm，mode 4 26.5 → 28.0 cm。
 - **和 D5 的出入（待用户确认）**：每次开始走路都是 4 → 2，去掉两个踝关键点；D5 写的是“切换只加关键点”。实测（各 5 局）：4 → 2 后 0.5 s 手腕最多动 0.98 cm、骨盆 0.32 cm；允许的 2 → 4 是 1.42 / 0.46 cm；不切换的对照 mode 4 0.11 cm、mode 2 0.53 cm；0 摔。D5 那条规矩来自去掉肩肘时手腕掉 21–28 cm（controller-compare S1），去掉踝不在那一类。
@@ -131,7 +131,7 @@ ScaleBFM 已知的实测（controller-compare §22、§21、S1）：
 
 ### 7.4 任务运行器（27.2.3，2026-10-16）
 
-- 代码 `src/locomani/tasks/scene/`：`world.py`（场景 + motor + 占用图 + 谓词状态）、`start.py`（起点）、`navigate.py`（绕障）、`episode.py`（一局 → `RoundResult`）、`skills/`（技能库，闭环以后写这里；现有种子 `pick` v0）。单测 `tests/test_scene_task_runner.py`，实测 `scripts/experiments/scene_rsi_20261016/episode_check.py`。
+- 代码 `src/locomani/tasks/scene/`：`world.py`（场景 + motor + 占用图 + 谓词状态）、`start.py`（起点）、`navigate.py`（绕障）、`episode.py`（一局 → `RoundResult`）、`skills/`（技能库，闭环以后写这里；现有种子 `pick` v0）。单测 `tests/test_scene_task_runner.py`，实测 `scripts/rsi/episode_check.py`。
 - 起点：任务物体在自己的台面上随机换位置和朝向（带朝向的矩形不相交，避开台面上所有没动的物体——不是自由体的也会碰：咖啡罐摆到推车托盘上一秒内被弹下）；机器人在任务房间的出生区随机，离物体 1–3 m，要求占用图上能走到物体旁。成败用 `compile_goal` 的谓词（= 19.10.2，运行器这条路已接上）。
 - 绕障：占用图距离场 + 跟随器生成路点，按可通行格子的视线切成直线段，每段 `walk_to`；贴着台面的站位用最后一段直线进去。
 - 种子 `pick` v0：在可走近的边里找一条“从那里过去能让夹爪横跨物体某个合适宽度的侧面”的边（推车顶层很挤，罐子只能顺长边放在一条 10 cm 的空带里，只有它端头那条边对得上），站到物体前 0.40 m、偏右 0.12 m，预抓 → 进入 → 合爪 → 抬 10 cm。
@@ -147,7 +147,7 @@ ScaleBFM 已知的实测（controller-compare §22、§21、S1）：
 
 ### 7.6 场景内环（27.2.4，2026-10-16）
 
-- 代码 `scripts/experiments/scene_rsi_20261016/`：`families/<族>.json`（任务族：场景、任务、三池种子与大小）、`family.py`（抽起点池）、`scene_round.py`（一个进程跑若干局）、`batch.py`（12 进程两卡分片）、`gate.py`（验收门）、`loop.py`（驱动）、`prompts/`、`rules.md`（v1）、`sandbox.py`（每次运行一个沙盒检出）。单测 `tests/test_scene_rsi_loop.py`。
+- 代码 `scripts/rsi/`：`families/<族>.json`（任务族：场景、任务、三池种子与大小）、`family.py`（抽起点池）、`scene_round.py`（一个进程跑若干局）、`batch.py`（12 进程两卡分片）、`gate.py`（验收门）、`loop.py`（驱动）、`prompts/`、`rules.md`（v1）、`sandbox.py`（每次运行一个沙盒检出）。单测 `tests/test_scene_rsi_loop.py`。
 - **候选 = 技能包快照 + 参数覆盖**（`candidate.json` 的 `set`，键是 `skills.apply_set` 的 `模块.常量[.字典键]`）。验收门把候选拷进自己的目录再跑，现任用现任的快照跑；共用的 motor 层和场景由“现任 5 局哨兵必须复现”把关。门的规则同 warehouse（前 30 局净赢 ≤ 0 即拒；60 局 b − c ≥ 3、单侧精确 McNemar p ≤ 0.05、摔倒和掉物不超过现任 + 1）。
 - Reviewer 的干预是对现任的参数覆盖，Prober 在 50 局诊断池上实测；要写代码的假设在 `needs_code` 里描述，由 Engineer 实现。Engineer 只能改沙盒里的技能包，改了别处整次作废并恢复；被拒后技能包回到现任快照。
 - 停止（D8 + 预算）：验收池成功 ≥ 70%、门调用 12 次、墙钟 6 h、模型费 150 USD（10-19 用户取消；`RSI_COST_CAP_USD` 可再设）、连拒 3 次且无新假设、Manager 停。
@@ -280,7 +280,7 @@ ScaleBFM 已知的实测（controller-compare §22、§21、S1）：
 
 **场景里出现的范围**（ADT 公寓 `scene_meta.json`）：71 个台面，顶面 0.11–1.30 m；212 个可动物体（111 个单手可抓），最窄边 1.6 cm 到 14 cm 以上（中位 5.5 cm），重量 0.1–6 kg（九成 ≤ 1.3 kg），物体底面 0–1.92 m 高。
 
-**探针**（`scripts/experiments/scene_rsi_20261016/capability_probe.py`，motor 层直接跑，不经技能；结果每格一个 JSON，在 `outputs/scene_rsi_20261016/capability/<类>/`）：
+**探针**（`scripts/rsi/capability_probe.py`，motor 层直接跑，不经技能；结果每格一个 JSON，在 `outputs/scene_rsi_20261016/capability/<类>/`）：
 
 | 类 | 场景 | 扫什么 | 格数 |
 |---|---|---|---|
@@ -332,7 +332,7 @@ grip 用固定的理想做法（站在桌边 0.28 m 外，预抓 12 cm → 进�
 
 ### 9.2 可站的边按场景运行器重算（TODO 27.3.1，2026-10-16；不花模型费）
 
-**规则**（`scripts/experiments/scene_rsi_20261016/stance_edges.py`）：沿用 10-03 规则每条边取 5 个点、5 个里过 3 个就算这条边能站；改的是每个点怎么判，换成环里 `pick_single` 现任技能（`0109bde905a8` 的 `plan_approach`）找站位的办法：
+**规则**（`scripts/rsi/stance_edges.py`）：沿用 10-03 规则每条边取 5 个点、5 个里过 3 个就算这条边能站；改的是每个点怎么判，换成环里 `pick_single` 现任技能（`0109bde905a8` 的 `plan_approach`）找站位的办法：
 - 物体放在离这条边 5 cm 或 15 cm 处，站位在物体后面 0.40 m，往任一只手那边偏 0.12 m，不行再试 0.22、0.30 m；
 - 站位离地上的物体（垃圾桶、凳子这类）≥ 0.12 m；离其他家具 ≥ 0.25 m，最后那段直线也一样（运行器不查这段，补了家具碰撞体以后穿过别的家具就是撞）；
 - 从台面所在房间的出生区，按 0.35 m 身体半径能走到离站位最近的空格子。
@@ -367,7 +367,7 @@ grip 用固定的理想做法（站在桌边 0.28 m 外，预抓 12 cm → 进�
 
 **发现**：新能力表 + 可站边覆盖文件（§9.2），Claude（`claude-opus-5-5`）提任务、检查器分桶、改两轮：60 个任务，第 1 / 2 / 3 桶 4 / 43 / 13；调用 3 次，4.58 USD，20 分钟。结果在 `outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round1/`（沙盒只链接 `outputs/scene_discovery`，所以放在场景目录下）。第 1 桶就是 `pick_single` 的 4 个拿起任务。
 
-**选缺口**（`scripts/experiments/scene_rsi_20261016/outer.py select`）：
+**选缺口**（`scripts/rsi/outer.py select`）：
 - 一个缺口 = 一种目标形状 + 手数（D7）：第 ② 桶里 held(X) 单手是一组（拿起技能用在没测过的物体和台面上），on(X, S) 一组（没有放下的技能），in(X, C) 一组，held + near 一组（拿着走到某物旁）；upright 跟着主动作走。内环提的缺口（`loop/gaps.jsonl`）也算，任务按目标对上发现的任务。
 - 排序按“任务数 ÷ 估计花费”（D9）：技能已有、只是用到新范围，估 75 USD（`pick_single` 前 5 轮花了 73 USD）；检查器说缺的技能每个估 150 USD；内环提的新动作按两个新技能估。取前 6 个、合计不超过 1000 USD（两轮共 2000 USD；10-19 用户取消预算，之后只取前 6 个，估计花费只用来排序）。
 - 每组最多取 10 个任务，按离已测范围的远近排好后均匀抽，使每个任务在封存集里有 8 局；三池种子按组分块，互不重叠。
@@ -713,7 +713,7 @@ grip 用固定的理想做法（站在桌边 0.28 m 外，预抓 12 cm → 进�
 
 `r2_in_single` 第 0 轮的 Reviewer 做了 84 次工具调用（75 次 Bash）、83 轮模型回复（原来写的 173 是转录文件的行数，一轮回复占好几行）；其中大约 30 次在重建每轮都一样的视图：结局总览、逐局步骤表、场景文件里物体和容器的尺寸、放下站位、用正运动学算物体到手腕的距离。每多一轮对话都要把整段上下文再读一遍，这部分最贵。
 
-`scripts/experiments/scene_rsi_20261016/digest.py` 由内环在诊断之后生成 `iter_NN/diag_digest.md`（50 局约 40 KB，用时 3 s），Reviewer 提示词的“先读”加了第 4 项。内容：
+`scripts/rsi/digest.py` 由内环在诊断之后生成 `iter_NN/diag_digest.md`（50 局约 40 KB，用时 3 s），Reviewer 提示词的“先读”加了第 4 项。内容：
 - 每个任务：目标；物体和目标的尺寸（静置高度对指垫的余量、容器内框、深度、沿高）；失败最早卡在哪一步；最能分开成败的步骤数值（秩二列相关）。
 - 每局：结局、最早失败的步骤和原因、各步骤的数值，以及轨迹算出的物体抬起高度、抓之前是否被碰动、抓住到松手之间物体到手腕距离的变化（滑移；只用位置，手腕绕物体转不会显示）。
 
@@ -744,7 +744,7 @@ grip 用固定的理想做法（站在桌边 0.28 m 外，预抓 12 cm → 进�
 `review_replay.py` 现在记录每次 Reviewer 点名的、沙盒以外的绝对路径（`outside`）。回放沙盒要从被回放那次运行自己的沙盒提交搭，只加回放工具：`/workspace/tmp/build_replay2.sh` 搭了 `/workspace/code/rsi-scene/replay2-r2{in,on}`，分别是 `r2-in-a@27500a4`、`r2-on-a@692e6a7` 加 `digest.py`、`lint.py`、`review_replay.py`、`reviewer.md`。
 
 **经验库对比（预先登记，10-19，用户“试经验库”）**：
-- 经验库：`scripts/experiments/scene_rsi_20261016/library/r2_on_start.md`（2.1k 词）和 `r2_in_start.md`（2.5k 词）。
+- 经验库：`scripts/rsi/library/r2_on_start.md`（2.1k 词）和 `r2_in_start.md`（2.5k 词）。
   - 内容只来自被回放那一轮开始时已有的知识：现任技能的 docstring 和当时的方案，按触发条件写，每条有规则、证据、局限。
   - 不写那一轮自己后来的发现：r2_on 的“外壳推长物体”“轻物体滑得慢”，r2_in 的“前倾夹取后搬运中滑掉”。r2_in 版多出 r2_on 的结果和写回 7，因为对 r2_in 那是已有知识。
 - 两臂：摘要（D）对摘要加经验库（L，提示词加第 5 项）。每族各跑 2 次，顺序交替 L、D、L、D，两族同时跑，共 8 次，约 65 USD。
@@ -901,7 +901,7 @@ grip 用固定的理想做法（站在桌边 0.28 m 外，预抓 12 cm → 进�
 
 用户 10-19：先不考虑钱，只看效果和效率。两处预算一并取消：内环每族 150 USD（`loop.py` 默认不设上限，每次角色调用的 `--max-budget-usd` 也去掉，`RSI_COST_CAP_USD` 仍可设）和 D9 的两轮共 2000 USD（`outer.py` 选缺口只取前 6 个）。其余停止条件不变：门 12 次、墙钟 6 h、连拒 3 次且无新假设、Manager 停、D8 的成功线、每次角色调用 4 h。
 
-**统计**（`scripts/experiments/scene_rsi_20261016/successes.py`，写 `outputs/scene_rsi_20261016/outer/successes.json`）：登记表里的每个族和每个标定样本，都用现在的目录逐局算。族用最近一次回归记下的封存集，标定样本用它自己的局。几个族跑过同一个目标就合在一起算。分三类：
+**统计**（`scripts/rsi/successes.py`，写 `outputs/scene_rsi_20261016/outer/successes.json`）：登记表里的每个族和每个标定样本，都用现在的目录逐局算。族用最近一次回归记下的封存集，标定样本用它自己的局。几个族跑过同一个目标就合在一起算。分三类：
 - **做成**：成功 ≥ 50%，也就是检查器第 1 桶的线。
 - **有成功、成功率低**：用户 10-19 定这也算 RSI 得到的成功案例，但单列。
 - **没有成功**。

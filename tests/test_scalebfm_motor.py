@@ -1,7 +1,7 @@
 """The ScaleBFM motor layer (TODO 27.2.1, backends/scalebfm/motor.py): reset seats the feet, the stationary reference
 pins both ankles in mode 4 while a walk runs in mode 2, the reference blends are continuous and come to rest, the
 jaw-centre servo is capped, and the walk's speed profile ends exactly at its distance. The policy here is a stand-in
-that returns the default joint targets (no network); the live behaviour is scripts/experiments/scene_rsi_20261016/
+that returns the default joint targets (no network); the live behaviour is scripts/rsi/
 motor_check.py."""
 
 import json
