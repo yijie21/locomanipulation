@@ -1068,7 +1068,17 @@
 - [x] 29.2 `docs/rsi.md`（命令：建场景、L0、核对已记录结果、L1–L3、视频、常见错误）和 `docs/rsi_design.md`（怎么工作、为什么）；`setup.md` 加第 9–12 步；术语表、文档维护规则、开发者索引跟着改
 - [x] 29.3 代码搬到 `scripts/rsi/`（数据目录名不变；搬之前建的沙盒保留旧布局，`outer.py select` 两处都读）
 - [x] 29.4 复现材料 `rsi_kit/`（`scripts/rsi/kit.py pack / restore / seed`，`export-ignore`，`loop.py` 记录检查查它）：6.5 MB、3899 个文件，结局取 `surfaces_20261020`；`git archive HEAD` 里没有它；恢复到空目录试过两次
-- [ ] 29.5（10-20 11:46 用户让暂停；状态见 `/workspace/tmp/fresh_rsi_20261020/PAUSED.md`，已做完 0–4 节和 5.1，找到 7 处偏差；走路速度改了，下次从新克隆重跑）新读者测试：没看过项目的 Claude 在干净环境里只照 README 和 `docs/rsi.md` 跑建场景、L0、核对一个任务族、L1（pick_single）；卡住的地方改文档
+- [~] 29.5（10-20 11:46 用户让暂停；状态见 `/workspace/tmp/fresh_rsi_20261020/PAUSED.md`，已做完 0–4 节和 5.1，找到 7 处偏差；走路速度改了，下次从新克隆重跑）新读者测试：没看过项目的 Claude 在干净环境里只照 README 和 `docs/rsi.md` 跑建场景、L0、核对一个任务族、L1（pick_single）；卡住的地方改文档
+  - [ ] 29.5.1 setup.md 第 9 步：`/venv/main` 还要装 `mujoco==3.11.0`。`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 经 `make_dex1_model` 导入 mujoco；这台机器上靠的是 `~/.local` 里的用户包，换个 HOME 就没有（偏差 2）
+  - [ ] 29.5.2 rsi.md §2：新克隆的 `outputs/` 是空的，要先跑 setup 第 4 步的 `SCENE_PRESET=bottle_only bash scripts/install_scene.sh`，`build_scene.sh walk` 才找得到 `outputs/scene/layout/layout.json`；setup 的表把第 4 步写成“所有人、一次”，要说明每个克隆都要（偏差 1）
+  - [ ] 29.5.3 rsi.md §2 时间：`adt_to_scene.py mujoco` 约 4 分钟，不是“不到 2 分钟”（偏差 3）
+  - [ ] 29.5.4 rsi.md §2：`adt_to_scene.py --robot mars` 会重写 `third_party/` 里的 mars 机器人模型（内容不变），文档要说（偏差 4）
+  - [ ] 29.5.5 rsi.md §3.2 措辞：账本里那一条是 `"void": true`，不是 `void` 为 `stub`（偏差 5）
+  - [ ] 29.5.6 rsi.md §4：同一台机器上重测 pick_single 不是逐局相同（49 → 49，b 3 c 3）。查原因（假设：TorchScript 第一次调用的数值差，或克隆的绝对路径不同），再改“应逐局相同”这句；另外写明核对会推进登记表的 `last`（偏差 6）
+  - [ ] 29.5.7 rsi.md §5.1：干净环境里 `git commit` 要先配 `user.name` / `user.email`（偏差 7）
+  - [ ] 29.5.8 rsi.md §7 的 L3 表第 5 行还写 30 / 15，应是 31 / 13（新读者发现）
+  - [ ] 29.5.9 30.3、30.4 做完后从新克隆重跑；接着改上面这些文档
+- [ ] 29.9 清理新读者测试的沙盒：`/workspace/tmp/fresh_rsi_20261020/`（3.8 GB，克隆、报告、会话记录）和 `/workspace/code/rsi-scene/pick-repro/`（1.4 GB）；10-20 12:00 记入 STATE，10-21 12:00 以后可删（报告先拷进 `outputs/`）
 - [x] 29.6 种子技能目录（`801a28c^`，和 pick-a 沙盒开局的技能目录逐字节相同）在今天的运行器上能跑：pick_single 两个封存起点和 10-16 一样失败（摔倒；手没碰到遥控器）
 - [ ] 29.7 空地场景 `outputs/scene/walk_mars`（动作层探针、`motor_check.py` 用）没有登记构建命令，要补进 `configs/scenes.yaml`
 - [ ] 29.8 测试 `test_scalebfm_rsi_phase4.py::Restore` 在工作树的提交钩子里继承了 `GIT_DIR`，临时仓库的 `git init` 把共享的 `.git/config` 改成 `bare = true`（10-20 09:06，已改回 `false`，测试已清掉 `GIT_*`）；别的测试里还有没有同样在钩子里跑 git 的，待查

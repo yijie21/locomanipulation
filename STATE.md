@@ -1,60 +1,51 @@
-# STATE — 2026-10-20（主线改成场景 RSI：文档 `docs/rsi.md` / `docs/rsi_design.md`，代码 `scripts/rsi/`，复现材料 `rsi_kit/`；第 2 轮外环仍暂停）
+# STATE — 2026-10-20 12:00（主线：场景 RSI。用户 11:46 让暂停所有在跑的任务；机器空闲，两张卡都没人用）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-20 11:20）：已推送到 origin/main（`35f235c`，用户“先推送到 github”）；之后的提交都在本地。
-已确认（10-19）：**第 2 轮暂停**（用户：“现在先暂停所有的尝试”）。`r2_on_single` 写回，`r2_in_single` 5 门全拒（种子 15/80，不写回）；后面 `r2_held_near_single`、`r2_held_single`、`r2_relay_regrasp` 没跑，`r2_in_room_none` 无效（“走到卧室”开局就成立）。Reviewer 回放（27.10.6）第一次有泄漏，结论撤回；经验库对比（27.10.6.1）10-19 跑完，不接（慢 13%、轮数多 10%，探针 31 对 32）；干净沙盒 `/workspace/code/rsi-scene/replay2-r2{in,on}{,-b,-c}`（共 8.4 GB）作证据保留，结果在各沙盒 `outputs/scene_rsi_20261016_hidden/<族>/replay/`。用户 10-19 取消模型费上限（27.11：内环 150 USD、D9 2000 USD），判断只看效果和效率。**穿模（27.13，方案 §14）**：用户 10-19 定墙和家具上部都补碰撞，`scene_add_colliders.py` 已加进场景并重新沉降（备份 `outputs/scene_discovery/adt_apartment_mars.bak_20261019_before_colliders/`）。重测 `colliders_20261019`：8 族 243 → 188 / 632（4 族显著变差），标定样本 263 → 101 / 856；登记表 `last` 已移到这个标签。做成的任务（`successes.py`）62 → 30（练过 22 → 15、没练过 40 → 15），低成功率 12 → 15；掉的集中在推车上的铁罐、展示柜里的大白花瓶、浴室洗手台。重学待用户定。进度报告（27.12）：`docs/handoff/scene-rsi-report-20261019.md`，网页版 https://claude.ai/artifact/1YY339VYjnSk8FTG1WCfBN 已更新内容（版本 2，新第 8 节）；视频换成 Unreal（27.13.4，`report_unreal.py`，`/workspace/tmp/report_unreal_run.sh`，输出 `outputs/scene_rsi_20261016/report/media_unreal/`）。Unreal 编辑器的守护脚本在容器 CPU 占满时会杀掉它，渲染时不要同时跑仿真批量。
-已确认：henry-zhao 直接推 origin/main 或 `henry-dev`，可能自带检查失败。
+已确认（10-20 11:20）：已推送到 origin/main = `35f235c`（用户“先推送到 github”，合并了 henry-zhao 的 12 个提交）。之后 `58d1dc5`（走路速度）和 handoff 提交只在本地，用户没说推。
+已确认：henry-zhao 直接推 origin/main，可能自带检查失败；推之前先 `git fetch` 再合并。
 
 ## 提交与磁盘
 
-- 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`。STATE.md 上限 60 行。
-- 已确认（10-20 01:00）：`/workspace` 剩 132 GiB（88%）。用户 10-20 批准清理报告里的“一”“二”两类并免掉 24 小时，已执行（80 → 132 GiB，TODO 9.14，`outputs/cleanup_20261020/`）；根分区 `/` 同日清理，1.8 → 15 GB。跑仿真 / pytest 前先 `export TMPDIR=/workspace/tmp`。副本 `/workspace/code/rsi-phase4/arm-{a,b,a2,b2}` 共约 10 GB，作证据保留。
+- 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`、`.playwright-mcp/`。按名字暂存，不用 `git add -A`。
+- 已确认（10-20 12:00）：`/workspace` 剩 125 GiB，`/` 剩 14 GB。
+- 删除预告（10-20 12:00 记，10-21 12:00 以后可删，TODO 29.9）：`/workspace/tmp/fresh_rsi_20261020/`（3.8 GB）、`/workspace/code/rsi-scene/pick-repro/`（1.4 GB）。删之前把 `report.md`、`progress.txt` 拷进 `outputs/`。
 
-## 当前进度
+## 当前进度（全部已确认）
 
-- 已确认（25.9.1.6，方案 `docs/handoff/scalebfm-warehouse-rsi-20261014.md` §17–19）：第 4 阶段每臂跑了两次。
-  - 封存集 80 局：臂 A 68 / 68（两次是同一配置 `root_z_min 0.74` + `carry.base_anchor: reference`，逐拍相同）。
-  - 扁平臂 B 57 / 40；第 2 阶段 final 48；SONIC 30。
-- 已确认（26.1–26.2）：warehouse 对比视频 7 段、进化视频 4 段已导出到 `outputs/rsi_demo_20261015/warehouse/{previews,evolution/previews}/`，都 ≤ 300 KB。
-- 已确认（26.3.1）：bottle 适配层在 `scripts/experiments/scalebfm_bottle_rsi_20261015/`（诊断池 55、验收池 60 个起点仍可用）。
-- 已确认（用户 10-15）：不要分段式抓取，只用 CuRobo 规划；两边都用；bottle 规划到举起位；先 warehouse（DECISIONS 10-15 末节）。
-- 已确认（26.5.5，方案 §20，`outputs/rsi_speed_20261015/`，提交 `6b017b6`）：
-  - 路线规划 5.5 → 0.34 s（`--no-self-collision-opt`，50 条路线逐位不变）；路线缓存 + 多服务实例，换分片重跑 12/12 逐拍相同（= 26.5.1）。
-  - `carry.ik_jacobian: analytic`：单进程 3.4 倍；诊断池 37 → 33，与 OMP 浮点对照（33）分不开；会改结局，只在冷启动用。
-  - `batch.py` + 12 进程 + `--gpu 0,1`：吞吐 3.15 → 12.1 仿真秒 / 秒；OMP 必须保持 2（OMP 1 改结局）。
+- 27.14：台面高度改按面积、视频按实测手指画，已改并重测：8 族 188 → 187 / 632，标定 101 → 106 / 856，做成的任务 30 → 31。报告视频在新场景重跑、Unreal 重渲（10 局因 10-19 补碰撞变失败，用户定保留原起点）。报告网页第 4 版：https://claude.ai/artifact/1YY339VYjnSk8FTG1WCfBN （分享设置是“任何拿到链接的人”，原来就是）。
+- 29：文档主线换成 RSI（`docs/rsi.md` 命令、`docs/rsi_design.md` 原理），VLA 文档原地归档；代码在 `scripts/rsi/`；复现材料 `rsi_kit/` 进了 git（用户推翻场景发现方案第 17 条），`git archive` 里没有它。
+- 29.5 新读者测试：做完 0–4 节和 5.1，L1 第一次迭代的 Reviewer 跑到一半时按用户要求停了；7 处偏差已记进 TODO 29.5.1–29.5.8；现场见 `/workspace/tmp/fresh_rsi_20261020/PAUSED.md` 和 `report.md`。
+- 30：动作层默认走路速度 0.25 → 0.5 m/s（`58d1dc5`，`rules.md` 第 7 版）。0.25 m/s 时 ScaleBFM 碎步蹭地（15 cm 步长、2 cm 抬脚、34–40% 滑行），0.5 m/s 正常迈步。对比视频页（私有）：https://claude.ai/artifact/Ss5X8HZdbX1f9RFZiqjfAe
+- 28：AMO 不用，控制器还是 ScaleBFM（用户定）。第 2 轮外环仍暂停（用户 10-19）。
 
-## 过夜进度（26.5.6，用户 10-15 确认"按建议"；方案 §21）
+## 下一步（编号见 `TODO.md`；都等用户开口，用户让先暂停）
 
-- SONIC 接 CuRobo 路线：接上了，但同种子分段式 3/10，路线三种变体合计 1/30（腰更弯，原因未查清）。**按约定停，没做对比视频。**
-- ScaleBFM 冷启动（`/workspace/code/rsi-curobo/arm-c`，17:54–20:40，38.3 USD，插手 1 次）：验收池 5 → 21 → 43 停。
-  - 封存集：起点 5、终版 54、生产版 SONIC 30；比人工修法 + 路线（68）少 14（p 0.02）。
-  - 进化视频 4 段（133–342 KB）：`outputs/rsi_demo_20261015/warehouse_curobo/evolution/previews/`。
-- 查看页（私有）：https://claude.ai/artifact/Xu14Az6FoSwbbztBazzyyJ ，源文件 `outputs/rsi_demo_20261015/warehouse_curobo/index.html`。
-- 路线服务 5795 / 5796 已停；机器空闲。
-
-## 下一步（编号见 `TODO.md`；都待用户定）
-
-- 27（方案 `docs/handoff/scene-rsi-plan-20261016.md`）：第 0 阶段（§7）、第 1 阶段能力探针（§9，表 `configs/scene_discovery/capability_mars_scalebfm.yaml`，`capability_write.py` 生成；27.3.1 可站边覆盖文件 `--approach-edges`）都完成。**第 2 阶段完成（§10、里程碑 1 §10.1）**：第 1 轮发现 60 个任务（`outputs/scene_discovery/adt_apartment_mars/discovery/rsi_round1/`），5 组内环按顺序跑并写回：`r1_on_single` → `r1_held_single` → `r1_in_single` → `r1_held_near_single` → `r1_slide_then_grasp`。第 1 桶 60 个里 4 → 16，2830 模板 4 → 41；模型费 309.46 USD（估 750），内环墙钟 24.8 h，门 19 次；插手：内环中 1、开跑前规则 1、写回时改检查器 / 能力表程序 4、用户 0。第 1 轮末目录下各族封存集：`pick_single` 58、`r1_on_single` 24、`r1_held_single` 39、`r1_in_single` 9、`r1_held_near_single` 33、`r1_slide_then_grasp` 38（各 /80，重测局在各沙盒 `sealed/catalog_after_r1_slide/`）。写回步骤：拷技能、参数写进常量 → 用新目录重测所有族封存集（`/workspace/tmp/wb6_regress.sh` 是最新一份）→ `capability_write.py --loop-root .../pick-a --pick-rounds ... --held-loop/--place-loop/--into-loop/--near-loop <沙盒>:<族>[:<重测目录>]` → `scene_feasibility.py --approach-edges` 重新分桶。**用户 10-18 定的都做完（27.4.6，§10.2）**：门第一阶段按任务分层、零起步族掉物上限、D13.4 最少起点（规则第 5 版）；蜡烛 `under_rim`；台面板 1 mm 余量（静置自转 33 → 5）；家具面板 + 沉降（`scene_add_panels.py`、`scene_settle.py`；自己掉下去的 5 → 0）；外环种子块。新物理基线各族封存集在各沙盒 `sealed/physics_20261018/`：59、25、34、9、31、40。场景备份 `outputs/scene_discovery/adt_apartment_mars.bak_20261018_*`。**第 3 阶段（27.5）开跑**：发现 `/workspace/tmp/discover_r2.sh` → `outer.py select .../outer/round2` → 族 `r2_*`（种子从 1,110,000 起）→ 内环同第 2 阶段。待用户定：碰撞检查层、换模型对照；还剩的慢漂移（鼠标在垫上约 1 mm/s）。
-- 27.10（方案 §12，用户 10-19“先把这效率和效果相关的 4+5 条先完成”）：九条代码都已提交（`b84c407`、`183ee66`、`8ced519`）。检查器标定：`cal_r2` 判第 1 桶 11/24 ≥ 50%；加“搬运时长对夹持余量”规则后 `cal_r3` 13/24（54%）；再加放进容器两条、顶部夹距离、标定样本登记成实测（`registry.json` 里 `cal_r2..r4`，用户 10-19）后 `cal_r4` 12/23（52%），现在第 1 桶的 63 个目标都跑过（方案 §12.3）。竖直轴已应用（8 族封存集逐局相同，`sealed/upright_20261019/`）。外环驱动 `outer_run.py`（`writeback.py`、`regress.py` 登记表 `outputs/scene_rsi_20261016/outer/registry.json`）还没整轮跑过，恢复第 2 轮时用它。
-- RSI 进化 slides（私有）：https://claude.ai/artifact/N9rLqruxRDpjDzwNKyzaeS；pick_single 进化图解（线索图 + 前后对比视频，私有）：https://claude.ai/artifact/FPhdLToZ7ebhzVtPHM73Zv ，源 `outputs/scene_rsi_20261016/visual/`（`visualize.py`）
-- 27.14 / 29 / 30（10-20，DECISIONS 2026-10-20）：台面高度和手指画法已改并重测；文档主线换成 RSI；动作层默认走路速度改成 0.5 m/s（0.25 m/s 时碎步蹭地）。**用户 11:46 让暂停**：新读者测试已停（`/workspace/tmp/fresh_rsi_20261020/PAUSED.md`），按 0.5 m/s 重测（30.3）和之后的更新都待用户开口。28 AMO：用户定还是用 ScaleBFM。
-- 26.5.6.8：查不查 SONIC 走路线时腰更弯的原因；冷启动要不要提高停止线续跑（现在停在 SONIC + 5）。
-- 26.5.6.9：bottle（26.5.4）和改方法（26.5.5.4）。
+- 30.3：按 0.5 m/s 重测 8 族和 3 个标定样本，和 0.25 m/s 的记录逐局比（掉落、窄路、停步）。
+- 30.4：重测后 `kit.py pack` 更新复现材料，改文档和报告里的数字，看搬运时长规则要不要重新拟合。
+- 29.5.1–29.5.9：按新读者的偏差改文档，再从新克隆重跑新读者测试（30.5）。
 
 ## 未解决 / 卡点
 
-- 已确认（10-15）：解析 IK 下冷启动终版封存集掉物 4（SONIC 15）；第 0 轮候选因掉物 5 > 3 被验收门拒。
-- 已确认：这台机器上 bottle 栈的实时率不管录不录制都在 0.80–0.86；bottle 池的有效线是 0.80（bottle 方案 §4）。
-- 已确认：`make check` 里 `tests/test_stack_start_failure.py::test_down_kills...` 在全量负载下偶发超时，单独跑 3/3 通过，和本次改动无关。
-- 已确认（10-15 17:00）：auto-memory 的 MEMORY.md 正好 200 行（上限），再加一条就要先合并或删一条。
-- 规则：SONIC 栈在跑时不跑 ScaleBFM；`pkill -f` 会杀掉命令行含同样字样的 shell，杀进程要写进脚本文件里用 `pgrep -f '[x]...'`。
+- 已确认：现在代码默认 0.5 m/s，但所有记录（登记表、复现材料、报告、文档里的数字）都是 0.25 m/s 下测的；30.3 之前照 `docs/rsi.md` 第 4 节核对会对不上（文档已写明）。
+- 已确认：同一台机器上用复现材料重测 pick_single 不是逐局相同（b 3 c 3，总数相同）。原因**待验证**：假设是 TorchScript 第一次调用的数值差或克隆的绝对路径不同（29.5.6）。
+- 已确认：10-20 09:06 一个测试在工作树的提交钩子里把共享的 `.git/config` 改成 `bare = true`，已改回、测试已修；别的测试里有没有同样的问题**待查**（29.8）。
+- 假设（没在场景里测过）：0.5 m/s 拿着东西走可能更容易掉、窄路可能更容易碰家具；30.3 的重测会回答。
+- 规则：`pkill -f` 会杀到命令行含同样字样的 shell，停进程用明确的 PID 或会话号（`pkill -s <sid>`）；不改正在跑的 bash 脚本。
 
 ## 关键路径与命令
 
 ```bash
-cd /workspace/code/locomanipulation && export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0 PYTHONPATH=src OMP_NUM_THREADS=2
-PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python; W=scripts/experiments/scalebfm_warehouse_rsi_20261014
-N=2 GPUS=0,1 bash $W/route_service.sh /workspace/tmp/route_service.log  # 路线服务 ×2，打印要 export 的 TF_CUROBO_PORTS；停：outputs/rsi_speed_20261015/stop_services.sh
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/experiments/rsi_demo_20261015/compare.py --task warehouse    # 对比视频
-MUJOCO_GL=egl $PY scripts/experiments/rsi_demo_20261015/evolution.py /workspace/code/rsi-phase4/arm-a2 --task warehouse --out outputs/rsi_demo_20261015/warehouse/evolution
+cd /workspace/code/locomanipulation && . scripts/paths.sh && export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2 && PY=$VENV_SIM_PY
+# 30.3：全部任务族和标定样本按当前技能目录、当前速度重测（约 2.5 h，后台跑，日志看每族一行）
+nohup setsid $PY scripts/rsi/regress.py run speed05_20261021 --procs 12 > /workspace/tmp/regress_speed05.log 2>&1 &
+PYTHONPATH=src $PY scripts/rsi/successes.py            # 按任务统计做成 / 偶尔成 / 没成
+PYTHONPATH=src $PY scripts/rsi/kit.py pack              # 30.4：重测后重打复现材料，再按名字提交 rsi_kit/
+# 步态对比视频（空地直走 4 m，两种速度）：输出在 outputs/scene_rsi_20261016/gait/
+CUDA_VISIBLE_DEVICES=1 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 PYTHONPATH=src $PY outputs/scene_rsi_20261016/gait/gait_video.py 0.25 0.5
+# 报告视频：先 bash scripts/start_unreal.sh --gpu 1（渲染时不跑仿真），脚本 /workspace/tmp/report_unreal_v4.sh；停：bash scripts/stop_unreal.sh
+# 新读者测试：删掉 /workspace/tmp/fresh_rsi_20261020/repo 后 bash /workspace/tmp/fresh_rsi_20261020/launch.sh（提示在 prompt.md，监视 watch2.sh）
 ```
+
+- 登记表 `outputs/scene_rsi_20261016/outer/registry.json`，各族 `last` = `surfaces_20261020`；备份 `/workspace/tmp/registry_before_surfaces.json`。
+- 场景 `outputs/scene_discovery/adt_apartment_mars/`（台面修正前的备份 `adt_apartment_mars.bak_20261020_before_surface_heights/`）；沙盒都在 `/workspace/code/rsi-scene/`。
+- 更早的线（warehouse / bottle 的 ScaleBFM RSI、SONIC 路线）都停着，状态在 TODO 25、26。
