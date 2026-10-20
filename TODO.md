@@ -1050,3 +1050,10 @@
     - [x] 27.8.7 只对搁置起点有用、一次改动放得下的小技能（钱包“贴着接触再捏”）：Manager 用 `reopen` 派 Engineer，候选先只在搁置起点上跑，做成就解除搁置再进门（用户 2026-10-16 按推荐；规则第 3 版，沙盒插手 5；方案 §8.1）
   - [x] 27.9 `held(X)` 把挂在合拢手指上带起的物体判成拿住（第 4 轮杯子 s100072），改成“两指都接触且离开所有台面”（用户 2026-10-16 定；`483b690`；重跑封存集 400 局、现任诊断 50 局，结局一局没变）
 
+
+## 28. AMO 换掉 ScaleBFM 会不会更稳、成功率更高（用户 2026-10-20：“能不能试几个例子看看”；记录 `docs/handoff/amo-compare-20261020.md`）
+
+- [x] 28.1 AMO 接进我们的仿真（`src/locomani/backends/amo/runtime.py`）：SIMPLE 自带的 AMO 权重（RSS 2025，下层 RL 策略只出腿 12 + 腰 3，读肩肘 8 个角；`adapter_jit` 把高度和躯干指令换成腿腰参考角），观测与 SIMPLE `AMO_Policy` 逐拍对上（误差 2e-7）。准入（mars G1，平地，各 10 次）：站 30 s、走、转 90°、下蹲到 0.65 / 0.55 / 0.45、前倾 0.5 / 1.0 rad 全部不摔；但只交付约一半速度指令，0.45 m 高度指令落在 0.58 m（`scripts/experiments/amo_compare_20261020/admission.py`）
+- [x] 28.2 AMO 版动作层（`src/locomani/backends/amo/motor.py`，接口同 ScaleBFM 的 `Motor`，技能代码不改；`SceneWorld(controller="amo")`、`scene_round.py --controller amo`）：腿腰走 AMO 指令（位置闭环 + 速度死区补偿），手臂每拍按实测躯干解 IK。平地基本动作（`motor_check.py loco --controller amo`）：走路、转身、侧移停位 1.1–1.4 cm（ScaleBFM 1.2–2.0）；下蹲时躯干不前倾（ScaleBFM 0.6 m 时前倾 25–54°）；伸手 1.15 m 高处 1.0 cm、中低处 0.7–4.6 cm、0.35 m 低处 6.3 cm（ScaleBFM 0.75–1.0）。全身 IK 必须锁住腰的偏航和侧倾（`waist_dofs="pitch"`）：放开时参考姿势扭腰 23°、侧倾 17°，ScaleBFM 不跟踪躯干所以没事，AMO 照做就往后退 30 cm 到 1.5 m（一度误判成“手臂举高 AMO 自己走开”）。另外 AMO 站着时腰会弯到 0.52 rad 上限，站立参考的腿腰要固定用复位姿势，否则参考越来越前倾
+- [x] 28.3 场景任务冒烟（`tasks.py --smoke`，10 个任务各 1 个封存起点，同起点同技能配对，`stability.py`）：第 4 轮 AMO 2 / 10、ScaleBFM 8 / 10（p 0.016），AMO 掉物 3 次；任务里躯干角速度 p95 59–79 对 40–57 °/s，站着时漂移更大——不更稳。主因是技能在 ScaleBFM 上长成（例：拿书要前倾 60°，AMO 手前伸时最多 36°）
+- [ ] 28.4 待用户定：停在这里，或让 RSI 在 AMO 上重学一族（如 `pick_single`，约 5 h）再比；整套 92 局配对（`tasks.py run`，约 2 h）只在要更多数字时跑

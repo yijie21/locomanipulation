@@ -70,13 +70,27 @@ def parse_set(text: str | None) -> dict:
     return json.loads(Path(text).read_text())
 
 
-def run(fam_name: str, pool: Path, skills_dir: Path, out: Path, labels: list[str], overrides: dict, npz: bool) -> None:
+def run(
+    fam_name: str,
+    pool: Path,
+    skills_dir: Path,
+    out: Path,
+    labels: list[str],
+    overrides: dict,
+    npz: bool,
+    controller: str = "scalebfm",
+) -> None:
     fam = F.load(fam_name)
     skills = load_skills(skills_dir)
     skills.apply_set(skills, overrides)
     h = skills_hash(skills_dir)
-    policy = R.Policy("cuda", ScaleBfmBackendConfig())
-    world = SceneWorld(fam["scene_dir"], policy)
+    if controller == "amo":  # TODO 28
+        from locomani.backends.amo.runtime import AmoPolicy
+
+        policy = AmoPolicy("cuda")
+    else:
+        policy = R.Policy("cuda", ScaleBfmBackendConfig())
+    world = SceneWorld(fam["scene_dir"], policy, controller=controller)
     out.mkdir(parents=True, exist_ok=True)
     for label in labels:
         f = out / f"{label}.json"
@@ -103,7 +117,9 @@ def run(fam_name: str, pool: Path, skills_dir: Path, out: Path, labels: list[str
                        t_end=ex["t_end"])  # fmt: skip
             if npz:
                 np.savez_compressed(out / f"{label}.npz", **arrays)
-        rec.update(skills=h, set=overrides, wall_s=round(time.time() - t0, 1), rule=B.SUCCESS_RULE)
+        rec.update(
+            skills=h, set=overrides, wall_s=round(time.time() - t0, 1), rule=B.SUCCESS_RULE, controller=controller
+        )
         tmp = f.with_suffix(".tmp")
         tmp.write_text(json.dumps(rec, indent=1, default=float))
         tmp.rename(f)  # a killed process never leaves a half-written round
@@ -118,9 +134,12 @@ def main(argv=None) -> int:
     ap.add_argument("--labels", default="", help="comma-separated start labels (default: the whole pool)")
     ap.add_argument("--set", default="", help="parameter overrides: inline JSON or a JSON file")
     ap.add_argument("--npz", action="store_true", help="also save each round's motor trace")
+    ap.add_argument(
+        "--controller", choices=("scalebfm", "amo"), default="scalebfm", help="whole-body controller (TODO 28)"
+    )
     a = ap.parse_args(argv)
     labels = [x for x in a.labels.split(",") if x] or F.labels(a.pool)
-    run(a.family, a.pool, a.skills, a.out, labels, parse_set(a.set), a.npz)
+    run(a.family, a.pool, a.skills, a.out, labels, parse_set(a.set), a.npz, a.controller)
     return 0
 
 

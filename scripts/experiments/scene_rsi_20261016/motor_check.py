@@ -10,6 +10,7 @@ centre, grip, lift 10 cm, hold 2 s.
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     CUDA_VISIBLE_DEVICES=1 $PY scripts/experiments/scene_rsi_20261016/motor_check.py loco
     CUDA_VISIBLE_DEVICES=1 $PY scripts/experiments/scene_rsi_20261016/motor_check.py pick [--walk]
+`--controller amo` runs the same cases on AMO (backends/amo, TODO 28); results go to motor_check/amo/.
 """
 
 from __future__ import annotations
@@ -35,8 +36,16 @@ WALK = REPO / "outputs" / "scene" / "walk_mars"
 ADT = REPO / "outputs" / "scene_discovery" / "adt_apartment_mars"
 
 
+CONTROLLER = "scalebfm"
+
+
 def make(policy, scene: Path, track=()):
     cfg = ScaleBfmBackendConfig(scene_dir=str(scene), object_name="")
+    if CONTROLLER == "amo":
+        from locomani.backends.amo.motor import AmoMotor
+        from locomani.backends.amo.runtime import AmoSim
+
+        return AmoMotor(AmoSim(cfg), policy, None, model_xml=str(scene / "scene_locomani.xml"), track=track)
     sim = R.Sim(policy.meta, backend=cfg)
     return Motor(sim, policy, MotorConfig(), model_xml=str(scene / "scene_locomani.xml"), track=track)
 
@@ -141,9 +150,18 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("what", choices=("loco", "pick"))
     ap.add_argument("--walk", action="store_true", help="pick: start at the scene's robot start and walk to the stance")
+    ap.add_argument("--controller", choices=("scalebfm", "amo"), default="scalebfm")
     a = ap.parse_args(argv)
+    global CONTROLLER, OUT
+    CONTROLLER = a.controller
+    if a.controller == "amo":
+        from locomani.backends.amo.runtime import AmoPolicy
+
+        OUT = OUT / "amo"
+        policy = AmoPolicy("cuda")
+    else:
+        policy = R.Policy("cuda", ScaleBfmBackendConfig())
     OUT.mkdir(parents=True, exist_ok=True)
-    policy = R.Policy("cuda", ScaleBfmBackendConfig())
     t0 = time.time()
     res = loco(policy) if a.what == "loco" else pick(policy, a.walk)
     name = a.what + ("_walk" if a.walk else "")

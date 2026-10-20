@@ -39,6 +39,7 @@ class Job:
     overrides: dict | None = None
     labels: tuple[str, ...] | None = None  # None = the whole pool
     npz: bool = False
+    controller: str = "scalebfm"  # scene_round --controller (TODO 28: "amo")
 
 
 def done(f: Path) -> bool:
@@ -102,7 +103,8 @@ def run_jobs(
         for i in range(math.ceil(len(todo[k]) / SHARD_ROUNDS)):
             shard = todo[k][i * SHARD_ROUNDS : (i + 1) * SHARD_ROUNDS]
             cmd = [str(SIM_PY), str(HERE / "scene_round.py"), family, "--pool", str(pool), "--skills", str(job.skills),
-                   "--out", str(job.out), "--labels", ",".join(shard), "--set", json.dumps(job.overrides or {})]  # fmt: skip
+                   "--out", str(job.out), "--labels", ",".join(shard), "--set", json.dumps(job.overrides or {}),
+                   "--controller", job.controller]  # fmt: skip
             if job.npz:
                 cmd.append("--npz")
             queue.append(cmd)

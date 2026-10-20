@@ -102,7 +102,8 @@ def physics_scene(scene_dir) -> Path:
 
 class SceneWorld:
     """`scene_dir` holds scene_meta.json + scene_locomani.xml (scripts/adt_to_scene.py mujoco); the sim runs its
-    physics copy (`physics_scene`)."""
+    physics copy (`physics_scene`). `controller` "amo" runs AMO (backends/amo, TODO 28) under the same motor
+    interface; `policy` is then an AmoPolicy."""
 
     def __init__(
         self,
@@ -112,6 +113,7 @@ class SceneWorld:
         motor_config: MotorConfig | None = None,
         jacobian="analytic",
         grip_law: dict | None = None,
+        controller: str = "scalebfm",
     ):
         self.dir = Path(scene_dir)
         self.physics = physics_scene(self.dir)
@@ -120,8 +122,20 @@ class SceneWorld:
         # controllers and the ported hand program (skills/grasp_program.py) closes with
         law = GRIP_LAW if grip_law is None else grip_law
         backend = ScaleBfmBackendConfig(scene_dir=str(self.physics), object_name="", **law)
-        self.sim = R.Sim(policy.meta, backend=backend)
-        self.motor = Motor(self.sim, policy, motor_config, model_xml=str(self.physics / "robot.xml"), jacobian=jacobian)
+        self.controller = controller
+        if controller == "amo":  # TODO 28: `policy` is a backends.amo.runtime.AmoPolicy
+            from locomani.backends.amo.motor import AmoMotor
+            from locomani.backends.amo.runtime import AmoSim
+
+            self.sim = AmoSim(backend)
+            self.motor = AmoMotor(
+                self.sim, policy, motor_config, model_xml=str(self.physics / "robot.xml"), jacobian=jacobian
+            )
+        else:
+            self.sim = R.Sim(policy.meta, backend=backend)
+            self.motor = Motor(
+                self.sim, policy, motor_config, model_xml=str(self.physics / "robot.xml"), jacobian=jacobian
+            )
         m = self.sim.m
         self.free = {k: m.body(o["body"]).id for k, o in self.meta["objects"].items() if o.get("free")}
         self.occ, self.nav = build_navigation(self.meta, body_radius=BODY_RADIUS_M)
