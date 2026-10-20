@@ -152,7 +152,10 @@ def job(sc: V.Scene, name: str) -> dict:
         target = b.z[b.key][0, :3]
         az = V.pick_azimuth(sc, [b, aft], target, V.grasp_view_azimuth(aft), 1.3, -26)
         p = dict(lift=None, obj0=target, az1=az, dest=None, az2=None)
-        caps = [[("旧版本", V.FG), b.outcome_zh()], [("新版本", V.FG), aft.outcome_zh()]]
+        caps = [
+            [("旧版本", V.FG), RM.flagged(b, b.outcome_zh())],
+            [("新版本", V.FG), RM.flagged(aft, aft.outcome_zh())],
+        ]
         return dict(panels=[("before", b, p), ("after", aft, p)], caps=caps, lines=lines, speed=V.SPEED, compare=aft)
     if name in RM.STEPS:
         fam, before, after, label, lines, fail, speed = RM.STEPS[name]
@@ -198,7 +201,8 @@ def main(argv=None) -> int:
     global PICK
     RM.use_rounds(a.rounds)
     if a.rounds:
-        PICK = RM.REPO / "outputs" / "scene_rsi_20261016" / "report" / a.rounds / "pick"
+        new = RM.REPO / "outputs" / "scene_rsi_20261016" / "report" / a.rounds / "pick"
+        RM.ORIG[new], PICK = PICK, new
     names = [*PS, *RM.STEPS, *RM.SOLOS] if a.names == ["all"] else a.names
     bad = [n for n in names if n not in PS and n not in RM.STEPS and n not in RM.SOLOS]
     if bad:

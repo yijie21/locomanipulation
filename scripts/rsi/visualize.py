@@ -118,6 +118,8 @@ class Round:
 
 def why_zh(why: str) -> str:
     rules = [
+        (r"pregrasp missed by ([\d.]+) cm", r"预抓位置差 \1 cm，放弃"),
+        (r"place reach failed: \w+: jaw centre ([\d.]+) cm off", r"放下时手没对准（爪中心差 \1 cm），物体没放到台面上"),
         (r"no side fits the jaw", "规划拒绝（没有一面放得进爪口）"),
         (r"no clear stance with a path", "规划拒绝（找不到干净的站位）"),
         (r"no path on the occupancy map", "规划拒绝（导航图上没有路）"),

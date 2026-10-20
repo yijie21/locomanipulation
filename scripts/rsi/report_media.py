@@ -104,31 +104,32 @@ STEPS = {
 # name: (sample, start(s), card lines, outcome captions, speed)
 SOLOS = {
     "u_wolf_cart": ("cal_r4", ["b1_put_DisplayWolf_on_UtilityCart__2_s8200041"],
-                    ["没练过 · 狼摆件放到推车上（8 局成 8 局）", "练过的是狼摆件放到茶几；推车是另一张台面"], 3),
+                    ["没练过 · 狼摆件放到推车上（现在 8 局成 3 局，补碰撞前 8 / 8）", "练过的是狼摆件放到茶几；推车是另一张台面"], 3),
     "u_canister_round": ("cal_r4", ["b1_canister_to_round_table_s8200021"],
-                         ["没练过 · 大铁罐竖着放到黑色圆桌（8/8）", "练过的是铁罐放到岛台"], 3),
+                         ["没练过 · 大铁罐竖着放到黑色圆桌（现在 0 / 8，补碰撞前 8 / 8）", "练过的是铁罐放到岛台"], 3),
     "u_soap_pick": ("cal_r2", ["b1_pick_HandSoap_1_s8000108"],
                     ["没练过 · 拿起洗手液（8/8）", "练过的是拿起洗洁精、果酱、铁罐等"], 2),
     "u_candle_pick": ("cal_r3", ["b2_pick_CandlePattern02_1_s8100096"],
                       ["没练过 · 拿起花纹蜡烛（8/8）", "检查器原来判它做不到（第 2 桶），实测 8 局全成"], 2),
     "u_vase_trash": ("cal_r4", ["b1_put_WhiteVaseBig_1_in_WhiteTrashBin_s8200071"],
-                     ["没练过 · 大白花瓶放进白垃圾桶（8/8 里 6 局成）", "没练过的“放进容器”任务里唯一过半的"], 3),
+                     ["没练过 · 大白花瓶放进白垃圾桶（现在 0 / 8，补碰撞前 6 / 8）", "补碰撞前，它是没练过的“放进容器”任务里唯一过半的"], 3),
     "u_jam_stool": ("cal_r2", ["b1_put_Jam_Anon_on_BlackBarStool_B__0_s8000085"],
                     ["没练过 · 果酱放到吧台凳上（6/8）", "吧台凳没在任何族里当过目标台面"], 3),
     "u_remote_console": ("cal_r2", ["b1_put_TvRemote_1_on_ConsoleTable__1_s8000021",
                                     "b1_put_TvRemote_1_on_ConsoleTable__1_s8000057"],
-                         ["没练过、成功率低 · 遥控器放到边桌（8 局成 2 局）", "同一个技能，左边这个起点成了，右边这个没成"], 4),
+                         ["没练过、成功率低 · 遥控器放到边桌（8 局成 3 局）", "同一个技能，左边这个起点成了，右边这个没成"], 4),
 }  # fmt: skip
 
 
 FAIL = {"b1_put_TvRemote_1_on_ConsoleTable__1_s8000057": "举起时没夹正（偏 2.7 cm），最后遥控器掉到了地上"}
+ORIG: dict[Path, Path] = {}  # use_rounds: a re-run tree -> where the report first found those rounds
 
 
 class Rd(V.Round):
     """A round from any directory (`base` = <dir>/<label>, no suffix)."""
 
     def __init__(self, base: Path):
-        self.label, self.version = base.name, base.parent.name
+        self.base, self.label, self.version = base, base.name, base.parent.name
         self.rec = json.loads(base.with_suffix(".json").read_text())
         self.z = dict(np.load(base.with_suffix(".npz")))
         self.key = next(k for k in self.z if k.startswith("obj_"))
@@ -223,7 +224,30 @@ def held(img: np.ndarray, text: str) -> np.ndarray:
 
 
 def outcome(r: Rd, fail: str | None) -> tuple[str, tuple]:
-    return ("成功", (90, 220, 120)) if r.rec["ok"] else (fail or "失败", (255, 110, 100))
+    """A round's caption. `fail` is the hand-written reason of the round as first filmed; a round re-run in a later
+    scene (use_rounds) keeps it only when it failed the same way, and a success that became a failure says so."""
+    if r.rec["ok"]:
+        return "成功", (90, 220, 120)
+    old, why = then(r), r.rec.get("plan_why") or r.rec.get("why") or ""
+    if old is not None and (old["ok"] or (old.get("plan_why") or old.get("why") or "") != why):
+        fail = "失败：" + V.why_zh(why)
+    return flagged(r, (fail or "失败", (255, 110, 100)))
+
+
+def then(r: Rd) -> dict | None:
+    """The record of `r` as the report first filmed it, when `r` is a re-run (use_rounds); else None."""
+    for new, old in ORIG.items():
+        if r.base.is_relative_to(new):
+            f = (old / r.base.relative_to(new)).with_suffix(".json")
+            return json.loads(f.read_text()) if f.exists() else None
+    return None
+
+
+def flagged(r: Rd, cap: tuple[str, tuple]) -> tuple[str, tuple]:
+    """`cap` of a re-run round that succeeded when first filmed and fails now: the walls and the furniture's upper
+    parts collide since 2026-10-19 (TODO 27.13), which every such round of 2026-10-20 traced to."""
+    old = then(r)
+    return ("补碰撞后" + cap[0], cap[1]) if old is not None and old["ok"] and not r.rec["ok"] else cap
 
 
 GHOST_NOTE = "半透明紫球：指令给的手腕位置"
@@ -314,7 +338,9 @@ def use_rounds(name: str | None) -> None:
         return
     base = REPO / "outputs" / "scene_rsi_20261016" / "report" / name
     for k in DIAG:
+        ORIG[base / "diag" / k] = DIAG[k]
         DIAG[k] = base / "diag" / k
+    ORIG[base / "untrained"] = UNTRAINED
     UNTRAINED = base / "untrained"
 
 
