@@ -83,7 +83,8 @@ SKILLS_NOTE = (
 )
 ISOLATION = (
     "\n\nThis checkout ({REPO}) and your scratch directory ({TMP}) are the whole world for this run. Do not read "
-    "anything outside them: no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
+    "or list anything outside them, not even their parent directories (an `ls /workspace/tmp/` voided a Reviewer on "
+    "2026-10-20): no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
     "A role call that does is void.\n"
 )
 FAMILY = ""
