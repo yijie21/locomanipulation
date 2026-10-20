@@ -1,0 +1,1 @@
+{"label": "coffee_can_in_trash_s330033", "task": "coffee_can_in_trash", "ok": false, "why": "[goal] in(NIT_CoffeeCan_Anon, WhiteTrashBin): outside the container footprint by (+1.75, -0.05) m", "fell": false, "dropped": false, "t_end": 59.44, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "bring_novel_to_bed_s340024", "task": "bring_novel_to_bed", "ok": false, "why": "[goal] near(BookFiction1_00, HybridMattress__0, 1.0): 1.78 m apart (limit 1.00)", "fell": false, "dropped": false, "t_end": 33.6, "seated": {}}

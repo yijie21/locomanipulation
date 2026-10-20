@@ -1,0 +1,1 @@
+{"label": "b1_put_CoffeeCanisterLarge_in_BlackCeramicBowl_s8100002", "task": "b1_put_CoffeeCanisterLarge_in_BlackCeramicBowl", "ok": false, "why": "[goal] in(CoffeeCanisterLarge, BlackCeramicBowl): outside the container footprint by (+1.58, +1.28) m", "fell": false, "dropped": false, "t_end": 63.38, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "plant_to_middle_shelf_s1310056", "task": "plant_to_middle_shelf", "ok": false, "why": "[goal] on(Plant2_5, DisplayShelves_1__1): underside z 0.397 not on DisplayShelves_1__1 (top 0.754, +0.3 m)", "fell": false, "dropped": false, "t_end": 21.98, "seated": {}}

@@ -1,0 +1,120 @@
+{
+ "family": "pick_single",
+ "pool": "sealed",
+ "written": 80,
+ "unavailable": {
+  "mouse_pickup": "no reachable spawn point in the room's spawn region"
+ },
+ "skipped": [
+  [
+   "mouse_pickup",
+   300008,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300009,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300010,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300011,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300012,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300013,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300014,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300015,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300016,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300017,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300018,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300019,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300020,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300021,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300022,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300023,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300024,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300025,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300026,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "mouse_pickup",
+   300027,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "dish_soap_pickup",
+   300040,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "dish_soap_pickup",
+   300065,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

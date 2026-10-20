@@ -1,0 +1,1 @@
+{"label": "wallet_in_wooden_box_s330063", "task": "wallet_in_wooden_box", "ok": false, "why": "[goal] in(Wallet_1, WoodenBoxSmall): outside the container footprint by (-0.03, +0.24) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b1_put_DisplayWolf_on_ConsoleTable__1_s8000200", "task": "b1_put_DisplayWolf_on_ConsoleTable__1", "ok": false, "why": "[goal] on(DisplayWolf, ConsoleTable__1): 3.38 m outside ConsoleTable__1's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

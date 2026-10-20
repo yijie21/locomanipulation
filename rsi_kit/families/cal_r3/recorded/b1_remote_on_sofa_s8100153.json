@@ -1,0 +1,1 @@
+{"label": "b1_remote_on_sofa_s8100153", "task": "b1_remote_on_sofa", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 70.8, "seated": {}}

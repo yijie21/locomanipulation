@@ -1,0 +1,1 @@
+{"label": "b2_put_GreenPear_A_on_DisplayUnit_1__0_s8000139", "task": "b2_put_GreenPear_A_on_DisplayUnit_1__0", "ok": false, "why": "[goal] on(GreenPear_A, DisplayUnit_1__0): underside z 0.896 not on DisplayUnit_1__0 (top 0.404, +0.3 m)", "fell": false, "dropped": false, "t_end": 41.54, "seated": {}}

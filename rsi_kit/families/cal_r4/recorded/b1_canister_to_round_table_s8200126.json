@@ -1,0 +1,1 @@
+{"label": "b1_canister_to_round_table_s8200126", "task": "b1_canister_to_round_table", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, BlackRoundTable__0): 1.50 m outside BlackRoundTable__0's footprint", "fell": false, "dropped": false, "t_end": 64.34, "seated": {}}

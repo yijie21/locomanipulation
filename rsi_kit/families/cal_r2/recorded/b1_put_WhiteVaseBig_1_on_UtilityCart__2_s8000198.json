@@ -1,0 +1,1 @@
+{"label": "b1_put_WhiteVaseBig_1_on_UtilityCart__2_s8000198", "task": "b1_put_WhiteVaseBig_1_on_UtilityCart__2", "ok": false, "why": "[goal] on(WhiteVaseBig_1, UtilityCart__2): 3.55 m outside UtilityCart__2's footprint", "fell": false, "dropped": false, "t_end": 28.92, "seated": {"WhiteVaseBig_1": 0.015}}

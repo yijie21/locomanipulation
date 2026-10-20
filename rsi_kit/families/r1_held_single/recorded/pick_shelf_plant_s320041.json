@@ -1,0 +1,1 @@
+{"label": "pick_shelf_plant_s320041", "task": "pick_shelf_plant", "ok": false, "why": "[goal] held(Plant2_5): no hand touches it", "fell": false, "dropped": false, "t_end": 34.28, "seated": {}}

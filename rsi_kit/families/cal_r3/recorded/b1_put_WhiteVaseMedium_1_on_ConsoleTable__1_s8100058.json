@@ -1,0 +1,1 @@
+{"label": "b1_put_WhiteVaseMedium_1_on_ConsoleTable__1_s8100058", "task": "b1_put_WhiteVaseMedium_1_on_ConsoleTable__1", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, ConsoleTable__1): underside z -0.022 not on ConsoleTable__1 (top 0.696, +0.3 m)", "fell": false, "dropped": true, "t_end": 51.82, "seated": {"WhiteVaseMedium_1": 0.015}}

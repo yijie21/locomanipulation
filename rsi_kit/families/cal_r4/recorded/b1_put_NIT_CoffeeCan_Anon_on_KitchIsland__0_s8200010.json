@@ -1,0 +1,1 @@
+{"label": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0_s8200010", "task": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, KitchIsland__0): underside z 0.747 not on KitchIsland__0 (top 0.895, +0.3 m)", "fell": false, "dropped": false, "t_end": 53.5, "seated": {}}

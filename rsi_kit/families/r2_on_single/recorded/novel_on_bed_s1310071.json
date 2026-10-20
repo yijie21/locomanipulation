@@ -1,0 +1,1 @@
+{"label": "novel_on_bed_s1310071", "task": "novel_on_bed", "ok": false, "why": "[goal] on(BookFiction1_01, HybridMattress__0): underside z 0.397 not on HybridMattress__0 (top 0.610, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

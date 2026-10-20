@@ -1,0 +1,1 @@
+{"label": "b1_vase_centerpiece_s8200248", "task": "b1_vase_centerpiece", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 52.14, "seated": {"WhiteVaseMedium_1": 0.015}}

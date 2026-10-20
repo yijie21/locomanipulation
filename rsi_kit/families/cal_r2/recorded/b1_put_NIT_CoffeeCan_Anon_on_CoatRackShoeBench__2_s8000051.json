@@ -1,0 +1,1 @@
+{"label": "b1_put_NIT_CoffeeCan_Anon_on_CoatRackShoeBench__2_s8000051", "task": "b1_put_NIT_CoffeeCan_Anon_on_CoatRackShoeBench__2", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, CoatRackShoeBench__2): 3.30 m outside CoatRackShoeBench__2's footprint", "fell": false, "dropped": false, "t_end": 60.76, "seated": {}}

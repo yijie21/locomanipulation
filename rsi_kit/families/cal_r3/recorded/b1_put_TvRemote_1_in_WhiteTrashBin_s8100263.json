@@ -1,0 +1,1 @@
+{"label": "b1_put_TvRemote_1_in_WhiteTrashBin_s8100263", "task": "b1_put_TvRemote_1_in_WhiteTrashBin", "ok": false, "why": "[goal] in(TvRemote_1, WhiteTrashBin): outside the container footprint by (+0.32, +0.65) m", "fell": false, "dropped": true, "t_end": 145.26, "seated": {}}

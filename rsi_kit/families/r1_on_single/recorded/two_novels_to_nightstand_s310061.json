@@ -1,0 +1,1 @@
+{"label": "two_novels_to_nightstand_s310061", "task": "two_novels_to_nightstand", "ok": false, "why": "[goal] on(BookFiction1_00, NightStand__2): underside z 0.397 not on NightStand__2 (top 0.642, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

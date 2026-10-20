@@ -1,0 +1,1 @@
+{"label": "b1_remote_on_sofa_s8100008", "task": "b1_remote_on_sofa", "ok": false, "why": "[goal] on(TvRemote_1, GreySofa__2): underside z 0.304 not on GreySofa__2 (top 0.452, +0.3 m)", "fell": false, "dropped": true, "t_end": 66.44, "seated": {}}

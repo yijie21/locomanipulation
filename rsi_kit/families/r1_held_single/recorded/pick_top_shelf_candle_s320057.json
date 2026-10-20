@@ -1,0 +1,1 @@
+{"label": "pick_top_shelf_candle_s320057", "task": "pick_top_shelf_candle", "ok": false, "why": "[goal] held(CandlePattern04_2): not between two fingers (right hand touches it)", "fell": false, "dropped": false, "t_end": 65.48, "seated": {}}

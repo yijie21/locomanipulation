@@ -1,0 +1,35 @@
+{"id": "b1_put_Jam_Anon_in_WhiteTrashBin", "goal": ["in(Jam_Anon, WhiteTrashBin)"], "room": null}
+{"id": "b1_put_WhiteVaseBig_1_in_WhiteTrashBin", "goal": ["in(WhiteVaseBig_1, WhiteTrashBin)"], "room": null}
+{"id": "b1_jam_to_dining_table", "goal": ["on(Jam_Anon, ExtendableTable__0)"], "room": "living_dining_kitchen"}
+{"id": "b1_vase_centerpiece", "goal": ["on(WhiteVaseMedium_1, ExtendableTable__0)"], "room": "living_dining_kitchen"}
+{"id": "b1_jam_to_cart", "goal": ["on(Jam_Anon, UtilityCart__2)"], "room": "living_dining_kitchen"}
+{"id": "b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0", "goal": ["on(CoffeeCanisterLarge, BlackBarStool_B__0)"], "room": null}
+{"id": "b1_put_DisplayWolf_on_UtilityCart__2", "goal": ["on(DisplayWolf, UtilityCart__2)"], "room": null}
+{"id": "b1_put_Jam_Anon_on_ApartmentEnv__3", "goal": ["on(Jam_Anon, ApartmentEnv__3)"], "room": null}
+{"id": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__2", "goal": ["on(NIT_CoffeeCan_Anon, ApartmentEnv__2)"], "room": null}
+{"id": "b1_put_NIT_CoffeeCan_Anon_on_BlackBarStool_B__0", "goal": ["on(NIT_CoffeeCan_Anon, BlackBarStool_B__0)"], "room": null}
+{"id": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0", "goal": ["on(NIT_CoffeeCan_Anon, KitchIsland__0)"], "room": null}
+{"id": "b1_put_RedClock_on_BlackRoundTable__0", "goal": ["on(RedClock, BlackRoundTable__0)"], "room": null}
+{"id": "b1_put_RedClock_on_UtilityCart__2", "goal": ["on(RedClock, UtilityCart__2)"], "room": null}
+{"id": "b1_put_WhiteVaseBig_1_on_CoatRackShoeBench__2", "goal": ["on(WhiteVaseBig_1, CoatRackShoeBench__2)"], "room": null}
+{"id": "b1_put_WhiteVaseBig_1_on_KitchIsland__0", "goal": ["on(WhiteVaseBig_1, KitchIsland__0)"], "room": null}
+{"id": "b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0", "goal": ["on(WhiteVaseMedium_1, BlackRoundTable__0)"], "room": null}
+{"id": "b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2", "goal": ["on(WhiteVaseMedium_1, CoatRackShoeBench__2)"], "room": null}
+{"id": "b1_put_CoffeeCanisterLarge_on_BlackCoffeeTable__1", "goal": ["on(CoffeeCanisterLarge, BlackCoffeeTable__1)"], "room": null}
+{"id": "b1_put_CoffeeCanisterLarge_on_GreySofa__2", "goal": ["on(CoffeeCanisterLarge, GreySofa__2)"], "room": null}
+{"id": "b1_put_DisplayWolf_on_GreySofa__2", "goal": ["on(DisplayWolf, GreySofa__2)"], "room": null}
+{"id": "b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1", "goal": ["on(WhiteVaseBig_1, BlackCoffeeTable__1)"], "room": null}
+{"id": "b1_canister_to_round_table", "goal": ["on(CoffeeCanisterLarge, BlackRoundTable__0)", "upright(CoffeeCanisterLarge)"], "room": "living_dining_kitchen"}
+{"id": "b1_canister_to_dining_table", "goal": ["on(CoffeeCanisterLarge, ExtendableTable__0)", "upright(CoffeeCanisterLarge)"], "room": "living_dining_kitchen"}
+{"id": "b2_pick_CandlePattern04_1", "goal": ["held(CandlePattern04_1)"], "room": null}
+{"id": "b2_put_CandlePattern02_1_in_WoodenBoxSmall", "goal": ["in(CandlePattern02_1, WoodenBoxSmall)"], "room": null}
+{"id": "b2_put_Banana_A_on_DisplayShelves_1__2", "goal": ["on(Banana_A, DisplayShelves_1__2)"], "room": null}
+{"id": "b2_put_CandlePattern02_1_on_DisplayShelves_1__1", "goal": ["on(CandlePattern02_1, DisplayShelves_1__1)"], "room": null}
+{"id": "b2_put_CandlePattern04_1_on_DisplayUnit_1__1", "goal": ["on(CandlePattern04_1, DisplayUnit_1__1)"], "room": null}
+{"id": "b2_put_PlateHolder_on_DisplayShelves_1__1", "goal": ["on(PlateHolder, DisplayShelves_1__1)"], "room": null}
+{"id": "b2_put_RedClock_on_CoatRackShoeBench__1", "goal": ["on(RedClock, CoatRackShoeBench__1)"], "room": null}
+{"id": "b2_put_Wallet_1_on_CoatRackShoeBench__2", "goal": ["on(Wallet_1, CoatRackShoeBench__2)"], "room": null}
+{"id": "b2_put_WhiteVaseBig_1_on_NightStand__0", "goal": ["on(WhiteVaseBig_1, NightStand__0)"], "room": null}
+{"id": "b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2", "goal": ["on(CandlePattern01_1, CornerDisplayShelves_1__2)"], "room": null}
+{"id": "b2_put_CandlePattern04_1_on_YellowArmChair__0", "goal": ["on(CandlePattern04_1, YellowArmChair__0)"], "room": null}
+{"id": "b2_put_WoodenSpoon_on_HybridMattress__0", "goal": ["on(WoodenSpoon, HybridMattress__0)"], "room": null}

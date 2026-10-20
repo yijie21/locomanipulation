@@ -1,0 +1,1 @@
+{"label": "plant_in_bedroom_trash_s1320017", "task": "plant_in_bedroom_trash", "ok": false, "why": "[goal] in(Plant2_5, TrashCan_1): outside the container footprint by (-0.05, +0.48) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

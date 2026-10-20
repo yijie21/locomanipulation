@@ -1,0 +1,1 @@
+{"label": "b2_put_Wallet_1_on_Bookcase__3_s8100289", "task": "b2_put_Wallet_1_on_Bookcase__3", "ok": false, "why": "[goal] on(Wallet_1, Bookcase__3): 0.86 m outside Bookcase__3's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

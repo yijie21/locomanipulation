@@ -1,0 +1,1 @@
+{"label": "b1_put_CoffeeCanisterLarge_on_ConsoleTable__1_s8100239", "task": "b1_put_CoffeeCanisterLarge_on_ConsoleTable__1", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, ConsoleTable__1): 2.46 m outside ConsoleTable__1's footprint", "fell": false, "dropped": false, "t_end": 77.7, "seated": {}}

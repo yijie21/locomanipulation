@@ -1,0 +1,1 @@
+{"label": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3_s8100270", "task": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, ApartmentEnv__3): underside z 0.747 not on ApartmentEnv__3 (top 0.814, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

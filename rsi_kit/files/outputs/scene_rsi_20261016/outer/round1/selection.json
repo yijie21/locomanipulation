@@ -1,0 +1,191 @@
+{
+ "round": "round1",
+ "discovered": 60,
+ "buckets": {
+  "1": 4,
+  "2": 43,
+  "3": 13
+ },
+ "gaps": [
+  {
+   "name": "on_single",
+   "source": "checker",
+   "tasks": [
+    "canister_to_long_counter",
+    "clock_to_console_table",
+    "cookbook_to_island",
+    "hand_soap_to_bathroom_sink",
+    "jam_to_dining_table",
+    "novel_to_bed",
+    "novel_to_display_middle_shelf",
+    "novel_to_nightstand",
+    "novel_to_nightstand_middle_shelf",
+    "novel_to_top_display_shelf",
+    "plant_to_coffee_table",
+    "plant_to_nightstand",
+    "plant_to_top_display_shelf",
+    "remote_on_sofa",
+    "supply_bin_to_middle_shelf",
+    "supply_bin_to_nightstand",
+    "tv_remote_to_tv_stand",
+    "two_novels_to_nightstand",
+    "vase_centerpiece",
+    "wallet_to_bed",
+    "wallet_to_nightstand"
+   ],
+   "n": 21,
+   "new_skills": [
+    "place_on_surface.single"
+   ],
+   "est_usd": 150.0,
+   "per_usd": 0.14,
+   "checker_gaps": {
+    "place_on_surface.single": 21,
+    "grasp_single.object_size": 17,
+    "carry_single.distance": 16,
+    "grasp_single.support_top": 15,
+    "grasp_single.covered": 10,
+    "grasp_single.mass": 6,
+    "place_on_surface.covered": 4,
+    "grasp_single.inboard": 2,
+    "navigate.distance": 2,
+    "grasp_single.wallet_pickup": 2,
+    "navigate.cross_room": 1,
+    "reorient": 1,
+    "grasp_single.thick_novel_pickup": 1
+   }
+  },
+  {
+   "name": "held_single",
+   "source": "checker",
+   "tasks": [
+    "pick_candle_coffee_table",
+    "pick_car_key",
+    "pick_coffee_can",
+    "pick_shelf_plant",
+    "pick_supply_bin_top_shelf",
+    "pick_thick_novel",
+    "pick_top_shelf_candle",
+    "pick_wallet",
+    "pick_white_mug",
+    "pick_wolf_figurine"
+   ],
+   "n": 10,
+   "new_skills": [],
+   "est_usd": 75.0,
+   "per_usd": 0.1333,
+   "checker_gaps": {
+    "grasp_single.object_size": 10,
+    "grasp_single.support_top": 10,
+    "grasp_single.covered": 3,
+    "grasp_single.mug_pickup": 1,
+    "grasp_single.wallet_pickup": 1,
+    "grasp_single.mass": 1,
+    "grasp_single.thick_novel_pickup": 1
+   }
+  },
+  {
+   "name": "in_single",
+   "source": "checker",
+   "tasks": [
+    "apple_in_black_bowl",
+    "banana_in_wooden_bowl",
+    "candle_in_small_dish",
+    "car_key_in_dish",
+    "coffee_can_in_trash",
+    "spoon_in_large_pot",
+    "supply_bin_in_wooden_box",
+    "wallet_in_wooden_box"
+   ],
+   "n": 8,
+   "new_skills": [
+    "place_into.single"
+   ],
+   "est_usd": 150.0,
+   "per_usd": 0.0533,
+   "checker_gaps": {
+    "grasp_single.object_size": 8,
+    "grasp_single.support_top": 8,
+    "place_into.single": 8,
+    "carry_single.distance": 4,
+    "navigate.distance": 1,
+    "place_into.upright": 1,
+    "grasp_single.wallet_pickup": 1
+   }
+  },
+  {
+   "name": "held+near_single",
+   "source": "checker",
+   "tasks": [
+    "bring_canister_to_island",
+    "bring_novel_to_bed",
+    "bring_novel_to_chair",
+    "bring_remote_to_sofa"
+   ],
+   "n": 4,
+   "new_skills": [],
+   "est_usd": 75.0,
+   "per_usd": 0.0533,
+   "checker_gaps": {
+    "goal.near": 4,
+    "grasp_single.covered": 2,
+    "grasp_single.mass": 2,
+    "grasp_single.object_size": 2,
+    "grasp_single.support_top": 2
+   }
+  },
+  {
+   "name": "slide_then_grasp",
+   "source": "/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/loop/gaps.jsonl",
+   "tasks": [
+    "pick_thick_novel",
+    "pick_wallet"
+   ],
+   "n": 3,
+   "new_skills": [
+    "slide_then_grasp"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.01,
+   "capability": "Contact-guided pre-grasp manipulation. Press a fingertip or the closed jaw on an object's top or side and drag or push it a set distance across its surface, then hand it to the existing side grasp. Variants: drag toward the shelf front until it overhangs, pull a book out of its row along its length, push the object away from a static obstacle.",
+   "loop_estimate": "One outer-loop gap: a new 'slide X on its surface' family (predicates plus 50/60/80 pools, about half a day of human setup), then one inner-loop run of about 6-10 h wall clock and 100-150 USD in model cost. It would reopen 12 parked diag starts plus 2 oranges (14/50 = 28% of the pool)."
+  },
+  {
+   "name": "contact_guided_top_pinch",
+   "source": "/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/loop/gaps.jsonl",
+   "tasks": [
+    "pick_wallet"
+   ],
+   "n": 1,
+   "new_skills": [
+    "contact_guided_top_pinch"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033,
+   "capability": "A wrist-down pinch that descends until one finger touches the object's long side, shifts the jaw by the measured contact offset, then closes. It places the jaw within the 4.1 mm per side that the wallet's 8.68 cm side leaves in the 9.5 cm jaw.",
+   "loop_estimate": "1-2 Engineer calls plus a reopen test on the 6 parked starts, about 20-40 USD and 1-2 h. Open risk: whether ScaleBFM delivers a wrist-down attitude at a jaw height of about 1.15 m (mugs at 0.78-0.92 m came out 41-58 deg off)."
+  },
+  {
+   "name": "step_clear_first",
+   "source": "/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/loop/gaps.jsonl",
+   "tasks": [],
+   "n": 1,
+   "new_skills": [
+    "step_clear_first"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033,
+   "capability": "Before planning, sidestep or back-step 15-20 cm away from the nearest static floor object along the free direction, using the motor layer's existing sidestep, then plan from the new pose.",
+   "loop_estimate": "One Engineer call, about 5-10 USD. Low priority: 1/50 diag starts. It becomes unnecessary once the sampler is fixed."
+  }
+ ],
+ "selected": [
+  "on_single",
+  "held_single",
+  "in_single",
+  "held+near_single",
+  "slide_then_grasp"
+ ],
+ "est_usd": 750.0,
+ "rule": "tasks / estimated USD (extend 75.0, new skill 150.0 each); first 6 within 1000.0 USD"
+}

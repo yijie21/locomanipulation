@@ -1,0 +1,1 @@
+{"label": "supply_bin_in_wooden_box_s330028", "task": "supply_bin_in_wooden_box", "ok": false, "why": "[goal] in(SupplyBinAccessory_00, WoodenBoxSmall): outside the container footprint by (+0.14, +0.22) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

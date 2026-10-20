@@ -1,0 +1,1 @@
+{"label": "clock_to_console_table_s310026", "task": "clock_to_console_table", "ok": false, "why": "[goal] on(RedClock, ConsoleTable__1): 4.17 m outside ConsoleTable__1's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

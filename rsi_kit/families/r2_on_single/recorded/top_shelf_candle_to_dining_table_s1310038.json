@@ -1,0 +1,1 @@
+{"label": "top_shelf_candle_to_dining_table_s1310038", "task": "top_shelf_candle_to_dining_table", "ok": false, "why": "[goal] on(CandlePattern04_2, ExtendableTable__0): underside z 1.082 not on ExtendableTable__0 (top 0.746, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {"CandlePattern04_2": 0.0148}}

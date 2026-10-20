@@ -1,0 +1,1 @@
+{"label": "b1_put_Jam_Anon_in_BlackCeramicBowl_s8000151", "task": "b1_put_Jam_Anon_in_BlackCeramicBowl", "ok": false, "why": "[goal] in(Jam_Anon, BlackCeramicBowl): outside the container footprint by (+1.65, +0.21) m", "fell": false, "dropped": true, "t_end": 119.1, "seated": {}}

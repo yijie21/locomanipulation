@@ -1,0 +1,1 @@
+{"label": "b2_put_RedClock_on_CoatRackShoeBench__1_s8200239", "task": "b2_put_RedClock_on_CoatRackShoeBench__1", "ok": false, "why": "[goal] on(RedClock, CoatRackShoeBench__1): underside z 0.898 not on CoatRackShoeBench__1 (top 0.311, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

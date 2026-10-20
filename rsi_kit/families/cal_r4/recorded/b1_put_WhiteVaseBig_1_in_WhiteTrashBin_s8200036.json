@@ -1,0 +1,1 @@
+{"label": "b1_put_WhiteVaseBig_1_in_WhiteTrashBin_s8200036", "task": "b1_put_WhiteVaseBig_1_in_WhiteTrashBin", "ok": false, "why": "[goal] in(WhiteVaseBig_1, WhiteTrashBin): outside the container footprint by (+4.47, +0.78) m", "fell": false, "dropped": false, "t_end": 24.36, "seated": {"WhiteVaseBig_1": 0.015}}

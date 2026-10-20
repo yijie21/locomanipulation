@@ -1,0 +1,1 @@
+{"label": "b1_put_Jam_Anon_on_ApartmentEnv__3_s8200182", "task": "b1_put_Jam_Anon_on_ApartmentEnv__3", "ok": false, "why": "[goal] on(Jam_Anon, ApartmentEnv__3): 2.73 m outside ApartmentEnv__3's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

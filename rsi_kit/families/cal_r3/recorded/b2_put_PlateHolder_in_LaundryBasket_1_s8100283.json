@@ -1,0 +1,1 @@
+{"label": "b2_put_PlateHolder_in_LaundryBasket_1_s8100283", "task": "b2_put_PlateHolder_in_LaundryBasket_1", "ok": false, "why": "[goal] in(PlateHolder, LaundryBasket_1): outside the container footprint by (+5.82, +1.38) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

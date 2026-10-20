@@ -1,0 +1,1 @@
+{"label": "pick_supply_bin_top_shelf_s320061", "task": "pick_supply_bin_top_shelf", "ok": false, "why": "[goal] held(SupplyBinAccessory_00): no hand touches it", "fell": false, "dropped": false, "t_end": 61.2, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern04_1_on_DisplayUnit_1__1_s8200202", "task": "b2_put_CandlePattern04_1_on_DisplayUnit_1__1", "ok": false, "why": "[goal] on(CandlePattern04_1, DisplayUnit_1__1): underside z 0.454 not on DisplayUnit_1__1 (top 0.743, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b1_put_Jam_Anon_in_WhiteUtensilTray_s8100040", "task": "b1_put_Jam_Anon_in_WhiteUtensilTray", "ok": false, "why": "[goal] in(Jam_Anon, WhiteUtensilTray): outside the container footprint by (+1.45, +1.35) m", "fell": false, "dropped": true, "t_end": 117.28, "seated": {}}

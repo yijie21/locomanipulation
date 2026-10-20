@@ -1,0 +1,1 @@
+{"label": "b2_put_Wallet_1_on_CoatRackShoeBench__2_s8200205", "task": "b2_put_Wallet_1_on_CoatRackShoeBench__2", "ok": false, "why": "[goal] on(Wallet_1, CoatRackShoeBench__2): underside z 1.125 not on CoatRackShoeBench__2 (top 0.530, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

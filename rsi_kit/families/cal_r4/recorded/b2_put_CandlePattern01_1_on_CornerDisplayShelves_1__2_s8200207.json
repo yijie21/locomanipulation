@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2_s8200207", "task": "b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2", "ok": false, "why": "[goal] on(CandlePattern01_1, CornerDisplayShelves_1__2): underside z 0.454 not on CornerDisplayShelves_1__2 (top 1.246, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

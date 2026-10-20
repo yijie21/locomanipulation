@@ -1,0 +1,1 @@
+{"label": "b2_put_BookFiction9_01_on_WireShelvingUnitBlack_1__2_s8000106", "task": "b2_put_BookFiction9_01_on_WireShelvingUnitBlack_1__2", "ok": false, "why": "[goal] on(BookFiction9_01, WireShelvingUnitBlack_1__2): underside z 0.502 not on WireShelvingUnitBlack_1__2 (top 1.183, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

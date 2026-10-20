@@ -1,0 +1,13 @@
+{
+ "family": "r2_on_single",
+ "pool": "sealed",
+ "written": 80,
+ "unavailable": {},
+ "skipped": [
+  [
+   "plate_holder_to_medium_counter",
+   1310059,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

@@ -1,0 +1,1 @@
+{"label": "car_key_in_dish_s1320032", "task": "car_key_in_dish", "ok": false, "why": "[goal] in(CarKey_2, CandleDishMedium): outside the container footprint by (+2.15, +1.35) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

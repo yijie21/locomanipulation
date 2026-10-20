@@ -1,0 +1,1 @@
+{"label": "b2_put_WoodenSpoon_on_DisplayShelves01_1__1_s8100107", "task": "b2_put_WoodenSpoon_on_DisplayShelves01_1__1", "ok": false, "why": "[goal] on(WoodenSpoon, DisplayShelves01_1__1): 5.85 m outside DisplayShelves01_1__1's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

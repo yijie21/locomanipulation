@@ -9,3 +9,7 @@ assets/scene/logistics_room_box_v1/**/*.png filter=lfs diff=lfs merge=lfs -text
 assets/scene/logistics_room_box_v1/**/*.jpg filter=lfs diff=lfs merge=lfs -text
 assets/scene/logistics_room_box_v1/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
 assets/scene/logistics_room_box_v1/**/*.exr filter=lfs diff=lfs merge=lfs -text
+
+# The scene RSI reproduction kit (scripts/rsi/kit.py): loop sandboxes are git archives of HEAD and must not carry
+# its hidden pools and outcomes (2026-10-20)
+/rsi_kit export-ignore

@@ -1,0 +1,1 @@
+{"label": "b1_put_NIT_CoffeeCan_Anon_on_BlackRoundTable__0_s8100233", "task": "b1_put_NIT_CoffeeCan_Anon_on_BlackRoundTable__0", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, BlackRoundTable__0): underside z 0.476 not on BlackRoundTable__0 (top 0.522, +0.3 m)", "fell": false, "dropped": true, "t_end": 109.64, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2_s8200051", "task": "b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, CoatRackShoeBench__2): 6.33 m outside CoatRackShoeBench__2's footprint", "fell": false, "dropped": false, "t_end": 52.84, "seated": {"WhiteVaseMedium_1": 0.015}}

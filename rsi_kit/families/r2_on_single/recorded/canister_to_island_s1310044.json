@@ -1,0 +1,1 @@
+{"label": "canister_to_island_s1310044", "task": "canister_to_island", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, KitchIsland__0): underside z 0.703 not on KitchIsland__0 (top 0.895, +0.3 m)", "fell": false, "dropped": false, "t_end": 70.62, "seated": {}}

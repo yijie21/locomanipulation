@@ -1,0 +1,1 @@
+{"label": "bring_novel_to_bed_s340057", "task": "bring_novel_to_bed", "ok": false, "why": "[goal] held(BookFiction1_00): no hand touches it", "fell": false, "dropped": false, "t_end": 25.8, "seated": {}}

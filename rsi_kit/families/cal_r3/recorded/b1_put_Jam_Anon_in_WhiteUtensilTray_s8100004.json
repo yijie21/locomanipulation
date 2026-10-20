@@ -1,0 +1,1 @@
+{"label": "b1_put_Jam_Anon_in_WhiteUtensilTray_s8100004", "task": "b1_put_Jam_Anon_in_WhiteUtensilTray", "ok": false, "why": "[goal] in(Jam_Anon, WhiteUtensilTray): centre 0.05 m above the rim (resting on it?)", "fell": false, "dropped": true, "t_end": 75.78, "seated": {}}

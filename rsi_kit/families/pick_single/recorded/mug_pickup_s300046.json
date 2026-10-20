@@ -1,0 +1,1 @@
+{"label": "mug_pickup_s300046", "task": "mug_pickup", "ok": false, "why": "[goal] held(Mug_2): not between two fingers (right hand touches it)", "fell": false, "dropped": false, "t_end": 57.42, "seated": {}}

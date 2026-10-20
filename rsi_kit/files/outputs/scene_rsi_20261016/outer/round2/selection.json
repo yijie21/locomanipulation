@@ -1,0 +1,338 @@
+{
+ "round": "round2",
+ "discovered": 56,
+ "buckets": {
+  "1": 12,
+  "2": 36,
+  "3": 8
+ },
+ "gaps": [
+  {
+   "name": "on_single",
+   "source": "checker",
+   "tasks": [
+    "big_white_vase_to_tv_stand",
+    "canister_to_island",
+    "car_key_to_console_table",
+    "clock_to_console_table",
+    "coffee_can_to_cart",
+    "hand_soap_to_toilet_tank",
+    "jam_to_cart",
+    "mug_to_island_upright",
+    "novel_on_bed",
+    "novel_to_armchair",
+    "novel_to_nightstand",
+    "novel_to_nightstand_bottom_shelf",
+    "novel_to_yellow_chair",
+    "novel_upright_middle_shelf",
+    "orange_to_dining_table",
+    "plant_to_middle_shelf",
+    "plant_to_nightstand",
+    "plant_to_round_table",
+    "plate_holder_to_medium_counter",
+    "small_vase_to_console_table",
+    "top_shelf_candle_to_dining_table",
+    "two_novels_on_bed",
+    "wallet_to_nightstand",
+    "wolf_into_glass_cabinet",
+    "wolf_to_coffee_table"
+   ],
+   "n": 25,
+   "new_skills": [],
+   "est_usd": 75.0,
+   "per_usd": 0.3333,
+   "checker_gaps": {
+    "grasp_single.object_size": 11,
+    "carry_single.distance": 9,
+    "grasp_single.covered": 8,
+    "place_on_surface.object_height": 8,
+    "place_on_surface.support_top": 7,
+    "place_on_surface.covered": 6,
+    "grasp_single.support_top": 5,
+    "navigate.distance": 3,
+    "grasp_single.inboard": 2,
+    "grasp_single.mass": 2,
+    "grasp_single.pick_shelf_plant": 2,
+    "grasp_single.mug_pickup": 1,
+    "grasp_single.pick_white_mug": 1,
+    "grasp_single.pick_top_shelf_candle": 1,
+    "place_on_surface.clock_to_console_table": 1,
+    "navigate.cross_room": 1,
+    "reorient": 1,
+    "grasp_single.pick_wallet": 1,
+    "grasp_single.wallet_pickup": 1
+   }
+  },
+  {
+   "name": "in_single",
+   "source": "checker",
+   "tasks": [
+    "apple_in_black_bowl",
+    "car_key_in_dish",
+    "orange_in_wooden_bowl",
+    "plant_in_bedroom_trash",
+    "wallet_in_wooden_box"
+   ],
+   "n": 5,
+   "new_skills": [],
+   "est_usd": 75.0,
+   "per_usd": 0.0667,
+   "checker_gaps": {
+    "place_into.rim_height": 2,
+    "grasp_single.object_size": 2,
+    "place_into.opening": 1,
+    "place_into.apple_in_black_bowl": 1,
+    "place_into.car_key_in_dish": 1,
+    "grasp_single.pick_wallet": 1,
+    "grasp_single.support_top": 1,
+    "grasp_single.wallet_pickup": 1,
+    "place_into.wallet_in_wooden_box": 1,
+    "grasp_single.covered": 1,
+    "grasp_single.pick_shelf_plant": 1
+   }
+  },
+  {
+   "name": "held+near_single",
+   "source": "checker",
+   "tasks": [
+    "bring_cookbook_to_kitchen",
+    "bring_pear_to_sofa",
+    "bring_second_novel_to_bed"
+   ],
+   "n": 3,
+   "new_skills": [],
+   "est_usd": 75.0,
+   "per_usd": 0.04,
+   "checker_gaps": {
+    "goal.near": 3,
+    "grasp_single.object_size": 2,
+    "grasp_single.covered": 1,
+    "grasp_single.support_top": 1
+   }
+  },
+  {
+   "name": "held_single",
+   "source": "checker",
+   "tasks": [
+    "hand_me_wallet",
+    "pick_third_thick_novel"
+   ],
+   "n": 2,
+   "new_skills": [],
+   "est_usd": 75.0,
+   "per_usd": 0.0267,
+   "checker_gaps": {
+    "grasp_single.covered": 1,
+    "grasp_single.mass": 1,
+    "grasp_single.object_size": 1,
+    "grasp_single.pick_wallet": 1,
+    "grasp_single.support_top": 1,
+    "grasp_single.wallet_pickup": 1
+   }
+  },
+  {
+   "name": "relay_regrasp",
+   "source": [
+    "/workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/loop/gaps.jsonl"
+   ],
+   "tasks": [
+    "apple_in_black_bowl",
+    "car_key_in_dish"
+   ],
+   "proposed": 2,
+   "capability": [
+    "Set a held object down mid-route on a surface (place_on's put-down) and re-grasp it from a new stance. Both legs are planned up front so each carry fits the grip's creep budget, and the skill refuses when no relay spot exists. Generic over objects and supports."
+   ],
+   "loop_estimate": [
+    "Its own family and pools: one 6-10 h inner loop, about 100-150 USD. It reopens 4 apple starts. The 6 key starts also need a drop stance (hand-over below)."
+   ],
+   "n": 2,
+   "new_skills": [
+    "relay_regrasp"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0067
+  },
+  {
+   "name": "in_room_none",
+   "source": "checker",
+   "tasks": [
+    "go_to_bedroom"
+   ],
+   "n": 1,
+   "new_skills": [
+    "goal.in_room"
+   ],
+   "est_usd": 150.0,
+   "per_usd": 0.0067,
+   "checker_gaps": {
+    "goal.in_room": 1
+   }
+  },
+  {
+   "name": "contact_guided_top_pinch",
+   "source": [
+    "/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/loop/gaps.jsonl"
+   ],
+   "tasks": [
+    "hand_me_wallet"
+   ],
+   "proposed": 1,
+   "capability": [
+    "A wrist-down pinch that descends until one finger touches the object's long side, shifts the jaw by the measured contact offset, then closes. It places the jaw within the 4.1 mm per side that the wallet's 8.68 cm side leaves in the 9.5 cm jaw."
+   ],
+   "loop_estimate": [
+    "1-2 Engineer calls plus a reopen test on the 6 parked starts, about 20-40 USD and 1-2 h. Open risk: whether ScaleBFM delivers a wrist-down attitude at a jaw height of about 1.15 m (mugs at 0.78-0.92 m came out 41-58 deg off)."
+   ],
+   "n": 1,
+   "new_skills": [
+    "contact_guided_top_pinch"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033
+  },
+  {
+   "name": "handover_right_to_left",
+   "source": [
+    "/workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/loop/gaps.jsonl"
+   ],
+   "tasks": [
+    "car_key_in_dish"
+   ],
+   "proposed": 1,
+   "capability": [
+    "Pass a held object from the right hand to the left mid-task (ScaleBFM's right-to-left hand-over measured 10/10), so the other hand can use a stance the first hand cannot reach."
+   ],
+   "loop_estimate": [
+    "A new bimanual skill with its own family and pools: one inner loop, about 100-150 USD. It reopens 6/50 diag starts and about 7/60 accept starts."
+   ],
+   "n": 1,
+   "new_skills": [
+    "handover_right_to_left"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033
+  },
+  {
+   "name": "high_shelf_side_grasp",
+   "source": [
+    "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/loop/gaps.jsonl",
+    "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/loop/gaps.jsonl"
+   ],
+   "tasks": [
+    "hand_me_wallet"
+   ],
+   "proposed": 6,
+   "capability": [
+    "Side grasp on 1.0-1.15 m shelves: stand tall or raise the pelvis, put the jaw at support top + housing clearance with the wrist pitched nose-down, and servo the wrist attitude through the entry.",
+    "A side grasp with the jaw at 1.07-1.15 m. Hold the commanded wrist pitch through the entry, by raising the pelvis or standing tall and servoing wrist attitude, so the jaw arrives at the support top plus housing clearance. Clear the slab lip on the 1.12 m shelves without hooking under it."
+   ],
+   "loop_estimate": [
+    "A capability probe at 1.0-1.15 m (no model cost, about 1 h), then one inner loop of 6-10 h and 100-150 USD. Targets 10/50 diag starts and helps the wallet.",
+    "A capability probe of wrist-pitch delivery at a 1.05-1.15 m jaw height, with and without a raised pelvis (no model cost, about 1-2 h), then one inner loop of 6-10 h and 100-150 USD. Targets 5 unparked diag starts (bins s120007, s120018, s120028, s120038; top-shelf candle s120035), about 8 accept entry timeouts, and helps park I2 (the wallet)."
+   ],
+   "n": 1,
+   "new_skills": [
+    "high_shelf_side_grasp"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033
+  },
+  {
+   "name": "mesh_part_grasp",
+   "source": [
+    "/workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/loop/gaps.jsonl"
+   ],
+   "tasks": [
+    "car_key_in_dish"
+   ],
+   "proposed": 3,
+   "capability": [
+    "Choose the grasp point from the object's collision mesh, not its box centre. Pick a section the two pads overlap on both sides, with the housing's path clear of the rest of the object: the banana's mid-section 5.5-6.5 cm in from its near end, the spoon's 2.0-2.2 cm tall bowl approached across its length, the key's fob. Then hand over to the existing side or pinch grasp."
+   ],
+   "loop_estimate": [
+    "One 6-10 h inner loop with its own pick family, about 100-150 USD. It addresses 18/50 diag starts and about 22/60 accept starts here, but opens the banana and spoon only together with their second pieces."
+   ],
+   "n": 1,
+   "new_skills": [
+    "mesh_part_grasp"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033
+  },
+  {
+   "name": "move_neighbour_first",
+   "source": [
+    "/workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/loop/gaps.jsonl"
+   ],
+   "tasks": [
+    "car_key_in_dish"
+   ],
+   "proposed": 2,
+   "capability": [
+    "Push a light piece of floor furniture (BlackBarStool_B) aside with the hand or body to free a stance at a counter edge, then re-plan the approach on the updated occupancy map."
+   ],
+   "loop_estimate": [
+    "Half a day of human preparation (a stool-push family and its predicates) plus one 6-10 h inner loop at 100-150 USD. On its own it is worth ranking below mesh_part_grasp."
+   ],
+   "n": 1,
+   "new_skills": [
+    "move_neighbour_first"
+   ],
+   "est_usd": 300.0,
+   "per_usd": 0.0033
+  }
+ ],
+ "skipped_proposals": [
+  {
+   "name": "book_from_row",
+   "why": "no bucket-2 task here",
+   "proposed": 3
+  },
+  {
+   "name": "crouch_reach_under_slab",
+   "why": "no bucket-2 task here",
+   "proposed": 1
+  },
+  {
+   "name": "deep_low_shelf_pick",
+   "why": "no bucket-2 task here",
+   "proposed": 1
+  },
+  {
+   "name": "lay_flat_push_in",
+   "why": "no bucket-2 task here",
+   "proposed": 1
+  },
+  {
+   "name": "pull_from_row_then_grasp",
+   "why": "no bucket-2 task here",
+   "proposed": 6
+  },
+  {
+   "name": "raised_top_down_pinch",
+   "why": "no bucket-2 task here",
+   "proposed": 2
+  },
+  {
+   "name": "slide_then_grasp",
+   "why": "built by an earlier family",
+   "proposed": 13
+  },
+  {
+   "name": "step_clear_first",
+   "why": "no bucket-2 task here",
+   "proposed": 1
+  }
+ ],
+ "selected": [
+  "on_single",
+  "in_single",
+  "held+near_single",
+  "held_single",
+  "relay_regrasp",
+  "in_room_none"
+ ],
+ "est_usd": 750.0,
+ "rule": "tasks / estimated USD (extend 75.0, new skill 150.0 each); first 6 within 1000.0 USD"
+}

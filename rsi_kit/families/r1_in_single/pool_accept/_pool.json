@@ -1,0 +1,13 @@
+{
+ "family": "r1_in_single",
+ "pool": "accept",
+ "written": 60,
+ "unavailable": {},
+ "skipped": [
+  [
+   "car_key_in_dish",
+   230014,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

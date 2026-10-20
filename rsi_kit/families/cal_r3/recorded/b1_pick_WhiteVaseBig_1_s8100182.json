@@ -1,0 +1,1 @@
+{"label": "b1_pick_WhiteVaseBig_1_s8100182", "task": "b1_pick_WhiteVaseBig_1", "ok": false, "why": "[goal] held(WhiteVaseBig_1): no hand touches it", "fell": false, "dropped": false, "t_end": 18.08, "seated": {"WhiteVaseBig_1": 0.015}}

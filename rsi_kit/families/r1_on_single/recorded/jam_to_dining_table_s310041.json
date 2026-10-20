@@ -1,0 +1,1 @@
+{"label": "jam_to_dining_table_s310041", "task": "jam_to_dining_table", "ok": false, "why": "[goal] on(Jam_Anon, ExtendableTable__0): 1.38 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

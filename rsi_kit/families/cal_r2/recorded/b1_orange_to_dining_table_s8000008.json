@@ -1,0 +1,1 @@
+{"label": "b1_orange_to_dining_table_s8000008", "task": "b1_orange_to_dining_table", "ok": false, "why": "[goal] on(Orange_A, ExtendableTable__0): 1.33 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

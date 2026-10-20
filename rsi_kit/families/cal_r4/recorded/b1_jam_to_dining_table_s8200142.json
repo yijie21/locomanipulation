@@ -1,0 +1,1 @@
+{"label": "b1_jam_to_dining_table_s8200142", "task": "b1_jam_to_dining_table", "ok": false, "why": "[goal] on(Jam_Anon, ExtendableTable__0): underside z -0.066 not on ExtendableTable__0 (top 0.746, +0.3 m)", "fell": false, "dropped": true, "t_end": 78.26, "seated": {}}

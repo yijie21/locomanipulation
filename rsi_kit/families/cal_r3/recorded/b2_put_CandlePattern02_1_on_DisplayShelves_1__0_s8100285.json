@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern02_1_on_DisplayShelves_1__0_s8100285", "task": "b2_put_CandlePattern02_1_on_DisplayShelves_1__0", "ok": false, "why": "[goal] on(CandlePattern02_1, DisplayShelves_1__0): 1.99 m outside DisplayShelves_1__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b2_put_WhiteVaseBig_1_on_NightStand__0_s8200206", "task": "b2_put_WhiteVaseBig_1_on_NightStand__0", "ok": false, "why": "[goal] on(WhiteVaseBig_1, NightStand__0): underside z 0.743 not on NightStand__0 (top 0.127, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {"WhiteVaseBig_1": 0.015}}

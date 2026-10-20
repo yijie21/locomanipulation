@@ -1,0 +1,1 @@
+{"label": "orange_in_wooden_bowl_s1320018", "task": "orange_in_wooden_bowl", "ok": false, "why": "[goal] in(Orange_A, WoodenBowl): outside the container footprint by (+3.33, +2.23) m", "fell": false, "dropped": true, "t_end": 189.28, "seated": {}}

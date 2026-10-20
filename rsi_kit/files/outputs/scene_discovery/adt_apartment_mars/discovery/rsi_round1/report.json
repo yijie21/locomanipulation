@@ -1,0 +1,72 @@
+{
+ "scene": "outputs/scene_discovery/adt_apartment_mars/scene_meta.json",
+ "model": "claude-opus-5-5",
+ "prompt_sha": "66553fa471ab",
+ "seconds": 1228.8,
+ "claude_calls": 3,
+ "cost_usd": 4.58,
+ "iterations": [
+  {
+   "iteration": 0,
+   "buckets": {
+    "1": 4,
+    "2": 35,
+    "3": 14
+   },
+   "changed": true,
+   "notes": "I'm proposing 53 tasks, with nothing checked yet: 30 in living_dining_kitchen and 23 in the bedroom. The bedroom only has 9 pickable objects, so I stopped at 23 there rather than pad it with near-copies.\n\nExpected sorting (your checker decides):\n(a) Likely bucket 1: the four measured grasps (coffee canister on the cart, jam on the island, TV remote on the coffee table, dish soap on the long counter at 6/10). Also two short carries built on those grasps (remote to the sofa, canister to the island), plus objects of similar size on the same or similar surfaces: DVD remote, pattern-3 candle, coffee can on the dining table.\n(b) Likely bucket 2. The skills these would point to:\n- placing on a surface (on_surface_single is untested; motor_put_back only measured 0.3-0.8 m), for the remote to the TV stand, jam, canister, clock, cookbook, vase and hand soap;\n- placing into a container (into_container_single_arm is untested), for the fruit bowls, utensil tray, pot, trash bin and candle dishes;\n- grasping and placing under a shelf above (overhead open_above is under 0.6 m), for the wolf figurine, cookbook, vases, small plant, novels and the bedroom bottom/middle display shelves;\n- the known grasp failures (white mug 2/10, wallet 0/10, thick novel 0/10).\n(c) Likely bucket 3:\n- support surfaces at or below 0.22 m (white vase on the bookcase's bottom shelf, remote to the coffee table's lower shelf, plant to the nightstand's bottom shelf);\n- support at 1.07-1.22 m (top display-unit candle, black wall shelf), above where motor_grasp support_top lifts (0.3-0.8 m);\n- the nightstand's middle shelf, with only 0.14 m clear above it;\n- surfaces the robot can't stand at (white dressing table, floating shelves);\n- the car key: 0.015 m tall, below object_height_lifted 0.03, and top_down grasps were 0/3.\n\nEvery bedroom task also has a navigation gap. cross_room is untested, and the bedroom's spawn region had no reachable point at body radius 0.35 m. So bedroom tasks will probably be at least bucket 2, needing navigate.narrow_passage at radius 0.26. I proposed them anyway because they show which skills the bedroom would unlock.\n\nAssumption on near(): it is measured in xy, but I don't know whether it is taken to the surface centre or its edge. So I used d = 0.8-1.0 m for surfaces (sofa seat, kitchen island, bed) and 0.3 m only when Y is an object."
+  },
+  {
+   "iteration": 1,
+   "buckets": {
+    "1": 4,
+    "2": 42,
+    "3": 12
+   },
+   "changed": true,
+   "notes": "58 tasks: 30 in living_dining_kitchen, 28 in the bedroom. The bedroom has only six pickable objects the robot can reach, so I stopped at 28 rather than add near-duplicates.\n\n**Kept as they were:** the 4 bucket-1 tasks, unchanged.\n\n**Revised (`from` names the original):**\n- canister_to_kitchen_counter -> canister_to_long_counter: the medium counter has only 0.016 m clear above it. The long counter is where dish_soap_pickup was measured, so it is open.\n- remote_to_lower_coffee_shelf -> remote_on_sofa: an object with a measured grasp going onto an open 0.46 m surface. It is the cleanest test of place_on_surface.single alone.\n- plant_to_wall_shelf -> plant_to_coffee_table: the 1.22 m wall shelf is past motor_put_back (0/3 at 1.20 m) and needs a 6.49 m route.\n- candle_in_small_dish now uses the second pattern-1 candle on the wide display unit. The route drops from 9.15 m to about 1.6 m.\n- donut_in_trash -> coffee_can_in_trash: the donut is out of reach, but the coffee can on the same table is not.\n- plant_to_nightstand now uses the second potted plant. The first one sits on the dressing table, which the robot can't stand at.\n\n**Added:** 5 bedroom tasks, including a two-object task and a second near() task.\n\n**Bucket 3:** 12 tasks kept with reasons. 10 of them have one cause: the white dressing table and the floating shelves have no edge the robot can stand at (robot_can_stand_at false at body radius 0.35 m). That is a navigation question (narrow passage at radius 0.26 m, never walked), not a manipulation skill. The other two: the DVD remote is beyond inboard_max 0.61 m, and the fork is longer than the utensil tray.\n\n**Choosing the next skill (approximate counts):**\n- place_on_surface.single is the most common gap (~16 tasks).\n- carry_single.distance is next (~15). Carry is measured only up to 1 m, but most carries in the apartment are 1.1-4.8 m.\n- Covered grasp or place, under a shelf slab, comes up ~14 times.\n- place_into.single comes up ~8 times; goal.near 4 times.\n- Cheapest moves to bucket 1:\n  - goal.near: bring_remote_to_sofa needs nothing else; bring_canister_to_island also needs a ~2.7 m carry.\n  - place_on_surface.single: remote_on_sofa, if the carry stays within 1 m.\n\n**Checker observations:**\n- Each grasp setting is a single measured point, so every new object lands in bucket 2 even when it is inside motor_grasp.\n- The checker sometimes compares against another surface's setting. The candle at 0.454 m was matched to jam (0.896 m), not tv_remote (0.454 m).\n- Potted plants get a reorient gap whenever upright() is in the goal, though plants should already be standing. This may be the asset's up axis; check it before building reorient. Books show the same thing.\n- HandSoap_1 and DishSoap_1 have a null room, which reads as a cross-room carry.\n- Width 0.092 m (WhiteVaseBig_2) and the 1.5 cm car key are past motor_grasp limits, but the checker still put them in bucket 2."
+  },
+  {
+   "iteration": 2,
+   "buckets": {
+    "1": 4,
+    "2": 43,
+    "3": 13
+   },
+   "changed": true,
+   "notes": "I've returned all 58 tasks from the checked list and added 2 new bedroom tasks, so each room now has 30. The 4 bucket-1 pickups are unchanged: canister, jam, TV remote and dish soap. No task could move into bucket 1, because place_on_surface, place_into, goal.near and any carry over 1.0 m are all still untested or unavailable.\n\nGoal revisions (each keeps its id; `from` is the old id):\n- **pick_bottom_shelf_vase**: switched from the 9.2 cm big white vase to WhiteVaseMedium_2 (8.3 cm wide) on the same bookcase shelf. The big vase is wider than motor_grasp.width_lifted (0.09 m); 0.085 m is 3/3.\n- **candle_in_small_dish**: the candle now comes from the open 0.45 m coffee table (CandlePattern03_1, the same table where the TV-remote grasp went 10/10) instead of the covered display-unit shelf. That removes the grasp_single.covered gap. The carry distance to the dining table is unmeasured.\n- **Plant tasks** (pick_shelf_plant, plant_to_nightstand, plant_to_top_display_shelf, plant_to_coffee_table): I dropped upright(). The checker reads both Plant2_5 and Plant4_2 as more than 15\u00b0 off upright where they stand now, so upright() could only pass after an unneeded reorient. Please check the plants' upright axis in the assets, then put upright back.\n\nOther edits:\n- Filled the empty `missing` field for supply_bin_in_wooden_box, novel_to_top_display_shelf, bring_novel_to_chair, supply_bin_to_nightstand and two_novels_to_nightstand.\n- Corrected `missing` where it disagreed with the checker's own numbers: canister_to_long_counter is a 5.2 m carry (it said ~3 m), remote_on_sofa needs a 1.46 m carry, and candle_in_small_dish now names the coffee-table source.\n- New tasks: wallet_to_bed (place onto an open surface at 0.61 m) and supply_bin_to_middle_shelf (high grasp plus a covered place). I did not change the bucket-3 reasons the checker wrote.\n\nWhat to build next, by how often each gap appears in bucket 2:\n- place_on_surface.single: 21 tasks\n- carry_single over 1 m: about 19\n- place_into.single: 8\n- grasp_single.covered: about 12\n- the thick-novel grasp: 9 (every bedroom novel task)\n- goal.near: 4\n\nTasks closest to bucket 1:\n- bring_remote_to_sofa: only goal.near is missing.\n- remote_on_sofa: place_on_surface.single onto the 0.46 m cushion, plus a 1.46 m carry.\n- pick_candle_coffee_table and pick_coffee_can: one grasp pilot each, with every measurement inside motor_grasp.\n\nScene issues:\n- **Bedroom navigation:** every reachable bedroom object sits on the DisplayShelves_1 unit. locomotion.cross_room notes that no bedroom spawn point was reachable at body radius 0.35 m, so all bedroom tasks depend on a navigation check the checker doesn't flag yet.\n- **Dressing table:** it blocks 10 bedroom tasks (bucket 3). Validating navigate.narrow_passage would unblock all of them at once.\n- **Missing room tags:** HandSoap_1 and DishSoap_1 have room null in the scene, which the checker reads as a cross-room carry."
+  }
+ ],
+ "final": {
+  "tasks": 60,
+  "buckets": {
+   "1": 4,
+   "2": 43,
+   "3": 13
+  },
+  "invalid": 0,
+  "outside_template_space": 60,
+  "template_bucket1_found": 0,
+  "template_bucket1": 0,
+  "gaps": {
+   "grasp_single.object_size": 37,
+   "grasp_single.support_top": 35,
+   "place_on_surface.single": 21,
+   "carry_single.distance": 20,
+   "grasp_single.covered": 15,
+   "grasp_single.mass": 9,
+   "place_into.single": 8,
+   "goal.near": 4,
+   "place_on_surface.covered": 4,
+   "grasp_single.wallet_pickup": 4,
+   "navigate.distance": 3,
+   "grasp_single.inboard": 2,
+   "grasp_single.thick_novel_pickup": 2,
+   "grasp_single.mug_pickup": 1,
+   "navigate.cross_room": 1,
+   "place_into.upright": 1,
+   "reorient": 1
+  }
+ },
+ "templates_from": null
+}

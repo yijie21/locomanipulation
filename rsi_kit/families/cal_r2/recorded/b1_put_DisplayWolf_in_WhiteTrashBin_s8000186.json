@@ -1,0 +1,1 @@
+{"label": "b1_put_DisplayWolf_in_WhiteTrashBin_s8000186", "task": "b1_put_DisplayWolf_in_WhiteTrashBin", "ok": false, "why": "[goal] in(DisplayWolf, WhiteTrashBin): outside the container footprint by (+0.41, +3.94) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

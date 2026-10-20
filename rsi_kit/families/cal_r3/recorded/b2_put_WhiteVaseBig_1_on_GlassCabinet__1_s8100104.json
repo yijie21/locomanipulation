@@ -1,0 +1,1 @@
+{"label": "b2_put_WhiteVaseBig_1_on_GlassCabinet__1_s8100104", "task": "b2_put_WhiteVaseBig_1_on_GlassCabinet__1", "ok": false, "why": "[goal] on(WhiteVaseBig_1, GlassCabinet__1): underside z 0.743 not on GlassCabinet__1 (top 0.773, +0.3 m)", "fell": false, "dropped": false, "t_end": 21.24, "seated": {"WhiteVaseBig_1": 0.015}}

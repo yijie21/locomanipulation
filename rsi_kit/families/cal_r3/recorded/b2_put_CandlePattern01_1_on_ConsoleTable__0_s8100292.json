@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern01_1_on_ConsoleTable__0_s8100292", "task": "b2_put_CandlePattern01_1_on_ConsoleTable__0", "ok": false, "why": "[goal] on(CandlePattern01_1, ConsoleTable__0): 2.12 m outside ConsoleTable__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

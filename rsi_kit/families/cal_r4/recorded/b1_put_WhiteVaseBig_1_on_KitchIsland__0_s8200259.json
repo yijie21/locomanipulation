@@ -1,0 +1,1 @@
+{"label": "b1_put_WhiteVaseBig_1_on_KitchIsland__0_s8200259", "task": "b1_put_WhiteVaseBig_1_on_KitchIsland__0", "ok": false, "why": "[goal] on(WhiteVaseBig_1, KitchIsland__0): underside z 0.743 not on KitchIsland__0 (top 0.895, +0.3 m)", "fell": false, "dropped": false, "t_end": 21.08, "seated": {"WhiteVaseBig_1": 0.015}}

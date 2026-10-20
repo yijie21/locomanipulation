@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern04_1_on_YellowArmChair__0_s8200208", "task": "b2_put_CandlePattern04_1_on_YellowArmChair__0", "ok": false, "why": "[goal] on(CandlePattern04_1, YellowArmChair__0): 1.13 m outside YellowArmChair__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

@@ -1,0 +1,28 @@
+{
+ "family": "r1_held_single",
+ "pool": "sealed",
+ "written": 80,
+ "unavailable": {},
+ "skipped": [
+  [
+   "pick_car_key",
+   320016,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "pick_car_key",
+   320037,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "pick_candle_coffee_table",
+   320047,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "pick_car_key",
+   320059,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

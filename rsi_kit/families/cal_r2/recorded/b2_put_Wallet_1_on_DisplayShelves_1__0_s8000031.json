@@ -1,0 +1,1 @@
+{"label": "b2_put_Wallet_1_on_DisplayShelves_1__0_s8000031", "task": "b2_put_Wallet_1_on_DisplayShelves_1__0", "ok": false, "why": "[goal] on(Wallet_1, DisplayShelves_1__0): underside z 1.125 not on DisplayShelves_1__0 (top 0.397, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern04_1_on_BlackBarStool_B__0_s8000209", "task": "b2_put_CandlePattern04_1_on_BlackBarStool_B__0", "ok": false, "why": "[goal] on(CandlePattern04_1, BlackBarStool_B__0): underside z 0.454 not on BlackBarStool_B__0 (top 0.646, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

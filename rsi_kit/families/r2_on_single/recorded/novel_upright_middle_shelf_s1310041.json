@@ -1,0 +1,1 @@
+{"label": "novel_upright_middle_shelf_s1310041", "task": "novel_upright_middle_shelf", "ok": false, "why": "[goal] on(BookFiction10_00, DisplayShelves_1__1): underside z 0.398 not on DisplayShelves_1__1 (top 0.754, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

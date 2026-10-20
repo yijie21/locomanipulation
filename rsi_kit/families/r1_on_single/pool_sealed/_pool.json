@@ -1,0 +1,18 @@
+{
+ "family": "r1_on_single",
+ "pool": "sealed",
+ "written": 80,
+ "unavailable": {},
+ "skipped": [
+  [
+   "hand_soap_to_bathroom_sink",
+   310048,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "hand_soap_to_bathroom_sink",
+   310059,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

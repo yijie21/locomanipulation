@@ -1,0 +1,1 @@
+{"label": "b1_canister_into_trash_s8000074", "task": "b1_canister_into_trash", "ok": false, "why": "[goal] in(CoffeeCanisterLarge, WhiteTrashBin): outside the container footprint by (+1.68, +2.31) m", "fell": false, "dropped": false, "t_end": 40.34, "seated": {}}

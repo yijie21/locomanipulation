@@ -1,0 +1,1 @@
+{"label": "pick_candle_coffee_table_s320015", "task": "pick_candle_coffee_table", "ok": false, "why": "[goal] held(CandlePattern03_1): no hand touches it", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

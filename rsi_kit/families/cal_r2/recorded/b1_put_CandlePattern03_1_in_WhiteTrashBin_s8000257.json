@@ -1,0 +1,1 @@
+{"label": "b1_put_CandlePattern03_1_in_WhiteTrashBin_s8000257", "task": "b1_put_CandlePattern03_1_in_WhiteTrashBin", "ok": false, "why": "[goal] in(CandlePattern03_1, WhiteTrashBin): outside the container footprint by (+2.13, +4.87) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

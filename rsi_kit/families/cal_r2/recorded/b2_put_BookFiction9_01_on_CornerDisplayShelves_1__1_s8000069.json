@@ -1,0 +1,1 @@
+{"label": "b2_put_BookFiction9_01_on_CornerDisplayShelves_1__1_s8000069", "task": "b2_put_BookFiction9_01_on_CornerDisplayShelves_1__1", "ok": false, "why": "[goal] on(BookFiction9_01, CornerDisplayShelves_1__1): underside z 0.502 not on CornerDisplayShelves_1__1 (top 0.841, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

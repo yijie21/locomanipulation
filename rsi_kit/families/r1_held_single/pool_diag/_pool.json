@@ -1,0 +1,13 @@
+{
+ "family": "r1_held_single",
+ "pool": "diag",
+ "written": 50,
+ "unavailable": {},
+ "skipped": [
+  [
+   "pick_candle_coffee_table",
+   120015,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

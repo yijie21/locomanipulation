@@ -1,0 +1,1 @@
+{"label": "tv_remote_to_tv_stand_s310000", "task": "tv_remote_to_tv_stand", "ok": false, "why": "[goal] on(TvRemote_1, TVUnit__2): underside z -0.002 not on TVUnit__2 (top 0.543, +0.3 m)", "fell": false, "dropped": true, "t_end": 78.14, "seated": {}}

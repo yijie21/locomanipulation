@@ -1,0 +1,1 @@
+{"label": "b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0_s8200225", "task": "b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, BlackRoundTable__0): 4.82 m outside BlackRoundTable__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {"WhiteVaseMedium_1": 0.015}}

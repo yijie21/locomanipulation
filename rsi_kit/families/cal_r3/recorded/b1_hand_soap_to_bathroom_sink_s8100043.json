@@ -1,0 +1,1 @@
+{"label": "b1_hand_soap_to_bathroom_sink_s8100043", "task": "b1_hand_soap_to_bathroom_sink", "ok": false, "why": "[goal] on(HandSoap_1, ApartmentEnv__3): 2.67 m outside ApartmentEnv__3's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

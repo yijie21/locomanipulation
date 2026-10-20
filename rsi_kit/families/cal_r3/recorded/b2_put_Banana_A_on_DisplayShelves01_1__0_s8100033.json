@@ -1,0 +1,1 @@
+{"label": "b2_put_Banana_A_on_DisplayShelves01_1__0_s8100033", "task": "b2_put_Banana_A_on_DisplayShelves01_1__0", "ok": false, "why": "[goal] on(Banana_A, DisplayShelves01_1__0): underside z 0.894 not on DisplayShelves01_1__0 (top 0.433, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

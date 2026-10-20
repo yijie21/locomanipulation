@@ -1,0 +1,346 @@
+{
+ "name": "cal_r4",
+ "runs": [
+  "outputs/scene_rsi_20261016/capability/feasibility/rules3_round2",
+  "outputs/scene_rsi_20261016/capability/feasibility/rules3_round1",
+  "outputs/scene_rsi_20261016/capability/feasibility/rules3_demo1",
+  "outputs/scene_rsi_20261016/capability/feasibility/rules3_templates_2830",
+  "outputs/scene_rsi_20261016/capability/feasibility/rules3_templates"
+ ],
+ "seed": 20261019,
+ "per_task": 8,
+ "measured_goals": 128,
+ "candidates": {
+  "1": {
+   "in": 2,
+   "on": 19,
+   "on+upright": 2
+  },
+  "2": {
+   "held": 19,
+   "in": 351,
+   "near+on": 2,
+   "on": 2121,
+   "on+upright": 11
+  }
+ },
+ "picked": [
+  {
+   "id": "b1_put_Jam_Anon_in_WhiteTrashBin",
+   "bucket": 1,
+   "kind": "in",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "in(Jam_Anon, WhiteTrashBin)"
+   ]
+  },
+  {
+   "id": "b1_put_WhiteVaseBig_1_in_WhiteTrashBin",
+   "bucket": 1,
+   "kind": "in",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "in(WhiteVaseBig_1, WhiteTrashBin)"
+   ]
+  },
+  {
+   "id": "b1_jam_to_dining_table",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_round2",
+   "goal": [
+    "on(Jam_Anon, ExtendableTable__0)"
+   ]
+  },
+  {
+   "id": "b1_vase_centerpiece",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_round2",
+   "goal": [
+    "on(WhiteVaseMedium_1, ExtendableTable__0)"
+   ]
+  },
+  {
+   "id": "b1_jam_to_cart",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_round2",
+   "goal": [
+    "on(Jam_Anon, UtilityCart__2)"
+   ]
+  },
+  {
+   "id": "b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(CoffeeCanisterLarge, BlackBarStool_B__0)"
+   ]
+  },
+  {
+   "id": "b1_put_DisplayWolf_on_UtilityCart__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(DisplayWolf, UtilityCart__2)"
+   ]
+  },
+  {
+   "id": "b1_put_Jam_Anon_on_ApartmentEnv__3",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(Jam_Anon, ApartmentEnv__3)"
+   ]
+  },
+  {
+   "id": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(NIT_CoffeeCan_Anon, ApartmentEnv__2)"
+   ]
+  },
+  {
+   "id": "b1_put_NIT_CoffeeCan_Anon_on_BlackBarStool_B__0",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(NIT_CoffeeCan_Anon, BlackBarStool_B__0)"
+   ]
+  },
+  {
+   "id": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(NIT_CoffeeCan_Anon, KitchIsland__0)"
+   ]
+  },
+  {
+   "id": "b1_put_RedClock_on_BlackRoundTable__0",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(RedClock, BlackRoundTable__0)"
+   ]
+  },
+  {
+   "id": "b1_put_RedClock_on_UtilityCart__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(RedClock, UtilityCart__2)"
+   ]
+  },
+  {
+   "id": "b1_put_WhiteVaseBig_1_on_CoatRackShoeBench__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(WhiteVaseBig_1, CoatRackShoeBench__2)"
+   ]
+  },
+  {
+   "id": "b1_put_WhiteVaseBig_1_on_KitchIsland__0",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(WhiteVaseBig_1, KitchIsland__0)"
+   ]
+  },
+  {
+   "id": "b1_put_WhiteVaseMedium_1_on_BlackRoundTable__0",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(WhiteVaseMedium_1, BlackRoundTable__0)"
+   ]
+  },
+  {
+   "id": "b1_put_WhiteVaseMedium_1_on_CoatRackShoeBench__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(WhiteVaseMedium_1, CoatRackShoeBench__2)"
+   ]
+  },
+  {
+   "id": "b1_put_CoffeeCanisterLarge_on_BlackCoffeeTable__1",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(CoffeeCanisterLarge, BlackCoffeeTable__1)"
+   ]
+  },
+  {
+   "id": "b1_put_CoffeeCanisterLarge_on_GreySofa__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(CoffeeCanisterLarge, GreySofa__2)"
+   ]
+  },
+  {
+   "id": "b1_put_DisplayWolf_on_GreySofa__2",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(DisplayWolf, GreySofa__2)"
+   ]
+  },
+  {
+   "id": "b1_put_WhiteVaseBig_1_on_BlackCoffeeTable__1",
+   "bucket": 1,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(WhiteVaseBig_1, BlackCoffeeTable__1)"
+   ]
+  },
+  {
+   "id": "b1_canister_to_round_table",
+   "bucket": 1,
+   "kind": "on+upright",
+   "source": "rules3_demo1",
+   "goal": [
+    "on(CoffeeCanisterLarge, BlackRoundTable__0)",
+    "upright(CoffeeCanisterLarge)"
+   ]
+  },
+  {
+   "id": "b1_canister_to_dining_table",
+   "bucket": 1,
+   "kind": "on+upright",
+   "source": "rules3_demo1",
+   "goal": [
+    "on(CoffeeCanisterLarge, ExtendableTable__0)",
+    "upright(CoffeeCanisterLarge)"
+   ]
+  },
+  {
+   "id": "b2_pick_CandlePattern04_1",
+   "bucket": 2,
+   "kind": "held",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "held(CandlePattern04_1)"
+   ]
+  },
+  {
+   "id": "b2_put_CandlePattern02_1_in_WoodenBoxSmall",
+   "bucket": 2,
+   "kind": "in",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "in(CandlePattern02_1, WoodenBoxSmall)"
+   ]
+  },
+  {
+   "id": "b2_put_Banana_A_on_DisplayShelves_1__2",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(Banana_A, DisplayShelves_1__2)"
+   ]
+  },
+  {
+   "id": "b2_put_CandlePattern02_1_on_DisplayShelves_1__1",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(CandlePattern02_1, DisplayShelves_1__1)"
+   ]
+  },
+  {
+   "id": "b2_put_CandlePattern04_1_on_DisplayUnit_1__1",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(CandlePattern04_1, DisplayUnit_1__1)"
+   ]
+  },
+  {
+   "id": "b2_put_PlateHolder_on_DisplayShelves_1__1",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(PlateHolder, DisplayShelves_1__1)"
+   ]
+  },
+  {
+   "id": "b2_put_RedClock_on_CoatRackShoeBench__1",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(RedClock, CoatRackShoeBench__1)"
+   ]
+  },
+  {
+   "id": "b2_put_Wallet_1_on_CoatRackShoeBench__2",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(Wallet_1, CoatRackShoeBench__2)"
+   ]
+  },
+  {
+   "id": "b2_put_WhiteVaseBig_1_on_NightStand__0",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates_2830",
+   "goal": [
+    "on(WhiteVaseBig_1, NightStand__0)"
+   ]
+  },
+  {
+   "id": "b2_put_CandlePattern01_1_on_CornerDisplayShelves_1__2",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(CandlePattern01_1, CornerDisplayShelves_1__2)"
+   ]
+  },
+  {
+   "id": "b2_put_CandlePattern04_1_on_YellowArmChair__0",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(CandlePattern04_1, YellowArmChair__0)"
+   ]
+  },
+  {
+   "id": "b2_put_WoodenSpoon_on_HybridMattress__0",
+   "bucket": 2,
+   "kind": "on",
+   "source": "rules3_templates",
+   "goal": [
+    "on(WoodenSpoon, HybridMattress__0)"
+   ]
+  }
+ ]
+}

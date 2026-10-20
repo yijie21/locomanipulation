@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern02_1_on_CoatRackShoeBench__1_s8000172", "task": "b2_put_CandlePattern02_1_on_CoatRackShoeBench__1", "ok": false, "why": "[goal] on(CandlePattern02_1, CoatRackShoeBench__1): 6.47 m outside CoatRackShoeBench__1's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

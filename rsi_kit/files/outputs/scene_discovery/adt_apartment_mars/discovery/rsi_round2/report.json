@@ -1,0 +1,81 @@
+{
+ "scene": "outputs/scene_discovery/adt_apartment_mars/scene_meta.json",
+ "model": "claude-opus-5-5",
+ "prompt_sha": "66553fa471ab",
+ "seconds": 1019.9,
+ "claude_calls": 3,
+ "cost_usd": 4.3,
+ "iterations": [
+  {
+   "iteration": 0,
+   "buckets": {
+    "1": 9,
+    "2": 25,
+    "3": 9
+   },
+   "changed": true,
+   "notes": "I proposed 43 tasks in the first round (no `checked` field yet): 30 in living_dining_kitchen and 13 in the bedroom. The bedroom has only 10 pickable objects, so I did not pad it with near-duplicates to reach 30. The verdicts below are my own guesses; the checker sorts the tasks.\n\nLikely bucket 1, matching measured settings or their ranges:\n- Measured goals: bring_canister_to_island, bring_remote_to_sofa, jam_to_dining_table, tv_remote_to_tv_stand, vase_centerpiece, hand_soap_to_bathroom_sink, coffee_can_in_trash.\n- Measured grasps: hand_me_dish_soap, pick_thick_novel.\n- A measured grasp combined with a put-down height inside the measured range: candle_to_dining_table, coffee_can_to_cart, car_key_to_console_table. The car key task carries a risk: the red clock put-down on that same console table failed 0/8.\n\nDeliberate near-misses, meant to show which skill to build next:\n- **Put-down height above the measured 0.817 m:** canister_to_kitchen_counter, donut_back_to_island, mug_to_island_upright, plate_holder_to_medium_counter.\n- **Container placement outside the one measured bin** (rim 0.547 m, opening at least 0.266 m): orange_in_wooden_bowl (rim about 1.03 m), apple_in_black_bowl, candle_in_small_dish, fork_in_utensil_tray. The fork is flat and also needs a top-down grasp, which failed every motor trial.\n- **Shelf with a board above it closer than 0.6 m (overhead untested):** wolf_into_glass_cabinet, novel_upright_middle_shelf, plant_to_middle_shelf, bring_cookbook_to_kitchen.\n- **Grasps not yet measured, on objects close to measured ones:** remotes_to_tv_stand (DVD remote), bring_pear_to_sofa, pick_third_thick_novel, small_vase_to_console_table, plant_to_round_table, novel_to_armchair.\n- **Bedroom put-downs** (nightstand top, bed, yellow chair): bring_novel_to_bed failed 0/20, so the bedroom route is suspect.\n- **Low reach:** low_vase_to_coffee_table (shelf top 0.16 m) and novel_to_nightstand_bottom_shelf (0.13 m, with a board above).\n- **go_to_bedroom:** cross_room is untested.\n\nLikely bucket 3:\n- big_white_vase_to_tv_stand: the vase is 0.092 m wide; grasps at 0.090 m worked 2/3 and at 0.095 m failed 0/3.\n- clock_to_white_nightstand and supply_bin_to_display_shelf: the robot cannot stand at either surface they start from or go to.\n- mouse_in_storage_box and charging_station_to_nightstand: both start on the white dressing table, where the robot cannot stand, and the bedroom spawn issue applies.\n- wallet_to_nightstand: every wallet grasp failed (0/10, 0/8, 0/40), and its 1.12 m shelf is above the 0.8 m support-top limit.\n\nI left out tasks that repeat a known failure with no variant to try: banana into the wooden bowl, wooden spoon into the large pot, the supply bin or wallet into the small wooden box, and novel to the top display shelf."
+  },
+  {
+   "iteration": 1,
+   "buckets": {
+    "1": 11,
+    "2": 32,
+    "3": 8
+   },
+   "changed": true,
+   "notes": "The revised list has 51 tasks: 36 in the living/dining/kitchen room and 15 in the bedroom.\n\n**Unchanged:** all 9 bucket-1 tasks are returned as they were: bring_canister_to_island, hand_me_dish_soap, jam_to_dining_table, coffee_can_in_trash, tv_remote_to_tv_stand, bring_remote_to_sofa, vase_centerpiece, hand_soap_to_bathroom_sink and pick_thick_novel.\n\n**Three goals revised (`from` gives the old id):**\n- **canister_to_kitchen_counter \u2192 canister_to_island.** Every kitchen counter has about 1.6 cm of headroom, so putting things on counters already shows up in plate_holder_to_medium_counter. The new goal leaves one gap: putting something down on a 0.90 m surface.\n- **top_shelf_candle_to_coffee_table \u2192 top_shelf_candle_to_dining_table.** The dining table is next to the wide display unit, which removes the 6.5 m carry and the 0.45 m put-down. Only the grasp from the 1.07 m shelf is left.\n- **clock_to_white_nightstand \u2192 clock_to_console_table.** The white nightstand has no spot to stand at, so that version was bucket 3. The console table version should land in bucket 2; the pilot exists and scored 0/8.\n\n**Kept with a filled field:**\n- All other bucket-2 tasks are kept with `missing` filled in.\n- The bucket-3 tasks are kept with `reason` filled in. They are: donut (out of reach from the edge), both remotes (DVD remote out of reach), candle in the small dish (the candle's centre can't get below the 2.4 cm rim), low bookcase vase (grip height below 0.25 m), fork in the utility tray (fork longer than the opening), and three bedroom tasks that need a dressing table or floating shelf with no stance.\n\n**New tasks:**\n- **Expected bucket 1** (they use grasps and container or surface settings that are already measured):\n  - orange_to_dining_table: same island-to-dining-table route as the jam.\n  - hand_me_car_key.\n  - apple_in_trash: same table and trash bin as the coffee can.\n  - jam_to_cart: the cart's top tier is open above it.\n  - hand_soap_to_toilet_tank, which also adds the upright predicate.\n- **Expected bucket 2:**\n  - car_key_in_dish and wallet_in_wooden_box: natural tasks that match failed pilots.\n  - bring_second_novel_to_bed: uses the novel whose grasp is measured, so the only gap should be the near skill.\n\n**Most common bucket-2 gaps:**\n1. Carrying more than 4.18 m: coffee can to cart, candle, wolf, car key, big vase, plant.\n2. Grasping or putting down inside covered shelf cells with 0.30\u20130.34 m headroom: bookcase, display unit, bedroom display shelves.\n3. Putting down objects taller than 0.187 m, which covers every book.\n4. Putting down on surfaces outside 0.51\u20130.82 m: the 0.90 m island; chair seats and the coffee table below 0.51 m.\n5. A general near(X, S, d) skill; only two pairs are measured.\n\n**Bedroom stays at 15 tasks, not 30:** the only reachable pickable objects are the three thick novels, the second potted plant, the wallet and the top-shelf supply bin. Everything else is on the dressing table or the floating shelves, and neither has a stance. Of the reachable objects, only the second thick novel has a measured grasp."
+  },
+  {
+   "iteration": 2,
+   "buckets": {
+    "1": 12,
+    "2": 36,
+    "3": 8
+   },
+   "changed": true,
+   "notes": "Round 2 of the list: 56 tasks (37 in living_dining_kitchen, 19 in bedroom). All 12 bucket-1 tasks are unchanged.\n\nRevised:\n- candle_to_dining_table is now candle_to_round_table. The old task failed only on the 7.6 m route, and canister_to_island, wolf_into_glass_cabinet and car_key_to_console_table already flag that gap. The new task keeps the measured candle grasp (CandlePattern03_1 from the coffee table, 7/8) and puts it on the 0.52 m round table, which is inside support_top_measured [0.512, 0.817]. Whether the carry stays under 4.18 m depends on where the round table is, which I could not tell from the stance data.\n\nMissing filled:\n- I filled `missing` on the six bucket-2 tasks that came back empty: orange_to_dining_table, jam_to_cart, hand_soap_to_toilet_tank, car_key_in_dish, bring_second_novel_to_bed, wallet_in_wooden_box.\n- canister_to_island's `missing` now also names the 7.0 m route; it was only listing the 0.90 m put-down.\n- hand_soap_to_toilet_tank: the soap dispenser's room is null in the scene, and that is why the checker treats the carry as cross-room.\n\nKept:\n- All other bucket-2 tasks are unchanged with their `missing`. None has a nearby variant that would land inside the measured envelope without copying a task that already passes.\n- All bucket-3 tasks are unchanged with their reasons. Each is valid, and every variant I tried hits the same block.\n\nNew:\n- wolf_to_coffee_table: one gap only, putting down on a 0.45 m top (below 0.512; motor_put_back went 3/3 at 0.40 and 0.50). The carry from the corner shelves should be short.\n- hand_me_wallet: a held-only test of the flat-wallet grasp.\n- plant_to_nightstand: the plant grasp (0/8) is the only gap; the nightstand top is open.\n- plant_in_bedroom_trash: a new container, TrashCan_1 (rim 0.517 m, opening \u2265 0.297 m).\n- two_novels_on_bed: two objects in one task, only the second such task after remotes_to_tv_stand.\n\nGaps I expect to come up most across the bucket-2 tasks:\n- longer carry: 4.18 m now; tasks need 4.3-7.0 m\n- putting down taller objects: over 0.187 m (the books)\n- grasping in a covered cell: headroom 0.30-0.34 m\n- a general near / bring-to skill\n- putting down on high tops: 0.88-0.92 m (kitchen counters and island)\n- putting down on low tops: 0.42-0.45 m"
+  }
+ ],
+ "final": {
+  "tasks": 56,
+  "buckets": {
+   "1": 12,
+   "2": 36,
+   "3": 8
+  },
+  "invalid": 0,
+  "outside_template_space": 56,
+  "template_bucket1_found": 0,
+  "template_bucket1": 0,
+  "gaps": {
+   "grasp_single.object_size": 16,
+   "grasp_single.covered": 11,
+   "carry_single.distance": 9,
+   "grasp_single.support_top": 8,
+   "place_on_surface.object_height": 8,
+   "place_on_surface.support_top": 7,
+   "place_on_surface.covered": 6,
+   "navigate.distance": 3,
+   "goal.near": 3,
+   "grasp_single.mass": 3,
+   "grasp_single.pick_wallet": 3,
+   "grasp_single.wallet_pickup": 3,
+   "grasp_single.pick_shelf_plant": 3,
+   "place_into.rim_height": 2,
+   "grasp_single.inboard": 2,
+   "place_into.opening": 1,
+   "place_into.apple_in_black_bowl": 1,
+   "grasp_single.mug_pickup": 1,
+   "grasp_single.pick_white_mug": 1,
+   "grasp_single.pick_top_shelf_candle": 1,
+   "place_on_surface.clock_to_console_table": 1,
+   "navigate.cross_room": 1,
+   "place_into.car_key_in_dish": 1,
+   "reorient": 1,
+   "goal.in_room": 1,
+   "place_into.wallet_in_wooden_box": 1
+  }
+ },
+ "templates_from": null
+}

@@ -1,0 +1,1 @@
+{"label": "b1_put_Jam_Anon_on_BlackRoundTable__0_s8000195", "task": "b1_put_Jam_Anon_on_BlackRoundTable__0", "ok": false, "why": "[goal] on(Jam_Anon, BlackRoundTable__0): underside z 0.896 not on BlackRoundTable__0 (top 0.522, +0.3 m)", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b1_put_NIT_CoffeeCan_Anon_in_BlackCeramicBowl_s8000262", "task": "b1_put_NIT_CoffeeCan_Anon_in_BlackCeramicBowl", "ok": false, "why": "[goal] in(NIT_CoffeeCan_Anon, BlackCeramicBowl): centre 0.02 m above the rim (resting on it?)", "fell": false, "dropped": false, "t_end": 52.82, "seated": {}}

@@ -1,0 +1,23 @@
+{
+ "family": "cal_r2",
+ "pool": "sealed",
+ "written": 288,
+ "unavailable": {},
+ "skipped": [
+  [
+   "b2_put_CandlePattern02_1_on_CoatRackShoeBench__1",
+   8000135,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b1_put_CarKey_2_in_WhiteTrashBin",
+   8000221,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b1_put_CarKey_2_in_WhiteTrashBin",
+   8000258,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

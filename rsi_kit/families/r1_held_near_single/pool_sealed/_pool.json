@@ -1,0 +1,18 @@
+{
+ "family": "r1_held_near_single",
+ "pool": "sealed",
+ "written": 80,
+ "unavailable": {},
+ "skipped": [
+  [
+   "bring_remote_to_sofa",
+   340001,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "bring_remote_to_sofa",
+   340050,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

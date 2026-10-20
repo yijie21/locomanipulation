@@ -1,0 +1,38 @@
+{
+ "family": "cal_r3",
+ "pool": "sealed",
+ "written": 288,
+ "unavailable": {},
+ "skipped": [
+  [
+   "b1_hand_soap_to_bathroom_sink",
+   8100151,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b1_hand_soap_to_bathroom_sink",
+   8100188,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b1_hand_soap_to_bathroom_sink",
+   8100225,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b1_hand_soap_to_bathroom_sink",
+   8100226,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b2_put_PlateHolder_in_LaundryBasket_1",
+   8100245,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "b2_put_PlateHolder_in_LaundryBasket_1",
+   8100246,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

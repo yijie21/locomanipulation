@@ -1,0 +1,18 @@
+{
+ "family": "r1_on_single",
+ "pool": "diag",
+ "written": 50,
+ "unavailable": {},
+ "skipped": [
+  [
+   "hand_soap_to_bathroom_sink",
+   110008,
+   "no reachable spawn point in the room's spawn region"
+  ],
+  [
+   "tv_remote_to_tv_stand",
+   110011,
+   "no reachable spawn point in the room's spawn region"
+  ]
+ ]
+}

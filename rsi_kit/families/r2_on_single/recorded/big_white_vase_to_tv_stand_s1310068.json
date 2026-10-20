@@ -1,0 +1,1 @@
+{"label": "big_white_vase_to_tv_stand_s1310068", "task": "big_white_vase_to_tv_stand", "ok": false, "why": "[goal] on(WhiteVaseBig_1, TVUnit__2): 5.35 m outside TVUnit__2's footprint", "fell": false, "dropped": false, "t_end": 20.9, "seated": {"WhiteVaseBig_1": 0.015}}

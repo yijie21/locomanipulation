@@ -1,0 +1,1 @@
+{"label": "b2_put_WoodenSpoon_on_HybridMattress__0_s8200244", "task": "b2_put_WoodenSpoon_on_HybridMattress__0", "ok": false, "why": "[goal] on(WoodenSpoon, HybridMattress__0): 4.46 m outside HybridMattress__0's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

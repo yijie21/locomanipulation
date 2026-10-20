@@ -1,0 +1,1 @@
+{"label": "bring_novel_to_chair_s340068", "task": "bring_novel_to_chair", "ok": false, "why": "[goal] near(BookFiction10_00, YellowDiningChair__0, 0.8): 1.74 m apart (limit 0.80)", "fell": false, "dropped": false, "t_end": 41.12, "seated": {}}

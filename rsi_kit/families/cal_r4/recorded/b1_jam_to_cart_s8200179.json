@@ -1,0 +1,1 @@
+{"label": "b1_jam_to_cart_s8200179", "task": "b1_jam_to_cart", "ok": false, "why": "[goal] on(Jam_Anon, UtilityCart__2): underside z -0.065 not on UtilityCart__2 (top 0.702, +0.3 m)", "fell": false, "dropped": true, "t_end": 164.54, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "candle_in_small_dish_s330082", "task": "candle_in_small_dish", "ok": false, "why": "[goal] in(CandlePattern03_1, CandleDishSmall): outside the container footprint by (+0.90, +4.04) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

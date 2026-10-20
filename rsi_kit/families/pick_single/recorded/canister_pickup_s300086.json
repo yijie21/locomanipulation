@@ -1,0 +1,1 @@
+{"label": "canister_pickup_s300086", "task": "canister_pickup", "ok": false, "why": "[goal] held(CoffeeCanisterLarge): no hand touches it", "fell": false, "dropped": false, "t_end": 70.02, "seated": {}}

@@ -1,0 +1,1 @@
+{"label": "b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0_s8200250", "task": "b1_put_CoffeeCanisterLarge_on_BlackBarStool_B__0", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, BlackBarStool_B__0): 1.04 m outside BlackBarStool_B__0's footprint", "fell": false, "dropped": false, "t_end": 45.16, "seated": {}}

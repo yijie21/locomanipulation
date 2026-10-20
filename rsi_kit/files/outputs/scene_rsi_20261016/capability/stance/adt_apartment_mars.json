@@ -1,0 +1,3272 @@
+{
+ "scene": "outputs/scene_discovery/adt_apartment_mars/scene_meta.json",
+ "rule": "an edge counts when >= 3 of 5 points along it pass skills/pick.py's stance search (object [0.05, 0.15] m in; stance 0.4 m behind it, [0.12, 0.22, 0.3] m toward either hand; >= 0.12 m from floor objects, >= 0.25 m from other furniture along the last leg; route at body radius 0.35 m from the room's spawn region)",
+ "body_radius": 0.35,
+ "floor_boxes": 7,
+ "surfaces_total": 71,
+ "approachable_old": 35,
+ "approachable_new": 58,
+ "gained": [
+  "BlackCoffeeTable__0",
+  "BlackCoffeeTable__1",
+  "BlackKitchenChair_B__0",
+  "ConsoleTable__0",
+  "ConsoleTable__1",
+  "CornerDisplayShelves_1__0",
+  "CornerDisplayShelves_1__1",
+  "CornerDisplayShelves_1__2",
+  "DisplayShelves01_1__0",
+  "DisplayShelves01_1__1",
+  "DisplayShelves01_1__2",
+  "GreySofa__2",
+  "HybridMattress__0",
+  "RedArmChair__0",
+  "TVUnit__0",
+  "TVUnit__1",
+  "TVUnit__2",
+  "WhiteChair__0",
+  "WireShelvingUnitBlack_1__0",
+  "WireShelvingUnitBlack_1__1",
+  "WireShelvingUnitBlack_1__2",
+  "YellowArmChair__0"
+ ],
+ "lost": [],
+ "changed": 43,
+ "surfaces": {
+  "ApartmentEnv__0": {
+   "approach_edges": [
+    "+x",
+    "+y"
+   ],
+   "old": [
+    "-x"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.3829,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.255,
+      -6.041,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.155,
+      -5.476,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "ApartmentEnv__1": {
+   "approach_edges": [],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.7279,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "no route": 1,
+      "other furniture": 4
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "ApartmentEnv__2": {
+   "approach_edges": [
+    "+x"
+   ],
+   "old": [
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.7524,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.209,
+      -5.277,
+      -3.1416
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      0.113,
+      -5.527,
+      1.5708
+     ]
+    }
+   }
+  },
+  "ApartmentEnv__3": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.8165,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.168,
+      -5.677,
+      1.5708
+     ]
+    }
+   }
+  },
+  "ApartmentEnv__6": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.9177,
+   "edges": {
+    "+x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.057,
+      -4.717,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      1.941,
+      -2.702,
+      -0.0
+     ]
+    }
+   }
+  },
+  "BlackArmChair__0": {
+   "approach_edges": [
+    "+x",
+    "-x"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.427,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.93,
+      -0.613,
+      2.7828
+     ]
+    },
+    "-x": {
+     "points": 3,
+     "why": {
+      "other furniture": 2
+     },
+     "stance": [
+      -3.215,
+      -0.324,
+      -0.3588
+     ]
+    },
+    "+y": {
+     "points": 1,
+     "why": {
+      "no route": 1,
+      "other furniture": 3
+     },
+     "stance": [
+      -1.772,
+      0.124,
+      -1.9296
+     ]
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "floor object": 3,
+      "other furniture": 1
+     },
+     "stance": [
+      -3.151,
+      -0.695,
+      1.212
+     ]
+    }
+   }
+  },
+  "BlackBarStool_B__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "-y"
+   ],
+   "old": [
+    "+x",
+    "-x"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.6459,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.317,
+      -2.625,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 4,
+     "why": {
+      "other furniture": 1
+     },
+     "stance": [
+      -0.317,
+      -1.625,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.597,
+      -1.905,
+      -0.0
+     ]
+    }
+   }
+  },
+  "BlackCoffeeTable__0": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.22,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.843,
+      2.754,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.268,
+      1.694,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 2,
+     "why": {
+      "no route": 3
+     },
+     "stance": [
+      -2.558,
+      2.27,
+      -0.0
+     ]
+    }
+   }
+  },
+  "BlackCoffeeTable__1": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4544,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.847,
+      2.758,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.222,
+      1.693,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 2,
+     "why": {
+      "no route": 3
+     },
+     "stance": [
+      -2.612,
+      2.271,
+      -0.0
+     ]
+    }
+   }
+  },
+  "BlackKitchenChair_B__0": {
+   "approach_edges": [
+    "+x",
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4402,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.283,
+      -3.987,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 3,
+     "why": {
+      "other furniture": 2
+     },
+     "stance": [
+      -0.603,
+      -3.722,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 2,
+     "why": {
+      "other furniture": 3
+     },
+     "stance": [
+      -1.723,
+      -3.808,
+      -0.0
+     ]
+    }
+   }
+  },
+  "BlackKitchenChair__0": {
+   "approach_edges": [
+    "+x",
+    "+y"
+   ],
+   "old": [
+    "+x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.4376,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.963,
+      -1.967,
+      -1.6208
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -2.665,
+      -2.376,
+      -0.05
+     ]
+    },
+    "-y": {
+     "points": 2,
+     "why": {
+      "other furniture": 3
+     },
+     "stance": [
+      -1.631,
+      -2.162,
+      3.0916
+     ]
+    }
+   }
+  },
+  "BlackRoundTable__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "+x"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.5193,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.673,
+      0.165,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 3,
+     "why": {
+      "other furniture": 2
+     },
+     "stance": [
+      -1.253,
+      1.365,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.953,
+      0.645,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "no route": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "BlackWallShelf__0": {
+   "approach_edges": [
+    "-x",
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 1.2192,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      1.174,
+      -0.398,
+      -0.0
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      1.594,
+      -0.538,
+      1.5708
+     ]
+    }
+   }
+  },
+  "Bookcase__0": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "-x"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.1619,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.341,
+      -0.322,
+      1.5019
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.689,
+      0.424,
+      -0.0689
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "Bookcase__1": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "-x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.5019,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.321,
+      -0.305,
+      1.5254
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.659,
+      0.409,
+      -0.0454
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "Bookcase__2": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "-x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.8196,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.322,
+      -0.32,
+      1.5254
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.659,
+      0.406,
+      -0.0454
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "Bookcase__3": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "-x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 1.0819,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.322,
+      -0.307,
+      1.5254
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.66,
+      0.408,
+      -0.0454
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "CoatRackShoeBench__0": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.1108,
+   "edges": {
+    "+x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.243,
+      -6.161,
+      1.5875
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.139,
+      -5.246,
+      0.0167
+     ]
+    }
+   }
+  },
+  "CoatRackShoeBench__1": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.3108,
+   "edges": {
+    "+x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.249,
+      -6.163,
+      1.5935
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.14,
+      -5.249,
+      0.0227
+     ]
+    }
+   }
+  },
+  "CoatRackShoeBench__2": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.5142,
+   "edges": {
+    "+x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.239,
+      -6.178,
+      1.593
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.129,
+      -5.251,
+      0.0222
+     ]
+    }
+   }
+  },
+  "ConsoleTable__0": {
+   "approach_edges": [
+    "+x",
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.2963,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.617,
+      -1.639,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.222,
+      -0.944,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "ConsoleTable__1": {
+   "approach_edges": [
+    "+x",
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.6972,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.615,
+      -1.637,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.19,
+      -0.942,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "CornerDisplayShelves_1__0": {
+   "approach_edges": [
+    "-x"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4422,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.668,
+      0.839,
+      -0.0555
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.62,
+      0.201,
+      1.5153
+     ]
+    }
+   }
+  },
+  "CornerDisplayShelves_1__1": {
+   "approach_edges": [
+    "-x"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.8393,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.679,
+      0.792,
+      -0.0
+     ]
+    },
+    "+y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.597,
+      1.172,
+      -1.5708
+     ]
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.597,
+      0.172,
+      1.5708
+     ]
+    }
+   }
+  },
+  "CornerDisplayShelves_1__2": {
+   "approach_edges": [
+    "-x"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 1.2448,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.68,
+      0.821,
+      -0.05
+     ]
+    },
+    "+y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.58,
+      1.199,
+      -1.6208
+     ]
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.63,
+      0.196,
+      1.5208
+     ]
+    }
+   }
+  },
+  "DisplayShelves01_1__0": {
+   "approach_edges": [
+    "+x",
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4327,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.265,
+      2.954,
+      1.5958
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "floor object": 3,
+      "other furniture": 2
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.665,
+      3.422,
+      0.025
+     ]
+    }
+   }
+  },
+  "DisplayShelves01_1__1": {
+   "approach_edges": [
+    "+x",
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.8336,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.28,
+      2.959,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "floor object": 4,
+      "other furniture": 1
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.67,
+      3.434,
+      -0.0
+     ]
+    }
+   }
+  },
+  "DisplayShelves01_1__2": {
+   "approach_edges": [
+    "+x",
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 1.2327,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.286,
+      2.957,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "floor object": 4,
+      "other furniture": 1
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.671,
+      3.432,
+      -0.0
+     ]
+    }
+   }
+  },
+  "DisplayShelves_1__0": {
+   "approach_edges": [
+    "-x",
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "bedroom",
+   "top": 0.3965,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "floor object": 3,
+      "other furniture": 2
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.436,
+      0.668,
+      1.5486
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.856,
+      1.249,
+      3.1194
+     ]
+    }
+   }
+  },
+  "DisplayShelves_1__1": {
+   "approach_edges": [
+    "-x",
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "bedroom",
+   "top": 0.7542,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "floor object": 3,
+      "other furniture": 2
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.429,
+      0.669,
+      1.5452
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.855,
+      1.25,
+      3.116
+     ]
+    }
+   }
+  },
+  "DisplayShelves_1__2": {
+   "approach_edges": [
+    "-x",
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "bedroom",
+   "top": 1.1186,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "floor object": 3,
+      "other furniture": 2
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.425,
+      0.646,
+      1.5445
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.855,
+      1.254,
+      3.1153
+     ]
+    }
+   }
+  },
+  "DisplayUnit_1__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.3876,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.495,
+      -4.559,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.675,
+      -3.259,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.29,
+      -4.029,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "DisplayUnit_1__1": {
+   "approach_edges": [
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.7271,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.682,
+      -3.606,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.297,
+      -4.381,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "DisplayUnit_1__2": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 1.0663,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.687,
+      -4.474,
+      1.5708
+     ]
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.586,
+      -3.254,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -3.302,
+      -4.034,
+      3.1416
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "ExtendableTable__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "-y"
+   ],
+   "old": [
+    "-x",
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.7468,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.391,
+      -3.237,
+      -3.1248
+     ]
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -2.914,
+      -3.039,
+      0.0168
+     ]
+    },
+    "+y": {
+     "points": 2,
+     "why": {
+      "other furniture": 3
+     },
+     "stance": [
+      -0.637,
+      -2.361,
+      -1.554
+     ]
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.76,
+      -3.9,
+      1.5876
+     ]
+    }
+   }
+  },
+  "FloatingShelf03Pattern01_1__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 1.2953,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "FloatingShelf03Pattern02_1__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 1.2943,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "FloatingShelf_5__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 1.1686,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "no route": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "floor object": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "FloatingShelf_6__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 1.1692,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 3,
+      "no route": 2
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "floor object": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "FloatingShelf_7__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 0.8392,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "no route": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "floor object": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "FloatingShelf_8__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 0.8475,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 3,
+      "no route": 2
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "floor object": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "GlassCabinet__0": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.397,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.231,
+      -5.577,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.139,
+      -6.067,
+      -0.0
+     ]
+    }
+   }
+  },
+  "GlassCabinet__1": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.7688,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.238,
+      -5.589,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.148,
+      -6.069,
+      -0.0
+     ]
+    }
+   }
+  },
+  "GlassCabinet__2": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 1.1975,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.24,
+      -5.589,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.15,
+      -6.069,
+      -0.0
+     ]
+    }
+   }
+  },
+  "GreySofa__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.3024,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "other furniture": 3,
+      "last leg": 1
+     },
+     "stance": [
+      -2.532,
+      2.639,
+      3.1229
+     ]
+    }
+   }
+  },
+  "GreySofa__1": {
+   "approach_edges": [],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4566,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "no route": 1,
+      "other furniture": 4
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 4,
+      "no route": 1
+     },
+     "stance": null
+    }
+   }
+  },
+  "GreySofa__2": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4566,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "no route": 1,
+      "other furniture": 4
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 3,
+     "why": {
+      "last leg": 2
+     },
+     "stance": [
+      -2.517,
+      2.648,
+      3.1264
+     ]
+    }
+   }
+  },
+  "HybridMattress__0": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [],
+   "room": "bedroom",
+   "top": 0.6088,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 4,
+      "floor object": 1
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 4,
+     "why": {
+      "other furniture": 1
+     },
+     "stance": [
+      1.783,
+      1.748,
+      1.5795
+     ]
+    }
+   }
+  },
+  "KitchIsland__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y",
+    "-y"
+   ],
+   "old": [
+    "+x",
+    "-x"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.8964,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      0.807,
+      -1.452,
+      -1.5867
+     ]
+    },
+    "-x": {
+     "points": 3,
+     "why": {
+      "floor object": 1,
+      "other furniture": 1
+     },
+     "stance": [
+      0.196,
+      -3.413,
+      1.5549
+     ]
+    },
+    "+y": {
+     "points": 4,
+     "why": {
+      "other furniture": 1
+     },
+     "stance": [
+      -0.083,
+      -2.723,
+      -0.0159
+     ]
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      1.419,
+      -2.567,
+      3.1257
+     ]
+    }
+   }
+  },
+  "NightStand__0": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "bedroom",
+   "top": 0.1262,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.161,
+      1.58,
+      -0.0
+     ]
+    }
+   }
+  },
+  "NightStand__1": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "bedroom",
+   "top": 0.4918,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.174,
+      1.57,
+      -0.0
+     ]
+    }
+   }
+  },
+  "NightStand__2": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [
+    "-y"
+   ],
+   "room": "bedroom",
+   "top": 0.6255,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.136,
+      1.572,
+      -0.0
+     ]
+    }
+   }
+  },
+  "RedArmChair__0": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4246,
+   "edges": {
+    "+x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -1.808,
+      2.818,
+      -3.0025
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -2.22,
+      2.655,
+      1.7099
+     ]
+    }
+   }
+  },
+  "TVUnit__0": {
+   "approach_edges": [
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.1217,
+   "edges": {
+    "+x": {
+     "points": 1,
+     "why": {
+      "floor object": 3,
+      "other furniture": 1
+     },
+     "stance": [
+      -0.598,
+      2.725,
+      -1.5847
+     ]
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.629,
+      0.511,
+      1.5569
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.698,
+      1.739,
+      -0.0139
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 3,
+      "floor object": 2
+     },
+     "stance": null
+    }
+   }
+  },
+  "TVUnit__1": {
+   "approach_edges": [
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.3437,
+   "edges": {
+    "+x": {
+     "points": 2,
+     "why": {
+      "floor object": 2,
+      "other furniture": 1
+     },
+     "stance": [
+      -0.535,
+      2.715,
+      -1.5843
+     ]
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.632,
+      0.522,
+      1.5573
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.7,
+      1.74,
+      -0.0135
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 3,
+      "floor object": 2
+     },
+     "stance": null
+    }
+   }
+  },
+  "TVUnit__2": {
+   "approach_edges": [
+    "+y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.5117,
+   "edges": {
+    "+x": {
+     "points": 2,
+     "why": {
+      "floor object": 2,
+      "other furniture": 1
+     },
+     "stance": [
+      -0.541,
+      2.725,
+      -1.5843
+     ]
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -0.648,
+      0.511,
+      1.5573
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.719,
+      1.74,
+      -0.0135
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 3,
+      "floor object": 2
+     },
+     "stance": null
+    }
+   }
+  },
+  "UtilityCart__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y",
+    "-y"
+   ],
+   "old": [
+    "+x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.1589,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.643,
+      -1.22,
+      3.0172
+     ]
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.751,
+      -0.839,
+      -0.1244
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.014,
+      -0.535,
+      -1.6952
+     ]
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.38,
+      -1.524,
+      1.4464
+     ]
+    }
+   }
+  },
+  "UtilityCart__1": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y",
+    "-y"
+   ],
+   "old": [
+    "+x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.4302,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.656,
+      -1.218,
+      3.0309
+     ]
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.747,
+      -0.855,
+      -0.1107
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.026,
+      -0.547,
+      -1.6815
+     ]
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.376,
+      -1.525,
+      1.4601
+     ]
+    }
+   }
+  },
+  "UtilityCart__2": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y",
+    "-y"
+   ],
+   "old": [
+    "+x",
+    "+y"
+   ],
+   "room": "living_dining_kitchen",
+   "top": 0.7015,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.659,
+      -1.225,
+      3.0309
+     ]
+    },
+    "-x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.75,
+      -0.862,
+      -0.1107
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.029,
+      -0.555,
+      -1.6815
+     ]
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.379,
+      -1.533,
+      1.4601
+     ]
+    }
+   }
+  },
+  "WhiteChair__0": {
+   "approach_edges": [
+    "+x",
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4446,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.075,
+      -1.992,
+      -1.6011
+     ]
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 2,
+     "why": {
+      "other furniture": 3
+     },
+     "stance": [
+      -1.667,
+      -2.158,
+      -0.0303
+     ]
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.642,
+      -2.458,
+      3.1113
+     ]
+    }
+   }
+  },
+  "WhiteDressingTable__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 0.6522,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.253,
+      1.617,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.165,
+      1.282,
+      -0.0
+     ]
+    }
+   }
+  },
+  "WhiteDressingTable__1": {
+   "approach_edges": [],
+   "old": [],
+   "room": "bedroom",
+   "top": 0.7734,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      2.249,
+      1.698,
+      -1.5708
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 2,
+     "why": {
+      "other furniture": 2,
+      "floor object": 1
+     },
+     "stance": [
+      2.157,
+      1.285,
+      -0.0
+     ]
+    }
+   }
+  },
+  "WhiteNightstand__0": {
+   "approach_edges": [],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.5304,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "no route": 2,
+      "other furniture": 3
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "WhiteNightstand__1": {
+   "approach_edges": [],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.7415,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "no route": 2,
+      "other furniture": 3
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  },
+  "WireShelvingUnitBlack_1__0": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4186,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 4,
+     "why": {
+      "other furniture": 1
+     },
+     "stance": [
+      1.94,
+      -0.514,
+      -0.0
+     ]
+    }
+   }
+  },
+  "WireShelvingUnitBlack_1__1": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.9241,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 4,
+     "why": {
+      "other furniture": 1
+     },
+     "stance": [
+      1.946,
+      -0.511,
+      -0.0
+     ]
+    }
+   }
+  },
+  "WireShelvingUnitBlack_1__2": {
+   "approach_edges": [
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 1.1795,
+   "edges": {
+    "+x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-x": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 4,
+     "why": {
+      "other furniture": 1
+     },
+     "stance": [
+      1.943,
+      -0.505,
+      -0.0
+     ]
+    }
+   }
+  },
+  "YellowArmChair__0": {
+   "approach_edges": [
+    "+x",
+    "-y"
+   ],
+   "old": [],
+   "room": "living_dining_kitchen",
+   "top": 0.4205,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -0.957,
+      3.264,
+      -3.0633
+     ]
+    },
+    "-x": {
+     "points": 1,
+     "why": {
+      "other furniture": 4
+     },
+     "stance": [
+      -2.223,
+      2.765,
+      0.0783
+     ]
+    },
+    "+y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    },
+    "-y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      -1.686,
+      2.703,
+      1.6491
+     ]
+    }
+   }
+  },
+  "YellowDiningChair__0": {
+   "approach_edges": [
+    "+x",
+    "-x",
+    "+y"
+   ],
+   "old": [
+    "+y"
+   ],
+   "room": "bedroom",
+   "top": 0.4303,
+   "edges": {
+    "+x": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      2.059,
+      1.389,
+      -1.6065
+     ]
+    },
+    "-x": {
+     "points": 3,
+     "why": {
+      "other furniture": 2
+     },
+     "stance": [
+      1.843,
+      0.382,
+      1.5351
+     ]
+    },
+    "+y": {
+     "points": 5,
+     "why": {},
+     "stance": [
+      1.607,
+      0.968,
+      -0.0357
+     ]
+    },
+    "-y": {
+     "points": 0,
+     "why": {
+      "other furniture": 5
+     },
+     "stance": null
+    }
+   }
+  }
+ },
+ "loop_check": [
+  {
+   "surface": "ApartmentEnv__6",
+   "edge": "-y",
+   "walked": 127,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "BlackCoffeeTable__1",
+   "edge": "+y",
+   "walked": 176,
+   "failed": 0,
+   "listed_old": false,
+   "listed_new": true
+  },
+  {
+   "surface": "DisplayShelves_1__0",
+   "edge": "-y",
+   "walked": 234,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "DisplayShelves_1__2",
+   "edge": "-y",
+   "walked": 234,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "ExtendableTable__0",
+   "edge": "+x",
+   "walked": 16,
+   "failed": 0,
+   "listed_old": false,
+   "listed_new": true
+  },
+  {
+   "surface": "ExtendableTable__0",
+   "edge": "+y",
+   "walked": 12,
+   "failed": 1,
+   "listed_old": false,
+   "listed_new": false
+  },
+  {
+   "surface": "ExtendableTable__0",
+   "edge": "-x",
+   "walked": 19,
+   "failed": 2,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "ExtendableTable__0",
+   "edge": "-y",
+   "walked": 56,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "KitchIsland__0",
+   "edge": "+x",
+   "walked": 2,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "KitchIsland__0",
+   "edge": "+y",
+   "walked": 122,
+   "failed": 0,
+   "listed_old": false,
+   "listed_new": true
+  },
+  {
+   "surface": "KitchIsland__0",
+   "edge": "-x",
+   "walked": 64,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "KitchIsland__0",
+   "edge": "-y",
+   "walked": 94,
+   "failed": 0,
+   "listed_old": false,
+   "listed_new": true
+  },
+  {
+   "surface": "UtilityCart__2",
+   "edge": "+x",
+   "walked": 253,
+   "failed": 0,
+   "listed_old": true,
+   "listed_new": true
+  },
+  {
+   "surface": "UtilityCart__2",
+   "edge": "-x",
+   "walked": 15,
+   "failed": 0,
+   "listed_old": false,
+   "listed_new": true
+  }
+ ],
+ "loop_missed": [
+  {
+   "surface": "ExtendableTable__0",
+   "edge": "+y",
+   "walked": 12,
+   "failed": 1,
+   "listed_old": false,
+   "listed_new": false
+  }
+ ],
+ "seconds": 2.7
+}

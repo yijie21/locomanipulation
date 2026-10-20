@@ -1,0 +1,1 @@
+{"label": "b1_put_CarKey_2_in_WhiteTrashBin_s8000259", "task": "b1_put_CarKey_2_in_WhiteTrashBin", "ok": false, "why": "[goal] in(CarKey_2, WhiteTrashBin): outside the container footprint by (+1.54, +0.24) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

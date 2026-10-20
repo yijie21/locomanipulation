@@ -1,0 +1,1 @@
+{"label": "b1_pick_GreenApple_A_s8100218", "task": "b1_pick_GreenApple_A", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 50.68, "seated": {}}

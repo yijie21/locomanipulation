@@ -1,0 +1,1 @@
+{"label": "b2_put_CandlePattern02_1_in_WoodenBoxSmall_s8200164", "task": "b2_put_CandlePattern02_1_in_WoodenBoxSmall", "ok": false, "why": "[goal] in(CandlePattern02_1, WoodenBoxSmall): outside the container footprint by (+2.30, +0.33) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

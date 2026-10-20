@@ -1,0 +1,1 @@
+{"label": "spoon_in_large_pot_s330072", "task": "spoon_in_large_pot", "ok": false, "why": "[goal] in(WoodenSpoon, LargePot): outside the container footprint by (+2.10, +0.19) m", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}

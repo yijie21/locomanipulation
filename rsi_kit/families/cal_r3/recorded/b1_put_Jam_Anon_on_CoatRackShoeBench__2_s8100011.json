@@ -1,0 +1,1 @@
+{"label": "b1_put_Jam_Anon_on_CoatRackShoeBench__2_s8100011", "task": "b1_put_Jam_Anon_on_CoatRackShoeBench__2", "ok": false, "why": "[goal] on(Jam_Anon, CoatRackShoeBench__2): underside z -0.066 not on CoatRackShoeBench__2 (top 0.530, +0.3 m)", "fell": false, "dropped": true, "t_end": 108.86, "seated": {}}

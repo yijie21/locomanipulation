@@ -593,6 +593,7 @@ def structured_from_transcript(session: str | None) -> dict | None:
 
 def leak_patterns() -> dict[str, str]:
     pats = {"gate": re.escape(HIDDEN.parent.name)}
+    pats["kit"] = r"rsi_kit|scene_rsi_20261016/kit/"  # kit.py: every family's pools and outcomes (2026-10-20)
     if ORIGIN != REPO:
         pats["origin"] = re.escape(str(ORIGIN)) + r"(?!/third_party)"
         pats["climb"] = r"third_party/\.\."

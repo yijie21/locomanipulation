@@ -1,0 +1,1 @@
+{"label": "b1_jam_to_cart_s8200214", "task": "b1_jam_to_cart", "ok": false, "why": "[goal] on(Jam_Anon, UtilityCart__2): 1.66 m outside UtilityCart__2's footprint", "fell": false, "dropped": false, "t_end": 87.56, "seated": {}}

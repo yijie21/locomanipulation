@@ -1,0 +1,1 @@
+{"label": "coffee_can_to_cart_s1310064", "task": "coffee_can_to_cart", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, UtilityCart__2): 1.96 m outside UtilityCart__2's footprint", "fell": false, "dropped": false, "t_end": 3.0, "seated": {}}
