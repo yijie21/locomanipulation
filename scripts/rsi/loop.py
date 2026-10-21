@@ -1336,6 +1336,7 @@ def main(argv=None) -> int:
     r.add_argument(
         "--candidates", type=int, default=1, help="Engineers per iteration, merged by a Composer (TODO 32.9)"
     )
+    r.add_argument("--scoped-review", action="store_true", help="two scoped Reviewers (TODO 32.11)")
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip

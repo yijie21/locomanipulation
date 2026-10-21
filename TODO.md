@@ -1132,3 +1132,9 @@
 - [ ] 33.5 准备动作层：人写接口和挑选器，循环按 33.4 的排序在能力任务族里写前 3–5 种（拉近 / 推到台边、对侧、挪开邻居、双手……）；起点加 `placement` 选项
 - [ ] 33.6 总评：`grasp_hard` 任务族，三版本封存集对比；出路变成被接受技能的比例
 
+
+## 34. gr00t_wbc 和 ScaleBFM 对比（用户 2026-10-21：rhoyn 抗扰行走榜前几名“会比 scalebfm 更稳定更流畅吗”；“在远端现在就开始测 gr00t_wbc”）
+
+- [ ] 34.1 远端 A800（`ssh -p 26804 root@14.103.60.188`）环境：uv + 阿里云镜像，mujoco 3.11、torch cu124、onnxruntime、scipy、scikit-fmm；同步代码、物理场景、ScaleBFM 权重、gr00t_wbc ONNX，路径和这边相同
+- [ ] 34.2 `backends/gr00t_wbc`：下半身用 GR00T-WholeBodyControl 的 Balance / Walk ONNX（速度 + 躯干高度 + 姿态指令），手臂用现有的 IK 跟手腕目标；`SceneWorld(controller="gr00t_wbc")`，照 TODO 28 的 AMO 后端
+- [ ] 34.3 对比（两个控制器都在远端跑）：准入、站立脚滑、走路振动 / 停步精度 / 摔倒、伸手包络、10 个场景抓取任务配对；榜单的 h066_p012 和默认 h074 两种姿态

@@ -75,6 +75,10 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
         from locomani.backends.amo.runtime import AmoPolicy
 
         policy = AmoPolicy("cuda")
+    elif controller.startswith("gr00t_wbc"):  # TODO 34
+        from locomani.backends.gr00t_wbc.runtime import Gr00tPolicy
+
+        policy = Gr00tPolicy()
     else:
         policy = R.Policy("cuda", ScaleBfmBackendConfig())
     return SceneWorld(fam["scene_dir"], policy, controller=controller)
@@ -165,7 +169,10 @@ def main(argv=None) -> int:
     ap.add_argument("--set", default="", help="parameter overrides: inline JSON or a JSON file")
     ap.add_argument("--npz", action="store_true", help="also save each round's motor trace")
     ap.add_argument(
-        "--controller", choices=("scalebfm", "amo"), default="scalebfm", help="whole-body controller (TODO 28)"
+        "--controller",
+        choices=("scalebfm", "amo", "gr00t_wbc", "gr00t_wbc_h066_p012"),
+        default="scalebfm",
+        help="whole-body controller (TODO 28, 34)",
     )
     a = ap.parse_args(argv)
     if a.queue is not None:

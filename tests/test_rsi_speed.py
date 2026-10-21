@@ -208,3 +208,24 @@ class LoopProcedure(unittest.TestCase):
         self.lp.CANDIDATES = 1
         lib = (HERE / "experience" / "INDEX.md").exists()
         self.assertEqual(bool(self.lp.prompt_vars()["LIBRARY"]), lib)
+
+
+class RunFlags(unittest.TestCase):
+    """`loop.py run` takes every TODO 32 switch on its command line (the first --scoped-review never reached the
+    parser: a text edit missed the reformatted line, and 8 scoped replays ran without it, 2026-10-21)."""
+
+    def test_the_switches_reach_cmd_run(self):
+        from unittest import mock
+
+        lp = _scene_loop()
+        seen = {}
+
+        def fake_run(a):
+            seen.update(vars(a))
+            return 0
+
+        with mock.patch.object(lp, "cmd_run", fake_run), mock.patch.object(lp, "configure", lambda f: None):
+            lp.main(["run", "grasp_atomic", "--candidates", "3", "--scoped-review", "--stop-after", "probe",
+                     "--effort", "engineer=medium", "--engineer-from", "/x/iter_02"])  # fmt: skip
+        self.assertEqual((seen["candidates"], seen["scoped_review"], seen["stop_after"]), (3, True, "probe"))
+        self.assertEqual((seen["effort"], str(seen["engineer_from"])), (["engineer=medium"], "/x/iter_02"))

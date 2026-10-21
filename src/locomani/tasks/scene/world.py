@@ -134,7 +134,14 @@ class SceneWorld:
         # 0.62 ms; outcomes moved with it, so every record was re-run (TODO 32.4)
         backend = ScaleBfmBackendConfig(scene_dir=str(self.physics), object_name="", sleep=sleep, **law)
         self.controller = controller
-        if controller == "amo":  # TODO 28: `policy` is a backends.amo.runtime.AmoPolicy
+        if controller.startswith("gr00t_wbc"):  # TODO 34: `policy` is a backends.gr00t_wbc.runtime.Gr00tPolicy
+            from locomani.backends.gr00t_wbc.motor import VARIANTS, Gr00tMotor
+            from locomani.backends.gr00t_wbc.runtime import Gr00tSim
+
+            self.sim = Gr00tSim(backend)
+            self.motor = Gr00tMotor(self.sim, policy, motor_config, model_xml=str(self.physics / "robot.xml"),
+                                    jacobian=jacobian, gr00t=VARIANTS[controller])  # fmt: skip
+        elif controller == "amo":  # TODO 28: `policy` is a backends.amo.runtime.AmoPolicy
             from locomani.backends.amo.motor import AmoMotor
             from locomani.backends.amo.runtime import AmoSim
 
