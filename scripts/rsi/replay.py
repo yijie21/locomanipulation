@@ -3,7 +3,7 @@ sandbox under today's code, so a change to the loop's procedure is judged on the
 side by side, instead of whole loops (user 2026-10-21: changes to the loop are checked by replays first, one whole
 loop at the end).
 
-    python3 scripts/rsi/replay.py setup <finished sandbox> <family> <iter> <new sandbox>
+    python3 scripts/rsi/replay.py setup <finished sandbox> <family> <iter> <new sandbox> [--ref <commit>]
     cd <new sandbox> && RSI_MAX_WALL_H=100 $PY scripts/rsi/loop.py run <family> --max-iters 1   # plus the arm's knobs
     python3 scripts/rsi/replay.py report <sandbox> [<sandbox> ...] [--out report.json]
 
@@ -77,8 +77,8 @@ def rebuild_parks(loop: Path, n: int) -> dict:
     return parked
 
 
-def setup(src: Path, family: str, n: int, dst: Path) -> None:
-    SB.build(dst, family)
+def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD") -> None:
+    SB.build(dst, family, ref)
     s_loop, d_loop = src / VISIBLE / family, dst / VISIBLE / family
     s_hid, d_hid = src / HIDDEN / family, dst / HIDDEN / family
     state, d_state = s_loop / "loop", d_loop / "loop"
@@ -221,13 +221,14 @@ def main(argv=None) -> int:
     s.add_argument("family")
     s.add_argument("iter", type=int)
     s.add_argument("dst", type=Path)
+    s.add_argument("--ref", default="HEAD", help="the commit the sandbox is built from")
     r = sub.add_parser("report")
     r.add_argument("sandboxes", type=Path, nargs="+")
     r.add_argument("--family")
     r.add_argument("--out", type=Path)
     a = ap.parse_args(argv)
     if a.cmd == "setup":
-        setup(a.src.resolve(), a.family, a.iter, a.dst.resolve())
+        setup(a.src.resolve(), a.family, a.iter, a.dst.resolve(), a.ref)
     else:
         rows = report([p.resolve() for p in a.sandboxes], a.family)
         text = json.dumps(rows, indent=1, ensure_ascii=False)

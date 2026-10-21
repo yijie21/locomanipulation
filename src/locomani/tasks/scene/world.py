@@ -122,6 +122,7 @@ class SceneWorld:
         jacobian="analytic",
         grip_law: dict | None = None,
         controller: str = "scalebfm",
+        sleep: bool = True,
     ):
         self.dir = Path(scene_dir)
         self.physics = physics_scene(self.dir)
@@ -129,7 +130,9 @@ class SceneWorld:
         # the finger law: the SONIC line's (kp 1.5, kd 0.1, ctrl clamp 20), which the 65-object comparison ran on both
         # controllers and the ported hand program (skills/grasp_program.py) closes with
         law = GRIP_LAW if grip_law is None else grip_law
-        backend = ScaleBfmBackendConfig(scene_dir=str(self.physics), object_name="", **law)
+        # sleep: resting objects leave the physics until touched (MuJoCo island sleeping): the apartment's step 1.82 ->
+        # 0.62 ms; outcomes moved with it, so every record was re-run (TODO 32.4)
+        backend = ScaleBfmBackendConfig(scene_dir=str(self.physics), object_name="", sleep=sleep, **law)
         self.controller = controller
         if controller == "amo":  # TODO 28: `policy` is a backends.amo.runtime.AmoPolicy
             from locomani.backends.amo.motor import AmoMotor

@@ -1109,6 +1109,9 @@
 - [x] 32.2 S1：场景编译缓存（`runtime.load_model`，`paths.MJB_CACHE`，0.13 s，逐字节、2000 步一致）+ `batch.py` 常驻工作进程（一次调用一个队列，`scene_round.py --queue`）；grasp_atomic 封存集 150 局（第 1、2 版和当前目录）和记录逐局一致，512 s（旧代码 579 s）。`outputs/rsi_speed_20261021/`
 - [x] 32.3 S3：策略网络 CUDA graph（`ScaleBfmBackendConfig.cuda_graph`，默认开）：每次 4.95 → 0.85 ms；第一版把控制模式当常量捕获，动作层换 `pol.mode`（2 ↔ 4）后失效，150 局 125 局不同——模式改成图的输入后 150 局逐局一致，S1 + S3 共 328 s（旧代码 579 s，约 1.7 倍）
 - [ ] 32.4 S2：MuJoCo 休眠（`mjENBL_SLEEP`，实测每步 1.82 → 0.62 ms，物体被碰到会醒）。用户同意：改变结局，按改场景处理——先按 0.5 m/s 不开休眠重测全部登记（就是 30.3，单独量步速的影响），再开休眠重测，逐局比；`kit.py pack`、文档数字
+  - [x] 32.4.1 0.5 m/s、不开休眠（`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（b 1 c 9，p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内；登记表 `last` 没前移
+  - [x] 32.4.2 `SceneWorld(sleep=True)`；grasp_atomic 封存集 150 局：224 s（不开 328 s），成功 18 → 19、24 → 25、24 → 26，每组翻转 b 3 c 1–2，摔倒 14 → 9
+  - [ ] 32.4.3 开休眠重测全部登记（tag `sleep_20261021`），和 32.4.1 逐局比；`kit.py pack`、文档数字；r1_slide_then_grasp 在 0.5 m/s 下变差的原因
 - [ ] 32.5 整轮重放：`review_replay.py` 扩到 Reviewer → Prober → Manager → Engineer → 验收门，从存下的迭代状态起跑；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
 - [ ] 32.6 Reviewer 分析工具（占用图、轨迹摘要、手腕/走路时序、站位模拟）+ 诊断摘要里的逐局步骤表；重放对照
 - [ ] 32.7 角色调用能不能用快速输出：用户设置 `fastMode: true`，`claude -p` 加 `--settings {"fastMode": true}` 实测仍是 standard

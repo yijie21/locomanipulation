@@ -85,11 +85,12 @@ def apply_spec(dest: Path, family: str) -> dict:
     return spec
 
 
-def build(dest: Path, family: str) -> None:
+def build(dest: Path, family: str, ref: str = "HEAD") -> None:
+    """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in)."""
     if dest.exists():
         raise SystemExit(f"{dest} exists")
     dest.mkdir(parents=True)
-    archive = subprocess.run(["git", "archive", "HEAD"], cwd=REPO, check=True, capture_output=True).stdout
+    archive = subprocess.run(["git", "archive", ref], cwd=REPO, check=True, capture_output=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True)
     spec = apply_spec(dest, family)
     links = [(rel, REPO / rel) for rel in LINKS]

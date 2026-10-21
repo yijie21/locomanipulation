@@ -89,7 +89,10 @@ ISOLATION = (
 )
 FAMILY = ""
 LOOP = HIDDEN = STATE = GATE_DIR = Path()
-EFFORT: dict = {}  # role -> claude --effort level (run --effort engineer=medium; TODO 32.8)
+# role -> claude --effort level. Pinned: role calls used to inherit the operator's settings.json (effortLevel xhigh for
+# Opus 5.5 on this machine, so every recorded run is xhigh), and another operator's settings would change the loop.
+# run --effort engineer=medium overrides one role (TODO 32.8).
+EFFORT: dict = dict(reviewer="xhigh", manager="xhigh", engineer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
 TOOLS_NOTE = (  # TODO 32.6: what 44 Reviewers wrote by hand, as tools (left out of the prompt when the sandbox has none)
     "Tools for these records (they print tables; run them with {SIM_PY}, from the sandbox root, PYTHONPATH=src): "
@@ -972,6 +975,9 @@ def engineer_again(n: int, src: Path, stub: bool) -> str | None:
         raise SystemExit(f"{src} has no hypotheses or Manager decision")
     if dec["decision"] not in ("engineer", "reopen"):
         raise SystemExit(f"{src}: the Manager decided {dec['decision']!r}; nothing for the Engineer")
+    claims = [c for c in hyps.get("infeasible") or [] if isinstance(c, dict)]
+    if claims and (it_dir / "claims.json").exists():  # that iteration's parks, as its after_review recorded them
+        park(jload(it_dir / "claims.json"), claims, n)
     inc = incumbent()
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
