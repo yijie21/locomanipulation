@@ -1112,7 +1112,7 @@
   - [x] 32.4.1 0.5 m/s、不开休眠（`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（b 1 c 9，p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内；登记表 `last` 没前移
   - [x] 32.4.2 `SceneWorld(sleep=True)`；grasp_atomic 封存集 150 局：224 s（不开 328 s），成功 18 → 19、24 → 25、24 → 26，每组翻转 b 3 c 1–2，摔倒 14 → 9
   - [x] 32.4.3 开休眠重测全部登记（`regress_sleep_20261021.json`）；和 32.4.1 逐局比（`outputs/rsi_speed_20261021/compare_speed05_20261021_sleep_20261021.json`）：总 b 25 c 28（p 0.78），没有任务族显著变化——休眠只是快。登记表 `last` 手动前移到 `sleep_20261021`（步速和休眠都是用户定的改动；原表存 `outputs/rsi_speed_20261021/registry_before_rebase.json`），`kit.py pack`
-  - [ ] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：9 局全是 pick_thick_novel（搁板下的书），插入超时 5–16 cm 或把书碰开 10 cm；走路停步误差两速相近（中位 1.5 vs 1.7 cm），但到位后的 settle_error 和预抓夹爪误差变大（如 s350018：0.65 → 2.0 cm、2.5 → 6.1 cm）——假设：快走到位后身体还在晃就伸手。下一步：用 `trace.py` 看到位后 1–2 s 的骨盆速度，试到位后等稳（技能层，可交给循环）
+  - [ ] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：9 局全是 pick_thick_novel（搁板下的书），插入超时 5–16 cm 或把书碰开 10 cm；走路停步误差两速相近（中位 1.5 vs 1.7 cm），但到位后的 settle_error 和预抓夹爪误差变大（如 s350018：0.65 → 2.0 cm、2.5 → 6.1 cm）——假设：快走到位后身体还在晃就伸手。下一步：用 `trace.py` 看到位后 1–2 s 的骨盆速度，试到位后等稳（技能层，可交给循环）。A800 上在跑诊断（2026-10-21，`scripts/experiments/slide_speed_20261021/probe.py`）：同一目录、本族三个池的 190 个起点，0.5 m/s 到位后等 0 / 0.5 / 1.0 / 1.5 s、0.35 / 0.25 m/s 不等，运行时改动作层，不改技能
 - [x] 32.5 整轮重放：`replay.py setup`（当前代码的新沙盒 + 原运行第 N 轮开始时的状态；`--ref` 固定提交）+ `loop.py run --max-iters 1`；`loop.py` 每轮开头在隐藏树存状态快照。grasp_atomic 第 3 轮桩重放从 Reviewer 走到验收门，现任的诊断局 30 / 30 和原来一致；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
 - [ ] 32.6 Reviewer 分析工具：44 个 Reviewer 会话 37% 的调用在写/跑临时脚本 → `scripts/rsi/tools/`（steps、start、trace、occ、history），沙盒有这个目录时提示词列出（`3bbc5c0`）；重放对照在跑：`outputs/rsi_speed_20261021/ab/plan_review_tools.json`（4 个状态 × 有/无 × 2，`--stop-after probe`，提交 `8e006d4`）
 - [ ] 32.7 角色调用能不能用快速输出：`-p` 支持 `--settings '{"fastMode": true}'`（文档），实测仍是 standard；文档说快速模式只走 usage credits，没开就静默回到 standard——要用户在账号里打开 usage credits（待用户）
@@ -1126,6 +1126,7 @@
 ## 33. 会换做法、知道自己身体的抓取进化（用户 2026-10-21：“有像人类一样思考，并拥有对自己身体物理边界的认知吗？”；“先写方案，五点都做”；方案 `docs/handoff/scene-rsi-strategy-plan-20261021.md`，D1–D5 待用户定）
 
 - [ ] 33.1 身体模型 `tasks/scene/body.py`：实测包络 + 每局实送误差，reach / fit / two_hand / stances；先量预测 AUC（≥ 0.75 才在运行时用），再 Reviewer 重放对照
+  - [ ] 33.1.1 实测数据：`capability_probe.py envelope`，15120 格（左右手 × 平 / 下 / 45° × 站立和下蹲到 0.68–0.52 m × 侧向 5 档 × 高 0.05–1.45 m × 前伸 0.2–0.9 m），A800 上在跑（2026-10-21）；双手同时够取要动作层支持，待做
 - [ ] 33.2 定向验收：候选声明目标任务；非目标任务 c = 0，目标任务另抽 12 个隐藏起点 + 验收池起点，b − c ≥ 3、p ≤ 0.05；rules.md 第 10 版；回放杯沿 / 木勺候选、空候选量误收
 - [ ] 33.3 “换个做法”方向 S，假设上限 6；并进 32.11 的重放
 - [ ] 33.4 出路和缺口提议跨族汇总、归并（`capabilities_wanted.json`），`outer.py select` 按跨族频次加权、每轮留 1–2 个能力名额

@@ -38,7 +38,7 @@ SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" /
 OUT = REPO / "outputs" / "scene_rsi_20261016" / "capability"
 WALK = REPO / "outputs" / "scene" / "walk_mars"
 PROBE_SCENE = OUT / "probe_scene"
-KINDS = ("reach", "posture", "loco", "grip")
+KINDS = ("reach", "posture", "loco", "grip", "envelope")
 
 LATERAL_M = 0.15  # the reaching hand's target this far to its own side of the pelvis
 EDGE_M = 0.28  # pelvis to the table edge in the grip probes (the pick skills stand 0.21-0.30 m off)
@@ -87,6 +87,19 @@ def cells(kind: str) -> list[dict]:
                 for x in (0.80, 0.90):
                     out.append(dict(id=f"{side}_level_stand_z{_num(z)}_x{_num(x, width=2)}", side=side, att="level",
                                     pelvis=None, z=round(z, 2), x=x))  # fmt: skip
+    elif kind == "envelope":  # TODO 33.1: the body model's dense single-arm envelope (not read by capability_write)
+        for side in ("right", "left"):
+            out_y = -1.0 if side == "right" else 1.0  # toward the hand's own side
+            for att in ("level", "down", "tilt45"):
+                for pel in (None, 0.68, 0.62, 0.56, 0.52):
+                    zs = [0.05 + 0.1 * k for k in range(15 if pel is None else 12)]
+                    for y in (-0.05, 0.05, 0.15, 0.25, 0.35):  # + is outward of the hand's own side
+                        for z in zs:
+                            for x in (0.20, 0.30, 0.40, 0.50, 0.60, 0.70, 0.80, 0.90):
+                                tag = "stand" if pel is None else f"p{_num(pel)}"
+                                out.append(dict(id=f"{side}_{att}_{tag}_y{_num(y + 0.1)}_z{_num(z)}_x{_num(x, width=2)}",
+                                                side=side, att=att, pelvis=pel, y=round(out_y * y, 2), z=round(z, 2),
+                                                x=x))  # fmt: skip
     elif kind == "posture":
         for p in (0.74, 0.70, 0.66, 0.62, 0.58, 0.54, 0.50, 0.46, 0.42, 0.38):
             out.append(dict(id=f"squat_p{_num(p)}", pelvis=p))
@@ -216,6 +229,32 @@ class Probe:
                     ik_err_cm=out.info.get("ik_err_cm"), jaw_err_after_hold_cm=round(100 * err_after, 2),
                     attitude_after_hold_deg=round(att_after, 1), pelvis=self.pelvis(),
                     torso_pitch_deg=self.torso_pitch_deg(), steps=rows)  # fmt: skip
+
+    def do_envelope(self, c: dict) -> dict:
+        """do_reach on the dense grid: the target `y` given in the pelvis frame, and a 45 deg tilted attitude too."""
+        m, R = self.m, self.R
+        m.reset((0.0, 0.0), 0.0)
+        rows: list = []
+        self.step(rows, "hold", m.hold(1.0))
+        if c["pelvis"] is not None and not self.step(rows, "posture", m.posture(pelvis_z=c["pelvis"])):
+            return dict(ok=False, fell=True, steps=rows, pelvis=self.pelvis())
+        target = np.array([c["x"], c["y"], c["z"]])
+        rot = {"level": np.eye(3), "down": R.rot_y(np.pi / 2), "tilt45": R.rot_y(np.pi / 4)}[c["att"]]
+        out = m.reach(c["side"], target, rot, pelvis_z=c["pelvis"])
+        alive = self.step(rows, "reach", out)
+        if alive:
+            self.step(rows, "hold", m.hold(1.5))
+        jaw, Rj = m.jaw_centre(c["side"])
+        from locomani.backends.scalebfm.motor import rotvec
+
+        err_after = float(np.linalg.norm(jaw - target))
+        att_after = math.degrees(float(np.linalg.norm(rotvec(rot @ Rj.T))))
+        fell = m.fell_at is not None
+        return dict(ok=bool(out.ok and not fell and err_after <= 0.02), fell=fell,
+                    jaw_err_cm=out.info.get("jaw_err_cm"), attitude_err_deg=out.info.get("attitude_err_deg"),
+                    ik_err_cm=out.info.get("ik_err_cm"), jaw_err_after_hold_cm=round(100 * err_after, 2),
+                    attitude_after_hold_deg=round(att_after, 1), pelvis=self.pelvis(),
+                    torso_pitch_deg=self.torso_pitch_deg(), feet_cm=self.feet_cm(), steps=rows)  # fmt: skip
 
     def do_posture(self, c: dict) -> dict:
         m = self.m
