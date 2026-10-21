@@ -29,6 +29,7 @@ WHITELIST = {
     "LOCOMANI_WORKSPACE",
     "LOCOMANI_TMP",  # process-level session/log root, shared with scripts/paths.sh
     "LOCOMANI_SIM_DIR",
+    "LOCOMANI_VENV",  # scene scripts' environment (docs/setup.md step 9): Makefile and scripts/rsi/writeback.py find ruff there
     "LOCOMANI_BACKEND_JSON",
     "LOCOMANI_DEPLOY_RECEIPTS",  # launcher/restart content-identity journal path  # one serialized config at the Python child-process entry
     "SONIC_ROOT",

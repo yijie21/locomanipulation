@@ -354,7 +354,7 @@ blender --background assets/blender/logistics_room.blend --python scripts/unreal
 uv pip install --python /venv/main/bin/python trimesh==4.12.2 opencv-python-headless numpy scipy matplotlib pyyaml ruff==0.16.1 huggingface_hub
 ```
 
-做什么：建场景的脚本（`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 等）和写回时的代码格式化用这个环境，不用 `.venv_sim`。Vast 的基础镜像自带 `/venv/main`，第一条会跳过。
+做什么：建场景的脚本（`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 等）和写回时的代码格式化用这个环境，不用 `.venv_sim`。Vast 的基础镜像自带 `/venv/main`，第一条会跳过。没有 `/venv/main` 写权限的机器可以建在 `~/venv/main`（两条命令里的路径照换）：`make` 和 `scripts/rsi/writeback.py` 先读环境变量 `LOCOMANI_VENV`，没有就依次找 `/venv/main`、`~/venv/main`。
 
 验证：`/venv/main/bin/python -c "import trimesh, cv2; print(trimesh.__version__)"` 输出 `4.12.2`。
 
