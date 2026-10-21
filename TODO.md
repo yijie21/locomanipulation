@@ -1078,7 +1078,7 @@
   - [ ] 29.5.7 rsi.md §5.1：干净环境里 `git commit` 要先配 `user.name` / `user.email`（偏差 7）
   - [ ] 29.5.8 rsi.md §7 的 L3 表第 5 行还写 30 / 15，应是 31 / 13（新读者发现）
   - [ ] 29.5.9 30.3、30.4 做完后从新克隆重跑；接着改上面这些文档
-- [ ] 29.9 清理新读者测试的沙盒：`/workspace/tmp/fresh_rsi_20261020/`（3.8 GB，克隆、报告、会话记录）和 `/workspace/code/rsi-scene/pick-repro/`（1.4 GB）；10-20 12:00 记入 STATE，10-21 12:00 以后可删（报告先拷进 `outputs/`）
+- [x] 29.9 清理新读者测试的沙盒：`/workspace/tmp/fresh_rsi_20261020/`（3.8 GB，克隆、报告、会话记录）和 `/workspace/code/rsi-scene/pick-repro/`（1.4 GB）；10-20 12:00 记入 STATE，10-21 12:00 以后可删（报告先拷进 `outputs/`）（2026-10-21 12:10 删了；报告、进度、脚本、日志和压缩的会话记录在 `outputs/fresh_rsi_20261020/`）
 - [x] 29.6 种子技能目录（`801a28c^`，和 pick-a 沙盒开局的技能目录逐字节相同）在今天的运行器上能跑：pick_single 两个封存起点和 10-16 一样失败（摔倒；手没碰到遥控器）
 - [ ] 29.7 空地场景 `outputs/scene/walk_mars`（动作层探针、`motor_check.py` 用）没有登记构建命令，要补进 `configs/scenes.yaml`
 - [ ] 29.8 测试 `test_scalebfm_rsi_phase4.py::Restore` 在工作树的提交钩子里继承了 `GIT_DIR`，临时仓库的 `git init` 把共享的 `.git/config` 改成 `bare = true`（10-20 09:06，已改回 `false`，测试已清掉 `GIT_*`）；别的测试里还有没有同样在钩子里跑 git 的，待查
@@ -1112,21 +1112,22 @@
   - [x] 32.4.1 0.5 m/s、不开休眠（`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（b 1 c 9，p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内；登记表 `last` 没前移
   - [x] 32.4.2 `SceneWorld(sleep=True)`；grasp_atomic 封存集 150 局：224 s（不开 328 s），成功 18 → 19、24 → 25、24 → 26，每组翻转 b 3 c 1–2，摔倒 14 → 9
   - [x] 32.4.3 开休眠重测全部登记（`regress_sleep_20261021.json`）；和 32.4.1 逐局比（`outputs/rsi_speed_20261021/compare_speed05_20261021_sleep_20261021.json`）：总 b 25 c 28（p 0.78），没有任务族显著变化——休眠只是快。登记表 `last` 手动前移到 `sleep_20261021`（步速和休眠都是用户定的改动；原表存 `outputs/rsi_speed_20261021/registry_before_rebase.json`），`kit.py pack`
-  - [ ] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：9 局全是 pick_thick_novel（搁板下的书），插入超时 5–16 cm 或把书碰开 10 cm；走路停步误差两速相近（中位 1.5 vs 1.7 cm），但到位后的 settle_error 和预抓夹爪误差变大（如 s350018：0.65 → 2.0 cm、2.5 → 6.1 cm）——假设：快走到位后身体还在晃就伸手。下一步：用 `trace.py` 看到位后 1–2 s 的骨盆速度，试到位后等稳（技能层，可交给循环）。A800 上在跑诊断（2026-10-21，`scripts/experiments/slide_speed_20261021/probe.py`）：同一目录、本族三个池的 190 个起点，0.5 m/s 到位后等 0 / 0.5 / 1.0 / 1.5 s、0.35 / 0.25 m/s 不等，运行时改动作层，不改技能
+  - [x] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：9 局全是 pick_thick_novel（搁板下的书），插入超时 5–16 cm 或把书碰开 10 cm。诊断（A800，2026-10-21，`scripts/experiments/slide_speed_20261021/probe.py`，结果 `outputs/slide_speed_20261021/remote/`）：本族三个池 190 个起点（书、钱包各 95），当前目录，运行时改动作层、不改技能。书：0.5 m/s 不等 78 / 95；到位后等 0.5 / 1.0 / 1.5 s 83 / 85 / 85（对 0.5 m/s 不等 b 11–13 c 5–6，p 0.17 / 0.084 / 0.072）；0.35 / 0.25 m/s 不等 83 / 82（p 0.17 / 0.27）。预抓夹爪误差中位 2.27 cm、55 / 95 超容差 → 等 1 s 1.22 cm、29 / 95，0.25 m/s 1.28 cm、30 / 95：假设成立（快走到位后身体还在晃就伸手），但多数在 grasp 里追回来，成功只差 4–7 局、不显著。差距集中在封存集的 40 个起点（0.25 vs 0.5 m/s：远端 36 vs 32，本机 38 vs 30），诊断池、验收池上没有（19 vs 21、27 vs 25）——登记里的 p 0.011 有一部分是这 40 个起点带来的。钱包每种设置都是 0–1 / 95（另一个问题）。远端和本机同一设置逐局 73 / 80 一致，不逐位一致。结论：动作层不改；到位后等稳留给技能层（32.4.5）
+  - [ ] 32.4.5 抓取类技能到位后等 1 s 再预抓：作为 r1_slide_then_grasp 下一次循环或 33.5 准备动作层的候选，按验收门走，不手改目录
 - [x] 32.5 整轮重放：`replay.py setup`（当前代码的新沙盒 + 原运行第 N 轮开始时的状态；`--ref` 固定提交）+ `loop.py run --max-iters 1`；`loop.py` 每轮开头在隐藏树存状态快照。grasp_atomic 第 3 轮桩重放从 Reviewer 走到验收门，现任的诊断局 30 / 30 和原来一致；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
-- [ ] 32.6 Reviewer 分析工具：44 个 Reviewer 会话 37% 的调用在写/跑临时脚本 → `scripts/rsi/tools/`（steps、start、trace、occ、history），沙盒有这个目录时提示词列出（`3bbc5c0`）；重放对照在跑：`outputs/rsi_speed_20261021/ab/plan_review_tools.json`（4 个状态 × 有/无 × 2，`--stop-after probe`，提交 `8e006d4`）
+- [x] 32.6 Reviewer 分析工具：44 个 Reviewer 会话 37% 的调用在写/跑临时脚本 → `scripts/rsi/tools/`（steps、start、trace、occ、history），沙盒有这个目录时提示词列出（`3bbc5c0`）。重放对照（`outputs/rsi_speed_20261021/ab/plan_review_tools*`，4 个状态 × 有/无 × 2，`--stop-after probe`）：有工具 Reviewer 31.7 min / 8.45 USD、临时脚本调用 27，没有 30.5 min / 7.45 USD、30；探针最好增益 0.12 vs 0.38。没看到好处，默认不开（32.12 的沙盒不带 `scripts/rsi/tools`）
 - [ ] 32.7 角色调用能不能用快速输出：`-p` 支持 `--settings '{"fastMode": true}'`（文档），实测仍是 standard；文档说快速模式只走 usage credits，没开就静默回到 standard——要用户在账号里打开 usage credits（待用户）
-- [ ] 32.8 Engineer 降思考强度，重放对照在跑：`plan_engineer_effort.json`（4 个状态 × xhigh / medium × 2，`--engineer-from`）。Manager 每轮 1–3 min，不测。发现：角色调用一直继承操作者 settings.json 的 effortLevel（这台 Opus 5.5 是 xhigh），`loop.py` 现在显式固定各角色 xhigh（`8e006d4`）
-- [ ] 32.9 Harness2 第 1 点：`run --candidates K`——Manager 列至多 K 个假设，K 个 Engineer 各在 `cand_k/` 副本里并行写，每个候选跑诊断池，Composer（`prompts/composer.md`）按翻转合并 / 采纳一个 / 不送，只送一个给验收门；rules.md 第 9 版第 28 条。代码和桩测试待完成后重放对照
-- [ ] 32.10 Harness2 第 2 点：`reflect.py`（上下文放在仓库外，不读项目记忆）写 `scripts/rsi/experience/<family>/`：逐条判定 + 至多一条经验 + final.patch，INDEX.md；Reviewer / Engineer 提示词在库存在时指向它。9 个已完成任务族的条目在写；之后留一法配对重放（10-19 人写的经验库被拒，这是不同形式）
-- [ ] 32.11 Harness2 第 3 点：`run --scoped-review`——两个 Reviewer 并行，流程（P）和物体/场景（O）各至多 2 条假设，编号加前缀合并；之后重放对照
+- [x] 32.8 Engineer 思考强度（`plan_engineer_effort*`，4 个状态 × xhigh / medium × 2，`--engineer-from`）：xhigh 8 次中 2 次被验收门接受（b 4.38 c 0.25，19.8 min），medium 0 / 8（b 4.0 c 1.0，10.9 min）——保持 xhigh。Manager 每轮 1–3 min，不测。发现：角色调用一直继承操作者 settings.json 的 effortLevel（这台 Opus 5.5 是 xhigh），`loop.py` 现在显式固定各角色 xhigh（`8e006d4`）
+- [x] 32.9 Harness2 第 1 点：`run --candidates K`——Manager 列至多 K 个假设，K 个 Engineer 各在 `cand_k/` 副本里并行写，每个候选跑诊断池，Composer（`prompts/composer.md`）按翻转合并 / 采纳一个 / 不送，只送一个给验收门；rules.md 第 9 版第 28 条（`e48cdba`）。重放对照（`plan_candidates*`，4 个状态 × K 1 / 3 × 2）：K = 3 被接受 3 / 8（b 4.71 c 0.14），K = 1 2 / 8（b 3.71 c 0.57）；Engineer 段 25.3 vs 15.0 min。样本小，倾向采用：32.12 用 K = 3
+- [x] 32.10 Harness2 第 2 点：`reflect.py`（上下文放在仓库外，不读项目记忆）写 `scripts/rsi/experience/<family>/`：逐条判定 + 至多一条经验 + final.patch，INDEX.md；Reviewer / Engineer 提示词在库存在时指向它；9 个已完成任务族的条目（14 USD）。留一法重放（`plan_library*`，3 个状态 × 有库（去掉本族条目）/ 无库 × 2）：有库 Reviewer 27.9 vs 29.3 min、临时脚本 17 vs 24，探针增益为正的假设 3 / 6 vs 0 / 6；都没到验收门。倾向采用：32.12 带库（10-19 人写的经验库被拒，这是不同形式）
+- [x] 32.11 Harness2 第 3 点：`run --scoped-review`——两个 Reviewer 并行，流程（P）和物体/场景（O）各至多 2 条假设，编号加前缀合并。第一次重放没带上开关（`321aa26` 修好并加测试），重跑（`plan_scoped_final*`，4 个状态 × 分范围 / 单个 × 2）：分范围的 8 个里第 2 遍 4 个撞上用量上限没跑完（线程里的失败变成 KeyError，已修成 RoleFailed 并加测试），剩 4 个：探针最好增益 0 / −1 / 0 / 1，单个 8 个都是 0；Reviewer 费用约 2 倍、时长相同。没有清楚的好处，默认不开，不补跑
 - [ ] 32.12 一次完整内环确认（grasp_atomic 同一批池）
 - 不做：加机器（用户：先不加）；验收门期间提前起下一轮 Reviewer（门只要 5 min，被拒时数据不变）
 
 ## 33. 会换做法、知道自己身体的抓取进化（用户 2026-10-21：“有像人类一样思考，并拥有对自己身体物理边界的认知吗？”；“先写方案，五点都做”；方案 `docs/handoff/scene-rsi-strategy-plan-20261021.md`，D1–D5 待用户定）
 
 - [ ] 33.1 身体模型 `tasks/scene/body.py`：实测包络 + 每局实送误差，reach / fit / two_hand / stances；先量预测 AUC（≥ 0.75 才在运行时用），再 Reviewer 重放对照
-  - [ ] 33.1.1 实测数据：`capability_probe.py envelope`，15120 格（左右手 × 平 / 下 / 45° × 站立和下蹲到 0.68–0.52 m × 侧向 5 档 × 高 0.05–1.45 m × 前伸 0.2–0.9 m），A800 上在跑（2026-10-21）；双手同时够取要动作层支持，待做
+  - [x] 33.1.1 实测数据（A800，2026-10-21，`outputs/scene_rsi_20261016/capability/envelope_remote/`，`summarise.py` → `summary.txt` / `summary.json`）：15120 格（左右手 × 平 / 下 / 45° × 站立和下蹲 0.68–0.52 m × 侧向 5 档 × 高 0.05–1.45 m × 前伸 0.2–0.9 m）成功 5000（伸到位、保持 1.5 s 后误差 ≤ 2 cm），摔 10。失败里 4226 格 IK 就够不着（集中在前伸 ≥ 0.7 m；0.8 m 11 / 1890、0.9 m 5 / 1890 成功），5805 格 IK 够得着、控制器送不到（误差 > 5 cm 3572、3–5 cm 1322、2–3 cm 911），保持后漂出 79——0.7 m 以内的边界是控制器的送达精度，不是几何。前伸上限各高度、各姿态都在 0.6–0.7 m；平端 0.35 m 以下够不着，朝下 / 45° 站着就够到 0.05 m（前 0.3–0.4 m）。下蹲没有帮助：姿态原语的骨盆最低 0.60 m（0.56、0.52 两档都停在 0.61 m，躯干前倾约 55°），和站立同格比：地面带（≤ 0.25 m）+20 / −6 到 +20 / −26，桌面带（0.65–0.95 m）485 → 392 / 335 / 223 / 211 / 960。左右手同格结局一致 6622 / 7560。双手同时够取要动作层支持，待做
 - [ ] 33.2 定向验收：候选声明目标任务；非目标任务 c = 0，目标任务另抽 12 个隐藏起点 + 验收池起点，b − c ≥ 3、p ≤ 0.05；rules.md 第 10 版；回放杯沿 / 木勺候选、空候选量误收
 - [ ] 33.3 “换个做法”方向 S，假设上限 6；并进 32.11 的重放
 - [ ] 33.4 出路和缺口提议跨族汇总、归并（`capabilities_wanted.json`），`outer.py select` 按跨族频次加权、每轮留 1–2 个能力名额
@@ -1136,6 +1137,6 @@
 
 ## 34. gr00t_wbc 和 ScaleBFM 对比（用户 2026-10-21：rhoyn 抗扰行走榜前几名“会比 scalebfm 更稳定更流畅吗”；“在远端现在就开始测 gr00t_wbc”）
 
-- [ ] 34.1 远端 A800（`ssh -p 26804 root@14.103.60.188`）环境：uv + 阿里云镜像，mujoco 3.11、torch cu124、onnxruntime、scipy、scikit-fmm；同步代码、物理场景、ScaleBFM 权重、gr00t_wbc ONNX，路径和这边相同
-- [ ] 34.2 `backends/gr00t_wbc`：下半身用 GR00T-WholeBodyControl 的 Balance / Walk ONNX（速度 + 躯干高度 + 姿态指令），手臂用现有的 IK 跟手腕目标；`SceneWorld(controller="gr00t_wbc")`，照 TODO 28 的 AMO 后端
-- [ ] 34.3 对比（两个控制器都在远端跑）：准入、站立脚滑、走路振动 / 停步精度 / 摔倒、伸手包络、10 个场景抓取任务配对；榜单的 h066_p012 和默认 h074 两种姿态
+- [x] 34.1 远端 A800（`ssh -p 26804 root@14.103.60.188`）环境：uv + 阿里云镜像，mujoco 3.11、torch 2.6 cu124、onnxruntime、scipy、scikit-fmm；同步代码、物理场景、ScaleBFM 权重、gr00t_wbc ONNX，路径和这边相同（`/workspace/venvs/sim`）
+- [x] 34.2 `backends/gr00t_wbc`：下半身用 GR00T-WholeBodyControl 的 Balance / Walk ONNX（速度 + 躯干高度 + 姿态指令），手臂用现有的 IK 跟手腕目标；`SceneWorld(controller="gr00t_wbc")`，照 TODO 28 的 AMO 后端（`321aa26`）
+- [x] 34.3 对比（都在远端跑，`outputs/gr00t_wbc_compare_20261021/remote_results/`）：抗推（100–300 N）三者都不摔；gr00t 走路更顺（竖直加速度 RMS 1.40 vs 2.05、躯干角速度 0.14 vs 0.48、侧摆 1.4 vs 2.2 cm），站 30 s 脚分开 2.7 vs 7.2 cm，但骨盆漂 3.6 vs 0.6 cm、被推后迈 36–63 cm（ScaleBFM 5 cm）；蹲不到 0.60 m 以下、躯干不前倾，近地伸手误差 5.8 cm。10 个场景任务配对：ScaleBFM 55 / 92，gr00t_wbc 10 / 92（b 2 c 47），h066_p012 7 / 92（b 1 c 49），多数是预抓插入超时。结论：不换控制器

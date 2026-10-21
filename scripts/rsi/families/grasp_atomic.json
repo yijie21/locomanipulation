@@ -58,7 +58,6 @@
    "scripts/rsi/scene_round.py",
    "scripts/rsi/sealed.py",
    "scripts/rsi/claim_check.py",
-   "scripts/rsi/tools",
    "scripts/rsi/experience",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",

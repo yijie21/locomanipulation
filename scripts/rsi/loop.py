@@ -880,13 +880,19 @@ def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, d
     def one(tag):
         text = prompt.replace("propose at most 4 interventions", "propose at most 2 interventions, within your scope")
         text += "\n\n" + SCOPES[tag] + "\n"
-        out[tag] = claude(f"reviewer_{tag}", text, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub)
+        try:
+            out[tag] = claude(f"reviewer_{tag}", text, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub)
+        except RoleFailed as e:
+            out[tag] = e
 
     ts = [threading.Thread(target=one, args=(t,)) for t in SCOPES]
     for t in ts:
         t.start()
     for t in ts:
         t.join()
+    for tag in SCOPES:  # a failed call reaches cmd_run as the RoleFailed it raised, not a KeyError
+        if isinstance(out.get(tag), RoleFailed):
+            raise out[tag]
     hyps = dict(notes="", hypotheses=[], infeasible=[])
     for tag in SCOPES:
         h, _ = out[tag]

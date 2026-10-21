@@ -185,6 +185,18 @@ class LoopProcedure(unittest.TestCase):
         self.assertEqual(acct["cost_usd"], 2.0)
         self.assertEqual(sorted(acct["sessions"]), ["O", "P"])
 
+    def test_a_failed_scoped_reviewer_raises_role_failed(self):
+        # 2026-10-21: a usage limit inside one Reviewer's thread surfaced as KeyError 'P' and crashed the run
+        from unittest import mock
+
+        def fake(role, prompt, schema, it_dir, tools, stub):
+            if role.endswith("_P"):
+                raise self.lp.RoleFailed("reviewer_P: session limit")
+            return dict(notes="", hypotheses=[], infeasible=[]), dict(cost_usd=1.0, session="O", seconds=1)
+
+        with mock.patch.object(self.lp, "claude", fake), self.assertRaises(self.lp.RoleFailed):
+            self.lp.scoped_review("propose at most 4 interventions", Path("."), None)
+
     def test_flips_pair_the_candidate_with_the_incumbent_start_by_start(self):
         with tempfile.TemporaryDirectory() as d:
             inc, cand = Path(d) / "inc", Path(d) / "cand"
