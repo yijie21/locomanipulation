@@ -1112,12 +1112,12 @@
   - [x] 32.4.1 0.5 m/s、不开休眠（`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（b 1 c 9，p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内；登记表 `last` 没前移
   - [x] 32.4.2 `SceneWorld(sleep=True)`；grasp_atomic 封存集 150 局：224 s（不开 328 s），成功 18 → 19、24 → 25、24 → 26，每组翻转 b 3 c 1–2，摔倒 14 → 9
   - [ ] 32.4.3 开休眠重测全部登记（tag `sleep_20261021`），和 32.4.1 逐局比；`kit.py pack`、文档数字；r1_slide_then_grasp 在 0.5 m/s 下变差的原因
-- [ ] 32.5 整轮重放：`review_replay.py` 扩到 Reviewer → Prober → Manager → Engineer → 验收门，从存下的迭代状态起跑；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
-- [ ] 32.6 Reviewer 分析工具（占用图、轨迹摘要、手腕/走路时序、站位模拟）+ 诊断摘要里的逐局步骤表；重放对照
-- [ ] 32.7 角色调用能不能用快速输出：用户设置 `fastMode: true`，`claude -p` 加 `--settings {"fastMode": true}` 实测仍是 standard
-- [ ] 32.8 Manager、Engineer 降思考强度（`--effort`），重放对照（用户：可以测）；Reviewer 不动
-- [ ] 32.9 Harness2 第 1 点：一轮多个候选并行写、诊断池上探针、合成，只把合成的一个送验收门；被拒候选以文件给角色
-- [ ] 32.10 Harness2 第 2 点：任务族结束后 Reflector 写逐条改动判定（helped / hurt / no effect / confounded）和至多一条经验（带可执行组件），下一族按需读；配对重放（10-19 人写的经验库被拒，这是不同形式）
-- [ ] 32.11 Harness2 第 3 点：分方向提议（通用流程 / 物体与场景特定）
+- [x] 32.5 整轮重放：`replay.py setup`（当前代码的新沙盒 + 原运行第 N 轮开始时的状态；`--ref` 固定提交）+ `loop.py run --max-iters 1`；`loop.py` 每轮开头在隐藏树存状态快照。grasp_atomic 第 3 轮桩重放从 Reviewer 走到验收门，现任的诊断局 30 / 30 和原来一致；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
+- [ ] 32.6 Reviewer 分析工具：44 个 Reviewer 会话 37% 的调用在写/跑临时脚本 → `scripts/rsi/tools/`（steps、start、trace、occ、history），沙盒有这个目录时提示词列出（`3bbc5c0`）；重放对照在跑：`outputs/rsi_speed_20261021/ab/plan_review_tools.json`（4 个状态 × 有/无 × 2，`--stop-after probe`，提交 `8e006d4`）
+- [ ] 32.7 角色调用能不能用快速输出：`-p` 支持 `--settings '{"fastMode": true}'`（文档），实测仍是 standard；文档说快速模式只走 usage credits，没开就静默回到 standard——要用户在账号里打开 usage credits（待用户）
+- [ ] 32.8 Engineer 降思考强度，重放对照在跑：`plan_engineer_effort.json`（4 个状态 × xhigh / medium × 2，`--engineer-from`）。Manager 每轮 1–3 min，不测。发现：角色调用一直继承操作者 settings.json 的 effortLevel（这台 Opus 5.5 是 xhigh），`loop.py` 现在显式固定各角色 xhigh（`8e006d4`）
+- [ ] 32.9 Harness2 第 1 点：`run --candidates K`——Manager 列至多 K 个假设，K 个 Engineer 各在 `cand_k/` 副本里并行写，每个候选跑诊断池，Composer（`prompts/composer.md`）按翻转合并 / 采纳一个 / 不送，只送一个给验收门；rules.md 第 9 版第 28 条。代码和桩测试待完成后重放对照
+- [ ] 32.10 Harness2 第 2 点：`reflect.py`（上下文放在仓库外，不读项目记忆）写 `scripts/rsi/experience/<family>/`：逐条判定 + 至多一条经验 + final.patch，INDEX.md；Reviewer / Engineer 提示词在库存在时指向它。9 个已完成任务族的条目在写；之后留一法配对重放（10-19 人写的经验库被拒，这是不同形式）
+- [ ] 32.11 Harness2 第 3 点：`run --scoped-review`——两个 Reviewer 并行，流程（P）和物体/场景（O）各至多 2 条假设，编号加前缀合并；之后重放对照
 - [ ] 32.12 一次完整内环确认（grasp_atomic 同一批池）
 - 不做：加机器（用户：先不加）；验收门期间提前起下一轮 Reviewer（门只要 5 min，被拒时数据不变）

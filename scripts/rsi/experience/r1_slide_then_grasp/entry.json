@@ -1,0 +1,191 @@
+{
+ "edits": [
+  {
+   "iteration": 1,
+   "component": "pick.py pick_once + new narrow_covered branch (NARROW values passed as call arguments to grasp_program.run: jaw_open 0.004, jaw_closed -0.06, entry_capture_depth_m 0.05, entry_overshoot_m -0.05, disturb_limit_m 0.10, lateral_correction_max_m 0, gate hold_s 0, rise_min 0.015) + held.pick_held own pull 0.30 m with pull_on to 0.35 m + cover.past_edge — candidate fba81e5762ec (accepted, final incumbent)",
+   "change": "Adds a scoped branch for an object under an overhead surface whose only side that fits the jaw is under 6 cm wide (the 4.66 cm thick novel packed in a shelf row). It moves the two-pad hold from 7-8 cm in front of the book's centre to 3-4.6 cm, doubles the squeeze (about 20 N), stops the entry 5 cm short, turns lateral correction off, accepts a 1.5 cm rise so a pivoted book goes on to the pull, and pulls it level 0.30 m out from under the shelf. Every other pick keeps its exact steps.",
+   "observed": "Gate: b=29, c=0, p_one_sided=0.0; stage 1 29/30 vs 0/30; 0 falls, 0 drops. Diag: 22 fixed (all books), 0 broken; wallet rounds unchanged. Sealed: seed 0/80 -> 38/80 (books 0/40 -> 38/40, wallet 0/40 -> 0/40). Books still failing: s150004 (knocked in entry), s150022 (pre-grasp miss), s150036 (entry stall).",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 1,
+   "component": "book parameter set probed globally (H1_book_deep_squeezed_hinge_pullout): SIMPLE.entry_capture_depth_m 0.05, entry_overshoot_m -0.05, disturb_limit_m 0.1, ENTRY_GATE.hold_s 0, JAW_OPEN 0.004, lateral_correction_max_m 0, JAW_CLOSED -0.06, RISE_MIN 0.015, held.WITHDRAW_PULL_M 0.3",
+   "change": "The same values as the accepted candidate, set as module globals for every pick. Deeper hinge, 2x squeeze, lower rise bar and a longer pull together.",
+   "observed": "Diag 0/50 -> 21/50 (book 0/25 -> 21/25). 0 broken. 20/20 predicted flips hit plus s150046. Compared with iteration 0's narrow_jaw_front_capture (capture 7.5 cm, narrow jaw only: 1/25), the jump came from four changes made at once (depth 7.5 -> 5 cm, squeeze -0.02 -> -0.06, RISE_MIN 0.05 -> 0.015, pull 0.20 -> 0.30). No run separates them. With the globals, the wallet became ungraspable but did not fall or drop.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 1,
+   "component": "grasp_program.SIMPLE.lateral_correction_max_m (0 in H1 vs incumbent 0.04 in H2_book_same_with_lateral_correction), within the book set",
+   "change": "Keeps the 4 cm lateral correction on during the deep, squeezed book entry, to test whether hinge height matters once the hold is deep.",
+   "observed": "H2 0 -> 19/25 against H1's 21/25; 0 broken in both. The two differ on only 4 starts: H1 alone fixed s150000, s150034 and s150042, H2 alone fixed s150030. 'no bilateral pad contact': 3 with H2 vs 1 with H1.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 1,
+   "component": "held.pick_held pull_on trigger (continue the pull to 0.35 m only while cover.overhead(X) is still true)",
+   "change": "After the branch's 0.30 m pull, keeps pulling to 0.35 m from the same start only if the book is still under the shelves. The Manager's literal trigger (centre less than 3 cm past the support's edge) was built first and replaced.",
+   "observed": "Probe H1 without pull_on failed s150030 with '[goal] held: resting on DisplayShelves'. The candidate with pull_on fixed s150030 on diag (22 vs 21 fixed). In smoke the literal 3 cm trigger also re-pulled 5 books that were already 1.9-2.9 cm out, and dropped s150042 (wrist 40 deg off). One start each way.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 0,
+   "component": "claim attempt front_capture_push: SIMPLE.entry_capture_depth_m 0.075, entry_overshoot_m -0.075, disturb_limit_m 0.1, ENTRY_GATE.hold_s 0 (book)",
+   "change": "The book's level side entry stops 7.5 cm short of the centre instead of pushing to 2.5 cm, to avoid shoving the packed book.",
+   "observed": "Book 0/25 -> 0/25. Failures moved from 22 'knocked 5 cm in entry' to mostly 'entry timed out 7.6-9.1 cm from the grasp', with 5 'not lifted (rise 2.1-3.4 cm)' and 3 'knocked 10 cm'.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "claim attempt narrow_jaw_front_capture: front_capture_push + grasp_program.JAW_OPEN 0.004 (book)",
+   "change": "Same shallow 7.5 cm front capture, with the open jaw narrowed from 0.0245 to 0.004 to fit the 4.66 cm book.",
+   "observed": "Book 0/25 -> 1/25 (s150008 lifted). About 9 rounds raised the book 2-4 cm, then ended 'not lifted' or 'lost pad contact'. This near-lift pattern led to iteration 1's hinge diagnosis. One success, against front_capture_push's 0.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 0,
+   "component": "claim attempt top_down_pinch: pick.TOP_FLAT_M 0.13 (book)",
+   "change": "Routes the book to the top-down pinch.",
+   "observed": "Book 0/25 -> 0/25: 21 'nothing between the fingers', 4 'not between the fingers after the lift'. The shelf above leaves 10.4 cm over the book, against the 18.45 cm fingertip-to-wrist length.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "pick.PINCH_OVERLAP_M 0.02 (probe H1_wallet_low_pads_meet_stale_yaw)",
+   "change": "Lowers the pads on the pitched/pinch path so they reach the wallet's widest low band.",
+   "observed": "Diag 0/50 -> 0/50, 0 fixed, 0 broken; book unchanged (22 knocked). The wallet's final strings were retry entry timeouts. A scratch round met the wallet at 44 deg stale yaw and knocked it 5 cm.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "pick.RETRY_ATTEMPTS 0 (probe H2, control)",
+   "change": "Removes the pick retry so the first attempt's failure is visible.",
+   "observed": "Diag 0/50 -> 0/50. The wallet's first attempts: 20/25 'lost pad contact during the lift' with rise -0.2..+0.1 cm, 4/25 'no bilateral pad contact'. The two-pad top-band hold exists but cannot lift.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "pick.py pick_slide branch (needs_slide) + grasp_program.run drag (SLIDE_JAW -0.06 squeeze, level min-jerk pull at 4 cm/s, 4 cm lag stop) + hold_hand/step_back + edge_grasp level regrasp with follow_yaw — candidate 0978e153ee36 (slide_then_grasp v0, rejected)",
+   "change": "For a flat object deep on a high surface (only the wallet qualified): close the incumbent's pitched grasp, drag the object toward the edge instead of lifting, release, step back, then regrasp level at the edge with the housing past the slab.",
+   "observed": "Gate: stage 1 b=0, c=0 on 30 pairs. Those 30 pairs were all book starts (labels sorted by task name), where the branch is byte-identical, so no wallet round was ever judged. Diag: 0/50 vs 0/50, 0 fixed, 0 broken (0/25 wallet). Smoke 0/4. Drag (wallet / jaw): 9.65/12.9, 5.6/9.6, 2.0/6.0, 1.2/5.2 cm. The regrasp pre-grasp missed by 5.6-7.9 cm with 25-40 deg attitude error, and the entry stalled at the slab's edge face.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 1,
+   "component": "grasp_program.JAW_CLOSED -0.06 globally (probe H3_wallet_hull_geometry_and_servo_windup)",
+   "change": "Doubles the squeeze for every grasp, to test whether the wallet's top-band hold fails on friction.",
+   "observed": "Diag 0/50 -> 0/50. The wallet kept the same 'lost pad contact' failure with a larger sideways shove. The book (without the deeper entry) still ended 23 'knocked 5 cm in entry'.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 2,
+   "component": "pick.JAW_SPAN_M 0.109 (probe H1_wallet_right_wrist_yaw_window: aim the jaw at the edge facing)",
+   "change": "Commands the wallet's jaw yaw at the facing instead of 15-30 deg inward.",
+   "observed": "Diag 22/50 -> 22/50, 0 fixed, 0 broken. The wallet's first-attempt failures changed to 8 no-bilateral, 5 knocked and 1 lost contact. s150005's pre-grasp was 46.5 deg off, so the facing yaw was not delivered.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 2,
+   "component": "pick.GRASP_PITCH_DEG 25 + pick.GRASP_CLEAR_M -0.005 (probe H2_wallet_pitch_decays_open_loop)",
+   "change": "Commands more nose-down pitch and a jaw 0.5 cm lower, so the pads reach the wallet's widest band (0.6-1.2 cm above the slab).",
+   "observed": "Diag 22/50 -> 22/50. 21/25 wallet first attempts still closed bilaterally and lost pad contact with |rise| <= 0.2 cm. The delivered pitch decays and the housing rides the slab (jaw 2.6-3.9 cm up).",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 2,
+   "component": "JAW_SPAN_M 0.109 + GRASP_PITCH_DEG 25 + GRASP_CLEAR_M -0.005 (probe H3_wallet_best_inplace_first_attempt)",
+   "change": "Combines both in-place wallet parameter shots.",
+   "observed": "Diag 22/50 -> 22/50. Wallet: 7 lost contact (|rise| <= 0.3 cm), 6 no-bilateral, 1 knocked, no rise >= 1.5 cm.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 2,
+   "component": "pick.py needs_slide/slide_grasp/slide_yaw + grasp_program.run drag/top keywords (one hand program: drag to centre 4.5 cm in, up to 2 extra drag cycles, open/rise/back 3 cm, level edge regrasp 1.75 cm above the slab without a walk or arm_rest) — candidate 293ef7f927b0 (slide_then_grasp v1, rejected)",
+   "change": "Drags the wallet with the incumbent's first close, then regrasps level at the edge from the current hand pose. The yaw is clipped to the right wrist's 15-30 deg inward window.",
+   "observed": "Gate: stage 1 b=0, c=0 (29 vs 29). All 30 stage-1 pairs were books, so no wallet round was judged. Diag: n=27 (stopped at rejection), 22 vs 22, 0 fixed, 0 broken. Smoke 0/3. The drag moved the wallet 7.1 cm on 2 diag records (centre ended 4.0-4.5 cm in). The off-centre grip (2.1 cm ahead, 2.1 cm across) pivoted the wallet 24-77 deg in the pads. The regrasp pre-grasp missed by 3.9-5.1 cm and 10-19 deg, and the closes ended 3.3-4.8 cm up against 1.75 commanded.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 3,
+   "component": "grasp_program.ENTRY_GATE.lateral_m 0, ENTRY_GATE.hold_s 70, SIMPLE.entry_timeout_s 85, pick.RETRY_ATTEMPTS 0 (probe H1_wallet_aligned_close_height_binds)",
+   "change": "Holds the wallet entry 70 s at the pre-grasp so the spinning wallet lines up with the jaw, to test whether pad height binds by itself. The timeout and lateral_m keys also reach the book branch, which overrides only hold_s.",
+   "observed": "Diag 22/50 -> 23/50. It fixed book s150036, which was not predicted (a stalled entry, likely helped by the longer timeout), and broke nothing. Wallet still 0/25: 2 rounds rose 2.7 and 4.0 cm before losing pad contact, and 6 new 'knocked 5 cm in entry'.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 3,
+   "component": "H1's entry hold + pick.GRASP_PITCH_DEG 13 + pick.GRASP_CLEAR_M -0.005 (probe H2_wallet_aligned_close_lower_command)",
+   "change": "The aligned-yaw hold plus a lower commanded jaw.",
+   "observed": "Diag 22/50 -> 23/50, the same book s150036 flip, 0 broken. Wallet 0/25: 2 rounds rose 3.6 and 5.0 cm before losing contact, 7 lost contact at -0.2 cm, 6 knocked.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 3,
+   "component": "pick.NARROW.entry_capture_depth_m 0.06 (probe H3_book_stall_capture_6cm)",
+   "change": "The book branch's entry captures 6 cm short instead of 5, to close stalled entries before the timeout.",
+   "observed": "Diag 22/50 -> 22/50. It fixed s150036 (as predicted) and broke s150028. It does not address the acceptance pool's one failing book, a knock.",
+   "verdict": "confounded"
+  }
+ ],
+ "experience": {
+  "cue": "A thin object stands packed in a row under an overhead shelf or surface, so only one box side (its thickness, under about 6 cm and well under the open jaw) fits the two-finger jaw, and a top-down pinch has no headroom. The level side grasp closes on the object's front few cm, far ahead of its centre of mass. The failures read 'knocked in entry', 'not lifted (rise 2-4 cm)' or 'lost pad contact during the lift'. Near-lifts of 2-4 cm, where the object pivots about its rear-bottom edge, are the tell.",
+  "lesson": "Do not change the global constants. Give the object its own branch in pick.pick_once, using a predicate like narrow_covered: cover.overhead(X), and exactly one box side <= JAW_SPAN_M that is narrower than 0.06 m. Pass these values to grasp_program.run as call arguments:\n- open jaw just wider than the side: JAW_OPEN 0.004 (default 0.0245)\n- entry stops 5 cm short of the centre: entry_capture_depth_m 0.05 and entry_overshoot_m -0.05, so the jaw ends 3-4.6 cm from the centre instead of 7-8 cm. 7.5 cm gave 0-1/25; 6 cm fixed one stall but broke one success.\n- lateral_correction_max_m 0, entry-gate hold 0, disturb_limit_m 0.10\n- about twice the squeeze: JAW_CLOSED -0.06, about 20 N instead of 10 N\n- rise_min 0.015 (not 0.05), so a pivoted object still goes on to the pull\nCarry a pull on the outcome (info 'withdraw'). In held.pick_held, pull the jaw straight back, level, 0.30 m before any walk. Continue to at most 0.35 m only while cover.overhead(X) still holds. Do not re-pull on a 'centre < 3 cm past the edge' bar: that re-pulled objects already clear and dropped one.\nChecks:\n- every other pick's steps are byte-identical to the incumbent's record (as globals, these values made an 8.7 cm object ungraspable)\n- log per round: jaw-to-centre offset at the close, rise, pull distance and past_edge_cm",
+  "evidence": "Accepted candidate fba81e5762ec (iteration 1): book diag 0/25 -> 22/25 with 0 broken; gate b=29, c=0, p=0.0 (stage 1 29/30 vs 0/30, no falls or drops); sealed books 0/40 -> 38/40, wallet unchanged (0/40). The same values as globals (probe H1) gave 0 -> 21/25. The contrast that shows the deep, squeezed hold matters: iteration 0's shallow captures (7.5 cm, normal squeeze, RISE_MIN 0.05) gave 0/25 and 1/25 with narrow jaw, with about 9 rounds stuck at 2-4 cm rises. Not isolated: which of the four simultaneous changes (depth 7.5 -> 5 cm, squeeze -0.02 -> -0.06, RISE_MIN 0.05 -> 0.015, pull 0.20 -> 0.30 m) carries the gain. Lateral correction off vs on is 21 vs 19 (4 starts differ). The pull_on to 0.35 m rests on one start (s150030 fixed, s150042 dropped under the alternative trigger). Capture at 6 cm: +1 / -1.",
+  "confidence": "medium. The whole bundle is strongly supported on three independent pools (diag 22/0, gate 29/0, sealed 38/40) with zero breaks. But it is one object type on one shelf row, and no run separates the depth, squeeze, rise-threshold and pull changes, so apply them together and do not credit any single one."
+ },
+ "cost_usd": 1.3626079999999998,
+ "seconds": 252,
+ "session": "209d7534-1c8a-45b2-936f-ff5aca66ed78",
+ "outside": [
+  "/home/yijie/.claude/CLAUDE.md",
+  "/tmp/rr",
+  "/tmp/rr/l00.json",
+  "/tmp/rr/l01.json",
+  "/tmp/rr/l02.json",
+  "/tmp/rr/l03.json",
+  "/tmp/rr/l04.json",
+  "/tmp/rr/l05.json",
+  "/tmp/rr/l06.json",
+  "/tmp/rr/l07.json",
+  "/tmp/rr/l08.json",
+  "/tmp/rr/l09.json",
+  "/tmp/rr/l10.json",
+  "/tmp/rr/l11.json",
+  "/tmp/rr/l12.json",
+  "/tmp/rr/l13.json",
+  "/tmp/rr/l14.json",
+  "/tmp/rr/l15.json",
+  "/tmp/rr/l16.json",
+  "/tmp/rr/l17.json",
+  "/tmp/rr/l18.json",
+  "/tmp/rr/l19.json",
+  "/tmp/rr/l{i:02d}.json",
+  "/tmp/supervisor-skip/<name>",
+  "/workspace/CLAUDE.md",
+  "/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/loop/gaps.jsonl",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/cover.py",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/grasp_program.py",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/held.py",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/held.py\\t2026-10-17",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/pick.py",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/pick.py\\t2026-10-17",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/test_held.py",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py\\n3c3\\n<",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py\\n4:@@",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py\\t2026-10-17",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py\\n38c38\\n<",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py\\n39:@@",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py\\t2026-10-17",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py\\n---",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py\\n198\\t---",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py\\n200:@@",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py\\t2026-10-17",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py\\n---",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py\\n257\\t---",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py\\n259:@@",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py\\t2026-10-17",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/test_held.py\\n352:@@",
+  "/workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/test_held.py\\t2026-10-17"
+ ]
+}

@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 8, 2026-10-20)
+# Rules for the scene RSI loop (TODO 27, version 9, 2026-10-21)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -91,3 +91,10 @@ rule is a new version of this file, committed, and counted as one human interven
     computed from the scene's geometry (the object's box and mesh, its surface, the gripper's size). The sandbox holds
     no earlier skill catalog, loop record or grasp program; do not look for them outside it (version 8, user
     2026-10-20).
+
+28. An iteration may build several candidates (`run --candidates K`, TODO 32.9): the Manager lists up to K hypotheses,
+    K Engineers build them in parallel from the incumbent (each in its own copy of the skills package), each candidate
+    runs on the diagnostic pool, and the Composer merges into one candidate the edits whose diagnostic flips show
+    their mechanism, adopts one candidate, or keeps the incumbent. Only that one candidate reaches the gate, so each
+    gate call stays one paired test (code); the Composer ties every kept or dropped edit to the starts and the trace
+    moment that decided it (prompt) (version 9, user 2026-10-21).

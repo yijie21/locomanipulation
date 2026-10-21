@@ -1,0 +1,388 @@
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/cover.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py
+--- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/cover.py	2026-10-17 14:56:38.000000000 +0000
++++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py	2026-10-17 17:23:21.097959461 +0000
+@@ -4,7 +4,8 @@
+ RESTING_GAP_M below X's underside, with no lower bound: a wolf figurine lifted 10 cm on the corner display shelf's
+ middle shelf failed as "resting on" the shelf 0.40 m above it. `resting_on` re-implements that rule from the object's
+ pose (the predicates stay frozen); `overhead` is its list less X's own support: the shelves above X. held.py withdraws
+-a lifted X from under them; pick.py keeps a covered X's side grasp level and reaches its pre-grasp from farther out."""
++a lifted X from under them; pick.py keeps a covered X's side grasp level and reaches its pre-grasp from farther out.
++`past_edge` is how far out of the shelves X's pull has brought it."""
+ 
+ from __future__ import annotations
+ 
+@@ -34,3 +35,21 @@
+     """`resting_on` less X's own support (its scene-file surface): the shelves above X."""
+     own = world.meta["objects"][key].get("surface")
+     return [k for k in resting_on(world, key) if k != own]
++
++
++def past_edge(world, key: str, surfaces, yaw: float) -> float:
++    """How far (m) X's box centre xy (rotation ignored, as `resting_on`) lies outside the flat top of each of `surfaces`
++    across its edge nearest a robot facing `yaw` (the edge whose outward normal points most against the facing), the
++    least over them; negative inside."""
++    box = world.meta["objects"][key]["box"]
++    pos, _ = world.object_pose(key)
++    xy = pos[:2] + np.asarray(box.get("centre") or (0.0, 0.0, 0.0), float)[:2]
++    out = np.inf
++    for k in surfaces:
++        s = world.meta["surfaces"][k]
++        flat = np.asarray(s.get("flat_half_extent") or s["half_extent"], float)
++        a = yaw - float(s.get("yaw", 0.0))
++        back = -np.array([np.cos(a), np.sin(a)])  # against the facing, in the surface's frame
++        axis = int(np.argmax(np.abs(back)))
++        out = min(out, float(np.sign(back[axis]) * to_surface_frame(xy, s)[axis] - flat[axis]))
++    return float(out)
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/grasp_program.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py
+--- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/grasp_program.py	2026-10-17 14:56:38.000000000 +0000
++++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py	2026-10-17 17:24:00.761754299 +0000
+@@ -98,13 +98,30 @@
+     return palm_R.T @ (obj_pos - tool)
+ 
+ 
+-def run(ctx, key: str, side: str, R_c, tool_c, width: float, entry_frame=None) -> Outcome:
++def run(
++    ctx,
++    key: str,
++    side: str,
++    R_c,
++    tool_c,
++    width: float,
++    entry_frame=None,
++    simple: dict | None = None,
++    gate: dict | None = None,
++    jaw: tuple | None = None,
++    rise_min: float | None = None,
++) -> Outcome:
+     """The closed loop from the pre-grasp: `R_c` = the grasp's wrist rotation (x = approach), `tool_c` = its jaw
+     centre (world, at the object's pose now), `width` = the object's span across the jaw. ctx.note logs the phases.
+     `entry_frame` (a rotation in the wrist frame, None: the wrist's own): the entry runs along R_c @ entry_frame's x and
+     the gate, the lateral correction and the alignment read the offsets in that planned frame, not the measured wrist's
+     (the pinch's level entry with a pitched wrist, pick.pick_pinch: a wrist pitched 40 deg instead of 20 leaked the
+-    12 cm still to go into a 4-10 cm "vertical" offset, and the correction drove the jaw the wrong way)."""
++    12 cm still to go into a 4-10 cm "vertical" offset, and the correction drove the jaw the wrong way).
++    `simple` and `gate` (entries over SIMPLE and ENTRY_GATE), `jaw` ((open, closed) for JAW_OPEN, JAW_CLOSED) and
++    `rise_min` (for RISE_MIN): one grasp's own values (pick.NARROW, the covered book), the module's where None."""
++    simple, gate = {**SIMPLE, **(simple or {})}, {**ENTRY_GATE, **(gate or {})}
++    jaw_open, jaw_closed = (JAW_OPEN, JAW_CLOSED) if jaw is None else jaw
++    rise_min = RISE_MIN if rise_min is None else rise_min
+     world, m = ctx.world, ctx.motor
+     sim, body = m.sim, world.free[key]
+     i = SIDES.index(side)
+@@ -162,54 +179,50 @@
+         pregrasp = grip - PREGRASP_BACK * direction
+         if phase in ("settle", "entry", "retreat"):
+             knocked = float(np.linalg.norm(obj_p[:2] - obj0[:2]))
+-            if knocked > SIMPLE["disturb_limit_m"]:
++            if knocked > simple["disturb_limit_m"]:
+                 return done(False, f"target knocked {knocked * 100:.0f} cm in {phase}")
+         if phase == "settle":
+             target = pregrasp
+             err = float(np.linalg.norm(tool_m - pregrasp))
+-            if (err <= SIMPLE["settle_tolerance_m"] and elapsed > 0.3) or elapsed >= SIMPLE["settle_timeout_s"]:
++            if (err <= simple["settle_tolerance_m"] and elapsed > 0.3) or elapsed >= simple["settle_timeout_s"]:
+                 rec["settle_error_m"] = round(err, 4)
+-                if SIMPLE["settle_abort_m"] is not None and err > SIMPLE["settle_abort_m"]:
++                if simple["settle_abort_m"] is not None and err > simple["settle_abort_m"]:
+                     # back out from where the hand is, the feedback zeroed: a hand stalled on a neighbour winds the
+                     # feedback up to its clip, and a retreat from the unreached target then swept the vase off its shelf
+                     target = retreat_from = tool_m.copy()
+-                    retreat_to = retreat_from - SIMPLE["retreat_m"] * direction
++                    retreat_to = retreat_from - simple["retreat_m"] * direction
+                     tracking, corrected_prev, prev_target = Tracking(), tool_m.copy(), tool_m.copy()
+                     enter("abort", stamp)
+                 else:
+                     entry_cmd = target.copy()
+                     enter("entry", stamp)
+         elif phase == "abort":  # a missed pre-grasp backs out before any entry (a miss then knocked the target)
+-            target = retreat_from + minjerk(elapsed / SIMPLE["retreat_seconds"]) * (retreat_to - retreat_from)
+-            if elapsed >= SIMPLE["retreat_seconds"]:
++            target = retreat_from + minjerk(elapsed / simple["retreat_seconds"]) * (retreat_to - retreat_from)
++            if elapsed >= simple["retreat_seconds"]:
+                 return done(False, f"pregrasp missed by {rec['settle_error_m'] * 100:.1f} cm")
+         elif phase == "entry":
+             off = object_in_palm(frame, tool_m, grip)
+-            if (
+-                ENTRY_GATE["on"]
+-                and max(abs(off[1]), abs(off[2])) > ENTRY_GATE["lateral_m"]
+-                and gate_held < ENTRY_GATE["hold_s"]
+-            ):
++            if gate["on"] and max(abs(off[1]), abs(off[2])) > gate["lateral_m"] and gate_held < gate["hold_s"]:
+                 gate_held += dt
+             else:
+-                entry_cmd = entry_command(entry_cmd, grip, direction, DASH_SPEED, dt, SIMPLE["entry_overshoot_m"])
++                entry_cmd = entry_command(entry_cmd, grip, direction, DASH_SPEED, dt, simple["entry_overshoot_m"])
+             wanted = shift + frame[:, 1] * off[1] + frame[:, 2] * off[2]
+             delta = wanted - shift
+             norm = float(np.linalg.norm(delta))
+             if norm > 1e-9:
+-                shift = shift + delta * min(1.0, SIMPLE["lateral_correction_speed_m_s"] * dt / norm)
++                shift = shift + delta * min(1.0, simple["lateral_correction_speed_m_s"] * dt / norm)
+             total = float(np.linalg.norm(shift))
+-            if total > SIMPLE["lateral_correction_max_m"]:
+-                shift *= SIMPLE["lateral_correction_max_m"] / total
++            if total > simple["lateral_correction_max_m"]:
++                shift *= simple["lateral_correction_max_m"] / total
+             target = entry_cmd + shift
+-            arrived = entry_captured(tool_m, grip, direction, SIMPLE["entry_capture_depth_m"])
++            arrived = entry_captured(tool_m, grip, direction, simple["entry_capture_depth_m"])
+             if arrived or bilateral:
+                 off = object_in_palm(frame, tool_m, grip)
+                 lateral_tol = max(0.005, (2 * PAD_Y - width) / 2 + 0.005)
+                 aligned = abs(off[1]) <= lateral_tol and abs(off[2]) <= PAD_Z
+                 entries.append(dict(arrived=bool(arrived), bilateral=bool(bilateral), aligned=bool(aligned),
+                                     offset_in_palm=[round(float(v), 4) for v in off]))  # fmt: skip
+-                if aligned or bilateral or len(entries) >= max(2, int(SIMPLE["entry_attempts"])):
++                if aligned or bilateral or len(entries) >= max(2, int(simple["entry_attempts"])):
+                     rec.update(
+                         entries=entries, gate_held_s=round(gate_held, 2), shift_m=round(float(np.linalg.norm(shift)), 4)
+                     )
+@@ -221,29 +234,29 @@
+                     enter("close", stamp)
+                 else:
+                     retreat_from = target.copy()
+-                    retreat_to = retreat_from - SIMPLE["retreat_m"] * direction
++                    retreat_to = retreat_from - simple["retreat_m"] * direction
+                     shift = shift + frame[:, 1] * off[1] + np.array([0.0, 0.0, off[2]])
+                     enter("retreat", stamp)
+-            elif elapsed > SIMPLE["entry_timeout_s"]:
++            elif elapsed > simple["entry_timeout_s"]:
+                 return done(False, f"entry timed out {np.linalg.norm(tool_m - grip) * 100:.1f} cm from the grasp")
+         elif phase == "retreat":
+-            target = retreat_from + minjerk(elapsed / SIMPLE["retreat_seconds"]) * (retreat_to - retreat_from)
+-            if elapsed >= SIMPLE["retreat_seconds"]:
++            target = retreat_from + minjerk(elapsed / simple["retreat_seconds"]) * (retreat_to - retreat_from)
++            if elapsed >= simple["retreat_seconds"]:
+                 entry_cmd = target.copy() - shift
+                 enter("entry", stamp)
+         elif phase == "close":
+-            closure = min(1.0, elapsed / SIMPLE["close_seconds"])
+-            if elapsed >= SIMPLE["close_seconds"]:
++            closure = min(1.0, elapsed / simple["close_seconds"])
++            if elapsed >= simple["close_seconds"]:
+                 if bilateral:
+                     lift_from = target.copy() if continuous else tool_m.copy()
+                     z_before = float(obj_p[2])
+                     rec["close_offset_in_palm"] = [round(float(v), 4) for v in object_in_palm(frame, tool_m, grip)]
+                     enter("lift", stamp)
+-                elif elapsed >= SIMPLE["close_seconds"] + SIMPLE["contact_timeout_s"]:
++                elif elapsed >= simple["close_seconds"] + simple["contact_timeout_s"]:
+                     return done(False, "no bilateral pad contact after the close")
+         elif phase == "lift":
+-            target = lift_from + [0.0, 0.0, LIFT_M * minjerk(elapsed / SIMPLE["lift_seconds"])]
+-            if elapsed >= SIMPLE["lift_seconds"]:
++            target = lift_from + [0.0, 0.0, LIFT_M * minjerk(elapsed / simple["lift_seconds"])]
++            if elapsed >= simple["lift_seconds"]:
+                 hold_offset0 = object_in_palm(palm, tool_m, obj_p)
+                 enter("recover", stamp)
+         elif phase == "recover":
+@@ -254,7 +267,7 @@
+                 rec.update(rise_m=round(rise, 4), hold_slip_m=round(float(np.linalg.norm(slip)), 4))
+                 if not bilateral:
+                     return done(False, f"lost pad contact during the lift (rise {rise * 100:.1f} cm)")
+-                if rise < RISE_MIN:
++                if rise < rise_min:
+                     return done(False, f"not lifted (rise {rise * 100:.1f} cm)")
+                 return done(True, "")
+         fb = tracking.step(corrected_prev, tool_m, dt)
+@@ -263,7 +276,7 @@
+         prev_target = target.copy()
+         corrected_prev = corrected.copy()
+         m.hand(side, corrected, R_cmd, v_cmd)
+-        m.jaw[i] = JAW_OPEN + closure * (JAW_CLOSED - JAW_OPEN)
++        m.jaw[i] = jaw_open + closure * (jaw_closed - jaw_open)
+         if not m.tick():
+             return done(False, f"fell in {phase}")
+ 
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/held.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py
+--- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/held.py	2026-10-17 14:56:38.000000000 +0000
++++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py	2026-10-17 17:38:24.575229666 +0000
+@@ -3,6 +3,12 @@
+ The goal's held(X) reads X as still resting on a shelf above it (cover.py: a wolf figurine lifted 10 cm on the corner
+ display shelf's middle shelf failed as "resting on" the shelf 0.40 m above it). A pick that ends with X under such a
+ shelf pulls the jaw WITHDRAW_PULL_M straight back, level, and backs off WITHDRAW_BACK_M when X is still under it.
++A pick whose outcome carries its own pull (info "withdraw", pick.NARROW: the thick novel, r1_slide_then_grasp loop
++iteration 1) pulls its pull_m instead, and on to max_m from the same start ("pull_on") when X is still under the
++shelves above: one start's 0.30 m pull left the book there 0.7 cm inside the edge and the back-off left it resting on
++its own shelf; pulled on, it ended held. Not for an X already out: 3 cm past the edge as the bar, the second pull
++also ran for 5 books out from under at 0.30 m, and dropped one of them. The pull's record keeps how far X's box centre
++is outside its shelves' front edge (cover.past_edge).
+ 
+ upright(X) after a side grasp: the mug hung 18-20 deg tilted at the end (limit 15), 9-11 deg right after the lift. The
+ wrist turns about X's centre by clearance.level_rotation of its measured up axis, at most LEVEL_MAX_DEG.
+@@ -24,7 +30,8 @@
+ 
+ def pick_held(ctx, key: str, skill, upright: bool = False) -> Outcome:
+     """`skill(ctx, key)` (the pick); after a successful one, with X gripped: level X when `upright` and the grasp is a
+-    side grasp ("level"), pull it out from under the surfaces above it ("pull_out", then "back_off" if still under).
++    side grasp ("level"), pull it out from under the surfaces above it ("pull_out", for a pick with its own pull
++    "pull_on" if still under, then "back_off" if still under).
+     ok when X is still gripped and rests on no surface."""
+     out = skill(ctx, key)
+     world, m = ctx.world, ctx.motor
+@@ -44,12 +51,29 @@
+                         lean_before=round(clearance.lean_deg(quat, rest), 1))  # fmt: skip
+         if m.fell_at is not None:
+             return step
+-    if cover.overhead(world, key):
++    under = cover.overhead(world, key)
++    if under:
++        pull = out.info.get("withdraw") or {}
+         jaw, rot = m.jaw_centre(side)
+-        back = jaw - WITHDRAW_PULL_M * np.array([np.cos(m.yaw()), np.sin(m.yaw()), 0.0])
+-        step = ctx.note("pull_out", m.reach(side, back, rot), under=cover.overhead(world, key))
++        yaw = m.yaw()
++        facing = np.array([np.cos(yaw), np.sin(yaw), 0.0])
++        shelves = [world.meta["objects"][key]["surface"], *under]
++
++        def pull_to(name, dist):
++            res = m.reach(side, jaw - dist * facing, rot)
++            own = {}
++            if pull:  # the pick's own pull: the jaw's travel back, X's centre outside the shelves' front edge
++                back, past = float((jaw - m.jaw_centre(side)[0]) @ facing), cover.past_edge(world, key, shelves, yaw)
++                own = dict(jaw_back_cm=round(100 * back, 1), past_edge_cm=round(100 * past, 1))
++            return ctx.note(name, res, under=cover.overhead(world, key), **own)
++
++        step = pull_to("pull_out", pull.get("pull_m", WITHDRAW_PULL_M))
+         if m.fell_at is not None:
+             return step
++        if pull and cover.overhead(world, key):
++            step = pull_to("pull_on", pull["max_m"])
++            if m.fell_at is not None:
++                return step
+         if cover.overhead(world, key):
+             step = ctx.note("back_off", m.sidestep(forward=-WITHDRAW_BACK_M), under=cover.overhead(world, key))
+             if m.fell_at is not None:
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/pick.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py
+--- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/pick.py	2026-10-17 14:56:38.000000000 +0000
++++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py	2026-10-17 17:38:24.575229666 +0000
+@@ -60,7 +60,17 @@
+ (`back_out`) and plans and runs again from the object's pose now, up to RETRY_ATTEMPTS times. Part of what fails is
+ one attempt, not the start: a coffee-table candle knocked 5 cm in the settle by the controller's lunge after a 3.2 cm
+ pre-grasp, a top-shelf candle whose entry timed out 4.7 cm short; a second attempt finished both. Planning refusals
+-and the top-down pinch are not retried; a success never reaches the retry, so its steps are unchanged."""
++and the top-down pinch are not retried; a success never reaches the retry, so its steps are unchanged.
++
++The narrow covered grasp (r1_slide_then_grasp loop iteration 1, `narrow_covered`): an object under another surface
++whose only side that fits the jaw is narrower than NARROW_SIDE_MAX_M (the 4.7 cm thick novel packed in a row on the
++bedroom display's bottom shelf, 16.6 cm deep, 23.9 cm tall) runs the same level grasp with NARROW's values. The
++module's jaw closed 7-8 cm in front of the book's centre with about 10 N: a two-point hinge about which the lift
++pivoted the book on its rear-bottom edge (it toppled, or rose 2 cm on an arc as the pads slid up). A narrower open jaw,
++an entry stopping 5 cm short instead of 2.5 (the jaw 3-4.6 cm from the centre), no lateral correction, twice the
++squeeze (about 20 N), a 1.5 cm rise threshold for a pivoted book, and held.pick_held's pull out to NARROW pull_m
++(NARROW max_m in all when the book is still under the shelves above) turn the pivot into a slide-out that ends held.
++The pull travels on the pick's outcome (info "withdraw")."""
+ 
+ from __future__ import annotations
+ 
+@@ -130,6 +140,19 @@
+ RETRY_ATTEMPTS = 1  # a failed attempt `retry_ok` admits runs again this many times at most, after `back_out`:
+ RETRY_OUT_M = 0.15  # the jaw pulls this far straight back, level, the robot steps RETRY_BACK_M back when that point
+ RETRY_BACK_M = 0.25  # is free on the skill's map, and the arm returns to the pose it walked with
++NARROW_SIDE_MAX_M = 0.06  # an object under another surface whose only side fitting the jaw is narrower: NARROW
++NARROW = dict(  # the narrow covered grasp's own values (grasp_program.run's and held.pick_held's)
++    jaw_open=0.004,  # grasp_program.JAW_OPEN 0.0245
++    jaw_closed=-0.06,  # JAW_CLOSED -0.02: the PD depth into the book, about 20 N instead of 10
++    entry_capture_depth_m=0.05,  # SIMPLE's 0.025: the entry ends 5 cm short of the centre ...
++    entry_overshoot_m=-0.05,  # ... and its command stops there (-0.01)
++    disturb_limit_m=0.10,  # 0.05
++    lateral_correction_max_m=0.0,  # 0.04
++    gate_hold_s=0.0,  # ENTRY_GATE hold_s 3.0
++    rise_min=0.015,  # RISE_MIN 0.05: a pivoted book still goes on to the pull
++    pull_m=0.30,  # held.WITHDRAW_PULL_M 0.20
++    max_m=0.35,  # the pull in all when after pull_m X is still under the shelves above
++)
+ _NAV: dict = {}  # id(meta) -> (meta, occupancy, navigator, floor boxes): one map per scene and process
+ _CLEAR: dict = {}  # (id(occupancy), furniture) -> (occupancy, clearance grid without that furniture's surfaces)
+ 
+@@ -262,9 +285,10 @@
+ 
+ def pick_once(ctx, key: str, side: str = "right", rest: dict | None = None) -> Outcome:
+     """Walk, reach the pre-grasp, then the ported closed-loop hand program (grasp_program.run), the wrist pitched and
+-    the jaw raised for a short object (`grasp_pitch`); a low flat object (`is_top`) is pinched from above instead
+-    (`pick_top`). A side grasp or pinch records the hand and its walking jaw pose (relative to the pelvis, in its yaw
+-    frame) in `rest` before the pre-grasp, for `back_out`."""
++    the jaw raised for a short object (`grasp_pitch`), with NARROW's values for a `narrow_covered` one (its outcome's
++    info "withdraw" carries NARROW's pull for held.pick_held); a low flat object (`is_top`) is pinched from above
++    instead (`pick_top`). A side grasp or pinch records the hand and its walking jaw pose (relative to the pelvis, in
++    its yaw frame) in `rest` before the pre-grasp, for `back_out`."""
+     world, m = ctx.world, ctx.motor
+     plan = approach(ctx, key, side)
+     if not plan.ok:
+@@ -282,6 +306,7 @@
+     pitch, rise = grasp_pitch(world, key, pos, wrist_in(plan.info))
+     if pitch and needs_pinch(world, key, pos, pitch, rise):
+         return pick_pinch(ctx, key, side, plan)
++    narrow = narrow_covered(world, key)
+     pitched = {}
+     if pitch:
+         Rg = Rg @ R.rot_y(pitch)
+@@ -293,9 +318,25 @@
+     if m.fell_at is not None:
+         return out
+     pos, _ = world.object_pose(key)
+-    return grasp_program.run(
+-        ctx, key, side, Rg, pos + up, span(quat, world.meta["objects"][key]["box"]["half_extent"], psi)
+-    )
++    width = span(quat, world.meta["objects"][key]["box"]["half_extent"], psi)
++    if not narrow:
++        return grasp_program.run(ctx, key, side, Rg, pos + up, width)
++    n = NARROW
++    simple = {k: n[k] for k in ("entry_capture_depth_m", "entry_overshoot_m", "disturb_limit_m",
++                                "lateral_correction_max_m")}  # fmt: skip
++    out = grasp_program.run(ctx, key, side, Rg, pos + up, width, simple=simple, gate=dict(hold_s=n["gate_hold_s"]),
++                            jaw=(n["jaw_open"], n["jaw_closed"]), rise_min=n["rise_min"])  # fmt: skip
++    withdraw = {k: n[k] for k in ("pull_m", "max_m")}
++    return Outcome(out.ok, out.why, out.t0, out.t1, dict(out.info, withdraw=withdraw))
++
++
++def narrow_covered(world, key: str) -> bool:
++    """X is under another surface (cover.overhead) and the only side of its box that fits the jaw (JAW_SPAN_M) is
++    narrower than NARROW_SIDE_MAX_M: the thick novel (4.7 cm; 16.6 cm along the other side), not the wallet (8.7 cm,
++    under no shelf)."""
++    half = world.meta["objects"][key]["box"]["half_extent"]
++    fits = [2 * float(h) for h in half[:2] if 2 * float(h) <= JAW_SPAN_M]
++    return len(fits) == 1 and fits[0] < NARROW_SIDE_MAX_M and bool(cover.overhead(world, key))
+ 
+ 
+ def min_jaw(pitch: float, points=None, clear: float | None = None) -> float:
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/test_held.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/test_held.py
+--- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/test_held.py	2026-10-17 14:56:38.000000000 +0000
++++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/test_held.py	2026-10-17 17:38:24.575229666 +0000
+@@ -108,6 +108,36 @@
+         self.assertFalse(out.ok)
+         self.assertIn("resting on ['U']", out.why)
+ 
++    def test_a_pick_with_its_own_pull_pulls_that_far_and_on_to_its_max_only_while_still_under(self):
++        pick_out = Outcome(True, "", 1.0, 2.0, dict(withdraw=dict(pull_m=0.20, max_m=0.30)))
++        for x, steps in ((1.99, [("pull_out", [], 1.0, 20.0)]),  # out, 1 cm past the edge: no second pull
++                         (2.05, [("pull_out", ["U"], -5.0, 20.0), ("pull_on", [], 5.0, 30.0)])):  # fmt: skip
++            world = self._world([x, 2.0, 0.59])  # S's and U's front edge, facing +x, at x 1.8
++            m = Gripper(world, [x - 0.02, 2.0, 0.59], np.eye(3))
++            ctx = Ctx(world, m)
++            out = held.pick_held(ctx, "Can", lambda c, k: pick_out)
++            self.assertTrue(out.ok, out.why)
++            self.assertEqual([(r["step"], r["under"], r["past_edge_cm"], r["jaw_back_cm"]) for r in ctx.log], steps)
++            pulls = [x - 0.02 - d for d in (0.20, 0.30)[: len(steps)]]  # both from the jaw where the pull began
++            np.testing.assert_allclose([c[1] for c in m.calls], [[p, 2.0, 0.59] for p in pulls])
++
++    def test_past_edge_is_outside_the_edge_a_robot_faces_least_over_the_surfaces(self):
++        world = self._world([1.75, 2.0, 0.59])
++        self.assertAlmostEqual(cover.past_edge(world, "Can", ["S", "U"], 0.0), 0.05)
++        world.meta["surfaces"]["U"]["xy"] = [1.98, 2.0]  # U's front edge 2 cm farther out
++        self.assertAlmostEqual(cover.past_edge(world, "Can", ["S", "U"], 0.0), 0.03)
++        # the display shelves' frame: turned 90 deg, approached from its -y edge by a robot facing -x
++        world.meta["surfaces"]["D"] = dict(xy=[0.0, 0.0], half_extent=[0.36, 0.177], yaw=np.pi / 2, top=0.4)
++        world.poses["Can"] = ([0.20, 0.1, 0.5], yaw_quat(0.0))
++        self.assertAlmostEqual(cover.past_edge(world, "Can", ["D"], np.pi - 0.03), 0.023)
++
++    def test_only_a_covered_object_whose_one_fitting_side_is_narrow_takes_the_narrow_grasp(self):
++        book, wallet, can = [0.0831, 0.0233, 0.1196], [0.054, 0.0434, 0.0138], [0.03, 0.03, 0.09]
++        for half, upper, want in ((book, True, True), (book, False, False), (wallet, True, False), (can, True, False)):
++            world = self._world([2.0, 2.0, 0.49], upper=upper)
++            world.meta["objects"]["Can"]["box"]["half_extent"] = half
++            self.assertEqual(pick.narrow_covered(world, "Can"), want, (half, upper))
++
+     def test_upright_levels_a_side_grasp_about_the_object_centre(self):
+         tip = expmap([np.radians(12.0), 0.0, 0.0])
+         pos = np.array([0.1, -0.1, 0.95])

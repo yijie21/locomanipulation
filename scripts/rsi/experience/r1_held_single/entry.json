@@ -1,0 +1,182 @@
+{
+ "edits": [
+  {
+   "iteration": 0,
+   "component": "probe H2: grasp_program.ENTRY_GATE.on=false + grasp_program.DASH_SPEED=0.1",
+   "change": "Turned off the entry gate and changed the entry speed. This tested the rival explanation that the low-slab entry stalls came from gating or speed, not from the gripper housing hitting the support.",
+   "observed": "Diag 4/50 -> 4/50, 0 fixed, 0 broken. Only the failure mix shuffled ('target knocked 5 cm in entry' 6 -> 8).",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "probe H3: pick.VIA_OUT_M 0.08 -> 0.20 (pick.edge_via)",
+   "change": "Moved the edge_via point to 20 cm outside the support edge (from 8 cm), so a hand that starts under a shelf slab clears the edge before it rises.",
+   "observed": "Diag 4 -> 4, 0 fixed, 0 broken. Wolf failures of the form '[goal] held: resting on the shelf above' went from 3 to 5: wolves s120023 and s120043 now reached a good grasp but still failed the covered-object predicate. Coffee can s120010 still succeeded. Later prototype runs showed that a global 0.20 breaks top-shelf candle s120014/s120045 and bin s120048 under the pitched grasp, so iteration 1 applied it to covered objects only.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "probe H4: pick.SIDE_AHEAD_M=0.46 for surfaces with top > 0.95 m (pick.SIDE_AHEAD_TOP_MIN_M=0.95)",
+   "change": "Stood farther back (0.46 m) for side grasps on high shelves.",
+   "observed": "Diag 4 -> 5. It fixed top_shelf_candle s120025, which nobody predicted, and broke 0. Never carried into a candidate, and the iteration-1 pitch fixed s120025 anyway.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 0,
+   "component": "candidate 16dcef01f218: new skills/held.py (plan_for held(X)[+upright(X)], post-pick withdraw, upright levelling) + set pick.VIA_OUT_M=0.20 globally",
+   "change": "plan_for now covers held(X) alone and held(X)+upright(X). After a successful pick, if a surface other than X's own support still covers X, the jaw pulls back level 0.20 m (WITHDRAW_PULL_M), then the robot backs off 0.30 m. For an upright goal with a side grasp, the wrist levels X by up to 25 deg. A global 0.20 m edge via is also set.",
+   "observed": "Gate rejected at stage 1: 5 vs 5 on 30 pairs, b 0, c 0, p 1.0; candidate fell 1 vs 0. Diag 11 vs 4: fixed 7 (all 5 wolves; mugs s120032 and s120042), broke 0. None of the diag gains appeared in the first 30 accept pairs.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 1,
+   "component": "probe H1: pick.TOP_FLAT_M=0.03 + pick.TOP_SURFACE_MAX_M=1.2 (top-down grasp admission)",
+   "change": "Admitted a top-down grasp for short flat objects on supports up to 1.2 m. This was the rival to a level side grasp whose housing meets the slab.",
+   "observed": "Diag 4 -> 7. Fixed coffee-table candle s120005, s120026 and s120036; broke 0. The Reviewer had predicted 0 flips. Not carried, because the pitched side grasp kept all three.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 1,
+   "component": "probe H2: grasp_program.TRACKING.clip 0.08 -> 0.25",
+   "change": "Tripled how far the hand program's translation feedback may push. This tested whether the large entry stalls (plant under a shelf, high shelf) were command saturation.",
+   "observed": "Diag 4 -> 4, 0 fixed, 0 broken, as predicted. Rules out command authority as the cause of the stalls.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 1,
+   "component": "candidate f1ad0545bdcc, part 1: pick.py grasp_pitch / min_jaw (GRIPPER_LOW_POINTS, GRASP_CLEAR_M 0.005, GRASP_PITCH_DEG 15)",
+   "change": "Side grasps only. When the object centre sits less than min_jaw(0) - 0.005 = 3.4 cm above its support top and nothing overhangs the object: pitch the wrist 15 deg nose-down and raise both the pre-grasp and the grasp target to support top + min_jaw(15 deg) = 2.76 cm. min_jaw(th) = max over the gripper's collision low points of (x sin th - z cos th) + clearance. Every other grasp is bit-identical.",
+   "observed": "Gate for the whole candidate: b 12, c 2, p 0.0065, accepted. Stage 1: b 4, c 0 on the same 30 pairs where iteration 0's withdraw-only candidate had b 0. Diag flips on tasks where only the pitch fires: coffee-table candle (0.454 m table) 0/5 -> 4/5 (s120005, s120016, s120026, s120036); top-shelf candle 0 -> 3/5; bin s120048; 0 broken across all 50. Sealed, seed -> this version: coffee-table candle 1/8 -> 7/8, but top-shelf candle 0/8 -> 0/8 and supply bin 0/8 -> 0/8. So the fixes on the 1.07-1.12 m shelves did not transfer.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 1,
+   "component": "candidate f1ad0545bdcc, part 2: held.py withdraw (cover.overhead, WITHDRAW_PULL_M 0.20 / WITHDRAW_BACK_M 0.30) + pick.edge_via COVERED_VIA_OUT_M 0.20 only for covered objects",
+   "change": "Iteration 0's post-pick withdraw for an object still under the shelf above it, with the 0.20 m via restricted to covered objects (0.08 m elsewhere).",
+   "observed": "These are the only mechanisms that fire on the wolf. Diag wolf 0/5 -> 5/5, 0 broken. Sealed wolf 0/8 -> 8/8 (seed -> this version). The via alone (iteration 0, H3) flipped none: the withdraw is necessary, and the via is needed on 2 of the 5 diag starts. Caveat: the same withdraw showed b 0 on the first 30 accept pairs in iteration 0.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 1,
+   "component": "candidate f1ad0545bdcc, part 3: held.py upright levelling (LEVEL_MAX_DEG 25) + plan_for covering held(X)+upright(X)",
+   "change": "The mug goal held+upright had no plan before ('no skill covers this goal'). Now the pick runs, then the wrist levels the mug by up to 25 deg.",
+   "observed": "Diag mug s120032 and s120042 fixed (0/5 -> 2/5). Sealed mug 0/8 -> 0/8 at this version. It reached 3/8 only at iteration 4, after the yawed pass, continuous close and retry were added.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 2,
+   "component": "probe H1: pick.FACE_TOLERANCE_DEG 40 -> 70",
+   "change": "Widened the allowed closing yaw away from the robot's facing, for all tasks.",
+   "observed": "Diag 19 -> 18. Broke mug s120042, as predicted: the planner swapped a small-yaw edge for a nearer large-yaw edge. Fixed 0.",
+   "verdict": "hurt"
+  },
+  {
+   "iteration": 2,
+   "component": "probe H2: pick.SIDE_AHEAD_M=0.35 for top > 0.95 m",
+   "change": "Stood 5 cm closer for side grasps on high shelves.",
+   "observed": "Diag 19 -> 18. Fixed top-shelf candle s120004. Broke bin s120048 (predicted) and top-shelf candle s120014 (not predicted).",
+   "verdict": "hurt"
+  },
+  {
+   "iteration": 2,
+   "component": "candidate ce2c27f881a0: pick.needs_pinch/pick_pinch (PINCH_PITCH_DEG 25, PINCH_CLEAR_M 0.005, PINCH_X_M -0.015, PINCH_DROP_M 0.04, PINCH_LOW_POINTS) + grasp_program.run entry_frame + plan_hand yawed fallback pass (FACE_TOLERANCE_YAWED_DEG 70, stance placed from the wrist, YAWED_TOP_MAX_M 1.0)",
+   "change": "A fingertip pinch for objects so thin that a pitched grasp's pads would overlap them by less than 0.5 cm (the key). The entry runs in the planned frame. A last-resort 70 deg yaw pass with the stance computed from the wrist.",
+   "observed": "Gate: b 2, c 0, p 0.25, rejected. Candidate fell 1 vs 0 ('fell at 6.70 s', which recurs in iterations 3 and 4). Diag 21 vs 19: fixed key s120037 and mug s120022, broke 0. Reopen test: keys 1/5. The Engineer found both 1.12 m bins fell without the 1.0 m yawed-pass guard.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 3,
+   "component": "probe H1: grasp_program.DASH_SPEED=0.03 + grasp_program.SIMPLE.entry_timeout_s=15",
+   "change": "Slower entry with a longer timeout, as a rival to the close/lift target-reset explanation.",
+   "observed": "Diag 19 -> 19, 0 fixed, 0 broken, as predicted. s120004 still lost the candle in the lift.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 3,
+   "component": "probe H2: pick.FACE_TOLERANCE_DEG=45",
+   "change": "Slightly wider yaw tolerance, to test whether yaw alone opens the keys.",
+   "observed": "Diag 19 -> 19, 0/0. Key s120047 now planned but failed 'no bilateral pad contact after the close'. So yaw alone does not open the keys; the jaw height does.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 3,
+   "component": "candidate 7a356e62b78b: iteration 2's code + pick.PINCH_CLEAR_M 0.005 -> 0.003 + grasp_program guarded continuous close (CONTINUOUS_CLOSE 1, CONTINUOUS_MIN_M 0.01)",
+   "change": "Lower pinch clearance for the key. At the close, if the jaw is more than 1 cm from the entry's last target, keep that target through the close and lift from it, instead of resetting to the measured jaw.",
+   "observed": "Gate: b 3, c 0, p 0.125, rejected; fell 1 vs 0. Diag 24 vs 19: fixed keys s120017, s120037 and s120047, top-shelf candle s120004 and mug s120022; broke 0. Against iteration 2 on diag: b 3, c 0. Keys s120017/s120047 come from PINCH_CLEAR 0.003 (smoke runs: 3/4 planned keys at 0.003 vs 1/4 at 0.005); s120004 comes from the continuous close. The 'guard' did not isolate anything: 14 of the 19 incumbent diag successes took the continuous branch (jumps 0.6-4.4 cm), and none broke. Sealed keys 0/8 -> 6/8 at iteration 4, which carries this code plus the retry.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "probe H1: grasp_program.SIMPLE.disturb_limit_m 0.05 -> 0.10",
+   "change": "Allowed a 10 cm object knock before aborting the attempt.",
+   "observed": "Diag 19 -> 20. Fixed coffee-table candle s120046 (predicted), broke 0. Not carried, because it keeps pushing knocked covered objects (drop risk).",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "probe H2: grasp_program.TRACKING.clip 0.08 -> 0.20",
+   "change": "Wider feedback clip, as a rival to the continuous close for the close-time jump.",
+   "observed": "Diag 19 -> 19. Fixed top-shelf candle s120004 and broke top-shelf candle s120025, both predicted: a one-for-one trade on single starts.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "candidate 498b72b75889: pick.pick retry layer (pick_once / retry_ok / back_out; RETRY_ATTEMPTS 1, RETRY_OUT_M 0.15, RETRY_BACK_M 0.25) on iteration 3's code, byte for byte",
+   "change": "After a failed attempt, retry once if all of these hold: no fall; the attempt reached the hand program; the object is still on its own support and between no fingers; and no surface overhangs it. To back out: pull the jaw 0.15 m back level, open, step back 0.25 m if that spot is free on the map, return the arm to its walking pose, then re-plan from the object's current pose.",
+   "observed": "Gate: b 7, c 0, p 0.0078, accepted; fell 1 vs 0 (the same 6.70 s fall that iteration 2's code introduced). Against iteration 3, the identical base on the deterministic accept pool: 20 -> 24 ok (b 3 -> 7, c 0 both). Diag 24 -> 25 (+ coffee-table candle s120046). The retry runs only after a failure, so successes kept identical steps. Without the overhang exclusion, diag drops went 1 -> 4 (retried shelf plants knocked off, books pushed again). Sealed 21 -> 31/80 versus iteration 1 (key 0 -> 6, mug 0 -> 3, top-shelf candle 0 -> 1), but this mixes in iterations 2-3.",
+   "verdict": "helped"
+  }
+ ],
+ "experience": {
+  "cue": "A side grasp of a short object on an open support with nothing overhanging it. The object's centre sits closer to the support top than the gripper's housing/palm hangs below the jaw axis. Symptoms: the hand stalls at the support edge or never leaves the pre-grasp ('entry timed out N cm from the grasp'), or knocks the object. Controller-side probes (slower entry, entry gate off, wider tracking clip) flip nothing.",
+  "lesson": "Compute the side-grasp height from the gripper's collision outline instead of aiming the jaw at the object centre (pick.py: min_jaw / grasp_pitch). Formula: min_jaw(th) = max over the gripper's low collision points (x along the approach, z up, jaw frame) of (x*sin th - z*cos th) + GRASP_CLEAR_M (0.005 m). Trigger: the object centre is less than min_jaw(0) - 0.005 above the support top (3.4 cm for this gripper) and no surface overhangs the object. Then pitch the wrist GRASP_PITCH_DEG = 15 nose-down and raise both the pre-grasp and the hand program's grasp target to support top + min_jaw(15 deg) (2.76 cm here). Leave every other grasp bit-identical. Checks: the pads must still overlap the object top by >= 0.5 cm (if not, it needs a dedicated pinch). The commanded pitch must actually be delivered. It transferred on a 0.45 m table but not on 1.07-1.12 m shelves, where the arm arrived 14-29 deg off the commanded attitude; treat those as a separate reach problem, not a stance or clearance retune.",
+  "evidence": "Row iter 1, part 1 (pick.grasp_pitch) is the only mechanism that fires on the coffee-table candle. Diag 0/5 -> 4/5 (s120005/16/26/36), 0 of 50 starts broken. Sealed (held-out) 1/8 -> 7/8, seed -> iteration-1 version. Mechanism corroborated: the rival top-down probe (TOP_FLAT_M 0.03, iter 1 H1) fixed 3 of the same 5 starts, so the cause is removing the level housing-vs-slab conflict. Controller probes flipped 0: ENTRY_GATE off / DASH 0.1 (iter 0 H2) and TRACKING.clip 0.25 (iter 1 H2). Boundary contrast: the same pitch fixed 3 top-shelf candles and 1 bin on diag, but sealed stayed 0/8 and 0/8. Gate for the whole candidate: b 12, c 2, p 0.0065; stage 1 b 4, c 0 on 30 pairs where iteration 0's withdraw-only candidate had b 0.",
+  "confidence": "medium. Held-out transfer on 8 sealed starts of one task, plus a mechanism confirmed by FK traces and an independent rival fix. But it was gated together with the withdraw (the c 2 is unattributed), and it is shown for one gripper and one low support height. It did not transfer on high shelves."
+ },
+ "cost_usd": 1.5473194000000001,
+ "seconds": 276,
+ "session": "a8af845e-e420-4fa9-beb7-7516462ab23b",
+ "outside": [
+  "/home/yijie/.claude/CLAUDE.md",
+  "/tmp/gp.txt",
+  "/tmp/hyp.txt",
+  "/tmp/mech.txt",
+  "/tmp/supervisor-skip/<name>",
+  "/workspace/CLAUDE.md",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/__init__.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/cover.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/grasp_program.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/held.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/pick.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/test_held.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/test_plan_for.py",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/__init__.py\\ndiff",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/cover.py\\ndiff",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/grasp_program.py\\ndiff",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/held.py\\ndiff",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/pick.py\\ndiff",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/test_held.py\\ndiff",
+  "/workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/test_plan_for.py",
+  "/workspace/tmp/rsi_scene_r1-held-a/it2/proto_yaw/skills/pick.py.\\n",
+  "/workspace/tmp/rsi_scene_r1-held-a/it2/proto_yaw/skills/pick.py.\\n88\\t",
+  "/workspace/tmp/rsi_scene_r1-held-a/it2/runs/",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/close.py,",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/proto_combo/skills",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/proto_combo/skills.\\\\nExpected",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/proto_cont/skills,",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/proto_cont/skills/grasp_program.py,",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/runs/:\\\\n-",
+  "/workspace/tmp/rsi_scene_r1-held-a/it3/runs/f45",
+  "/workspace/tmp/rsi_scene_r1-held-a/it4/proto_retry/pick_retry.diff:\\n-",
+  "/workspace/tmp/rsi_scene_r1-held-a/it4/proto_retry/pick_retry.diff:\\n185\\t-",
+  "/workspace/tmp/rsi_scene_r1-held-a/it4/proto_retry/skills,",
+  "/workspace/tmp/rsi_scene_r1-held-a/it4/proto_retry/skills/pick.py",
+  "/workspace/tmp/rsi_scene_r1-held-a/it4/runs/,",
+  "/workspace/tmp/rsi_scene_r1-held-a/proto_grasp_floor.patch",
+  "/workspace/tmp/rsi_scene_r1-held-a/proto_pitch_runs.txt,",
+  "/workspace/tmp/rsi_scene_r1-held-a/proto_withdraw_level.patch",
+  "/workspace/tmp/rsi_scene_r1-held-a/proto_withdraw_level.patch.\\n(3",
+  "/workspace/tmp/rsi_scene_r1-held-a/proto_withdraw_level.patch.\\n7\\t(3",
+  "/workspace/tmp/rsi_scene_r1-held-a/runs/*/"
+ ]
+}

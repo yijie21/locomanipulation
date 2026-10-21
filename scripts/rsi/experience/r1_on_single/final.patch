@@ -1,0 +1,1485 @@
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/__init__.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/__init__.py
+--- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/__init__.py	2026-10-16 16:17:40.000000000 +0000
++++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/__init__.py	2026-10-16 22:32:19.379373118 +0000
+@@ -11,21 +11,35 @@
+ 
+ from locomani.scene_discovery.predicates import parse
+ 
+-from . import grasp_program, pick  # noqa: F401  (apply_set reaches modules through the package)
++from . import clearance, grasp_program, pick, place  # noqa: F401  (apply_set reaches modules through the package)
+ 
+ PLAN_HELD = "pick"  # held(X): "pick" (the ported closed-loop program, plan D4) or "pick_simple"
+ 
+ 
+ def plan_for(task):
+-    """The plan for a task's goal, or None when no skill covers it. Covered: held(X)."""
++    """The plan for a task's goal, or None when no skill covers it. Covered: held(X); a conjunction of on(X, S) and
++    upright(X) only (`place.place_on` for each on(X, S) in goal order, stopping at the first failure)."""
+     preds = [parse(g) for g in task.goal]
+     if len(preds) == 1 and preds[0].name == "held":
+         key = preds[0].args[0]
+         skill = getattr(pick, PLAN_HELD)
+         return lambda ctx: skill(ctx, key)
++    ons = [tuple(p.args) for p in preds if p.name == "on"]
++    if ons and all(p.name in ("on", "upright") for p in preds):
++        return lambda ctx: place_all(ctx, ons)
+     return None
+ 
+ 
++def place_all(ctx, ons):
++    """`place.place_on` for each (object, surface) in order; the first failure ends the plan."""
++    out = None
++    for key, surface in ons:
++        out = place.place_on(ctx, key, surface)
++        if not out.ok:
++            return out
++    return out
++
++
+ def apply_set(package, overrides: dict) -> list[str]:
+     """Set parameters on a loaded skills package: "NAME" (the package's own), "module.NAME", or "module.NAME.key"
+     (an entry of a dict parameter). Unknown names raise (a typo must not run silently). Returns the keys set."""
+@@ -53,7 +67,7 @@
+ def parameters(package) -> dict:
+     """Every overridable parameter: upper-case module constants (numbers, strings, dicts of them), by `apply_set` key."""
+     out = {k: v for k, v in vars(package).items() if k.isupper() and isinstance(v, (int, float, str, dict))}
+-    for name in ("pick", "grasp_program"):
++    for name in ("pick", "grasp_program", "place", "clearance"):
+         mod = getattr(package, name)
+         for k, v in vars(mod).items():
+             if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/clearance.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/clearance.py
+--- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/clearance.py	1970-01-01 00:00:00.000000000 +0000
++++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/clearance.py	2026-10-16 22:36:08.482137800 +0000
+@@ -0,0 +1,117 @@
++"""Where the robot's gripper and a carried object fit (r1_on_single loop iteration 4): the carried object's footprint at
++the yaw it rides in the hand, whether it lies inside a surface's flat top, and the gripper's least clearance to the
++scene's static objects along a stretch of the motor trace. place.py's spot planner refuses on the footprint; the gripper
++clearance is only logged so far (the carried hand passed 1-4 cm from a thermostat beside the bathroom sink, and one
++soap carry stalled against it).
++
++The release's geometry (iteration 5): the carried object's measured up axis (`up_axis`, `lean_deg`), the wrist turn that
++levels it (`level_rotation`) and the open jaw's move onto its centre (`centre_move`)."""
++
++from __future__ import annotations
++
++import numpy as np
++
++from locomani.backends.scalebfm import runtime as R
++from locomani.backends.scalebfm.motor import SIDES, expmap
++from locomani.scene_discovery.scene_file import to_surface_frame
++
++from . import grasp_program, pick
++
++GRIPPER_HALF_M = grasp_program.PAD_Y + 0.012  # the open fingers' half width across the jaw (pads + finger thickness)
++SWEEP_EVERY = 5  # `sweep` checks every this many trace rows
++_STATIC: dict = {}  # id(meta) -> (meta, keys, box centres, rotations, half extents) of `static_boxes`
++
++
++def carried_footprint(xy, half_xy, face: float, yaw_rel: float) -> tuple:
++    """The footprint (start.footprint's form) of an object carried at yaw `yaw_rel` on a robot facing `face`, centred
++    at `xy`."""
++    return np.asarray(xy, float)[:2], np.asarray(half_xy, float)[:2], float(face + yaw_rel)
++
++
++def inside(fp, surface: dict, margin: float) -> bool:
++    """The footprint `fp` lies inside the surface's flat top by `margin` on every side."""
++    xy, half, yaw = fp
++    a = yaw - float(surface.get("yaw", 0.0))
++    reach = np.abs([[np.cos(a), np.sin(a)], [np.sin(a), np.cos(a)]]) @ half
++    flat = np.asarray(surface.get("flat_half_extent") or surface["half_extent"], float)
++    return bool(np.all(np.abs(to_surface_frame(xy, surface)) + reach <= flat - margin))
++
++
++def static_boxes(meta: dict) -> tuple:
++    """(keys, centres (n, 3), rotations (n, 3, 3), half extents (n, 3)) of the boxes of the static objects other than a
++    surface's furniture and the apartment's shell: what a carried gripper can strike (the thermostat on the wall beside
++    the bathroom sink). Built once per scene."""
++    hit = _STATIC.get(id(meta))
++    if hit is None or hit[0] is not meta:
++        furniture = {s.get("of_object") for s in meta["surfaces"].values()}
++        keys, centres, rots, halves = [], [], [], []
++        for k, o in meta["objects"].items():
++            if o.get("free") or k in furniture or k.startswith("Apartment"):
++                continue
++            rot = R.mat(np.asarray(o["init_quat"], float))
++            keys.append(k)
++            centres.append(np.asarray(o["init_pos"], float) + rot @ np.asarray(o["box"].get("centre") or (0, 0, 0)))
++            rots.append(rot)
++            halves.append(np.asarray(o["box"]["half_extent"], float))
++        hit = _STATIC[id(meta)] = (meta, keys, np.array(centres), np.array(rots), np.array(halves))
++    return hit[1:]
++
++
++def gripper_points(wrist, rot) -> np.ndarray:
++    """(n, 3) points sampling the gripper: the wrist to the fingertips (R.OFF + pick.FINGERTIP_M along the wrist x), on
++    the jaw axis and GRIPPER_HALF_M either side of it along the wrist y."""
++    tip = R.OFF + np.array([pick.FINGERTIP_M, 0.0, 0.0])
++    local = [u * tip + np.array([0.0, w, 0.0]) for u in np.linspace(0.0, 1.0, 5) for w in (-GRIPPER_HALF_M, 0.0,
++                                                                                            GRIPPER_HALF_M)]  # fmt: skip
++    return np.asarray(wrist, float) + np.asarray(local) @ np.asarray(rot).T
++
++
++def sweep(world, m, side: str, k0: int) -> dict | None:
++    """The gripper's (`gripper_points`) least distance to `static_boxes` over the motor trace from row `k0` (every
++    SWEEP_EVERY-th row and the last): dict(cm, near, t). The trace keeps wrist positions only, so the wrist attitude is
++    the one measured now, turned with the pelvis yaw. Logged, never refused on. None for an empty stretch."""
++    rows = m.trace[k0:]
++    if not rows:
++        return None
++    keys, centres, rots, halves = static_boxes(world.meta)
++    i = SIDES.index(side)
++    _, rot_now = m.jaw_centre(side)
++    on_body = R.rot_z(-m.yaw()) @ rot_now
++    best = (np.inf, "", 0.0)
++    for r in rows[::SWEEP_EVERY] + rows[-1:]:
++        pts = gripper_points(r["wrists"][i], R.rot_z(R.yaw_of(r["robot"][3:7])) @ on_body)
++        q = np.einsum("bji,pbj->pbi", rots, pts[:, None, :] - centres[None])  # each point in each box's frame
++        d = np.linalg.norm(np.maximum(np.abs(q) - halves[None], 0.0), axis=2).min(axis=0)
++        j = int(np.argmin(d))
++        if d[j] < best[0]:
++            best = (float(d[j]), keys[j], float(r["t"]))
++    return dict(cm=round(100 * best[0], 1), near=best[1], t=round(best[2], 2))
++
++
++def up_axis(quat, rest_quat) -> np.ndarray:
++    """The object's measured up axis (world): its axis that is vertical in the rest pose `rest_quat` (the scene file's
++    init_quat; a start only turns it about z), turned by its pose now `quat`."""
++    return R.mat(quat) @ (R.mat(rest_quat).T @ np.array([0.0, 0.0, 1.0]))
++
++
++def lean_deg(quat, rest_quat) -> float:
++    """The angle (deg) between the object's `up_axis` and the world vertical."""
++    return float(np.degrees(np.arccos(np.clip(up_axis(quat, rest_quat)[2], -1.0, 1.0))))
++
++
++def level_rotation(u, max_deg: float) -> tuple[np.ndarray, float]:
++    """(corr, deg): the least rotation (world) taking the axis `u` toward the world z, about u x z, by at most
++    `max_deg`; the angle it turns. Identity when `u` is vertical (or upside down: no unique axis)."""
++    u = np.asarray(u, float) / float(np.linalg.norm(u))
++    axis = np.cross(u, [0.0, 0.0, 1.0])
++    s = float(np.linalg.norm(axis))
++    if s < 1e-9:
++        return np.eye(3), 0.0
++    ang = min(float(np.arctan2(s, u[2])), float(np.radians(max_deg)))
++    return expmap(axis / s * ang), float(np.degrees(ang))
++
++
++def centre_move(d: float, min_m: float, max_m: float) -> float:
++    """How far (m) the open jaw moves along the wrist y onto an object whose centre is `d` along it from the jaw
++    centre: none within `min_m`, else `d` clamped to +-`max_m`."""
++    return 0.0 if abs(d) <= min_m else float(np.clip(d, -max_m, max_m))
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/grasp_program.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/grasp_program.py
+--- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/grasp_program.py	2026-10-16 16:17:40.000000000 +0000
++++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/grasp_program.py	2026-10-16 22:32:19.383373095 +0000
+@@ -30,6 +30,7 @@
+     contact_timeout_s=0.8,
+     lift_seconds=2.0,
+     disturb_limit_m=0.05,
++    settle_abort_m=None,  # a settle ending farther than this from the pre-grasp retreats and fails (None: never)
+ )
+ TRACKING = dict(deadband=0.002, speed=0.04, acceleration=0.2, clip=0.08)  # SupportedMotion's translation feedback
+ # grasp_planned.ENTRY_GATE (lateral 0.015 m, hold 2.0 s until the pick_single loop's set)
+@@ -157,8 +158,20 @@
+             err = float(np.linalg.norm(tool_m - pregrasp))
+             if (err <= SIMPLE["settle_tolerance_m"] and elapsed > 0.3) or elapsed >= SIMPLE["settle_timeout_s"]:
+                 rec["settle_error_m"] = round(err, 4)
+-                entry_cmd = target.copy()
+-                enter("entry", stamp)
++                if SIMPLE["settle_abort_m"] is not None and err > SIMPLE["settle_abort_m"]:
++                    # back out from where the hand is, the feedback zeroed: a hand stalled on a neighbour winds the
++                    # feedback up to its clip, and a retreat from the unreached target then swept the vase off its shelf
++                    target = retreat_from = tool_m.copy()
++                    retreat_to = retreat_from - SIMPLE["retreat_m"] * direction
++                    tracking, corrected_prev, prev_target = Tracking(), tool_m.copy(), tool_m.copy()
++                    enter("abort", stamp)
++                else:
++                    entry_cmd = target.copy()
++                    enter("entry", stamp)
++        elif phase == "abort":  # a missed pre-grasp backs out before any entry (a miss then knocked the target)
++            target = retreat_from + minjerk(elapsed / SIMPLE["retreat_seconds"]) * (retreat_to - retreat_from)
++            if elapsed >= SIMPLE["retreat_seconds"]:
++                return done(False, f"pregrasp missed by {rec['settle_error_m'] * 100:.1f} cm")
+         elif phase == "entry":
+             off = object_in_palm(palm, tool_m, grip)
+             if (
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/pick.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/pick.py
+--- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/pick.py	2026-10-16 16:17:40.000000000 +0000
++++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/pick.py	2026-10-16 22:32:19.383373095 +0000
+@@ -22,7 +22,11 @@
+ out to TOP_MAX_DEPTH_M, then the other hand from the mirrored stance (on the kitchen island's free west side every
+ right-hand stance stands against a bar stool; the left hand's stance is on the stool's far side). A fallback plan is
+ refused when the robot starts against a floor object (a mug start spawns with its wrist inside a trash bin's footprint
+-and falls on the first step whatever the plan)."""
++and falls on the first step whatever the plan).
++
++A default-off switch the put-down (place.py, r1_on_single loop iteration 4) turns on around its pick, so held(X)'s pick
++is unchanged: SIDE_AHEAD_M stands the pelvis farther back for a right-hand side grasp on a surface above
++SIDE_AHEAD_TOP_MIN_M (`stand_ahead`); the left-hand fallback and the top-down pinch keep STAND_AHEAD_M."""
+ 
+ from __future__ import annotations
+ 
+@@ -64,6 +68,8 @@
+ TOP_DESCENT_SPEED = 0.05
+ TOP_MAX_DEPTH_M = 0.39  # a top-down pinch's depth limit (fallback pass; MAX_DEPTH_M stays the side grasps')
+ SPAWN_CLEAR_M = 0.08  # a fallback plan needs the start pelvis this far from every floor object footprint
++SIDE_AHEAD_M = None  # default-off switch (place.py's pick): object this far ahead for a right-hand side grasp ...
++SIDE_AHEAD_TOP_MIN_M = 0.6  # ... on a surface whose top is above this (None: STAND_AHEAD_M, held(X)'s pick)
+ _NAV: dict = {}  # id(meta) -> (meta, occupancy, navigator, floor boxes): one map per scene and process
+ _CLEAR: dict = {}  # (id(occupancy), furniture) -> (occupancy, clearance grid without that furniture's surfaces)
+ 
+@@ -221,7 +227,7 @@
+     the surface's own furniture: the kitchen island's unlisted west side stands against a bar stool) and has a path on
+     the skill's map; the stance is STAND_SIDE_M toward the hand, else each of STAND_SIDE_RETRY_M. The utility cart's
+     crowded top leaves the canister lying along one edge: only the edge at its end faces its narrow side. The object
+-    centre is at most `max_depth` (default MAX_DEPTH_M) in from the edge."""
++    centre is at most `max_depth` (default MAX_DEPTH_M) in from the edge and `stand_ahead` ahead of the stance."""
+     obj = world.meta["objects"][key]
+     surf = world.meta["surfaces"][obj["surface"]]
+     pos, quat = world.object_pose(key)
+@@ -231,16 +237,18 @@
+     sign = -1.0 if side == "right" else 1.0
+     edges = [(f, dep, True) for f, dep in facings(surf, pos, listed)]
+     edges += [(f, dep, False) for f, dep in (facings(surf, pos, others) if others else [])]
+-    fit = _nearest_closing_yaw if is_top(world, key) else grasp_yaw
++    top_pinch = is_top(world, key)
++    fit = _nearest_closing_yaw if top_pinch else grasp_yaw
+     why = "no side fits the jaw within reach of an approachable edge"
+     max_depth = MAX_DEPTH_M if max_depth is None else max_depth
++    ahead = stand_ahead(float(surf["top"]), side, top_pinch)
+     for f, dep, is_listed in edges:
+         psi = fit(quat, obj["box"]["half_extent"], f) if dep <= max_depth else None
+         if psi is None:
+             continue
+         why = "no clear stance with a path at an edge where a side fits the jaw"
+         for lateral in (STAND_SIDE_M, *STAND_SIDE_RETRY_M):
+-            stance = pos[:2] - (R.rot_z(f) @ np.array([STAND_AHEAD_M, sign * lateral, 0.0]))[:2]
++            stance = pos[:2] - (R.rot_z(f) @ np.array([ahead, sign * lateral, 0.0]))[:2]
+             if floor_clearance(boxes, stance) < STANCE_CLEAR_M:
+                 continue
+             if not is_listed and other_clearance(world, obj["surface"], stance) < OTHER_EDGE_CLEAR_M:
+@@ -251,6 +259,15 @@
+     return None, why
+ 
+ 
++def stand_ahead(top: float, side: str, top_pinch: bool) -> float:
++    """How far ahead of the pick stance the object is: SIDE_AHEAD_M for a right-hand side grasp on a surface whose top is
++    above SIDE_AHEAD_TOP_MIN_M when the switch is set (from 0.40 m the soap's reach on the bathroom sink counter missed
++    the pre-grasp by 13-22 cm), else STAND_AHEAD_M."""
++    if SIDE_AHEAD_M is None or side != "right" or top_pinch or top <= SIDE_AHEAD_TOP_MIN_M:
++        return STAND_AHEAD_M
++    return float(SIDE_AHEAD_M)
++
++
+ def plan_hand(world, start_xy, key: str, side: str):
+     """(plan, hand, why): `plan_approach` for `side`; only when that finds none, the fallback passes -- the same hand
+     with a top-down pinch out to TOP_MAX_DEPTH_M, then the other hand (stance mirrored) -- whose plan is refused when
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/place.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/place.py
+--- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/place.py	1970-01-01 00:00:00.000000000 +0000
++++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/place.py	2026-10-16 22:39:24.373185885 +0000
+@@ -0,0 +1,714 @@
++"""Skill `place_on` (r1_on_single loop, iteration 0; the family's gap place_on_surface.single, rules 24): put a free
++object down on a named surface. `pick.pick` as it is, step back (stand up if the pick left the pelvis low), walk to a
++stance facing a free spot near an edge of the target (`plan_spot`), reach the object over the spot through a point
++outside that edge, lower it, release, retract, step back.
++
++The target height is the named surface's own top, never another surface sharing its footprint (NightStand__1's middle
++shelf lies under NightStand__2's top). A spot must clear every object resting on the target by its current pose, not
++the scene file's `surface` field (two_novels' second book has to see the first; the bed's pillows have no surface).
++
++`on(X, S)` does not require a release: an object still held up to 0.30 m over S passes it. So the skill never ends
++holding the object -- every failure after the pick opens the hand -- and it reports success only when, after the
++retract, no finger touches X and X rests on S's own top. Each stage fails with its own string (pick refused / pick
++failed / no spot / no stance or route / carry / dropped during the carry / place reach failed / still touching after
++release / not resting on S) so failures split by layer.
++
++Not tucked before the carry: raising a top-down-pinched remote to 0.8 m left it 34 deg off, and side-grasped objects
++carried fine without a tuck (Reviewer's closed-loop checks). The in-place turns of the carry run at CARRY_TURN_RATE: the
++one jam that slipped did so in a 120 deg final turn at the motor's 0.8 rad/s.
++
++Drop-safe (loop iteration 1; iteration 0 won the gate 12-0 and was rejected on 10 drops):
++- An object whose footprint overlaps a neighbour on its support is refused before the pick (`blocking_neighbour`): the
++  open fingers have no room. Every book start and one vase start overlap by 1.2-1.5 cm, every other start is 2 cm or
++  more clear, and none of the overlapping ones was ever put down.
++- The put-down's pick aborts once the object has moved PICK_DISTURB_LIMIT_M (successes moved at most 0.7 cm; knocked
++  objects passed 2 cm seconds before the 5 cm limit, then fell off the shelf). held(X)'s pick keeps its own limit.
++- An object held more than HELD_OUT_MAX_M out along the fingers after the lift (`held_out`) is set back on its support
++  instead of carried: those slid out of the grip in the carry, the successes sat 1.5-2.6 cm out.
++- After a low pick (reference pelvis tilt above UPRIGHT_TILT_DEG) the jaw first pulls CLEAR_BACK_M straight back, level,
++  and the robot stands up before it walks: walk_to's yaw-only pelvis otherwise snaps the reference wrist up 18-33 cm at
++  the first tick. On that path the grip is checked after each step, and a lost grip ends the skill before any walk (a
++  robot that walked on after a lost book fell).
++- A failure after the lift sets the object down on whichever of its support and the target is under it (`set_down`)
++  before the hand opens; it opens in the air only over neither.
++
++Planned before the pick (loop iteration 2; iteration 1 won 15-0 and was rejected on 6 drops, 3 of them in the carry):
++- The spot and the carry route are planned before any contact (`plan_ahead`), from where the back-off will leave the
++  robot, with the object's yaw relative to the robot predicted from the grasp. No spot or route: refused untouched.
++  After the lift the spot is planned again from where the robot is and only refines that plan.
++- Creep budget, side grasps only: a carried object slides down between the pads at 0.04-0.14 cm/s whatever the grip
++  force (the clock lost after 4.2 cm in 39 s). The pick is refused when the pad margin (`grip_margin`: the object's top
++  above the grasp height less grasp_program.PAD_Z) is under CREEP_RATE_M_S times the planned lift-to-release time
++  (`lift_to_release_s`); after the lift the margin measured in the jaw is checked against the rest of that time, and a
++  short one is set back on its support. The top-down pinch (the remote: 0.3-0.5 cm in 21-23 s) is exempt.
++- The put-down's pick aborts before the entry when the settle ends more than PICK_SETTLE_ABORT_M from the pre-grasp
++  (grasp_program.SIMPLE settle_abort_m; every knock followed such a miss, every success settled within 1.3 cm).
++- Never opened in the air while it still grips: a failure with no surface under the object walks back to the pick
++  stance and puts it back where it was (`set_down` with `home`); at the target the hand opens only over it, after one
++  more lowering when the first ended more than LOWER_RETRY_OFF_M off.
++
++Deep counters and end spots (loop iteration 4; iteration 3 won 8-1 and was rejected on 3 drops, all put-downs released
++2.1-2.6 cm from the target's end):
++- The put-down's pick stands back for a right-hand side grasp on a surface above 0.6 m (pick.SIDE_AHEAD_M at
++  PICK_SIDE_AHEAD_M, `_pick_switches`): from 0.40 m the soap's reach missed the pre-grasp by 13-22 cm. The left-hand
++  fallback, the top-down pinch and every put-down stance keep 0.40 m. Its entry closes PICK_CAPTURE_DEPTH_M deep (the
++  2.5 cm capture left objects 1.9-3.0 cm out toward the fingertips; near 3 cm they were set back or slid out), and a
++  settle abort backs out from where the hand is (grasp_program; a retreat with wound-up feedback swept a vase off).
++- A side-grasped object goes down PLACE_SIDE_MIN_M from the edge's ends, its footprint at the carried yaw SPOT_INSIDE_M
++  inside the flat top (clearance.inside): one vase start fell off the table's end from 2.6 cm and stood from 6.1 cm. A
++  top-down-pinched one keeps SPOT_SIDE_M (the TV leaves one remote start only a spot 3.8 cm from the stand's end).
++- On a surface that lists no approach edge every put-down stance needs pick.OTHER_EDGE_CLEAR_M, as at an unlisted edge:
++  a remote's carry to the TV stand's walled north end fell there 0.15 m from the wall (the successes stood 0.35 m clear).
++- CREEP_RATE_M_S 0.12 cm/s (was 0.15): carries measured 0.067-0.117 cm/s on the successes and 0.08-0.13 cm/s on the
++  clocks that dropped, and T_est overestimates the carry by 2.3-9.8 s.
++- Logged only: the gripper's least clearance to static objects over the carry and the reach over the spot
++  (clearance.sweep; a carried hand passed 1-4 cm from the thermostat beside the bathroom sink).
++
++Closed-loop release, side grasps only (loop iteration 5; iterations 3 and 4 each won 8-1 and were rejected on 3 drops,
++all of them put-downs that toppled on release or retract -- a jam or soap lying on the target is a drop):
++- Levelled (`_lower_onto`): the wrist turns by the least rotation taking the object's measured up axis to vertical,
++  at most LEVEL_MAX_DEG (clearance.level_rotation), before the reach over the spot, and holds it down: lowered at the
++  attitude the carry left, objects reached the top tilted 1-16 deg.
++- Released (`_release`): the servo's position lead and turn integral are dropped and the hand re-commanded where it
++  is before the jaw opens (with the lead, up to 4.7 cm, the open jaw sprang up 1.5-4.3 cm and left the object leaning
++  on one finger); the open jaw moves onto the object's centre along the wrist y (clearance.centre_move), backs out
++  RETRACT_M along the fingers level, then rises RETRACT_RISE_M (the rising retract dragged leaning objects over).
++- The put-down, `set_down` and `_put_back` (through `_lower_onto`) all release this way. A top-down-pinched object
++  (pick.is_top, the remote) keeps the open-loop lowering, release and rising retract."""
++
++from __future__ import annotations
++
++import contextlib
++import dataclasses
++
++import numpy as np
++
++from locomani.backends.scalebfm import runtime as R
++from locomani.backends.scalebfm.motor import FF_SHORT, FF_SPEEDS, SIDES, Outcome, Profile, tilt, turn_seconds
++from locomani.scene_discovery.scene_file import to_surface_frame
++from locomani.tasks.scene.start import footprint, overlap
++
++from . import clearance, grasp_program, pick
++
++BACK_AFTER_PICK_M = 0.30  # step back this far after the pick ...
++STAND_UP_BELOW_M = 0.72  # ... and stand up when the pelvis is still lower than this
++SPOT_CLEAR_M = 0.04  # the object's footprint at the spot this clear of every object resting on the target
++SPOT_EDGE_M = 0.03  # spot depth in from its edge: from the object's smaller half extent + this ...
++SPOT_DEPTH_MAX_M = 0.30  # ... to this (and the spot centre stays as far from the opposite edge)
++SPOT_SIDE_M = 0.02  # spot centre at least this far in from the ends of its edge
++SPOT_STEP_M = 0.02  # depth and along-edge grid
++RESTING_BAND_M = 0.05  # an object whose underside is this close to the target's top rests on it
++MAX_ROUTE_TRIES = 40  # stances tried for a route, best first
++CARRY_TURN_RATE = 0.4  # rad/s peak in-place turn while carrying (the motor's 0.8 restored after the carry)
++PLACE_CLEAR_M = 0.015  # object underside this far above the top at the end of the descent
++ABOVE_M = 0.06  # the descent starts this far above that
++VIA_OUT_M = 0.10  # the reach over the top passes with the object this far outside the edge, at the descent's start
++DESCENT_SPEED = 0.04
++RETRACT_M = 0.12  # after the release the jaw backs out this far along -wrist x ...
++RETRACT_UP_M = 0.03  # ... and rises this far
++BACK_AFTER_PLACE_M = 0.25
++REST_GAP_M = 0.02  # done only with the object's underside at most this above the target's top
++PICK_MIN_NEIGHBOUR_GAP_M = 0.0  # refuse the pick when a neighbour on the support comes closer than this (overlap)
++PICK_DISTURB_LIMIT_M = 0.02  # grasp_program's disturb limit during the put-down's pick only (held(X)'s stays 0.05)
++HELD_OUT_MAX_M = 0.03  # object centre at most this far out along the fingers after the lift, else set back
++UPRIGHT_TILT_DEG = 10.0  # reference pelvis tilt above which the robot stands up before its first walk
++CLEAR_BACK_M = 0.20  # ... after pulling the jaw this far straight back, level
++SET_DOWN_MARGIN_M = 0.03  # set_down: the object's centre this far inside the surface's footprint
++CREEP_RATE_M_S = 0.0012  # side grasps: the object slides down the pads this fast from the lift to the release
++LEG_SETTLE_S = 3.0  # lift_to_release_s: per walk leg after its profile (walk_to: settle_s, up to its stop_timeout)
++PICK_SETTLE_ABORT_M = 0.035  # grasp_program's settle_abort_m during the put-down's pick only (held(X)'s stays None)
++LOWER_RETRY_OFF_M = 0.015  # a lowering that ends farther than this from its target ...
++LOWER_RETRY_UP_M = 0.03  # ... rises this far and lowers once more
++PICK_SIDE_AHEAD_M = 0.46  # pick.SIDE_AHEAD_M during the put-down (held(X)'s stays None)
++PICK_CAPTURE_DEPTH_M = 0.015  # grasp_program's entry_capture_depth_m during the put-down's pick (held(X)'s stays 0.025)
++PLACE_SIDE_MIN_M = 0.06  # a side-grasped object's spot centre at least this far in from the ends of its edge ...
++SPOT_INSIDE_M = 0.015  # ... and its footprint at the carried yaw this far inside the flat top on every side
++LEVEL_MAX_DEG = 25.0  # side grasps: the wrist levels the object's measured up axis by at most this before lowering
++CENTRE_MIN_M = 0.002  # after the release the open jaw moves onto the object's centre (wrist y) when off more ...
++CENTRE_MAX_M = 0.03  # ... than this, by at most this
++RETRACT_RISE_M = 0.05  # side grasps: the jaw backs out RETRACT_M level, then rises this far
++
++
++def neighbours(world, surface_key: str, exclude: str) -> dict[str, tuple]:
++    """Footprints (start.footprint) by key of the objects, static or free, whose underside is now within
++    RESTING_BAND_M of the surface's top and whose footprint can reach the surface's, except `exclude`."""
++    s = world.meta["surfaces"][surface_key]
++    top, c = float(s["top"]), np.asarray(s["xy"], float)
++    reach = float(np.hypot(*(s.get("flat_half_extent") or s["half_extent"])))
++    out = {}
++    for k, o in world.meta["objects"].items():
++        if k == exclude:
++            continue
++        pos, quat = world.object_pose(k)
++        half, centre = np.asarray(o["box"]["half_extent"], float), np.asarray(o["box"].get("centre") or (0, 0, 0))
++        if abs(float(pos[2] + centre[2] - half[2]) - top) > RESTING_BAND_M:
++            continue
++        xy = pos[:2] + centre[:2]
++        if np.linalg.norm(xy - c) > reach + np.hypot(half[0], half[1]) + SPOT_CLEAR_M:
++            continue
++        out[k] = footprint(o, xy, quat)
++    return out
++
++
++def resting_on(world, surface_key: str, exclude: str) -> list[tuple]:
++    """The footprints of `neighbours`."""
++    return list(neighbours(world, surface_key, exclude).values())
++
++
++def blocking_neighbour(world, key: str) -> str | None:
++    """The first object resting on `key`'s support (`neighbours`) whose footprint comes within
++    PICK_MIN_NEIGHBOUR_GAP_M of `key`'s, by current poses, or None."""
++    o = world.meta["objects"][key]
++    pos, quat = world.object_pose(key)
++    me = footprint(o, pos[:2] + np.asarray(o["box"].get("centre") or (0, 0, 0))[:2], quat)
++    for k, fp in neighbours(world, o["surface"], key).items():
++        if overlap(me, fp, PICK_MIN_NEIGHBOUR_GAP_M):
++            return k
++    return None
++
++
++def held_out(jaw, rot, obj_pos) -> float:
++    """How far (m) the object's centre sits out along the fingers (the wrist x) from the jaw centre."""
++    return float(grasp_program.object_in_palm(rot, jaw, obj_pos)[0])
++
++
++def grip_margin(half_z: float, centre_z: float = 0.0, grasp_dz: float = 0.0) -> float:
++    """Planned: how far (m) a side-grasped object can slide down between the pads before its top passes theirs -- its
++    top above the grasp height (the jaw at the object's origin + `grasp_dz`) less grasp_program.PAD_Z."""
++    return float(centre_z + half_z - grasp_dz - grasp_program.PAD_Z)
++
++
++def grip_margin_now(jaw, rot, pos, quat, box: dict) -> float:
++    """Measured: the object's top centre above the jaw centre along the wrist z, less grasp_program.PAD_Z."""
++    centre = np.asarray(box.get("centre") or (0, 0, 0), float)
++    top = np.asarray(pos, float) + R.mat(quat) @ (centre + np.array([0.0, 0.0, box["half_extent"][2]]))
++    return float((np.asarray(rot).T @ (top - np.asarray(jaw, float)))[2] - grasp_program.PAD_Z)
++
++
++def creep_short(margin: float, seconds: float) -> bool:
++    """The margin is less than the creep over `seconds` at CREEP_RATE_M_S."""
++    return margin < CREEP_RATE_M_S * seconds
++
++
++def walk_seconds(cfg, xy, yaw: float, corners, goal_yaw: float | None, fixed: bool = False) -> float:
++    """The planned duration of walking `corners` (pick.walk_route: one walk_to per corner after the first, the last
++    one ending at `goal_yaw`) from `xy` facing `yaw`: per leg walk_to's turn toward it (none when `fixed`), its speed
++    profile, its final turn, plus LEG_SETTLE_S."""
++    t, p, yaw = 0.0, np.asarray(xy, float)[:2], float(yaw)
++    ff = float(np.interp(cfg.walk_speed, FF_SPEEDS, FF_SHORT))
++    for k, c in enumerate(corners[1:], start=1):
++        delta = np.asarray(c, float)[:2] - p
++        dist = float(np.linalg.norm(delta))
++        heading = yaw
++        if not fixed and dist > cfg.face_travel_min_m:
++            travel = float(np.arctan2(delta[1], delta[0]))
++            if abs(R.wrap(travel - yaw)) > np.radians(cfg.face_travel_deg):
++                heading = travel
++        end = goal_yaw if k == len(corners) - 1 and goal_yaw is not None else heading
++        for a in (R.wrap(heading - yaw), R.wrap(end - heading)):
++            t += turn_seconds(a, cfg.turn_rate) if abs(a) > 1e-3 else 0.0
++        if dist > 1e-3:
++            t += Profile(cfg.walk_speed, cfg.walk_acc, dist + ff if dist > 0.05 else dist).t_end
++        t += LEG_SETTLE_S
++        p, yaw = np.asarray(c, float)[:2], end
++    return t
++
++
++def lift_to_release_s(cfg, stance, face: float, corners, spot_face: float, depth: float, rise: float) -> float:
++    """T_est (s), the lift to the release of a put-down planned before the pick: the pick's lift and hold, the back-off
++    from `stance`, the carry over `corners` at CARRY_TURN_RATE ending at `spot_face`, the reach over the spot (legs of
++    `depth` + VIA_OUT_M, the first also `rise` up or down) and the lowering, each reach with its whole settle."""
++    back = np.asarray(stance, float)[:2] - BACK_AFTER_PICK_M * np.array([np.cos(face), np.sin(face)])
++    t = grasp_program.SIMPLE["lift_seconds"] + grasp_program.HOLD_S
++    t += walk_seconds(cfg, stance, face, [stance, back], face, fixed=True)
++    t += walk_seconds(dataclasses.replace(cfg, turn_rate=CARRY_TURN_RATE), back, face, corners, spot_face)
++    leg = depth + VIA_OUT_M
++    t += sum(max(cfg.reach_min_s, d / cfg.reach_speed) for d in (float(np.hypot(leg, rise)), leg)) + cfg.reach_settle_s
++    return t + max(cfg.reach_min_s, ABOVE_M / DESCENT_SPEED) + cfg.reach_settle_s
++
++
++def surface_below(world, key: str, surfaces, margin: float = SET_DOWN_MARGIN_M) -> str | None:
++    """Of `surfaces`, the highest whose flat footprint holds the object's centre `margin` inside its sides and whose
++    top is below the object's underside + REST_GAP_M (an object still on it counts), or None."""
++    pos, _ = world.object_pose(key)
++    box = world.meta["objects"][key]["box"]
++    centre = np.asarray(box.get("centre") or (0, 0, 0), float)
++    xy, bottom = pos[:2] + centre[:2], float(pos[2] + centre[2] - box["half_extent"][2])
++    best = None
++    for k in dict.fromkeys(surfaces):
++        s = world.meta["surfaces"][k]
++        half = np.asarray(s.get("flat_half_extent") or s["half_extent"], float)
++        if np.any(np.abs(to_surface_frame(xy, s)) > half - margin) or float(s["top"]) > bottom + REST_GAP_M:
++            continue
++        if best is None or float(s["top"]) > float(world.meta["surfaces"][best]["top"]):
++            best = k
++    return best
++
++
++def plan_spot(world, key: str, surface_key: str, side: str, start_xy, yaw_rel: float):
++    """(spot or None, why). Spots: per edge of the target -- approach_edges first, then the others -- depths from the
++    object's smaller half extent + SPOT_EDGE_M to SPOT_DEPTH_MAX_M and offsets along the edge, SPOT_STEP_M apart, the
++    centre SPOT_SIDE_M from the edge's ends (a side-grasped object: PLACE_SIDE_MIN_M, and its footprint `inside` the
++    flat top by SPOT_INSIDE_M); the object's footprint there, at yaw face + `yaw_rel` (its yaw relative to the robot's
++    now, clearance.carried_footprint), SPOT_CLEAR_M clear of `resting_on`. Stance: the spot at pick.STAND_AHEAD_M ahead,
++    pick.STAND_SIDE_M toward the hand `side`, with pick's floor-object and other-edge clearances (the latter at every
++    edge of a surface that lists none: the TV stand's walled north end, where a remote's carry fell turning). Best first
++    by listed edge, depth, distance from `start_xy`; the first of MAX_ROUTE_TRIES with a route on pick's map wins. spot:
++    dict(xy, face, stance, edge_xy, edge, depth)."""
++    meta = world.meta
++    s = meta["surfaces"][surface_key]
++    hx, hy = (float(v) for v in meta["objects"][key]["box"]["half_extent"][:2])
++    taken = resting_on(world, surface_key, key)
++    Rs = R.rot_z(float(s.get("yaw", 0.0)))[:2, :2]
++    half = np.asarray(s.get("flat_half_extent") or s["half_extent"], float)
++    c = np.asarray(s["xy"], float)
++    occ, nav, boxes = pick.nav_map(world)
++    listed = list(s.get("approach_edges") or pick.NORMALS)
++    boxed = not s.get("approach_edges")  # every edge counts as listed, and every stance needs the other-edge clearance
++    edges = [(e, True) for e in listed] + [(e, False) for e in pick.NORMALS if e not in listed]
++    sign = -1.0 if side == "right" else 1.0
++    d_min = min(hx, hy) + SPOT_EDGE_M
++    side_grasp = not pick.is_top(world, key)
++    n_inside, n_free, cands = 0, 0, []
++    for e, is_listed in edges:
++        n = np.asarray(pick.NORMALS[e])  # outward normal, surface frame
++        t = np.array([-n[1], n[0]])
++        ax = 0 if "x" in e else 1
++        along = half[1 - ax] - (PLACE_SIDE_MIN_M if side_grasp else SPOT_SIDE_M)
++        d_max = min(SPOT_DEPTH_MAX_M, 2 * half[ax] - d_min)
++        if along < 0 or d_max < d_min:
++            continue
++        w = Rs @ n
++        face = float(np.arctan2(-w[1], -w[0]))
++        for depth in np.arange(d_min, d_max + 1e-9, SPOT_STEP_M):
++            for u in np.arange(-along, along + 1e-9, SPOT_STEP_M):
++                xy = c + Rs @ (n * (half[ax] - depth) + t * u)
++                fp = clearance.carried_footprint(xy, (hx, hy), face, yaw_rel)
++                if side_grasp and not clearance.inside(fp, s, SPOT_INSIDE_M):
++                    continue
++                n_inside += 1
++                if any(overlap(fp, tk, SPOT_CLEAR_M) for tk in taken):
++                    continue
++                n_free += 1
++                stance = xy - (R.rot_z(face) @ np.array([pick.STAND_AHEAD_M, sign * pick.STAND_SIDE_M, 0.0]))[:2]
++                if pick.floor_clearance(boxes, stance) < pick.STANCE_CLEAR_M:
++                    continue
++                if (not is_listed or boxed) and pick.other_clearance(
++                    world, surface_key, stance
++                ) < pick.OTHER_EDGE_CLEAR_M:
++                    continue
++                cands.append((0 if is_listed else 1, round(float(depth), 3), float(np.linalg.norm(stance - start_xy)),
++                              dict(xy=xy, face=face, stance=stance, edge_xy=c + Rs @ (n * half[ax] + t * u), edge=e,
++                                   depth=round(float(depth), 3))))  # fmt: skip
++    if not n_inside:
++        return None, f"no spot: {key} does not fit {SPOT_INSIDE_M} m inside {surface_key}"
++    if not n_free:
++        return None, f"no spot: nothing on {surface_key} clears the {len(taken)} objects resting there"
++    cands.sort(key=lambda z: z[:3])
++    for cd in cands[:MAX_ROUTE_TRIES]:
++        if pick.route(occ, nav, start_xy, cd[3]["stance"]) is not None:
++            return cd[3], ""
++    return None, f"no stance or route: {n_free} free spots, {len(cands)} clear stances, none of the first " \
++                 f"{min(len(cands), MAX_ROUTE_TRIES)} reachable"  # fmt: skip
++
++
++def plan_ahead(world, key: str, surface_key: str, side: str, start_xy, cfg) -> dict | None:
++    """The put-down planned before any contact. None when the pick has no plan (pick.pick refuses it with its own why);
++    else dict(hand, face, stance, edge_xy (pick.plan_hand, as pick.pick will make it), xy (the object's now), top (a
++    top-down pinch), spot, why (plan_spot from the back-off's end, the object's yaw on the robot predicted from the
++    grasp: its yaw in the hand, yaw - psi, plus the hand's on the body, psi - face), corners (the carry route),
++    t_est (`lift_to_release_s`, motor config `cfg`), margin (`grip_margin`))."""
++    plan, hand, _ = pick.plan_hand(world, start_xy, key, side)
++    if plan is None:
++        return None
++    face, _, psi, stance, edge_xy = plan
++    pos, quat = world.object_pose(key)
++    obj = world.meta["objects"][key]
++    back = stance - BACK_AFTER_PICK_M * np.array([np.cos(face), np.sin(face)])
++    spot, why = plan_spot(world, key, surface_key, hand, back, R.wrap(R.yaw_of(quat) - face))
++    out = dict(hand=hand, face=face, stance=stance, edge_xy=edge_xy, xy=pos[:2].copy(), top=pick.is_top(world, key),
++               spot=spot, why=why, corners=None, t_est=None,
++               margin=grip_margin(obj["box"]["half_extent"][2], (obj["box"].get("centre") or (0, 0, 0))[2]))  # fmt: skip
++    if spot is None:
++        return out
++    occ, nav, _ = pick.nav_map(world)
++    out["corners"] = pick.route(occ, nav, back, spot["stance"])
++    tops = (float(world.meta["surfaces"][k]["top"]) for k in (obj["surface"], surface_key))
++    rise = abs(next(tops) + grasp_program.LIFT_M - next(tops) - PLACE_CLEAR_M - ABOVE_M)
++    out["t_est"] = lift_to_release_s(cfg, stance, face, out["corners"], spot["face"], spot["depth"], rise)
++    return out
++
++
++def _refusal(ctx, ahead: dict | None) -> Outcome | None:
++    """Logs `plan_ahead` (step "plan_ahead"); the refusal before any contact -- no spot or route, or a side grasp whose
++    margin is short of the creep over T_est -- or None."""
++    m = ctx.motor
++    if ahead is None:
++        return None
++    why = ""
++    if ahead["spot"] is None:
++        why = f"{ahead['why']} (planned before the pick)"
++    elif not ahead["top"] and creep_short(ahead["margin"], ahead["t_est"]):
++        why = f"pick refused: carry of {ahead['t_est']:.0f} s exceeds the grip's creep margin " \
++              f"({100 * ahead['margin']:.1f} cm < {100 * CREEP_RATE_M_S * ahead['t_est']:.1f} cm)"  # fmt: skip
++    t_est = None if ahead["t_est"] is None else round(ahead["t_est"], 1)
++    ctx.note("plan_ahead", Outcome(not why, why, m.t, m.t), t_est_s=t_est, margin_cm=round(100 * ahead["margin"], 2),
++             top=ahead["top"], hand=ahead["hand"], spot=None if ahead["spot"] is None else ahead["spot"]["xy"])  # fmt: skip
++    return Outcome(False, why, m.t, m.t) if why else None
++
++
++@contextlib.contextmanager
++def _pick_switches():
++    """pick.SIDE_AHEAD_M at PICK_SIDE_AHEAD_M inside, so plan_ahead and pick.pick plan the same stance (plan_spot does
++    not read it); pick's own value (held(X)'s: off) restored after."""
++    saved = pick.SIDE_AHEAD_M
++    pick.SIDE_AHEAD_M = PICK_SIDE_AHEAD_M
++    try:
++        yield
++    finally:
++        pick.SIDE_AHEAD_M = saved
++
++
++@_pick_switches()
++def place_on(ctx, key: str, surface_key: str, side: str = "right") -> Outcome:
++    """Plan the put-down (`plan_ahead`), pick `key`, carry it to a free spot on `surface_key` and put it down, pick's
++    put-down switch on throughout (`_pick_switches`); see the module doc."""
++    world, m = ctx.world, ctx.motor
++    body = world.free[key]
++    blocker = blocking_neighbour(world, key)
++    if blocker is not None:
++        why = f"pick refused: a neighbour blocks the jaw ({blocker} overlaps it)"
++        return ctx.note("pick_check", Outcome(False, why, m.t, m.t), neighbour=blocker)
++    ahead = plan_ahead(world, key, surface_key, side, m.sim.d.qpos[:2].copy(), m.cfg)
++    refused = _refusal(ctx, ahead)
++    if refused is not None:
++        return refused
++    n0 = len(ctx.log)
++    saved = {k: grasp_program.SIMPLE[k] for k in ("disturb_limit_m", "settle_abort_m", "entry_capture_depth_m")}
++    grasp_program.SIMPLE.update(disturb_limit_m=PICK_DISTURB_LIMIT_M, settle_abort_m=PICK_SETTLE_ABORT_M,
++                                entry_capture_depth_m=PICK_CAPTURE_DEPTH_M)  # fmt: skip
++    try:
++        out = pick.pick(ctx, key, side)
++    finally:
++        grasp_program.SIMPLE.update(saved)
++    if not out.ok:
++        refused = not any(r["step"] == "walk" for r in ctx.log[n0:])
++        return _fail(ctx, key, f"{'pick refused' if refused else 'pick failed'}: {out.why}")
++    hands = sorted(m.gripping(body)) or sorted(m.touching(body))
++    if not hands:
++        return _fail(ctx, key, "pick failed: the object is not in the hand after the pick")
++    side = hands[0]
++    source = world.meta["objects"][key]["surface"]
++    lifted = (source, surface_key)  # where a failure from here on sets it down
++    home = dict(stance=ahead["stance"], face=ahead["face"], xy=ahead["xy"], edge_xy=ahead["edge_xy"], surface=source)
++    failed = _handoff(ctx, key, side, lifted, ahead, home)
++    if failed is not None:
++        return failed
++
++    _, quat = world.object_pose(key)
++    spot, why = plan_spot(world, key, surface_key, side, m.sim.d.qpos[:2].copy(), R.wrap(R.yaw_of(quat) - m.yaw()))
++    corners = None
++    if spot is None:  # the plan made before the pick stands
++        ctx.note("place_plan", Outcome(False, why, m.t, m.t), fallback="planned before the pick")
++        spot, corners = ahead["spot"], ahead["corners"]
++    k0 = len(m.trace)
++    with _carry_turns(m):
++        if corners is None:
++            occ, nav, _ = pick.nav_map(world)
++            walked = pick.walk_route(m, occ, nav, spot["stance"], spot["face"])
++        else:
++            walked = walk_corners(m, corners, spot["face"])
++    out = ctx.note("carry", walked, spot=spot["xy"], edge=spot["edge"], depth=spot["depth"], stance=spot["stance"],
++                   face_deg=round(float(np.degrees(spot["face"])), 1), sweep=clearance.sweep(world, m, side, k0))  # fmt: skip
++    if not out.ok or m.fell_at is not None:
++        return _fail(ctx, key, f"carry: {out.why}", lifted, home)
++    if side not in m.gripping(body):
++        return _fail(ctx, key, f"dropped during the carry: the {side} hand no longer grips it", lifted)
++    return _put_down(ctx, key, surface_key, side, spot, lifted, home)
++
++
++def _put_down(ctx, key: str, surface_key: str, side: str, spot: dict, lifted, home: dict) -> Outcome:
++    """At the place stance: lower the object over the spot (`_lower_onto`), release over the target only, retract, step
++    back; done only with no finger on it and it resting on the target's own top."""
++    world, m = ctx.world, ctx.motor
++    body = world.free[key]
++    off, level = _lower_onto(ctx, key, side, spot["xy"], surface_key, spot["edge_xy"], spot["face"])
++    if m.fell_at is not None:
++        return _fail(ctx, key, f"place reach failed: {'; '.join(off)}")
++    if surface_below(world, key, (surface_key,), margin=0.0) is None:
++        return _fail(ctx, key, f"place reach failed: not over {surface_key} ({'; '.join(off)})", lifted, home)
++    if pick.is_top(world, key):
++        ctx.note("release", m.release(side))
++        jaw, rot = m.jaw_centre(side)
++        out = ctx.note("retract", m.reach(side, jaw - RETRACT_M * rot[:, 0] + np.array([0.0, 0.0, RETRACT_UP_M]), None))
++    else:
++        out = _release(ctx, key, side, level)
++    if m.fell_at is None:
++        out = ctx.note("step_back", m.sidestep(forward=-BACK_AFTER_PLACE_M))
++    if m.fell_at is not None:
++        return Outcome(False, f"after the release: {out.why}", out.t0, out.t1)
++    touching = sorted(m.touching(body))
++    if touching:
++        return Outcome(False, f"still touching after release: {'/'.join(touching)} hand", out.t0, out.t1)
++    rests, why = resting(world, key, surface_key)
++    if not rests:
++        return Outcome(False, f"place reach failed: {'; '.join(off)} ({why})" if off else why, out.t0, out.t1)
++    return Outcome(True, "", out.t0, out.t1, info=dict(spot=np.round(spot["xy"], 3).tolist(), edge=spot["edge"]))
++
++
++def _lower_onto(ctx, key: str, side: str, xy, surface_key: str, edge_xy, face: float) -> tuple[list[str], float | None]:
++    """Reach the held object over `xy` on `surface_key` through a point VIA_OUT_M outside the edge point `edge_xy` (the
++    robot facing `face`) and lower it to PLACE_CLEAR_M above the surface's own top at DESCENT_SPEED; a lowering that
++    ends more than LOWER_RETRY_OFF_M off rises LOWER_RETRY_UP_M and lowers once more. A side-grasped object is levelled
++    first: every leg holds the wrist turned by clearance.level_rotation (at most LEVEL_MAX_DEG) of its measured up
++    axis; a top-down-pinched one keeps the wrist as carried. (the reaches that failed, the levelling turn in deg or None
++    for a pinch; the caller checks m.fell_at)."""
++    world, m = ctx.world, ctx.motor
++    top = float(world.meta["surfaces"][surface_key]["top"])
++    obj = world.meta["objects"][key]
++    box = obj["box"]
++    pos, quat = world.object_pose(key)
++    jaw, rot = m.jaw_centre(side)
++    rel = pos - jaw  # object centre from the jaw centre, as carried
++    rot_goal, level = None, None
++    if not pick.is_top(world, key):
++        corr, level = clearance.level_rotation(clearance.up_axis(quat, obj["init_quat"]), LEVEL_MAX_DEG)
++        rot_goal, rel = corr @ rot, corr @ rel
++    target = np.r_[xy, top + box["half_extent"][2] - (box.get("centre") or (0, 0, 0))[2] + PLACE_CLEAR_M] - rel
++    above = target + np.array([0.0, 0.0, ABOVE_M])
++    n_in = np.array([np.cos(face), np.sin(face)])
++    via = (np.r_[np.asarray(edge_xy, float) - n_in * VIA_OUT_M - rel[:2], above[2]],)
++    legs = [("over", above, dict(via=via)), ("lower", target, dict(speed=DESCENT_SPEED))]
++    off = []
++    while legs:
++        name, goal, kw = legs.pop(0)
++        k0 = len(m.trace)
++        out = m.reach(side, goal, rot_goal, **kw)
++        sweep = clearance.sweep(world, m, side, k0) if name == "over" else None
++        ctx.note(name, out, target=np.round(goal, 3), **({"sweep": sweep} if sweep else {}))
++        if m.fell_at is not None:
++            return off + [f"{name}: {out.why}"], level
++        if not out.ok:
++            off.append(f"{name}: {out.why}")
++        if name == "lower" and float(np.linalg.norm(m.jaw_centre(side)[0] - target)) > LOWER_RETRY_OFF_M:
++            up = target + np.array([0.0, 0.0, LOWER_RETRY_UP_M])
++            legs = [("raise_again", up, {}), ("lower_again", target, dict(speed=DESCENT_SPEED))]
++    return off, level
++
++
++def _release(ctx, key: str, side: str, level: float | None) -> Outcome:
++    """Let go of a side-grasped object resting on a surface: drop `side`'s servo lead and turn integral and re-command
++    the hand where it is ("unload"), open ("open"), move the open jaw onto the object's centre along the wrist y
++    (clearance.centre_move, "centre"), back out RETRACT_M along -wrist x level ("retract"), rise RETRACT_RISE_M
++    ("rise"), the attitude held throughout; stops at a fall. Logs one "release" step: the object's lean at the end of
++    the lowering, the levelling turn `level`, the lead dropped, the centring offset, the lean after the opening and
++    after the retract, the hands touching it after the opening. Returns the last motion's outcome (the caller checks
++    m.fell_at)."""
++    world, m = ctx.world, ctx.motor
++    body = world.free[key]
++    rest = world.meta["objects"][key]["init_quat"]
++    t0 = m.t
++    info = dict(lean_lowered_deg=round(clearance.lean_deg(world.object_pose(key)[1], rest), 1),
++                level_deg=None if level is None else round(level, 1))  # fmt: skip
++    lead = m.servo.pop(("pos", side), None)
++    m.servo.pop(("turn", side), None)
++    info["lead_cm"] = None if lead is None else np.round(100 * lead, 1).tolist()
++    jaw, rot = m.jaw_centre(side)
++    out = ctx.note("unload", m.reach(side, jaw, rot))
++    if m.fell_at is None:
++        out = ctx.note("open", m.release(side))
++        info.update(lean_open_deg=round(clearance.lean_deg(world.object_pose(key)[1], rest), 1),
++                    touching_open=sorted(m.touching(body)))  # fmt: skip
++    if m.fell_at is None:
++        jaw, rot = m.jaw_centre(side)
++        d = float(grasp_program.object_in_palm(rot, jaw, world.object_pose(key)[0])[1])
++        move = centre_move(d)
++        info["centre_cm"] = round(100 * d, 2)
++        if move:
++            out = ctx.note("centre", m.reach(side, jaw + move * rot[:, 1], rot), move_cm=round(100 * move, 2))
++    if m.fell_at is None:
++        jaw, rot = m.jaw_centre(side)
++        out = ctx.note("retract", m.reach(side, jaw - RETRACT_M * rot[:, 0], rot))
++    if m.fell_at is None:
++        jaw, rot = m.jaw_centre(side)
++        out = ctx.note("rise", m.reach(side, jaw + np.array([0.0, 0.0, RETRACT_RISE_M]), rot))
++    info["lean_retract_deg"] = round(clearance.lean_deg(world.object_pose(key)[1], rest), 1)
++    ctx.note("release", Outcome(m.fell_at is None, "" if m.fell_at is None else out.why, t0, m.t), **info)
++    return out
++
++
++def centre_move(d: float) -> float:
++    """clearance.centre_move at CENTRE_MIN_M, CENTRE_MAX_M."""
++    return clearance.centre_move(d, CENTRE_MIN_M, CENTRE_MAX_M)
++
++
++def _handoff(ctx, key: str, side: str, lifted, ahead: dict, home: dict) -> Outcome | None:
++    """From the pick stance to standing clear with the object, ready to carry: the fingertip check (`held_out`) and, for a
++    side grasp, the grip margin measured in the jaw against the creep over the rest of T_est; after a low pick the level
++    pull-back and the stand-up, the grip checked after each step and after the back-off; the back-off (and the stand-up
++    when the pelvis is still low). None when ready, else the failure (`_fail`, object set down)."""
++    world, m = ctx.world, ctx.motor
++    body = world.free[key]
++    jaw, rot = m.jaw_centre(side)
++    pos, quat = world.object_pose(key)
++    out_m = held_out(jaw, rot, pos)
++    ctx.note("held_out", Outcome(out_m <= HELD_OUT_MAX_M, "", m.t, m.t), cm=round(100 * out_m, 2))
++    if out_m > HELD_OUT_MAX_M:
++        return _fail(ctx, key, f"pick failed: held at the fingertips ({100 * out_m:.1f} cm out)", lifted, home)
++    if not ahead["top"]:
++        margin = grip_margin_now(jaw, rot, pos, quat, world.meta["objects"][key]["box"])
++        rest = ahead["t_est"] - grasp_program.SIMPLE["lift_seconds"] - grasp_program.HOLD_S
++        short = creep_short(margin, rest)
++        ctx.note("grip_margin", Outcome(not short, "", m.t, m.t), cm=round(100 * margin, 2),
++                 creep_cm=round(100 * CREEP_RATE_M_S * rest, 2), rest_s=round(rest, 1))  # fmt: skip
++        if short:
++            return _fail(ctx, key, f"pick failed: grip margin {100 * margin:.1f} cm < creep over {rest:.0f} s", lifted,
++                         home)  # fmt: skip
++
++    tilt_deg = float(np.degrees(tilt(m.ref(m.t).quat)))
++    low_pick = tilt_deg > UPRIGHT_TILT_DEG
++    if low_pick:
++        jaw, rot = m.jaw_centre(side)
++        back = jaw - CLEAR_BACK_M * np.array([np.cos(m.yaw()), np.sin(m.yaw()), 0.0])
++        out = ctx.note("pull_back", m.reach(side, back, rot), ref_tilt_deg=round(tilt_deg, 1))
++        if m.fell_at is not None:
++            return _fail(ctx, key, f"carry: {out.why}")
++        if not out.ok:
++            return _fail(ctx, key, f"pick failed: stuck after the lift ({out.why})", lifted, home)
++        if side not in m.gripping(body):
++            return _fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the pull_back", lifted)
++        out = m.posture()
++        ctx.note("stand", out, ref_tilt_after_deg=round(float(np.degrees(tilt(m.ref(m.t).quat))), 1))
++        if m.fell_at is not None:
++            return _fail(ctx, key, f"carry: {out.why}")
++        if side not in m.gripping(body):
++            return _fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the stand", lifted)
++
++    k0 = len(m.trace)
++    out = ctx.note("back_off", m.sidestep(forward=-BACK_AFTER_PICK_M), ref_wrist_jump_cm=_ref_jump(m, side, k0))
++    if m.fell_at is not None:
++        return _fail(ctx, key, f"carry: {out.why}")
++    if low_pick and side not in m.gripping(body):
++        return _fail(ctx, key, f"dropped before the carry: the {side} hand lost it in the back_off", lifted)
++    if float(m.sim.d.qpos[2]) < STAND_UP_BELOW_M:
++        out = ctx.note("stand", m.posture())
++        if m.fell_at is not None:
++            return _fail(ctx, key, f"carry: {out.why}")
++    return None
++
++
++def walk_corners(m, corners, goal_yaw: float) -> Outcome:
++    """pick.walk_route's walk over route corners already planned (the first is where the robot was to start)."""
++    if len(corners) < 2:
++        return m.walk_to(corners[-1], goal_yaw)
++    out = None
++    for k, c in enumerate(corners[1:], start=1):
++        out = m.walk_to(c, goal_yaw if k == len(corners) - 1 else None)
++        if not out.ok:
++            return out
++    out.info["legs"] = len(corners) - 1
++    return out
++
++
++@contextlib.contextmanager
++def _carry_turns(m):
++    """The motor's in-place turns at CARRY_TURN_RATE inside, its own config restored after."""
++    cfg0 = m.cfg
++    m.cfg = dataclasses.replace(cfg0, turn_rate=CARRY_TURN_RATE)
++    try:
++        yield
++    finally:
++        m.cfg = cfg0
++
++
++def resting(world, key: str, surface_key: str) -> tuple[bool, str]:
++    """`on(key, surface_key)` with the underside at most REST_GAP_M above the surface's own top (`on` alone admits
++    0.30 m)."""
++    ok, why = world.check([f"on({key}, {surface_key})"])(world.state([key]))
++    if not ok:
++        return False, f"not resting on {surface_key}: {why}"
++    pos, _ = world.object_pose(key)
++    box = world.meta["objects"][key]["box"]
++    top = float(world.meta["surfaces"][surface_key]["top"])
++    gap = float(pos[2] + (box.get("centre") or (0, 0, 0))[2] - box["half_extent"][2]) - top
++    return (True, "") if gap <= REST_GAP_M else (False, f"not resting on {surface_key}: underside {gap:+.3f} m")
++
++
++def set_down(ctx, key: str, surfaces, home: dict | None = None) -> str:
++    """Lower the held object onto `surface_below` among `surfaces` (underside PLACE_CLEAR_M above its top), open every
++    hand that touches it, retract the holding one as the put-down does (a side grasp: `_release`). Over neither, while a
++    hand still grips it and `home` (the pick's stance, face, edge point, the object's start xy and support) is given:
++    walk back there and put it back where it was first (`_put_back`). Over none: just open. Returns what happened, for
++    the failure string."""
++    world, m = ctx.world, ctx.motor
++    body = world.free[key]
++    hands = sorted(m.gripping(body)) or sorted(m.touching(body))
++    under = surface_below(world, key, surfaces)
++    back = ""
++    if under is None and home is not None and hands and hands[0] in m.gripping(body):
++        under, back = _put_back(ctx, key, hands[0], home)
++        if m.fell_at is not None:
++            return f"fell {back}"
++    if under is not None:
++        pos, _ = world.object_pose(key)
++        box = world.meta["objects"][key]["box"]
++        bottom = float(pos[2] + (box.get("centre") or (0, 0, 0))[2] - box["half_extent"][2])
++        drop = max(0.0, bottom - float(world.meta["surfaces"][under]["top"]) - PLACE_CLEAR_M)
++        jaw, _ = m.jaw_centre(hands[0])
++        ctx.note("set_down", m.reach(hands[0], jaw - np.array([0.0, 0.0, drop]), None, speed=DESCENT_SPEED),
++                 surface=under, drop_cm=round(100 * drop, 1))  # fmt: skip
++        if m.fell_at is not None:
++            return f"fell setting it down on {under}"
++    if under is not None and not pick.is_top(world, key):
++        for s in sorted(m.touching(body) - {hands[0]}):
++            ctx.note("let_go", m.release(s))
++        _release(ctx, key, hands[0], None)
++    else:
++        for s in sorted(m.touching(body)):
++            ctx.note("let_go", m.release(s))
++        if under is None:
++            return f"opened over no surface{f' ({back})' if back else ''}"
++        jaw, rot = m.jaw_centre(hands[0])
++        ctx.note("retract", m.reach(hands[0], jaw - RETRACT_M * rot[:, 0] + np.array([0.0, 0.0, RETRACT_UP_M]), None))
++    rests, _ = resting(world, key, under)
++    done = "put back" if back == "walked back" else "set down"
++    return f"{done} on {under}" if rests else f"{done}, not resting on {under}"
++
++
++def _put_back(ctx, key: str, side: str, home: dict) -> tuple[str | None, str]:
++    """Walk the gripped object back to the pick's stance and lower it over its start xy on its support (`_lower_onto`).
++    (the support when the object is over it now, else None; what happened)."""
++    world, m = ctx.world, ctx.motor
++    occ, nav, _ = pick.nav_map(world)
++    with _carry_turns(m):
++        out = ctx.note("walk_back", pick.walk_route(m, occ, nav, home["stance"], home["face"]))
++    if m.fell_at is not None or not out.ok:
++        return None, f"walking back: {out.why}"
++    if side not in m.gripping(world.free[key]):
++        return None, "lost it walking back"
++    off, _ = _lower_onto(ctx, key, side, home["xy"], home["surface"], home["edge_xy"], home["face"])
++    if m.fell_at is not None:
++        return None, f"putting it back: {'; '.join(off)}"
++    return surface_below(world, key, (home["surface"],), margin=0.0), "walked back"
++
++
++def _fail(ctx, key: str, why: str, lifted=(), home: dict | None = None) -> Outcome:
++    """The failure `why`, after opening every hand that still touches the object when the robot stands: the skill never
++    ends holding it (a hover over the target passes `on`). After a lift (`lifted`: its support and the target) it is
++    first set down on the one under it, or put back at `home` (`set_down`)."""
++    m = ctx.motor
++    if m.fell_at is None and m.touching(ctx.world.free[key]):
++        if lifted:
++            why = f"{why} [{set_down(ctx, key, lifted, home)}]"
++        else:
++            for s in sorted(m.touching(ctx.world.free[key])):
++                ctx.note("let_go", m.release(s))
++    return Outcome(False, why, m.t, m.t)
++
++
++def _ref_jump(m, side: str, k0: int) -> float | None:
++    """The reference wrist's jump (cm) across the first tick of the primitive that began at trace row `k0`."""
++    if k0 < 1 or len(m.trace) < k0 + 2:
++        return None
++    i = SIDES.index(side)
++    return round(100 * float(np.linalg.norm(m.trace[k0 + 1]["ref_wrists"][i] - m.trace[k0 - 1]["ref_wrists"][i])), 1)
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/test_plan_for.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/test_plan_for.py
+--- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/test_plan_for.py	1970-01-01 00:00:00.000000000 +0000
++++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/test_plan_for.py	2026-10-16 22:38:37.657406147 +0000
+@@ -0,0 +1,487 @@
++"""The put-down's pure parts (place.py): `plan_for` sends a goal of on(...) and upright(...) to `place.place_on` once per
++on(X, S) in goal order and keeps held(X) on the pick; a spot sees what rests on the target by its pose, not by the
++scene file's `surface` field; the drop guards -- a neighbour overlapping the object refuses the pick, the object's
++offset out along the fingers, the surface a failed carry sets it down on; the creep budget -- the planned
++lift-to-release time, the pad margin, the plan made before the pick -- and the pick's settle abort, inert unless set,
++backing out from the measured jaw; the put-down's pick switches (inert at None), its stance and the spot rule for a
++side-grasped versus a top-pinched object; the release -- a side-grasped object levelled before it is lowered, unloaded,
++centred, retracted level, a top-pinched one released as before. Lives in the skills package because the loop's Engineer
++may change nothing outside it; run with
++`make test TESTS="src/locomani/tasks/scene/skills/test_plan_for.py"`."""
++
++import unittest
++from types import SimpleNamespace
++from unittest import mock
++
++import numpy as np
++
++import locomani.tasks.scene.skills as skills
++from locomani.backends.scalebfm import runtime as R
++from locomani.backends.scalebfm.motor import FF_SHORT, MotorConfig, Outcome, Profile, expmap, turn_seconds
++from locomani.primitives.navigator import build
++from locomani.tasks.scene.skills import clearance, grasp_program, pick, place
++
++
++def yaw_quat(y):
++    return [float(np.cos(y / 2)), 0.0, 0.0, float(np.sin(y / 2))]
++
++
++def meta():
++    """A 6 x 6 m room, a 0.8 x 0.6 m table (top 0.7 m, approached from -y) with a book on it whose scene-file surface
++    is the shelf it came from, a 0.9 m tall cabinet next to it (underside on the floor) and the can to place."""
++    table = dict(xy=[0.0, 0.0], half_extent=[0.4, 0.3], flat_half_extent=[0.4, 0.3], yaw=0.0, top=0.7,
++                 approach_edges=["-y"], room="r", of_object="Table")  # fmt: skip
++    shelf = dict(xy=[2.0, 2.0], half_extent=[0.2, 0.2], yaw=0.0, top=0.4, approach_edges=["-y"], room="r")
++    objects = {
++        "Book": dict(
++            surface="S",
++            free=True,
++            body="Book_object",
++            init_pos=[0.0, 0.0, 0.83],
++            init_quat=yaw_quat(0.0),
++            box=dict(half_extent=[0.38, 0.27, 0.13]),
++        ),  # fmt: skip
++        "Cabinet": dict(
++            surface=None,
++            free=False,
++            init_pos=[0.7, 0.0, 0.45],
++            init_quat=yaw_quat(0.0),
++            box=dict(half_extent=[0.2, 0.2, 0.45]),
++        ),  # fmt: skip
++        "Can": dict(
++            surface="S",
++            free=True,
++            body="Can_object",
++            init_pos=[2.0, 2.0, 0.49],
++            init_quat=yaw_quat(0.0),
++            box=dict(half_extent=[0.03, 0.03, 0.09]),
++        ),  # fmt: skip
++    }
++    room = dict(bounds=dict(x=[-3.0, 3.0], y=[-3.0, 3.0]), walls=[], obstacles=[],
++                spawn={"r": [[[-2.8, -2.8], [2.8, -2.8], [2.8, 2.8], [-2.8, 2.8]]]})  # fmt: skip
++    return dict(objects=objects, surfaces={"T": table, "S": shelf}, room=room)
++
++
++class World:
++    """What plan_spot reads: the scene file, the objects' poses, the navigation body radius."""
++
++    def __init__(self, poses=None):
++        self.meta = meta()
++        self.poses = poses or {}
++        self.occ = SimpleNamespace(body_radius=0.35)
++
++    def object_pose(self, key):
++        o = self.meta["objects"][key]
++        pos, quat = self.poses.get(key, (o["init_pos"], o["init_quat"]))
++        return np.asarray(pos, float), np.asarray(quat, float)
++
++
++class PlanFor(unittest.TestCase):
++    def test_held_stays_on_the_pick_and_other_goals_have_no_plan(self):
++        with mock.patch.object(pick, "pick", return_value=Outcome(True)) as p:
++            skills.plan_for(SimpleNamespace(goal=["held(Can)"]))("ctx")
++        p.assert_called_once_with("ctx", "Can")
++        for goal in (
++            ["upright(Can)"],
++            ["on(Can, T)", "held(Can)"],
++            ["in(Can, Bowl)"],
++            ["on(Can, T)", "near(Can, T, 1)"],
++        ):
++            self.assertIsNone(skills.plan_for(SimpleNamespace(goal=goal)), goal)
++
++    def test_on_and_upright_place_each_on_goal_in_order_and_stop_at_a_failure(self):
++        calls = []
++
++        def place_on(ctx, key, surface):
++            calls.append((key, surface))
++            return Outcome(key != "Fail", "" if key != "Fail" else "pick refused: no side fits")
++
++        with mock.patch.object(place, "place_on", side_effect=place_on):
++            out = skills.plan_for(SimpleNamespace(goal=["on(Can, T)", "upright(Can)"]))("ctx")
++            self.assertTrue(out.ok)
++            self.assertEqual(calls, [("Can", "T")])
++            calls.clear()
++            out = skills.plan_for(SimpleNamespace(goal=["on(Book, S)", "on(Can, T)"]))("ctx")
++            self.assertEqual(calls, [("Book", "S"), ("Can", "T")])
++            calls.clear()
++            out = skills.plan_for(SimpleNamespace(goal=["on(Fail, S)", "on(Can, T)"]))("ctx")
++            self.assertEqual((calls, out.ok, out.why), ([("Fail", "S")], False, "pick refused: no side fits"))
++
++
++class Spot(unittest.TestCase):
++    def test_what_rests_on_the_target_counts_by_pose_and_furniture_does_not(self):
++        rest = place.resting_on(World(), "T", "Can")
++        self.assertEqual([tuple(np.round(f[0], 3)) for f in rest], [(0.0, 0.0)])  # the book, not the cabinet
++        moved = World({"Book": ([2.0, -2.0, 0.13], yaw_quat(0.0))})
++        self.assertEqual(place.resting_on(moved, "T", "Can"), [])
++
++    def test_spot_clears_the_book_at_the_listed_edge_with_a_routed_stance(self):
++        world = World({"Book": ([0.0, 0.11, 0.83], yaw_quat(0.0))})  # free along -y at the first depth only
++        occ, _ = build(world.meta, body_radius=0.35)
++        world.occ = occ
++        with mock.patch.dict(pick._NAV, {}, clear=True):
++            spot, why = place.plan_spot(world, "Can", "T", "right", np.array([0.0, -2.0]), 0.0)
++            self.assertIsNotNone(spot, why)
++            self.assertEqual((spot["edge"], spot["depth"]), ("-y", 0.06))
++            self.assertAlmostEqual(float(spot["xy"][1]), -0.24, places=6)
++            self.assertAlmostEqual(spot["face"], np.pi / 2)
++            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, pick.STAND_AHEAD_M], atol=1e-9)
++            full = World({"Book": ([0.0, 0.0, 0.83], yaw_quat(0.0)), "Can": ([2.0, 2.0, 0.49], yaw_quat(0.0))})
++            full.meta["objects"]["Book"]["box"]["half_extent"] = [0.42, 0.32, 0.13]
++            full.occ = occ
++            spot, why = place.plan_spot(full, "Can", "T", "right", np.array([0.0, -2.0]), 0.0)
++            self.assertIsNone(spot)
++            self.assertTrue(why.startswith("no spot: "), why)
++
++
++class DropGuards(unittest.TestCase):
++    def test_a_neighbour_overlapping_the_object_on_its_support_blocks_the_pick(self):
++        self.assertIsNone(place.blocking_neighbour(World(), "Can"))  # the book rests on T, whatever its surface field
++        # the book on the shelf, its near face 1 cm into the can's footprint (books in a row: -1.2 to -1.5 cm)
++        into = World({"Book": ([2.0, 2.0 + 0.03 + 0.27 - 0.01, 0.53], yaw_quat(0.0))})
++        self.assertEqual(place.blocking_neighbour(into, "Can"), "Book")
++        clear = World({"Book": ([2.0, 2.0 + 0.03 + 0.27 + 0.02, 0.53], yaw_quat(0.0))})  # 2 cm clear
++        self.assertIsNone(place.blocking_neighbour(clear, "Can"))
++        # the can 0.5 cm short of the book's -y face (y 1.73) square on, but turned 45 deg its corner (4.2 cm) reaches in
++        square = World({"Can": ([2.0, 1.695, 0.49], yaw_quat(0.0)), "Book": ([2.0, 2.0, 0.53], yaw_quat(0.0))})
++        self.assertIsNone(place.blocking_neighbour(square, "Can"))
++        turned = World({"Can": ([2.0, 1.695, 0.49], yaw_quat(np.pi / 4)), "Book": ([2.0, 2.0, 0.53], yaw_quat(0.0))})
++        self.assertEqual(place.blocking_neighbour(turned, "Can"), "Book")
++
++    def test_held_out_is_the_object_centre_along_the_fingers(self):
++        jaw = np.array([0.5, -0.2, 0.9])
++        side = R.rot_z(0.7)  # side grasp: wrist x level
++        self.assertAlmostEqual(place.held_out(jaw, side, jaw + side @ [0.033, 0.004, -0.01]), 0.033)
++        self.assertGreater(place.held_out(jaw, side, jaw + side @ [0.033, 0.0, 0.0]), place.HELD_OUT_MAX_M)
++        self.assertLess(place.held_out(jaw, side, jaw + side @ [0.026, 0.0, 0.0]), place.HELD_OUT_MAX_M)
++        top = R.rot_z(0.7) @ R.rot_y(np.pi / 2)  # top-down pinch: wrist x down, out along the fingers is below
++        self.assertAlmostEqual(place.held_out(jaw, top, jaw - [0.0, 0.0, 0.025]), 0.025)
++
++    def test_set_down_takes_the_highest_of_support_and_target_under_the_object(self):
++        lifted = World({"Can": ([0.1, -0.1, 0.70 + 0.09 + 0.10], yaw_quat(0.0))})  # 10 cm over the table T
++        self.assertEqual(place.surface_below(lifted, "Can", ("S", "T")), "T")
++        self.assertIsNone(place.surface_below(lifted, "Can", ("S",)))
++        resting = World({"Can": ([0.1, -0.1, 0.70 + 0.09 + 0.005], yaw_quat(0.0))})  # still on it
++        self.assertEqual(place.surface_below(resting, "Can", ("T",)), "T")
++        edge = World({"Can": ([0.1, -0.3 + 0.02, 0.89], yaw_quat(0.0))})  # centre 2 cm inside the -y edge
++        self.assertIsNone(place.surface_below(edge, "Can", ("T", "S")))
++        below = World({"Can": ([0.1, -0.1, 0.60], yaw_quat(0.0))})  # under the table top
++        self.assertIsNone(place.surface_below(below, "Can", ("T",)))
++
++
++class CreepBudget(unittest.TestCase):
++    def test_walk_seconds_are_walk_tos_turns_and_profiles_plus_the_leg_settle(self):
++        cfg = MotorConfig()
++        leg = Profile(cfg.walk_speed, cfg.walk_acc, 1.0 + FF_SHORT[0]).t_end
++        straight = place.walk_seconds(cfg, [0.0, 0.0], 0.0, [[0.0, 0.0], [1.0, 0.0]], 0.0)
++        self.assertAlmostEqual(straight, leg + place.LEG_SETTLE_S)
++        # facing +y: turn to the leg first (past face_travel_deg), then to the goal yaw at its end
++        turned = place.walk_seconds(cfg, [0.0, 0.0], np.pi / 2, [[0.0, 0.0], [1.0, 0.0]], -np.pi / 2)
++        self.assertAlmostEqual(turned, straight + turn_seconds(np.pi / 2, cfg.turn_rate) * 2)
++        # a step back keeps the heading: no turn
++        back = place.walk_seconds(cfg, [0.0, 0.0], 0.0, [[0.0, 0.0], [-0.3, 0.0]], 0.0, fixed=True)
++        self.assertAlmostEqual(
++            back, Profile(cfg.walk_speed, cfg.walk_acc, 0.3 + FF_SHORT[0]).t_end + place.LEG_SETTLE_S
++        )
++
++    def test_lift_to_release_adds_lift_hold_back_off_carry_reach_over_and_lowering(self):
++        cfg = MotorConfig()
++        corners = [[-0.3, 0.0], [-0.3, 2.0]]
++        t = place.lift_to_release_s(cfg, [0.0, 0.0], 0.0, corners, np.pi / 2, 0.06, 0.0)
++        carry = place.walk_seconds(cfg.__class__(turn_rate=place.CARRY_TURN_RATE), [-0.3, 0.0], 0.0, corners, np.pi / 2)
++        back = place.walk_seconds(cfg, [0.0, 0.0], 0.0, [[0.0, 0.0], [-0.3, 0.0]], 0.0, fixed=True)
++        reach = 2 * max(cfg.reach_min_s, (0.06 + place.VIA_OUT_M) / cfg.reach_speed) + cfg.reach_settle_s
++        lower = place.ABOVE_M / place.DESCENT_SPEED + cfg.reach_settle_s
++        lift = grasp_program.SIMPLE["lift_seconds"] + grasp_program.HOLD_S
++        self.assertAlmostEqual(t, lift + back + carry + reach + lower)
++        self.assertGreater(place.lift_to_release_s(cfg, [0.0, 0.0], 0.0, corners + [[2.0, 2.0]], 0.0, 0.06, 0.0), t)
++
++    def test_grip_margin_is_the_top_above_the_grasp_less_the_pad_half_height(self):
++        self.assertAlmostEqual(place.grip_margin(0.049), 0.049 - grasp_program.PAD_Z)  # the clock: 3.5 cm
++        self.assertLess(place.grip_margin(0.0138), 0.0)  # the wallet's 2.8 cm: none
++        box = dict(half_extent=[0.03, 0.03, 0.09])
++        jaw, rot = np.array([0.5, 0.2, 1.0]), R.rot_z(0.7)  # side grasp, wrist z up
++        planned = place.grip_margin(0.09)
++        self.assertAlmostEqual(place.grip_margin_now(jaw, rot, jaw, yaw_quat(0.3), box), planned)
++        slid = place.grip_margin_now(jaw, rot, jaw - [0.0, 0.0, 0.02], yaw_quat(0.3), box)  # 2 cm down the pads
++        self.assertAlmostEqual(slid, planned - 0.02)
++        # the clock over a 30 s carry at 0.15 cm/s needs 4.5 cm; the jam's 7.6 cm covers 43.8 s
++        self.assertTrue(place.creep_short(place.grip_margin(0.049), 30.0))
++        self.assertFalse(place.creep_short(place.grip_margin(0.09), 43.8))
++
++    def test_plan_ahead_plans_the_spot_and_carry_before_the_pick_or_says_why_not(self):
++        world = World({"Book": ([0.0, 0.11, 0.83], yaw_quat(0.0))})  # free along -y
++        occ, _ = build(world.meta, body_radius=0.35)
++        world.occ = occ
++        with mock.patch.dict(pick._NAV, {}, clear=True):
++            ahead = place.plan_ahead(world, "Can", "T", "right", np.array([0.0, -2.0]), MotorConfig())
++            self.assertIsNotNone(ahead["spot"], ahead["why"])
++            self.assertEqual((ahead["hand"], ahead["top"]), ("right", False))
++            self.assertAlmostEqual(ahead["margin"], 0.09 - grasp_program.PAD_Z)
++            np.testing.assert_allclose(ahead["corners"][-1], ahead["spot"]["stance"])
++            self.assertGreater(ahead["t_est"], grasp_program.SIMPLE["lift_seconds"] + grasp_program.HOLD_S)
++            world.poses["Book"] = ([0.0, 0.0, 0.83], yaw_quat(0.0))
++            world.meta["objects"]["Book"]["box"]["half_extent"] = [0.42, 0.32, 0.13]  # covers the table
++            ahead = place.plan_ahead(world, "Can", "T", "right", np.array([0.0, -2.0]), MotorConfig())
++            self.assertIsNone(ahead["spot"])
++            self.assertTrue(ahead["why"].startswith("no spot: "), ahead["why"])
++
++
++class SettleAbort(unittest.TestCase):
++    """grasp_program.run on a jaw that stays 5 cm short of the pre-grasp: settle_abort_m None (held(X)'s) goes on into
++    the entry as before; set, the hand backs out and the program fails before any entry."""
++
++    def run_program(self, abort):
++        body = 7
++        jaw = np.array([0.0, 0.0, 1.0])
++        sim = SimpleNamespace(d=SimpleNamespace(xpos={body: np.array([0.19, 0.0, 1.0])}, ncon=0), m=None)
++        self.hands = []
++        m = SimpleNamespace(sim=sim, servo_on={}, servo={}, fingers={"right": (1, 2)}, jaw=np.zeros(2),
++                            jaw_centre=lambda side: (jaw, np.eye(3)), commanded_jaw=lambda side: jaw.copy(),
++                            hand=lambda side, pos=None, *a: self.hands.append(None if pos is None else pos.copy()),
++                            adopt_hand=lambda side: None)  # fmt: skip
++        m.t = 0.0
++
++        def tick():
++            m.t += R.DT
++            return True
++
++        m.tick = tick
++        notes = []
++        ctx = SimpleNamespace(world=SimpleNamespace(free={"Can": body}), motor=m,
++                              note=lambda name, out, **kw: notes.append((name, out, kw)) or out)  # fmt: skip
++        with mock.patch.dict(grasp_program.SIMPLE, settle_abort_m=abort):
++            out = grasp_program.run(ctx, "Can", "right", np.eye(3), np.array([0.19, 0.0, 1.0]), 0.06)
++        return out, notes[-1][2]["phases"]
++
++    def test_inert_at_none_and_aborting_when_set(self):
++        self.assertIsNone(grasp_program.SIMPLE["settle_abort_m"])
++        out, phases = self.run_program(None)
++        self.assertIn("entry", phases)
++        self.assertNotIn("abort", phases)
++        out, phases = self.run_program(0.035)
++        self.assertEqual(phases, ["settle", "abort"])
++        self.assertEqual((out.ok, out.why), (False, "pregrasp missed by 5.0 cm"))
++        # the settle commands the pre-grasp 5 cm ahead plus its feedback; the abort starts at the measured jaw, its
++        # feedback zeroed, and only backs out from there
++        xs = [float(h[0]) for h in self.hands if h is not None]
++        k = next(i for i, x in enumerate(xs) if abs(x) < 1e-9)
++        self.assertGreater(min(xs[:k]), 0.04)
++        self.assertLessEqual(max(xs[k:]), 1e-9)
++
++
++class PutDownPick(unittest.TestCase):
++    """The put-down's switches: off (held(X)'s pick) unless place_on turns them on; on, a right-hand side grasp on a
++    surface above 0.6 m stands at PICK_SIDE_AHEAD_M, the left hand, a top-down pinch and every put-down stance at
++    pick.STAND_AHEAD_M."""
++
++    def test_switches_are_inert_at_none_and_restored_after_the_put_down(self):
++        self.assertIsNone(pick.SIDE_AHEAD_M)
++        self.assertEqual(pick.stand_ahead(0.82, "right", False), pick.STAND_AHEAD_M)
++        self.assertEqual(grasp_program.SIMPLE["entry_capture_depth_m"], 0.025)
++        with self.assertRaises(RuntimeError), place._pick_switches():
++            self.assertEqual(pick.SIDE_AHEAD_M, place.PICK_SIDE_AHEAD_M)
++            raise RuntimeError
++        self.assertIsNone(pick.SIDE_AHEAD_M)
++
++    def test_only_a_right_hand_side_grasp_above_0_6_m_stands_back(self):
++        with place._pick_switches():
++            self.assertEqual(pick.stand_ahead(0.82, "right", False), 0.46)
++            self.assertEqual(pick.stand_ahead(0.82, "left", False), pick.STAND_AHEAD_M)
++            self.assertEqual(pick.stand_ahead(0.82, "right", True), pick.STAND_AHEAD_M)
++            self.assertEqual(pick.stand_ahead(0.51, "right", False), pick.STAND_AHEAD_M)
++        world = World({"Book": ([0.0, 0.11, 0.83], yaw_quat(0.0)), "Can": ([0.1, -0.2, 0.79], yaw_quat(0.0))})
++        world.meta["objects"]["Can"]["surface"] = "T"  # on the 0.7 m table, approached from -y
++        occ, _ = build(world.meta, body_radius=0.35)
++        world.occ = occ
++        with mock.patch.dict(pick._NAV, {}, clear=True), place._pick_switches():
++            for side, ahead in (("right", 0.46), ("left", pick.STAND_AHEAD_M)):
++                plan, why = pick.plan_approach(world, np.array([0.0, -2.0]), "Can", side)
++                self.assertIsNotNone(plan, why)
++                self.assertAlmostEqual(float(-0.2 - plan[3][1]), ahead, msg=side)
++            spot, why = place.plan_spot(world, "Can", "T", "right", np.array([0.0, -2.0]), 0.0)
++            np.testing.assert_allclose(spot["stance"], spot["xy"] - [pick.STAND_SIDE_M, pick.STAND_AHEAD_M], atol=1e-9)
++
++    def test_a_side_grasped_spot_sits_off_the_ends_and_inside_the_top_a_pinched_one_keeps_the_old_rule(self):
++        world = World({"Book": ([0.0, 0.2, 0.83], yaw_quat(0.0))})  # free along -y to 0.13 m deep
++        occ, _ = build(world.meta, body_radius=0.35)
++        world.occ = occ
++        can = world.meta["objects"]["Can"]
++        start = np.array([-2.0, -2.0])  # nearest the -x end of the -y edge
++        with mock.patch.dict(pick._NAV, {}, clear=True):
++            spot, why = place.plan_spot(world, "Can", "T", "right", start, 0.0)  # side grasp (half height 9 cm)
++            self.assertEqual((spot["edge"], spot["depth"]), ("-y", 0.06), why)
++            self.assertAlmostEqual(float(spot["xy"][0]), -0.4 + place.PLACE_SIDE_MIN_M)
++            can["box"]["half_extent"] = [0.03, 0.06, 0.09]  # carried 45 deg turned: 6.4 cm reach across the edge
++            spot, why = place.plan_spot(world, "Can", "T", "right", start, np.pi / 4)
++            self.assertEqual(spot["depth"], 0.08, why)  # at 0.06 it would end 1.4 cm from the -y edge
++            self.assertAlmostEqual(float(spot["xy"][0]), -0.32)  # at -0.34, 1.4 cm from the -x end
++            self.assertTrue(place.clearance.inside(place.clearance.carried_footprint(spot["xy"], [0.03, 0.06],
++                                                                                      spot["face"], np.pi / 4),
++                                                   world.meta["surfaces"]["T"], place.SPOT_INSIDE_M))  # fmt: skip
++            can["box"]["half_extent"] = [0.03, 0.06, 0.015]  # flat on the 0.4 m shelf: a top-down pinch
++            self.assertTrue(pick.is_top(world, "Can"))
++            spot, why = place.plan_spot(world, "Can", "T", "right", start, np.pi / 4)
++            self.assertEqual(spot["depth"], 0.06, why)
++            self.assertAlmostEqual(float(spot["xy"][0]), -0.4 + place.SPOT_SIDE_M)
++
++
++class Hand:
++    """What the lowering and the release drive: a jaw that goes where a reach sends it (rot None keeps the attitude),
++    the servo's lead and turn integral, the motions in order."""
++
++    def __init__(self, jaw, rot):
++        self.jaw, self.rot = np.asarray(jaw, float), np.asarray(rot, float)
++        self.servo = {("pos", "right"): np.array([0.0, 0.0, 0.03]), ("turn", "right"): np.zeros(3)}
++        self.calls, self.trace, self.fell_at, self.t = [], [], None, 0.0
++
++    def jaw_centre(self, side):
++        return self.jaw.copy(), self.rot.copy()
++
++    def reach(self, side, pos, rot=None, **kw):
++        self.calls.append(("reach", np.asarray(pos, float), None if rot is None else np.asarray(rot, float)))
++        self.jaw, self.rot = np.asarray(pos, float), self.rot if rot is None else np.asarray(rot, float)
++        return Outcome(True)
++
++    def release(self, side):
++        self.calls.append(("release",))
++        return Outcome(True)
++
++    def sidestep(self, **kw):
++        self.calls.append(("sidestep",))
++        return Outcome(True)
++
++    def touching(self, body):
++        return set()
++
++
++class Ctx:
++    def __init__(self, world, motor):
++        self.world, self.motor, self.log = world, motor, []
++
++    def note(self, name, out, **extra):
++        self.log.append(dict(step=name, ok=out.ok, **out.info, **extra))
++        return out
++
++
++class Release(unittest.TestCase):
++    """A side-grasped object is lowered with its measured up axis levelled (at most LEVEL_MAX_DEG) and let go by
++    unload, open, centre, a level retract and a rise; a top-pinched one keeps the carried wrist, the release and the
++    rising retract."""
++
++    def test_levelling_is_identity_when_level_takes_the_up_axis_to_vertical_and_clamps(self):
++        corr, deg = clearance.level_rotation([0.0, 0.0, 1.0], place.LEVEL_MAX_DEG)
++        np.testing.assert_allclose(corr, np.eye(3))
++        self.assertEqual(deg, 0.0)
++        u = R.rot_z(0.4) @ R.rot_y(np.radians(12.0)) @ [0.0, 0.0, 1.0]
++        corr, deg = clearance.level_rotation(u, 25.0)
++        np.testing.assert_allclose(corr @ u, [0.0, 0.0, 1.0], atol=1e-9)
++        self.assertAlmostEqual(deg, 12.0)
++        u = expmap([np.radians(40.0), 0.0, 0.0]) @ [0.0, 0.0, 1.0]
++        corr, deg = clearance.level_rotation(u, 25.0)
++        self.assertAlmostEqual(deg, 25.0)
++        v = corr @ u
++        self.assertAlmostEqual(float(np.degrees(np.arccos(v[2]))), 15.0)
++        self.assertAlmostEqual(float(v[0]), 0.0)  # turned in the plane of u and z
++
++    def test_up_axis_is_the_rest_vertical_turned_by_the_pose_now(self):
++        rest = R.rot_z(0.7) @ expmap([0.0, np.radians(4.0), 0.0])  # a start turns the rest pose about z only
++        tip = expmap([np.radians(10.0), 0.0, 0.0])
++        now = R.quat_wxyz(tip @ R.rot_z(1.1) @ rest)
++        np.testing.assert_allclose(clearance.up_axis(now, R.quat_wxyz(rest)), tip @ [0.0, 0.0, 1.0], atol=1e-9)
++        self.assertAlmostEqual(clearance.lean_deg(now, R.quat_wxyz(rest)), 10.0)
++
++    def test_centre_move_follows_the_offset_sign_and_clamps(self):
++        self.assertEqual(place.centre_move(0.0015), 0.0)
++        self.assertEqual(place.centre_move(-place.CENTRE_MIN_M), 0.0)
++        self.assertAlmostEqual(place.centre_move(0.012), 0.012)
++        self.assertAlmostEqual(place.centre_move(-0.009), -0.009)
++        self.assertEqual(place.centre_move(0.05), place.CENTRE_MAX_M)
++        self.assertEqual(place.centre_move(-0.05), -place.CENTRE_MAX_M)
++
++    def _held(self, top: bool):
++        """The Can held 12 deg tipped about x, 2 cm out along the fingers of a side grasp (wrist x along +y, tipped)."""
++        tip = expmap([np.radians(12.0), 0.0, 0.0])
++        pos = np.array([0.1, -0.1, 0.95])
++        rot = tip @ R.rot_z(np.pi / 2)
++        world = World({"Can": (pos, R.quat_wxyz(tip))})
++        world.free = {"Can": 7}
++        if top:
++            world.meta["objects"]["Can"]["box"]["half_extent"] = [0.03, 0.06, 0.015]
++        return world, Hand(pos - rot @ [0.02, 0.0, 0.0], rot), pos, tip
++
++    def test_a_side_grasp_is_lowered_levelled_onto_the_spot(self):
++        world, m, pos, tip = self._held(top=False)
++        rot0, jaw0 = m.rot.copy(), m.jaw.copy()
++        off, level = place._lower_onto(Ctx(world, m), "Can", "right", [0.1, -0.1], "T", [0.1, -0.3], np.pi / 2)
++        self.assertEqual((off, round(level, 6)), ([], 12.0))
++        self.assertEqual(len(m.calls), 2)
++        for _, _, rot in m.calls:
++            np.testing.assert_allclose(rot @ rot0.T @ tip @ [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], atol=1e-9)
++        corr = m.calls[-1][2] @ rot0.T
++        centre = m.calls[-1][1] + corr @ (pos - jaw0)  # where the levelled object's centre ends
++        np.testing.assert_allclose(centre, [0.1, -0.1, 0.7 + 0.09 + place.PLACE_CLEAR_M], atol=1e-9)
++
++    def test_a_top_pinch_is_lowered_with_the_carried_wrist(self):
++        world, m, pos, _ = self._held(top=True)
++        self.assertTrue(pick.is_top(world, "Can"))
++        jaw0 = m.jaw.copy()
++        off, level = place._lower_onto(Ctx(world, m), "Can", "right", [0.1, -0.1], "T", [0.1, -0.3], np.pi / 2)
++        self.assertEqual((off, level), ([], None))
++        self.assertEqual([c[2] for c in m.calls], [None, None])
++        np.testing.assert_allclose(m.calls[-1][1], [0.1, -0.1, 0.7 + 0.015 + place.PLACE_CLEAR_M] - (pos - jaw0))
++
++    def test_release_unloads_opens_centres_retracts_level_then_rises(self):
++        world, m, pos, _ = self._held(top=False)
++        m.jaw = pos - m.rot @ [0.02, 0.012, 0.0]  # the object 1.2 cm toward +wrist y
++        jaw0, rot0 = m.jaw.copy(), m.rot.copy()
++        ctx = Ctx(world, m)
++        place._release(ctx, "Can", "right", 12.0)
++        self.assertEqual([r["step"] for r in ctx.log], ["unload", "open", "centre", "retract", "rise", "release"])
++        self.assertNotIn(("pos", "right"), m.servo)
++        self.assertNotIn(("turn", "right"), m.servo)
++        goals = [c[1] for c in m.calls if c[0] == "reach"]
++        np.testing.assert_allclose(goals[0], jaw0)
++        np.testing.assert_allclose(goals[1], jaw0 + 0.012 * rot0[:, 1], atol=1e-9)
++        np.testing.assert_allclose(goals[2], goals[1] - place.RETRACT_M * rot0[:, 0], atol=1e-9)
++        np.testing.assert_allclose(goals[3], goals[2] + [0.0, 0.0, place.RETRACT_RISE_M], atol=1e-9)
++        for c in m.calls:
++            if c[0] == "reach":
++                np.testing.assert_allclose(c[2], rot0)
++        row = ctx.log[-1]
++        self.assertEqual((row["lead_cm"], row["centre_cm"], row["level_deg"]), ([0.0, 0.0, 3.0], 1.2, 12.0))
++        self.assertEqual(row["touching_open"], [])
++
++    def test_a_top_pinch_put_down_releases_and_retracts_as_before_a_side_grasp_through_release(self):
++        world, m, _, _ = self._held(top=True)
++        jaw0, rot0 = m.jaw.copy(), m.rot.copy()
++        ctx = Ctx(world, m)
++        spot = dict(xy=[0.1, -0.1], edge_xy=[0.1, -0.3], face=np.pi / 2, edge="-y")
++        with (
++            mock.patch.object(place, "_lower_onto", return_value=([], None)),
++            mock.patch.object(place, "surface_below", return_value="T"),
++            mock.patch.object(place, "resting", return_value=(True, "")),
++            mock.patch.object(place, "_release") as release,
++        ):
++            self.assertTrue(place._put_down(ctx, "Can", "T", "right", spot, ("S", "T"), {}).ok)
++        release.assert_not_called()
++        self.assertEqual([r["step"] for r in ctx.log], ["release", "retract", "step_back"])
++        self.assertEqual([c[0] for c in m.calls], ["release", "reach", "sidestep"])
++        up = jaw0 - place.RETRACT_M * rot0[:, 0] + [0.0, 0.0, place.RETRACT_UP_M]
++        np.testing.assert_allclose(m.calls[1][1], up)
++        self.assertIsNone(m.calls[1][2])
++        self.assertIn(("pos", "right"), m.servo)
++        world, m, _, _ = self._held(top=False)
++        ctx = Ctx(world, m)
++        with (
++            mock.patch.object(place, "_lower_onto", return_value=([], 7.5)),
++            mock.patch.object(place, "surface_below", return_value="T"),
++            mock.patch.object(place, "resting", return_value=(True, "")),
++            mock.patch.object(place, "_release", return_value=Outcome(True)) as release,
++        ):
++            self.assertTrue(place._put_down(ctx, "Can", "T", "right", spot, ("S", "T"), {}).ok)
++        release.assert_called_once_with(ctx, "Can", "right", 7.5)
++
++
++if __name__ == "__main__":
++    unittest.main()

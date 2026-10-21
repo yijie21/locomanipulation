@@ -1,0 +1,187 @@
+{
+ "edits": [
+  {
+   "iteration": 0,
+   "component": "place.PICK_CAPTURE_DEPTH_M (the side-grasp entry depth of place.place_on's pick)",
+   "change": "0.015 -> 0.025 m. The entry now stops the jaw centre 2.5 cm short of the object centre instead of 1.5 cm. The Dex1 housing front sits 4.07 cm behind the jaw centre, so the old depth pushed any object with a half-length along the approach over about 5.6 cm (canister 6.15 cm) before the pads arrived, and the 2 cm disturb limit then aborted the pick.",
+   "observed": "Probe H1 changed only this parameter. Diag went 4 -> 8/50. It fixed canister s04/s14/s24/s35, which was 4 of 4 predicted, and broke 0. In all 4 incumbent canister failures the FK traces showed the object starting to move when the jaw was 1.8-2.0 cm from its centre. Sealed canister went 0/8 -> 3/8 (seed -> 470aff, together with the creep-rate change).",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 0,
+   "component": "place.CREEP_RATE_M_S (the creep budget in place._refusal / _grip_checks)",
+   "change": "0.0009 -> 0.00062 m/s. The budget had been measured on a 0.6 kg object (0.084 cm/s); the 0.15 kg wolf slid 0.048 cm/s. Lowering it lets lighter objects pass the pre-pick creep refusal.",
+   "observed": "Contrast of probe H2 (capture + rate) against probe H1 (capture only): 8 -> 14/50. Added wolf s02/s12/s22/s33 and coffee can s13/s44, broke 0. The wolf also needed the capture change: with only the creep budget loosened, a single round knocked it in the entry. Sealed wolf went 0/8 -> 7/8 and coffee can 0/8 -> 2/8. The margins are thin: the wolf's post-lift check is 2.64 vs 2.96 cm, and the coffee can's carry slides 6.26 vs 6.5 cm.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 0,
+   "component": "skills/__init__.py place_all -> new goal_holds(ctx)",
+   "change": "The put-down returns success without acting when the task's whole goal already holds at the start. This guards the free plate-holder successes, which survived only because the pick was refused before contact, 2% of the creep rate away from being admitted.",
+   "observed": "No flip can be attributed to it. Plate holder was 7/8 sealed in the seed, in 470aff and in d99d alike, and the diag free successes were unchanged. It is protective only.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 0,
+   "component": "candidate 470aff016d4c (capture 0.025 + creep 0.00062 + goal_holds)",
+   "change": "The three rows above shipped together. Accepted as the incumbent for iterations 1-4.",
+   "observed": "Gate n=60: 19 vs 8, b=11, c=0, p=0.00049, accepted. Diag 14 vs 4: fixed 10 (canister 4, wolf 4, coffee can 2), broken 0. Sealed 7/80 -> 19/80.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 0,
+   "component": "book-path parameters (probe H3: place.PICK_MIN_NEIGHBOUR_GAP_M -0.006, pick.OTHER_EDGE_CLEAR_M 0.2, place.HELD_OUT_MAX_M 0.07, place.CLEAR_BACK_M 0.08, on top of H2)",
+   "change": "Admits book picks past the neighbour-overlap refusal, loosens the held-out limit from 3 to 7 cm, and shortens the pull-back.",
+   "observed": "Probe 4 -> 15. Its one start beyond H2 was coffee can s34, which came from OTHER_EDGE_CLEAR 0.2 (iteration 1's probe H2 confirmed this alone). 0 of 15 book starts flipped: the books were lifted, the pull was judged stuck, and they were set back. Claim C1's two attempt sets gave 0/10. Not built.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 1,
+   "component": "pick.OTHER_EDGE_CLEAR_M 0.25 -> 0.15 and place.SPOT_CLEAR_M 0.04 -> 0.035 (probe H1); pick.OTHER_EDGE_CLEAR_M 0.20 alone (probe H2)",
+   "change": "Lowers the furniture clearance for pick stances at an edge the scene file does not list, and loosens the cart spot clearance by 5 mm.",
+   "observed": "H1: 14 -> 17, fixed coffee can s23, s34 and wolf s43, broke 0. H2: 14 -> 15 (s34). The same three flips with 0 broken came back identically in iteration 2 H2, iteration 3 H1/H2 and iteration 4 H2 (the deterministic simulator replays a start the same way). Wolf s43's flip comes from a put-down spot shift, and ABOVE_M alone also produces it (see the iteration 2 row).",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 1,
+   "component": "candidate a3528efce22b (vase path v1: pick.low_grasp/band_width, pick.clear_pass/strip_blocker, place.plan_spot fallback clearances 0.02/0.03, with set OTHER_EDGE_CLEAR 0.15, SPOT_CLEAR 0.035, place.LEVEL_MAX_DEG 25 -> 60 global)",
+   "change": "For hulls wider than 8.9 cm across the jaw, the jaw closes about 3 cm below the equator with a level wrist. The approach yaws 35 deg away from a fixed object in the hand's strip and uses the far hand. When no spot exists, the spot search is repeated at looser clearances. Put-downs may level by up to 60 deg everywhere.",
+   "observed": "Gate stage 1 (n=30): 10 vs 10, b=1, c=1, drops 3 vs 1; rejected. Diag was cut short at n=24: fixed vase s07/s17/s27/s38, broke 0. The reopen test finished 4/5 vase starts.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 1,
+   "component": "place.LEVEL_MAX_DEG 25 -> 60 (global)",
+   "change": "Every side-grasp put-down may level the object by up to 60 deg before lowering.",
+   "observed": "No run isolated it; it was part of a3528efce22b. The Reviewer attributed the stage-1 c=1 (canister 'place reach failed: not over KitchIsland__0') to it, because on diag it levelled 4/5 canister put-downs by 32.6-43.8 deg instead of 25. In iteration 2 it was scoped to low grasps (LOW_LEVEL_MAX_DEG) and c went to 0, but iteration 2 changed several other things too.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 2,
+   "component": "place.ABOVE_M 0.06 -> 0.12",
+   "change": "Raises the put-down's via point above the target edge to absorb a 1-12 cm servo dip, measured by FK, at the via just outside the edge.",
+   "observed": "Probe H1 changed only this: 14 -> 15 (wolf s43), broke 0. Probe H2 added it to the iteration 1 set: 17, the same as without it, so it adds no start at the margin. The SPOT_CLEAR/OTHER_EDGE shift alone also flips s43. It stayed in the final set, and the canister's sealed 3 -> 5/8 cannot be separated from the island far stance.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 2,
+   "component": "vase path as a unit (pick.low_grasp + pick.clear_pass + place.spot_passes round footprint, ROUND_RATIO 1.03, then FALLBACK_SPOT_CLEAR_M 0.02 / FALLBACK_SIDE_MIN_M 0.03; lowest-jaw-height fix)",
+   "change": "The low grasp below the equator, the turned far-hand approach, and a yaw-invariant square footprint for near-round objects, searched only after the box footprint finds no spot.",
+   "observed": "Diag vase went 0/5 -> 4/5 (iteration 1) -> 5/5 (iterations 2, 3, 4). The round footprint plus the lowest-height fix opened s48, which had no spot at a 36 deg carried yaw. Sealed vase went 0/8 -> 6/8 (d99d). The path also brought the two vase drops on accept, a left-hand carry drop and a knock in the entry. No run separates its parts: the vase needs all of them.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 2,
+   "component": "candidate f7d5e2490cca (vase path + LOW_LEVEL_MAX_DEG 60 for low grasps only + drop guards: no retry after a failed low grasp, pick.LOW_PREGRASP_MISS_M 0.035, levelled set-down; set: base 3 + incumbent 2)",
+   "change": "Ports the iteration 1 vase code with the levelling cap scoped to low grasps, adds the round footprint and the failure-path guards, and adds the probed base parameter set.",
+   "observed": "Gate n=60: 25 vs 19, b=6, c=0, p=0.0156, but rejected for drops 3 > 2 (incumbent 1). Diag 22 vs 14: fixed vase x5, coffee can s23/s34, wolf s43; broke 0.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 2,
+   "component": "place creep refusal disabled for the candle (claim C7 attempt sets)",
+   "change": "Turns the creep checks off, with and without a 0.40 m stance, for a short object with about 1.1 cm of planned pad margin.",
+   "observed": "Three sets of 5 starts gave 1/5, 2/5 and 1/5 wins, with 2, 1 and 1 carry drops. The refusal was kept and the claim stayed unproven.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 3,
+   "component": "grasp_program.CONTINUOUS_CLOSE 1 -> 0 (probe H2, on the base set)",
+   "change": "Stops driving the hand toward the entry target while the jaw closes.",
+   "observed": "Probe 14 -> 17, the base set's same 3 flips, broke 0, so no outcome changed on 50 diag starts. In the Reviewer's 2 rounds the vase push fell from 1.6-5.9 to 0.3-0.7 cm, and one of those rounds then dropped the vase after release. Not built.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 3,
+   "component": "place: level a heavy carried object in place before the final turn (Engineer prototype, not gated)",
+   "change": "For the 0.6 kg canister, levels the object by up to 45 deg at the end of the last carry leg, before the in-place turn.",
+   "observed": "Diag canister s14 went from a finish to a drop: the 37.5 deg wrist turn alone slid it 2.77 cm. On fresh canister starts it went 3/7 -> 4/7 but turned s1710000 into a drop, and total slide grew on 3 of 4. Removed before the gate.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 3,
+   "component": "candidate ec6e9d9eb673 (= f7d5e2490cca + pick.LOW_LATERAL_ABORT_M 0.03 passed to grasp_program.run for low grasps only)",
+   "change": "A low grasp's entry fails once the grasp point drifts more than 3 cm across the jaw. This is on the failure path only.",
+   "observed": "The gate replayed iteration 2: 25 vs 19, b=6, c=0, drops 3 > 2, rejected. One 'target knocked 2 cm in entry' became 'entry 3.0 cm across the jaw', but the drop count did not move. Diag 21/49 vs 14 (one start short), broke 0.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 4,
+   "component": "pick.STAND_AHEAD_M 0.40 -> 0.50 global (probe H1) and 0.45 global (probe H2), on the base set",
+   "change": "Moves every pick and put-down stance farther from its spot.",
+   "observed": "0.50: 14 -> 16, the base flips but broke wolf s22. The wolf toppled on release at the 0.454 m coffee table, as the Reviewer's own round predicted. 0.45: 14 -> 17, broke 0 (the same as the base). In single rounds the canister gripper's clearance from the island bowl was 5.9 / 8.7 / 13.0 cm at 0.40 / 0.45 / 0.50 m.",
+   "verdict": "hurt"
+  },
+  {
+   "iteration": 4,
+   "component": "place.plan_spot: put-down stance PLACE_AHEAD_M 0.50 only when the target top > PLACE_AHEAD_TOP_MIN_M 0.6 m (island 0.896, cart 0.70), else 0.40",
+   "change": "On high targets, the robot ends the carry farther from the spot so the final in-place turn does not sweep the leaning canister into the WoodenBowl on the island. Low targets plan exactly as before.",
+   "observed": "Its only contrast is iteration 3 -> 4, the same code plus this. Wins were identical (b=6, c=0 both times) and drops went 3 -> 2. The 'dropped during the carry: the right hand' string still appears once in both why-counts, so the right-hand carry still failed; it most likely no longer fell to the floor. The planned carry got longer: the creep-refusal times shifted from 39/40 s to 41 s, and 35 s refusals went x4 -> x5. One accept event, whose start can't be read, is all that stands behind the difference.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "candidate d99d433524f3 (incumbent 470aff + vase path + guards + lateral abort + high-target far stance; set: capture 0.025, creep 0.00062, ABOVE_M 0.12, OTHER_EDGE_CLEAR 0.15, SPOT_CLEAR 0.035)",
+   "change": "The final incumbent.",
+   "observed": "Gate n=60: 25 vs 19, b=6, c=0, p=0.0156, drops 2 <= 2, accepted. Diag 22 vs 14 (the same 8 fixed as iteration 2, 0 broken). Sealed 19/80 -> 32/80: vase 0 -> 6, coffee can 2 -> 6, canister 3 -> 5, wolf 7 -> 8, plate holder 7 -> 7; books, plant and candle stayed 0.",
+   "verdict": "helped"
+  }
+ ],
+ "experience": {
+  "cue": "A side-grasp pick that aims the jaw centre at the object centre fails only on the longer objects, while shorter objects with the same skill succeed. The failures read 'knocked/disturbed N cm in entry', or the traces show the object moving while the jaw is still about the capture depth plus 0.5 cm short. Cause: the object's half-length along the approach axis (the box axis the jaw does not span) exceeds the gripper housing's offset behind the jaw centre plus the entry's capture depth.",
+  "lesson": "In the side-grasp entry (place.place_on's pick: place.PICK_CAPTURE_DEPTH_M; the held(X) pick uses 0.025), take for each failing object a = its box half-extent along the approach, and h = the housing-front offset behind the jaw centre (Dex1: 0.0407 m). If a > h + capture, raise the entry capture depth to at least a - h + 0.005 m, per object or as a constant that covers the family. Keep it at or under the carry's held-out limit (place.HELD_OUT_MAX_M 0.03). 0.015 -> 0.025 cleared a = 6.15 cm (canister) and, together with a creep budget matched to the object's mass, a = 6.55 cm (wolf). If a - h is above the held-out limit (a > about 7.1 cm with this gripper: books 8.3-8.5 cm, plate holder 13.9 cm), no centred side grasp exists. Do not loosen HELD_OUT_MAX_M or the capture depth to chase it; park the task for a new action (end grasp with a lever check, push, two hands). Check after the change: in the FK traces the object does not move before the jaw is within the capture depth, and the held-out after the close stays under 3 cm.",
+  "evidence": "Iteration 0 probe H1 changed only PICK_CAPTURE_DEPTH_M 0.015 -> 0.025: diag 4 -> 8/50, fixed canister s04/s14/s24/s35 (4 of 4 predicted), broke 0. In all 4 incumbent canister failures the object began moving with the jaw 1.8-2.0 cm from its centre. With the creep change (probe H2) the wolf flipped 4/5. The shipped candidate got gate b=11, c=0, p=0.00049, and sealed went canister 0/8 -> 3/8, wolf 0/8 -> 7/8. Upper bound: claims C3/C4 (books, jaw at least 4.24-4.43 cm from the centre; all 10 picks measured 4.6-6.3 cm out) and C2 (plate holder, 9.8 cm). The book parameters with HELD_OUT 0.07 (iteration 0 probe H3) flipped 0 of 15 book starts. The C2 end-grasp attempt sets finished 0. The iteration 1 Reviewer's book prototype lost both books (one slid from 4.6 to 6.1 cm out and fell in the carry). Sealed books and plate-holder starts stayed 0 or unchanged through the whole run.",
+  "confidence": "Two levels. High for raising the capture depth to a - h + 0.5 cm when a is within h + 3 cm: a single-parameter probe flipped 4 of 4 predicted starts with 0 broken, FK measured the mechanism, and the gate and sealed pools agree. Medium for the upper-bound clause (park when a - h exceeds the held-out limit): it rests on claim attempts and 2 prototype rounds, not on a gated contrast. h = 4.07 cm belongs to this robot's Dex1 gripper; re-derive it for another gripper."
+ },
+ "cost_usd": 1.6647496000000002,
+ "seconds": 334,
+ "session": "cd4bb461-0697-4682-be62-70a9fd10fd26",
+ "outside": [
+  "/home/yijie/.claude/CLAUDE.md",
+  "/tmp/supervisor-skip/<name>",
+  "/workspace/CLAUDE.md",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/##g",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/470aff016d4c/skills/pick.py",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/470aff016d4c/skills/place.py",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/470aff016d4c/skills/test_held.py",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/470aff016d4c/skills/test_plan_for.py",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/__init__.py",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/__init__.py\\t2026-10-18",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/test_plan_for.py",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/test_plan_for.py\\t2026-10-18",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_00/candidate/skills/__init__.py\\n---",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_00/candidate/skills/__init__.py\\t2026-10-18",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_00/candidate/skills/test_plan_for.py\\n---",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_00/candidate/skills/test_plan_for.py\\t2026-10-18",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_01/candidate/skills/pick.py\\n4:@@",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_01/candidate/skills/place.py\\n238:@@",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_01/candidate/skills/test_held.py\\n326:@@",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_01/candidate/skills/test_plan_for.py\\n448:@@",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/loop/iter_02/code.patch",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/__init__.py\\n56:diff",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/grasp_program.py\\n76:diff",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/pick.py\\n348:diff",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/place.py\\n657:diff",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/test_held.py\\n852:diff",
+  "/workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/test_plan_for.py\\n\\n111:+LOW_SPAN_M",
+  "/workspace/tmp/rsi_scene_r2-on-a/claims/book_flat_upright.py\\",
+  "/workspace/tmp/rsi_scene_r2-on-a/claims/long_side_grasp.py\\",
+  "/workspace/tmp/rsi_scene_r2-on-a/eng04/round_report.py",
+  "/workspace/tmp/rsi_scene_r2-on-a/eng04/runs/cand/big_white_vase_to_tv_stand_s1110007.json\\",
+  "/workspace/tmp/rsi_scene_r2-on-a/eng04/runs/cand/big_white_vase_to_tv_stand_s\\",
+  "/workspace/tmp/rsi_scene_r2-on-a/eng04/runs/cand/canister_to_island_s1110004.json",
+  "/workspace/tmp/rsi_scene_r2-on-a/eng04/runs/cand/canister_to_island_s1110004\\",
+  "/workspace/tmp/rsi_scene_r2-on-a/it2/runs,",
+  "/workspace/tmp/rsi_scene_r2-on-a/it3/proto_relevel/skills/place.py",
+  "/workspace/tmp/rsi_scene_r2-on-a/it3/proto_relevel/skills/place.py,",
+  "/workspace/tmp/rsi_scene_r2-on-a/it3/runs",
+  "/workspace/tmp/rsi_scene_r2-on-a/it3:",
+  "/workspace/tmp/rsi_scene_r2-on-a/it4/carry_hits.py.\\n-",
+  "/workspace/tmp/rsi_scene_r2-on-a/it4/runs:\\\\n-",
+  "/workspace/tmp/rsi_scene_r2-on-a/it4:",
+  "/workspace/tmp/rsi_scene_r2-on-a/plan_offline.py",
+  "/workspace/tmp/rsi_scene_r2-on-a/runs/",
+  "/workspace/tmp/rsi_scene_r2-on-a/runs/.",
+  "/workspace/tmp/rsi_scene_r2-on-a/{place_proto.diff,"
+ ]
+}

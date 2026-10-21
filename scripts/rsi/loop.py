@@ -92,8 +92,34 @@ LOOP = HIDDEN = STATE = GATE_DIR = Path()
 # role -> claude --effort level. Pinned: role calls used to inherit the operator's settings.json (effortLevel xhigh for
 # Opus 5.5 on this machine, so every recorded run is xhigh), and another operator's settings would change the loop.
 # run --effort engineer=medium overrides one role (TODO 32.8).
-EFFORT: dict = dict(reviewer="xhigh", manager="xhigh", engineer="xhigh")
+EFFORT: dict = dict(reviewer="xhigh", manager="xhigh", engineer="xhigh", composer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
+SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
+CANDIDATES = 1  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step)
+LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience library
+    "The experience library, scripts/rsi/experience/INDEX.md: what earlier families' loops found, one entry per family "
+    "(per change a verdict -- helped, hurt, no observed effect, confounded --, at most one lesson with its cue, and the "
+    "code that run ended with in final.patch). Read the index; open an entry when its cue matches a failure here. An "
+    "entry's numbers come from other objects and surfaces: they are hypotheses for this family, to check on these "
+    "rounds, and where this family's rounds disagree, trust the rounds.\n"
+)
+SCOPES = {  # TODO 32.11 (Harness2's scoped proposals): each scoped Reviewer gives at most two hypotheses in its scope
+    "P": "YOUR SCOPE: HOW THE ROBOT DOES IT. You own the skill's procedure -- the order and timing of walk, stance, reach, "
+    "grip, lift and hold, the tolerances and when a step counts as done, mode switches, approach paths, retries and "
+    "recovery -- the part that should hold for any object. Trace a failing round's steps, fix the earliest step where "
+    "it diverges from a success. Do not propose object-specific grasp choices; another Reviewer owns them.",
+    "O": "YOUR SCOPE: WHAT THE OBJECTS AND THE SCENE REQUIRE. You own what this family's objects and surfaces demand -- "
+    "which side and orientation a grasp can take given the object's size and shape, the jaw's width, the surface's "
+    "height, slabs above, neighbours and edges -- written as rules over the geometry, not lists of objects. Do not "
+    "propose changes to the step sequence or its timing; another Reviewer owns them.",
+}
+CANDIDATES_NOTE = (  # TODO 32.9: what the Manager reads when an iteration builds several candidates
+    "This iteration builds {K} candidates at once: with `engineer`, list up to {K} hypothesis ids in `hypotheses`, best "
+    "first (the same id twice gives two independent drafts; `hypothesis` is the first). {K} Engineers build them in "
+    "parallel from the incumbent, each runs on the diagnostic starts, and a Composer merges what those rounds support "
+    "into one candidate for the gate, adopts one, or keeps the incumbent.\n"
+)
+PATCHED = re.compile(r"^\+\+\+ \S+/skills/(\S+)", re.M)  # the files a candidate patch changes
 TOOLS_NOTE = (  # TODO 32.6: what 44 Reviewers wrote by hand, as tools (left out of the prompt when the sandbox has none)
     "Tools for these records (they print tables; run them with {SIM_PY}, from the sandbox root, PYTHONPATH=src): "
     "`scripts/rsi/tools/steps.py <rounds dir> [--vs <rounds dir>] [--task T] [--step a,b] [--failed]` -- every round's "
@@ -173,6 +199,7 @@ MANAGER_SCHEMA = {
     "properties": {
         "decision": {"enum": ["engineer", "reopen", "review", "stop"]},
         "hypothesis": {"type": "string"},
+        "hypotheses": {"type": "array", "items": {"type": "string"}},  # TODO 32.9: one per Engineer, best first
         "reopen_claim": {"type": "string"},  # 27.8.7: the park whose exit the Engineer builds
         "focus": {"type": "string"},
         "reason": {"type": "string"},
@@ -195,6 +222,18 @@ MANAGER_SCHEMA = {
         "summary_zh": {"type": "string"},
     },
 }
+COMPOSER_SCHEMA = {  # TODO 32.9
+    "type": "object",
+    "required": ["decision", "notes"],
+    "properties": {
+        "decision": {"enum": ["merge", "adopt", "keep"]},
+        "adopted": {"type": "integer"},
+        "set": {"type": "object"},
+        "mechanism": {"type": "string"},
+        "notes": {"type": "string"},
+    },
+}
+
 ENGINEER_SCHEMA = {
     "type": "object",
     "required": ["mechanism", "files_changed", "set", "tests"],
@@ -233,6 +272,8 @@ def prompt_vars() -> dict:
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         TOOLS=TOOLS_NOTE if (HERE / "tools").is_dir() else "",
+        CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
+        LIBRARY=LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "",
     )
 
 
@@ -546,7 +587,7 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
         "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
-        *(["--effort", EFFORT[role]] if role in EFFORT else []),
+        *(["--effort", EFFORT.get(role) or EFFORT[role.split("_")[0]]] if (role in EFFORT or role.split("_")[0] in EFFORT) else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
     ]  # fmt: skip
     session = str(uuid.uuid4())
@@ -814,17 +855,49 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", evidence="stub",
                   delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},
                   predicted_fixed=[], predicted_broken=[])])  # fmt: skip
-    hyps, acct = claude(
-        "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
-    )
+    if SCOPED:
+        hyps, acct = scoped_review(prompt, it_dir, stub_h if stub else None)
+    else:
+        hyps, acct = claude(
+            "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
+        )
     jdump(it_dir / "hypotheses.json", hyps)
-    leaks = transcript_leaks(acct["session"])
+    leaks = sorted({x for sess in acct.pop("sessions", None) or [acct["session"]] for x in transcript_leaks(sess)})
     n_claims = len(hyps["infeasible"]) if isinstance(hyps.get("infeasible"), list) else 0
     ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), n_claims=n_claims, void=bool(leaks),
                 leaks=leaks, **acct))  # fmt: skip
     if leaks:
         return f"reviewer of iteration {n} named off-limits paths ({', '.join(leaks)})"
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
+
+
+def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, dict]:
+    """Two Reviewers in parallel on the same inputs, each held to a scope (SCOPES) and two hypotheses; their
+    hypotheses are merged with the scope letter before the id (P1, O1, ...), their claims and notes joined. The
+    accounting sums cost and keeps the longer wall time; `session` is the first one's (the leak check reads both)."""
+    out: dict = {}
+
+    def one(tag):
+        text = prompt.replace("propose at most 4 interventions", "propose at most 2 interventions, within your scope")
+        text += "\n\n" + SCOPES[tag] + "\n"
+        out[tag] = claude(f"reviewer_{tag}", text, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub)
+
+    ts = [threading.Thread(target=one, args=(t,)) for t in SCOPES]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    hyps = dict(notes="", hypotheses=[], infeasible=[])
+    for tag in SCOPES:
+        h, _ = out[tag]
+        hyps["notes"] += f"[{tag}] {h.get('notes', '')}\n"
+        for x in h["hypotheses"][:2]:
+            hyps["hypotheses"].append(dict(x, id=f"{tag}{x['id']}", scope=tag))
+        hyps["infeasible"] += [c for c in h.get("infeasible") or [] if isinstance(c, dict)]
+    accts = [out[t][1] for t in SCOPES]
+    acct = dict(cost_usd=sum(a["cost_usd"] for a in accts), session=accts[0]["session"],
+                seconds=max(a["seconds"] for a in accts), sessions=[a["session"] for a in accts])  # fmt: skip
+    return hyps, acct
 
 
 def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
@@ -870,6 +943,8 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
 def engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
     """The Manager's decision carried out: the chosen hypothesis (or the reopened park) to the Engineer, then the
     gate (after_engineer)."""
+    if CANDIDATES > 1 and dec["decision"] == "engineer":
+        return multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
     reopen = dec.get("reopen_claim") if dec["decision"] == "reopen" else None
     park_ = jload(STATE / "parked.json", {}).get(reopen) if reopen else None
     if reopen and park_ is None:
@@ -931,6 +1006,11 @@ def after_engineer(
         return None
     if reopen and not reopen_test(n, it_dir, cand, reopen):
         return None
+    return gate_candidate(n, it_dir, cand, stub)
+
+
+def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool) -> str | None:
+    """`cand` to the gate on the acceptance pool, its diagnostic rounds beside it (the next incumbent's, if accepted)."""
     redraw_accept()
     gate_args = [str(SIM_PY), str(HERE / "gate.py"), FAMILY, "--gate", str(GATE_DIR), "--pool", str(accept_pool()),
                  "--candidate", str(cand), "--gpus", GPUS]  # fmt: skip
@@ -958,6 +1038,162 @@ def after_engineer(
                 result=verdict.get("result"), stage1=verdict.get("stage1"), unparked=unparked_view(rounds),
                 void=stub))  # fmt: skip
     return None
+
+
+def revert_strays(base_changes: list) -> list[str]:
+    """Files a role changed outside the skills working copies, put back as they were; returns them."""
+    stray = [f for f in changed_files() if f not in base_changes]
+    for f in stray:
+        if (
+            subprocess.run(["git", "ls-files", "--error-unmatch", "--", f], cwd=REPO, capture_output=True).returncode
+            == 0
+        ):
+            subprocess.run(["git", "checkout", "--", f], cwd=REPO, capture_output=True)
+        elif (REPO / f).exists():
+            (REPO / f).unlink()
+    return stray
+
+
+def flips(inc_dir: Path, cand_dir: Path) -> dict:
+    """A candidate's diagnostic rounds against the incumbent's, start by start."""
+    a, b = B.outcomes(inc_dir), B.outcomes(cand_dir)
+    both = sorted(set(a) & set(b))
+    return dict(ok=sum(bool(b[x]["ok"]) for x in both), incumbent_ok=sum(bool(a[x]["ok"]) for x in both), n=len(both),
+                fixed=[x for x in both if b[x]["ok"] and not a[x]["ok"]],
+                broken=[x for x in both if a[x]["ok"] and not b[x]["ok"]])  # fmt: skip
+
+
+def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
+    """TODO 32.9 (Harness2's contrastive compose step): CANDIDATES Engineers build the Manager's hypotheses in parallel,
+    each in its own copy of the incumbent's skills package (`cand_k/skills`); every valid candidate runs on the
+    diagnostic pool; the Composer merges what those rounds support into one candidate, adopts one, or keeps the
+    incumbent; only that one candidate reaches the gate, so the gate's test stays one test per call."""
+    known = {h["id"]: h for h in hyps["hypotheses"]}
+    ids = [h for h in (dec.get("hypotheses") or []) if h in known] or [dec.get("hypothesis")]
+    ids = [h for h in ids if h in known] or [hyps["hypotheses"][0]["id"]]
+    ids = (ids * CANDIDATES)[:CANDIDATES]
+    calls = []
+    for k, hid in enumerate(ids, 1):
+        w = it_dir / f"cand_{k}"
+        if w.exists():
+            shutil.rmtree(w)
+        shutil.copytree(
+            Path(inc["dir"]) / "skills", w / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
+        )
+        ctx = w / "engineer_context.json"
+        jdump(ctx, context(inc, dict(hypothesis=known[hid], manager=dec, probe=[p for p in pr if p.get("id") == hid],
+                                     park=None, draft=dict(number=k, of=len(ids)))))  # fmt: skip
+        prompt = fill(
+            (HERE / "prompts" / "engineer.md").read_text(), CONTEXT=ctx, ITER=w, **dict(common, SKILLS=w / "skills")
+        )
+        stub_e = dict(mechanism=f"stub {k}", files_changed=[], set={**inc["set"]}, tests="none")
+        if stub:  # a stub draft must differ from the incumbent, or the plumbing after it never runs
+            with (w / "skills" / "__init__.py").open("a") as fh:
+                fh.write(f"\n# stub draft {k}\n")
+        calls.append((k, hid, w, prompt, stub_e))
+    out: dict = {}
+
+    def one(k, w, prompt, stub_e):
+        try:
+            out[k] = claude(
+                f"engineer_{k}", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_e if stub else None
+            )
+        except RoleFailed as e:
+            out[k] = e
+
+    threads = [threading.Thread(target=one, args=(k, w, pr_, se)) for k, _, w, pr_, se in calls]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    stray = revert_strays(base_changes)
+    put_skills(Path(inc["dir"]) / "skills")
+    cands, jobs = [], []
+    for k, hid, w, _, _ in calls:
+        res = out.get(k)
+        if isinstance(res, Exception) or res is None:
+            ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, void=True, error=str(res)[:300]))
+            continue
+        eng, acct = res
+        leaks = transcript_leaks(acct["session"])
+        cand = it_dir / f"candidate_{k}"
+        if cand.exists():
+            shutil.rmtree(cand)
+        shutil.copytree(w / "skills", cand / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        (cand / "candidate.json").write_text(json.dumps({"set": eng.get("set") or {}}, indent=1))
+        patch = subprocess.run(["diff", "-ruN", "-x", "__pycache__", "-x", "*.pyc", str(Path(inc["dir"]) / "skills"),
+                                str(cand / "skills")], capture_output=True, text=True).stdout  # fmt: skip
+        (it_dir / f"code_{k}.patch").write_text(patch)
+        void = bool(leaks) or bool(stray) or candidate_hash(cand) == inc["hash"]
+        ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, changed=sorted(set(PATCHED.findall(patch))),
+                    stray=stray, mechanism=eng["mechanism"], set=eng["set"], void=void, leaks=leaks, **acct))  # fmt: skip
+        if not void:
+            cands.append(dict(number=k, hypothesis=hid, mechanism=eng["mechanism"], dir=str(cand),
+                              patch=str(it_dir / f"code_{k}.patch"), hash=candidate_hash(cand),
+                              diag=str(LOOP / "diag" / f"candidate_{candidate_hash(cand)}")))  # fmt: skip
+            jobs.append(
+                B.Job(cand / "skills", LOOP / "diag" / f"candidate_{candidate_hash(cand)}", overrides(cand), None, True)
+            )
+    if not cands:
+        ledger(dict(step="compose", iter=n, decision="none", reason="no valid candidate", stray=stray))
+        return None
+    if not stub:
+        B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
+    base = LOOP / "diag" / f"incumbent_{inc['hash']}"
+    for c in cands:
+        c.update(flips(base, Path(c["diag"])))
+    jdump(it_dir / "candidates.json", cands)
+    # the Composer
+    wc = it_dir / "compose" / "skills"
+    if wc.parent.exists():
+        shutil.rmtree(wc.parent)
+    shutil.copytree(Path(inc["dir"]) / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    ctx = it_dir / "composer_context.json"
+    jdump(ctx, context(inc, dict(hypotheses=[known[h] for h in dict.fromkeys(ids)], candidates=cands,
+                                 incumbent_diag=str(base), manager=dec)))  # fmt: skip
+    prompt = fill((HERE / "prompts" / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
+    stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
+    comp, acct = claude("composer", prompt, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_c if stub else None)
+    leaks = transcript_leaks(acct["session"])
+    stray = revert_strays(base_changes)
+    put_skills(Path(inc["dir"]) / "skills")
+    jdump(it_dir / "composer.json", comp)
+    ledger(dict(step="compose", iter=n, decision=comp["decision"], adopted=comp.get("adopted"), notes=comp["notes"],
+                mechanism=comp.get("mechanism", ""), set=comp.get("set"), stray=stray, void=bool(leaks or stray),
+                leaks=leaks, **acct))  # fmt: skip
+    if leaks or stray:
+        return f"composer of iteration {n} named off-limits paths ({', '.join(leaks)})" if leaks else None
+    if comp["decision"] == "keep":
+        return None
+    if comp["decision"] == "adopt":
+        pick = next((c for c in cands if c["number"] == comp.get("adopted")), None)
+        if pick is None:
+            ledger(
+                dict(
+                    step="gate",
+                    iter=n,
+                    accepted=False,
+                    void=True,
+                    reason=f"adopted candidate {comp.get('adopted')} is not a valid one",
+                )
+            )
+            return None
+        cand = Path(pick["dir"])
+    else:
+        cand = it_dir / "candidate"
+        if cand.exists():
+            shutil.rmtree(cand)
+        shutil.copytree(wc, cand / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        (cand / "candidate.json").write_text(json.dumps({"set": comp.get("set") or {}}, indent=1))
+        patch = subprocess.run(["diff", "-ruN", "-x", "__pycache__", "-x", "*.pyc", str(Path(inc["dir"]) / "skills"),
+                                str(cand / "skills")], capture_output=True, text=True).stdout  # fmt: skip
+        (it_dir / "code.patch").write_text(patch)
+        if candidate_hash(cand) == inc["hash"]:
+            ledger(
+                dict(step="gate", iter=n, accepted=False, void=True, reason="the composed candidate is the incumbent")
+            )
+            return None
+    return gate_candidate(n, it_dir, cand, stub)
 
 
 def engineer_again(n: int, src: Path, stub: bool) -> str | None:
@@ -1031,6 +1267,12 @@ def cmd_run(a) -> int:
     n = len(list(STATE.glob("iter_*")))
     iters = a.max_iters
     global STOP_AFTER
+    global CANDIDATES
+    CANDIDATES = max(1, getattr(a, "candidates", 1) or 1)
+    global SCOPED
+    SCOPED = bool(getattr(a, "scoped_review", False))
+    meta.update(candidates=CANDIDATES, scoped_review=SCOPED)
+    jdump(STATE / "meta.json", meta)
     STOP_AFTER = getattr(a, "stop_after", None)
     EFFORT.update(dict(x.split("=", 1) for x in getattr(a, "effort", [])))
     if getattr(a, "engineer_from", None) is not None:  # one iteration: the Engineer and the gate on a recorded decision
@@ -1090,6 +1332,9 @@ def main(argv=None) -> int:
     r.add_argument("--stub", action="store_true", help="canned role outputs, gate --dry-run: plumbing only")
     r.add_argument(
         "--reprobe", type=int, default=None, help="re-probe iteration N's hypotheses first (probes lost or not run)"
+    )
+    r.add_argument(
+        "--candidates", type=int, default=1, help="Engineers per iteration, merged by a Composer (TODO 32.9)"
     )
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",

@@ -1,0 +1,451 @@
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/__init__.py /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/__init__.py
+--- /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/__init__.py	2026-10-20 12:39:55.000000000 +0000
++++ /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/__init__.py	2026-10-20 17:33:33.806239643 +0000
+@@ -1,5 +1,6 @@
+-"""The scene RSI loop's skill library, atomic seed (TODO 31, user 2026-10-20): no skill yet. A sandbox built for a family
+-whose `sandbox.seed` names this directory starts its skills package from it (scripts/rsi/sandbox.py).
++"""The scene RSI loop's skill library, atomic seed (TODO 31, user 2026-10-20); the loop added `pick` (held(X)). A
++sandbox built for a family whose `sandbox.seed` names this directory starts its skills package from it
++(scripts/rsi/sandbox.py).
+ 
+ A skill is a task-level function `skill(ctx, ...) -> Outcome` over the motor layer and the privileged scene state;
+ `plan_for(task)` returns the plan for a goal, a callable `plan(ctx) -> Outcome`, or None when no skill covers it. What a
+@@ -18,9 +19,17 @@
+ 
+ import types
+ 
++from locomani.scene_discovery.predicates import parse
++
++from . import pick
++
+ 
+ def plan_for(task):
+-    """The plan for a task's goal, or None when no skill covers it. Covered: nothing yet."""
++    """The plan for a task's goal, or None when no skill covers it. Covered: ("held(X)",) -> pick.pick."""
++    goal = [parse(g) for g in task.goal]
++    if len(goal) == 1 and goal[0].name == "held":
++        key = goal[0].args[0]
++        return lambda ctx: pick.pick(ctx, key)
+     return None
+ 
+ 
+diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/pick.py /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/pick.py
+--- /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/pick.py	1970-01-01 00:00:00.000000000 +0000
++++ /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/pick.py	2026-10-20 17:33:33.842239633 +0000
+@@ -0,0 +1,416 @@
++"""pick(ctx, X): the plain end-to-end pick for `held(X)` (grasp_atomic H1, iteration 1), built on the motor layer only;
++the hand clearance against surface slabs and fronts (2a, 3a) is iteration 3's H2 and H1, narrowed in iteration 4 so
++that every plan and path the incumbent makes stays as it was (tight fits only as a fallback tier, the hang filter
++only for grasps above the hanging jaw, front clearance only from far stances).
++
++1. Grasp from the object's collider (the MuJoCo geoms of its body at the current pose: mesh vertices, whose convex hull
++   is what contact uses, or box corners). For each of HEADINGS approach directions `a` the jaw closes along the
++   horizontal axis left of `a`; a heading fits when the hull's width along it plus 2 * JAW_CLEAR_M is within the jaw's
++   opening (none fits: the narrowest). Objects at least FLAT_M tall: a side grasp, the jaw centre SIDE_Z_* above the
++   hull's bottom and at most PALM_M - PALM_GAP_M past its near face. Flatter ones: top-down, the jaw centre TOP_ABOVE_M
++   above the surface top (the fingertips run 3.5 cm past it). When no stance with a path is left, the search runs again
++   with TIGHT_CLEAR_M.
++2. Stance: the pelvis D behind the jaw centre along `a` and LATERAL_M to the inner side of the grasping hand; the
++   smallest D (then the narrowest width) whose cell keeps STANCE_CLEAR_M from the occupancy map and has a path. A shelf
++   (a surface under another one, or with a ceiling in colliders.json) is approached only within EDGE_DEG of one of its
++   approach edges' inward normal; tables by the occupancy map alone (their listed edges omit free sides).
++2a. Shelves, grasps above HANG_Z_M: a stance whose hanging jaws (HANG_* ahead of and beside the pelvis), or those jaws
++   HANG_OUT_M further along `a`, lie under the object's own surface HANG_ABOVE_* above them is passed over (the walk
++   would hook the hand under the slab it must rise past); when no stance is left, the unfiltered choice. Other slabs
++   over the jaw do not count: a plant two shelves up, re-planned for a lower shelf, lost a start it had won.
++3. Moves: walk_path to the stance facing `a`; reach the pre-grasp PRE_M back along the wrist x through a via point
++   VIA_BACK_M further back; insert at INSERT_SPEED_MPS; grip; lift LIFT_M. Jaw targets below LOW_Z_M lower the pelvis.
++3a. Front clearance: when the walk leaves the jaw within APP_OUT_M of (or inside) the front of a surface the rise must
++   clear, and the first leg to the via would advance more than APP_ADVANCE_M toward it, the jaw first backs out along
++   -a (attitude kept) until its fingers are APP_OUT_M outside, then rises there to APP_ABOVE_M over that surface while
++   turning to the grasp attitude, then goes on to the pre-grasp (through the via only if it lies further in). As one
++   leg the back-out and the rise caught the finger under the slab again. Only from stances at least APP_D_MIN_M back:
++   nearer, the back-out pulls the jaw towards the chest and the rise stalls.
++4. Carry-out: `held` counts every surface whose footprint holds the object and whose top is not more than
++   RESTING_GAP_M under its underside, shelves above it included; back the object out along -a past all of them plus
++   CARRY_MARGIN_M, by reach up to CARRY_REACH_MAX_M and a step back for the rest.
++"""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++import mujoco
++import numpy as np
++
++from locomani.backends.scalebfm.motor import Outcome
++from locomani.scene_discovery.scene_file import to_surface_frame
++from locomani.tasks.scene import navigate
++
++# grasp
++JAW_OPEN_M = 0.095  # Dex1 jaw opening
++JAW_CLEAR_M = 0.003  # free space each side of the object when the jaw is open
++TIGHT_CLEAR_M = 0.0
++RIM_BELOW_M = 0.022  # the fallback tier's, when no stance with a path is left at JAW_CLEAR_M
++HEADINGS = 24  # approach directions tried, evenly spaced
++FLAT_M = 0.035  # objects lower than this: top-down
++SIDE_Z_MIN_M = 0.018  # side grasp: jaw centre above the hull's bottom, clip(height / 2, min, max)
++SIDE_Z_MAX_M = 0.06
++PALM_M = 0.038  # the palm face sits this far behind the jaw centre
++PALM_GAP_M = 0.006  # side grasp: the palm stops this far short of the near face
++TOP_ABOVE_M = 0.040  # top-down: jaw centre above the surface top
++PITCH_DEG = 15.0  # side grasp: wrist x pitched down from the approach direction
++# stance
++LATERAL_M = 0.15  # pelvis to the inner side of the grasping hand
++D_MIN_M = 0.36  # pelvis behind the jaw centre along the approach
++D_MAX_M = 0.66
++D_STEP_M = 0.02
++STANCE_CLEAR_M = 0.22  # occupancy clearance at the stance cell
++EDGE_DEG = 50.0  # shelves: approach within this of an approach edge's inward normal
++# moves
++PRE_M = 0.10  # pre-grasp back along the wrist x
++VIA_BACK_M = 0.15  # via point this much further back
++INSERT_SPEED_MPS = 0.08
++LIFT_M = 0.10
++CARRY_SPEED_MPS = 0.08  # lift and carry-out
++LOW_Z_M = 0.70  # jaw targets below this lower the pelvis to max(PELVIS_MIN_M, jaw z + PELVIS_ABOVE_M)
++PELVIS_MIN_M = 0.55
++PELVIS_ABOVE_M = 0.12
++# carry-out
++RESTING_GAP_M = 0.02  # predicates.RESTING_GAP_M: a surface top this close under the underside holds the object
++CARRY_MARGIN_M = 0.05
++CARRY_REACH_MAX_M = 0.18
++# shelf stances: the hanging hands at a walk's end
++HANG_FWD_M = 0.25  # jaw ahead of the pelvis along the approach (0.18-0.30 measured)
++HANG_LAT_M = 0.13  # each jaw beside the pelvis
++HANG_Z_M = 0.69  # jaw height
++HANG_ABOVE_MIN_M = 0.02  # a surface top this far above the jaw ...
++HANG_ABOVE_MAX_M = 0.20  # ... and not further hooks it
++HANG_OUT_M = 0.05  # also checked this much further along the approach
++# front clearance before the pre-grasp
++APP_OUT_M = 0.06  # finger points this far outside every footprint the rise must cross
++APP_ABOVE_M = 0.07  # rise to this above the highest crossed top
++APP_BACK_MAX_M = 0.15
++APP_ADVANCE_M = 0.03  # fire only when the first leg would advance more than this toward the front
++APP_TOP_BELOW_M = 0.03  # crossed: a surface whose top is above the jaw minus this ...
++APP_TOP_ABOVE_M = 0.02  # ... and not above the grasp point plus this, its footprint on the jaw -> grasp segment
++APP_VIA_AHEAD_M = 0.02  # after the rise, keep the via only if it lies this much further along the approach
++APP_D_MIN_M = 0.54  # only from stances at least this far back
++
++UP = np.array([0.0, 0.0, 1.0])
++_ceiling_cache: dict = {}
++
++
++def _r(v, n=3):
++    return [round(float(x), n) for x in v]
++
++
++def hull_points(world, key: str) -> np.ndarray:
++    """World points whose convex hull is the object's collider: mesh vertices, box corners, other shapes' bounding
++    boxes."""
++    m, d = world.sim.m, world.sim.d
++    mujoco.mj_kinematics(m, d)
++    corners = np.array([[x, y, z] for x in (-1, 1) for y in (-1, 1) for z in (-1, 1)], float)
++    pts = []
++    for g in range(m.ngeom):
++        if m.geom_bodyid[g] != world.free[key] or not (m.geom_contype[g] or m.geom_conaffinity[g]):
++            continue
++        rot = d.geom_xmat[g].reshape(3, 3)
++        if m.geom_type[g] == mujoco.mjtGeom.mjGEOM_MESH:
++            a, k = m.mesh_vertadr[m.geom_dataid[g]], m.mesh_vertnum[m.geom_dataid[g]]
++            local = m.mesh_vert[a : a + k]
++        elif m.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX:
++            local = corners * m.geom_size[g]
++        else:
++            local = m.geom_aabb[g, :3] + corners * m.geom_aabb[g, 3:]
++        pts.append(d.geom_xpos[g] + local @ rot.T)
++    return np.concatenate(pts)
++
++
++def grasps(world, key: str, clear: float | None = None) -> tuple[list[dict], bool]:
++    """One grasp per approach heading that fits the jaw (or the narrowest when none does); and whether any fitted."""
++    o = world.meta["objects"][key]
++    top = float(world.meta["surfaces"][o["surface"]]["top"])
++    P = hull_points(world, key)
++    bottom, height = float(P[:, 2].min()), float(np.ptp(P[:, 2]))
++    kind = "top" if height < FLAT_M else "side"
++    out = []
++    if o.get("container"):
++        m, d = world.sim.m, world.sim.d
++        Rm = d.xmat[world.free[key]].reshape(3, 3)
++        pos = d.xpos[world.free[key]].copy()
++        box = o["box"]
++        he = np.asarray(box["half_extent"], float)
++        wall = float(box.get("wall", 0.01))
++        ctr = pos + Rm @ np.asarray(box.get("centre", (0, 0, 0)), float)
++        rim = float(P[:, 2].max())
++        i = 0
++        for k in (0, 1):
++            n = np.r_[Rm[:2, k], 0.0]
++            n /= np.linalg.norm(n)
++            for sg in (1.0, -1.0):
++                g = ctr + sg * n * (he[k] - wall / 2)
++                g[2] = rim - RIM_BELOW_M
++                a = -sg * n  # stand outside this wall facing the mug: the near wall, closing along the approach
++                out.append(dict(kind="rim", heading=i, a=a, cl=a.copy(), width=wall, depth=wall, height=height, g=g))
++                i += 1
++        return out, True
++
++    for i in range(HEADINGS):
++        th = 2 * np.pi * i / HEADINGS
++        a = np.array([np.cos(th), np.sin(th), 0.0])
++        cl = np.cross(UP, a)  # closing axis: the wrist y, left of the approach
++        pa, pc = P @ a, P @ cl
++        width, depth = float(np.ptp(pc)), float(np.ptp(pa))
++        if kind == "side":
++            along = float(pa.min()) + min(0.5 * depth, PALM_M - PALM_GAP_M)
++            z = bottom + float(np.clip(0.5 * height, SIDE_Z_MIN_M, SIDE_Z_MAX_M))
++        else:
++            along, z = 0.5 * float(pa.max() + pa.min()), top + TOP_ABOVE_M
++        g = along * a + 0.5 * float(pc.max() + pc.min()) * cl
++        g[2] = z
++        out.append(dict(kind=kind, heading=i, a=a, cl=cl, width=width, depth=depth, height=height, g=g))
++    clear = JAW_CLEAR_M if clear is None else clear
++    fits = [c for c in out if c["width"] + 2 * clear <= JAW_OPEN_M]
++    if fits:
++        return fits, True
++    narrowest = min(c["width"] for c in out)
++    return [c for c in out if c["width"] <= narrowest + 1e-6], False
++
++
++def wrist_rotation(kind: str, a, cl) -> np.ndarray:
++    """Side: x along the approach pitched PITCH_DEG down, y left of it, z up-ish. Top-down: x down, y the closing axis
++    (left of the facing direction)."""
++    if kind == "side":
++        p = np.radians(PITCH_DEG)
++        x = np.cos(p) * a - np.sin(p) * UP
++    else:
++        x = -UP
++    y = cl / np.linalg.norm(cl)
++    z = np.cross(x, y)
++    z /= np.linalg.norm(z)
++    return np.column_stack([np.cross(y, z), y, z])
++
++
++def ceilings(world) -> dict:
++    """colliders.json's `ceilings` (surface -> height of the collider above it, or None), {} without the file."""
++    key = str(world.dir)
++    if key not in _ceiling_cache:
++        f = Path(world.dir) / "colliders.json"
++        _ceiling_cache[key] = (json.loads(f.read_text()).get("ceilings") or {}) if f.exists() else {}
++    return _ceiling_cache[key]
++
++
++def _inside(xy, s) -> bool:
++    half = np.asarray(s.get("flat_half_extent") or s["half_extent"], float)[:2]
++    return bool(np.all(np.abs(to_surface_frame(xy, s)) <= half))
++
++
++def is_shelf(world, skey: str) -> bool:
++    """A surface with another surface over its centre, or a ceiling collider above it."""
++    surfaces = world.meta["surfaces"]
++    s = surfaces[skey]
++    if ceilings(world).get(skey) is not None:
++        return True
++    return any(k != skey and float(t["top"]) > float(s["top"]) and _inside(s["xy"], t) for k, t in surfaces.items())
++
++
++def edge_ok(s: dict, a) -> bool:
++    """`a` within EDGE_DEG of the inward normal of one of the surface's approach edges (any, when none is listed)."""
++    edges = s.get("approach_edges") or []
++    if not edges:
++        return True
++    yaw = float(s.get("yaw", 0.0))
++    lx, ly = np.array([np.cos(yaw), np.sin(yaw)]), np.array([-np.sin(yaw), np.cos(yaw)])
++    inward = {"+x": -lx, "-x": lx, "+y": -ly, "-y": ly}
++    return any(float(a[:2] @ inward[e]) >= np.cos(np.radians(EDGE_DEG)) for e in edges if e in inward)
++
++
++def stances(world, gr: dict, side: str) -> list[tuple[float, np.ndarray]]:
++    """(D, pelvis xy) for every D in [D_MIN_M, D_MAX_M] whose cell keeps STANCE_CLEAR_M clearance."""
++    occ, a = world.occ, gr["a"]
++    left = np.array([-a[1], a[0]])
++    lat = LATERAL_M if side == "right" else -LATERAL_M
++    out = []
++    for D in np.arange(D_MIN_M, D_MAX_M + 1e-9, D_STEP_M):
++        P = gr["g"][:2] - a[:2] * D + left * lat
++        c = occ.cell_of(P)
++        if occ.in_bounds(c) and occ.clearance[c[0], c[1]] >= STANCE_CLEAR_M:
++            out.append((float(D), P))
++    return out
++
++
++def hand_hooked(world, a, P, support: str) -> bool:
++    """Either hanging jaw at a stance P facing `a`, or that jaw HANG_OUT_M further along `a`, under the footprint of the
++    object's surface `support` when that is HANG_ABOVE_MIN_M to HANG_ABOVE_MAX_M above it."""
++    a = a[:2]
++    left = np.array([-a[1], a[0]])
++    s = world.meta["surfaces"][support]
++    slabs = [s] if HANG_ABOVE_MIN_M <= float(s["top"]) - HANG_Z_M <= HANG_ABOVE_MAX_M else []
++    for lat in (HANG_LAT_M, -HANG_LAT_M):
++        j = P + a * HANG_FWD_M + left * lat
++        if any(_inside(j + a * d, s) for s in slabs for d in (0.0, HANG_OUT_M)):
++            return True
++    return False
++
++
++def choose(world, key: str, here) -> tuple[dict | None, dict]:
++    gr, info = _choose(world, key, here, JAW_CLEAR_M)
++    if gr is None and TIGHT_CLEAR_M < JAW_CLEAR_M:
++        gr, info = _choose(world, key, here, TIGHT_CLEAR_M)
++        info.update(tight=True)
++    return gr, info
++
++
++def _choose(world, key: str, here, clear) -> tuple[dict | None, dict]:
++    """The grasp, hand and stance: the smallest D, then the narrowest width, with a path from `here`. Shelves: first
++    without stances that hook a hanging hand under a slab."""
++    o = world.meta["objects"][key]
++    surface = world.meta["surfaces"][o["surface"]]
++    shelf = is_shelf(world, o["surface"])
++    cands, fit = grasps(world, key, clear)
++    info = dict(fit=fit, shelf=shelf, n_grasps=len(cands))
++    for hang in (True, False) if shelf else (False,):
++        for use_edges in (True, False) if shelf else (False,):
++            options, hooked = [], 0
++            for gr in cands:
++                if use_edges and not edge_ok(surface, gr["a"]):
++                    continue
++                for si, side in enumerate(("right", "left")):
++                    if gr["kind"] == "rim" and side != "right":
++                        continue
++                    for D, P in stances(world, gr, side):
++                        if hang and gr["g"][2] > HANG_Z_M and hand_hooked(world, gr["a"], P, o["surface"]):
++                            hooked += 1
++                            continue
++                        options.append((D, gr["width"], si, gr["heading"], side, P, gr))
++            options.sort(key=lambda t: t[:4])
++            for D, _, _, _, side, P, gr in options:
++                if navigate.path(world.occ, world.nav, here, P) is not None:
++                    info.update(edges=use_edges, n_options=len(options))
++                    if shelf:
++                        info.update(hang_filter=hang, hang_rejected=hooked)
++                    return dict(gr, side=side, D=D, stance=P), info
++    return None, info
++
++
++def front_clearance(world, m, side: str, a, g, via, D: float) -> dict:
++    """The back-out point A and the rise point B when the first leg (jaw -> via) would advance more than APP_ADVANCE_M
++    toward the front of a surface the rise must cross while the finger points are within APP_OUT_M of it (or inside);
++    `fired` False otherwise. Crossed: tops between the jaw minus APP_TOP_BELOW_M and the grasp point plus APP_TOP_ABOVE_M
++    whose footprint the jaw -> grasp segment enters. Only from stances at least APP_D_MIN_M back."""
++    jaw, R = m.jaw_centre(side)
++    y = R[:2, 1]
++    fingers = [jaw[:2] + y * 0.5 * JAW_OPEN_M, jaw[:2] - y * 0.5 * JAW_OPEN_M, jaw[:2]]
++    seg = [jaw[:2] + (g[:2] - jaw[:2]) * u for u in np.linspace(0, 1, 41)]
++    crossed = [s for s in world.meta["surfaces"].values()
++               if float(jaw[2]) - APP_TOP_BELOW_M < float(s["top"]) <= float(g[2]) + APP_TOP_ABOVE_M
++               and any(_inside(p, s) for p in seg)]  # fmt: skip
++    via_rel = float((via[:2] - jaw[:2]) @ a[:2])
++
++    def clear_at(d):  # the finger points moved d along a are outside every crossed footprint
++        return all(not _inside(p + a[:2] * d, s) for p in fingers for s in crossed)
++
++    F = None  # how far the finger points can advance along a before entering (negative: already inside)
++    for d in np.arange(-0.20, 0.60, 0.005):
++        if clear_at(d) and not clear_at(d + 0.005):
++            F = float(d)
++            break
++    if F is None and not clear_at(0.0):
++        F = -0.20
++    out = dict(fired=False, jaw=_r(jaw), n_crossed=len(crossed), via_rel_cm=round(100 * via_rel, 1),
++               face_cm=None if F is None else round(100 * F, 1))  # fmt: skip
++    if D < APP_D_MIN_M or not crossed or F is None or via_rel <= APP_ADVANCE_M or F >= APP_OUT_M:
++        return out
++    back = min(APP_BACK_MAX_M, max(0.0, APP_OUT_M - F))
++    top = max(float(s["top"]) for s in crossed)
++    A = jaw.copy()
++    A[:2] -= a[:2] * back
++    B = A.copy()
++    B[2] = max(float(via[2]), top + APP_ABOVE_M)
++    out.update(fired=True, back_cm=round(100 * back, 1), z_clear=round(float(B[2]), 3), top=round(top, 3), A=A, B=B)
++    return out
++
++
++def exit_distance(world, key: str, a) -> float:
++    """How far the object must move along -a to leave every surface (not its own) that `held` would call it resting
++    on: footprint holding its xy and top not more than RESTING_GAP_M under its underside (the predicate's box rule)."""
++    o = world.meta["objects"][key]
++    box = o.get("box") or {}
++    centre = np.asarray(box.get("centre", (0.0, 0.0, 0.0)), float)
++    half = np.asarray(box.get("half_extent", (0.0, 0.0, 0.0)), float)
++    pos, _ = world.object_pose(key)
++    xy, bottom = pos[:2] + centre[:2], float(pos[2] + centre[2] - half[2])
++    need = 0.0
++    for skey, s in world.meta["surfaces"].items():
++        if skey == o["surface"] or bottom - float(s["top"]) > RESTING_GAP_M or not _inside(xy, s):
++            continue
++        d = 0.0
++        while d < 2.0 and _inside(xy - a[:2] * d, s):
++            d += 0.01
++        need = max(need, d)
++    return need
++
++
++def pick(ctx, key: str) -> Outcome:
++    w, m = ctx.world, ctx.motor
++    pos0, _ = w.object_pose(key)
++    gr, info = choose(w, key, m.pelvis()[0][:2])
++    if gr is None:
++        return ctx.note("choose", Outcome(False, "no grasp with a reachable stance", m.t, m.t), **info)
++    a, side, kind = gr["a"], gr["side"], gr["kind"]
++    ctx.note("choose", Outcome(True, "", m.t, m.t), kind=kind, side=side, D=round(gr["D"], 3),
++             heading_deg=round(float(np.degrees(np.arctan2(a[1], a[0]))), 1), width_cm=round(100 * gr["width"], 2),
++             depth_cm=round(100 * gr["depth"], 2), height_cm=round(100 * gr["height"], 2), g=_r(gr["g"]),
++             stance=_r(gr["stance"]), **info)  # fmt: skip
++    out = ctx.note("walk", navigate.walk_path(m, w.occ, w.nav, gr["stance"], float(np.arctan2(a[1], a[0]))))
++    if not out.ok:
++        return out
++    pos1, _ = w.object_pose(key)
++    g = gr["g"] + (pos1 - pos0)  # the object may have been bumped on the way
++    Rg = wrist_rotation(kind, a, gr["cl"])
++    if kind == "rim":  # closing-axis sign nearest the hand's present attitude (proto)
++        _, Rc = m.jaw_centre(side)
++        Rf = wrist_rotation(kind, a, -gr["cl"])
++        ang = lambda R: float(np.arccos(np.clip((np.trace(R @ Rc.T) - 1) / 2, -1, 1)))
++        if ang(Rf) < ang(Rg):
++            Rg = Rf
++    x = Rg[:, 0]
++    pz = None if g[2] >= LOW_Z_M else max(PELVIS_MIN_M, float(g[2]) + PELVIS_ABOVE_M)
++    pre = g - x * PRE_M
++
++    def moved():
++        return round(100 * float(np.linalg.norm(w.object_pose(key)[0] - pos1)), 2)
++
++    via = pre - x * VIA_BACK_M
++    vias = (via,)
++    if kind == "rim":  # proto: via halfway in xy at the pre-grasp height, not stacked above it
++        jn = m.jaw_centre(side)[0]
++        lz = max(float(pre[2]), float(w.meta["surfaces"][w.meta["objects"][key]["surface"]]["top"]) + 0.12)
++        via = np.r_[0.5 * (jn[:2] + pre[:2]), lz]
++        vias = (via,) if jn[2] < lz else ()
++    fc = front_clearance(w, m, side, a, g, via, gr["D"])
++    ctx.note("approach", Outcome(True, "", m.t, m.t), **{k: v for k, v in fc.items() if k not in ("A", "B")})
++    if fc["fired"]:
++        ctx.note("retreat", m.reach(side, fc["A"], None, pelvis_z=pz), obj_moved_cm=moved())
++        ctx.note("rise", m.reach(side, fc["B"], Rg, pelvis_z=pz), obj_moved_cm=moved())
++        if float((via - fc["B"])[:2] @ a[:2]) <= APP_VIA_AHEAD_M:
++            vias = ()
++    ctx.note("pre", m.reach(side, pre, Rg, via=vias, pelvis_z=pz), obj_moved_cm=moved(),
++             walk_moved_cm=round(100 * float(np.linalg.norm(pos1 - pos0)), 2),
++             pelvis_z=None if pz is None else round(pz, 3))  # fmt: skip
++    ctx.note("insert", m.reach(side, g, Rg, speed=INSERT_SPEED_MPS, pelvis_z=pz), obj_moved_cm=moved())
++    out = ctx.note("grip", m.grip(side), obj_moved_cm=moved())
++    if not out.ok:
++        return out
++    z_grip = float(w.object_pose(key)[0][2])
++    lifted = g + UP * LIFT_M
++    out = m.reach(side, lifted, Rg, speed=CARRY_SPEED_MPS, pelvis_z=pz)
++    ctx.note("lift", out, obj_dz_cm=round(100 * (float(w.object_pose(key)[0][2]) - z_grip), 2))
++    need = exit_distance(w, key, a)
++    if need <= 0:
++        return out
++    d = need + CARRY_MARGIN_M
++    back = min(d, CARRY_REACH_MAX_M)
++    out = ctx.note("carry_out", m.reach(side, lifted - a * back, Rg, speed=CARRY_SPEED_MPS, pelvis_z=pz),
++                   need_cm=round(100 * need, 1), reach_cm=round(100 * back, 1))  # fmt: skip
++    if d > back + 1e-6:
++        out = ctx.note("step_back", m.sidestep(forward=-(d - back)), step_cm=round(100 * (d - back), 1))
++    ctx.note("after_carry", Outcome(True, "", m.t, m.t), need_after_cm=round(100 * exit_distance(w, key, a), 1))
++    return out

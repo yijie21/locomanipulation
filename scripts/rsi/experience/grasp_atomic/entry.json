@@ -1,0 +1,131 @@
+{
+ "edits": [
+  {
+   "iteration": 1,
+   "component": "skills/pick.py (new module) + skills/__init__.plan_for -> pick.pick for held(X)",
+   "change": "End-to-end pick on the motor layer. The grasp comes from the MuJoCo collider over 24 headings: a side grasp for objects at least 3.5 cm tall, top-down for flatter ones; the opening plus 2*JAW_CLEAR_M 0.003 must fit the 0.095 m jaw. Stance: smallest D in [0.36, 0.66] with 0.22 m occupancy clearance and a path; approach-edge filter on shelves only. Moves: via 0.15 m behind pre, insert at 0.08 m/s, grip, 0.10 m lift, then carry-out along -a from under any overhead surface.",
+   "observed": "Diagnostic 0/30 -> 15/30 (15 fixed, 0 broken). Acceptance b 20, c 0 (20/40, p ~0). Sealed 0/50 -> 18/50.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 2,
+   "component": "parameter pick.D_MIN_M 0.36 -> 0.44 (probe)",
+   "change": "Moves stances that sat at the minimum D 2-8 cm further back, so the hanging hand lands shallower in a shelf bay.",
+   "observed": "Diagnostic 15 -> 12. Fixed DisplayWolf s410029 (predicted). Broke Plant4_1 s410018 and s410028, TvRemote s410014 (predicted), and VaseSmall_2 s410007. Lost reach at the 1.08 m top shelf, the low shelf, and on the top-down remote.",
+   "verdict": "hurt"
+  },
+  {
+   "iteration": 2,
+   "component": "parameter pick.D_MAX_M 0.66 -> 0.76 (probe)",
+   "change": "Allows farther stances so the island oranges get a plan.",
+   "observed": "Diagnostic 15 -> 15, no flips. The oranges got stances but still jammed on the reach.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 2,
+   "component": "parameter pick.JAW_CLEAR_M 0.003 -> 0 (probe)",
+   "change": "Admits headings whose width fills the 9.5 cm jaw with no margin.",
+   "observed": "Diagnostic 15 -> 15, no flips (it re-planned 4 starts that were already failing). Later fresh closed-loop pairs, used to argue the iter 3/4 rows, lost 3 of 5 when it re-planned existing successes to 9.2-9.3 cm fits: DishSoap s800020, s800027 and TvRemote s800012; the insert shoved the object.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 2,
+   "component": "pick.entry() post-walk shelf-bay retract (candidate 3a651b3a04f3)",
+   "change": "Shelves only. If the jaw centre ends the walk inside a footprint its rise would cross, three reaches run before the via/pre path: back out along -a (at most 0.20 m) until both fingers are 0.05 m outside, rise to via height, then turn to the grasp attitude.",
+   "observed": "Diagnostic 15 vs 15: 0 fixed, 0 broken. The target Wolf s410029 was not fixed, and the engineer's smoke showed the retract did not deliver. Acceptance stage 1 b 0, c 1 (one DisplayWolf dropped on CornerDisplay); rejected. The one lost start is too thin to call harm, but it fixed nothing.",
+   "verdict": "no observed effect"
+  },
+  {
+   "iteration": 3,
+   "component": "parameter pick.VIA_BACK_M 0.15 -> 0 (falsification probe)",
+   "change": "Removes the via behind the pre-grasp. The first reach leg from the hanging jaw then advances toward the support front while rising instead of backing away.",
+   "observed": "Diagnostic 15 -> 10. Broke 5 of 6 predicted: DishSoap s410022, DisplayWolf s410009, CoffeeCan s410021, Plant4_1 s410018 and s410028 (CoffeeCan s410011 survived). Nothing unpredicted broke; candles, remotes and vases were unchanged. So the incumbent's back-off-first via is load-bearing at supports above the hanging jaw.",
+   "verdict": "hurt"
+  },
+  {
+   "iteration": 3,
+   "component": "candidate 259d835b1e48: pick.front_clearance + pick.hand_hooked stance filter (all slabs) + set JAW_CLEAR_M 0",
+   "change": "Three changes at once. (1) front_clearance: when the jaw is within 6 cm of (or inside) a crossed front and the first leg would advance more than 3 cm, run three reaches: retreat (at most 0.15 m), rise to max(via z, top + 0.07), then pre. (2) On shelves, skip stances whose predicted hanging jaw lies under any slab 0.02-0.20 m above 0.69. (3) Global JAW_CLEAR_M 0.",
+   "observed": "Diagnostic 15 -> 19: fixed DishSoap s410012, DisplayWolf s410029, Orange s410010 and s410020; broke none. Acceptance 23/40, b 5, c 2, p 0.227 (stage 1 b 4, c 1); rejected. The losses were later blamed on the JAW_CLEAR 0 re-plans and on front_clearance firing at D 0.48, using fresh pairs only, not the acceptance starts themselves.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "parameter pick.HEADINGS 24 -> 48 (probe)",
+   "change": "Finer 7.5 deg heading grid. It re-plans 9 of 15 successes, never at larger D or narrower clearance.",
+   "observed": "Diagnostic 15 -> 14. Fixed DishSoap s410012. Broke Plant4_1 s410018 and s410028 (unpredicted); the predicted Wolf s410009 break did not happen. This refutes the claim that only re-plans losing clearance or reach break a start, at least for plants.",
+   "verdict": "hurt"
+  },
+  {
+   "iteration": 4,
+   "component": "candidate 2a16184c5cbc: iteration 3's bundle narrowed (TIGHT_CLEAR_M fallback tier, hang filter only for g_z > 0.69 and the object's own support, front_clearance only at D >= APP_D_MIN_M 0.54, no parameter set)",
+   "change": "JAW_CLEAR 0 now runs only when the 0.003 search finds no stance with a path. The hang filter counts only the object's own support slab and only for grasps above the hanging jaw. Front clearance fires only from stances at least 0.54 m back. The side-wall mug rim pinch was built, failed 3 smokes on Mug s410003 (jaw 6.9-14.6 cm and 26-57 deg off), and was dropped.",
+   "observed": "Diagnostic 15 -> 19, the same 4 fixes as iteration 3, 0 broken. Acceptance 24/40, b 4, c 0, p 0.0625; rejected. Against iteration 3: c 2 -> 0, b 5 -> 4. Shipped unchanged inside iteration 5 (row below).",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "pick._choose / pick.hand_hooked shelf stance filter (as shipped in iterations 4 and 5)",
+   "change": "On shelves, for grasps above 0.69 m, skip any stance whose predicted hanging jaw lies inside the footprint of the object's own support when that support's top is 0.02-0.20 m above 0.69. The jaw is predicted at pelvis + 0.25*a +/- 0.13*left, z 0.69, and again 0.05 m further along a. If no stance is left, use the unfiltered choice. The wolf goes from D 0.38, heading 30 to D 0.46, heading 15.",
+   "observed": "Diagnostic Wolf s410029 fixed in iterations 3, 4 and 5, no diagnostic break. Fresh pairs: s800000, s800001, s800002 fail -> OK; s800003 OK both ways. Sealed DisplayWolf 2/5 -> 5/5 (incumbent 01 vs 05). Offline replay re-plans only wolf starts (25/25; every other task 0/25). The other bundle pieces cannot fire on the wolf (D 0.46 < 0.54, and it has 0.003 stances), so the wolf gain belongs to this filter. Never gated alone.",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 4,
+   "component": "pick.choose TIGHT_CLEAR_M 0 fallback tier + pick.front_clearance gated at D >= 0.54",
+   "change": "Gives the oranges and DishSoap s410012 a stance, then retreats and rises before the forward first leg so the finger does not catch under the island or counter lip.",
+   "observed": "Together they account for diagnostic fixes Orange s410010, s410020 and DishSoap s410012 (prototype rounds 2/2, 2/2, 1/1). On sealed there is zero difference: Orange 4/5, DishSoap 1/5 and TvRemote 2/5 in both 01 and 05. The acceptance b 4 cannot be split by task, and neither piece was run alone.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 4,
+   "component": "narrowing iteration 3 -> 4 (global JAW_CLEAR 0 -> fallback tier; front_clearance D gate; hang filter restricted to own support and g_z > 0.69)",
+   "change": "Turns re-plans of starts that already succeed into plans only where the incumbent had none.",
+   "observed": "Acceptance c 2 -> 0, b 5 -> 4, with diagnostic flips identical. Fresh pairs: the global tight swap lost 3 of 5 and gained 0; front_clearance at D 0.48 lost 1 of 2. All three narrowings changed together, so no run isolates which one removed the 2 acceptance losses.",
+   "verdict": "confounded"
+  },
+  {
+   "iteration": 5,
+   "component": "candidate 47dae34f3d70: iteration 4 unchanged + mug rim pinch (pick.grasps 'rim' kind for container objects; right hand only in _choose; attitude sign and low via in pick)",
+   "change": "Mug_2 only, the one object flagged container. The jaw sits on the near wall's midline 0.022 m below the rim, approaching along -n, with the closing axis along the approach. Wrist x points down, the closing-axis sign is the one nearest the present attitude, and the via is the xy midpoint at max(pre z, surface top + 0.12).",
+   "observed": "Reopen test 2 of 3 parked mug starts: s410003 and s410023 OK; s410013 failed with 'nothing between the fingers' (bin). Diagnostic 15 -> 21: iteration 4's 4 fixes plus Mug s410003 and s410023, 0 broken. Acceptance 26/40, b 6, c 0, p 0.0156; accepted. Against iteration 4: b +2, all on the mug-only code path. Sealed 18/50 -> 24/50 (Mug 0/5 -> 3/5, Wolf 2/5 -> 5/5, all other tasks identical).",
+   "verdict": "helped"
+  },
+  {
+   "iteration": 5,
+   "component": "pick.grasps rim pinch: near wall, closing along the approach (vs iteration 4's side-wall pinch)",
+   "change": "For a 9 cm hollow mug with 1 cm walls in a 9.5 cm jaw, pinch the wall nearest the robot instead of straddling the body or pinching a side wall along its tangent.",
+   "observed": "The side-wall variant (iteration 4): 0 of 3 smokes, 26-57 deg attitude error. The near-wall variant: 2 of 3 parked diagnostic starts, +2 acceptance wins, sealed Mug 0/5 -> 3/5. Isolated by code path: only container objects reach it.",
+   "verdict": "helped"
+  }
+ ],
+ "experience": {
+  "cue": "A pick (or place) target sits on a shelf or bay whose own slab top is 2-20 cm above the robot's idle hanging-hand height (about 0.69-0.71 m), and the grasp point is above that height. The closest-stance walk ends with a hanging hand 3-6 cm inside or under that slab. Signs to look for: the same plan succeeds on some spawns and fails on others, depending on how deep the hand landed; failures read 'nothing between the fingers' or a pre-reach that stalls 20+ cm off while the wrist presses the slab's front-underside edge.",
+  "lesson": "Fix it at stance choice, not after the walk. In the stance chooser (pick._choose over stances()), predict both hanging jaws at the walk's end: pelvis + 0.25 m*a +/- 0.13 m*left(a) at z 0.69 m, and the same points 0.05 m further along a. Skip any stance that puts either point inside the footprint of the object's own support when that support's top is 0.02-0.20 m above 0.69 m. Apply this only on shelves and only for grasp points above 0.69 m, and fall back to the unfiltered choice when no stance survives. Do not count other slabs; in this run that re-planned lower-shelf plants and lost one, though that rests on a single fresh pair. Do not get the effect by raising D_MIN globally (0.36 -> 0.44 broke 4 starts) or with a post-walk back-out retract (fixed 0). Check before gating: an offline choose() replay over fresh starts should re-plan only the targeted shelf object (here 25/25 wolf starts, 0/25 on every other task), and no diagnostic success should change its plan.",
+  "evidence": "Rows iter 4 'hand_hooked stance filter' (helped), iter 2 'D_MIN_M 0.44' (hurt), iter 2 'entry() retract' (no observed effect). The stance-time filter fixed DisplayWolf s410029 in all three runs that carried it (iterations 3, 4, 5) with no diagnostic break. Fresh closed-loop pairs went 3 fail -> OK and 1 OK both ways. On the sealed pool DisplayWolf rose 2/5 -> 5/5 between the iteration 1 and iteration 5 incumbents, and every other non-mug task was identical. The other pieces in its bundle cannot fire on the wolf (front clearance needs D >= 0.54, the wolf plans D 0.46; the tight tier runs only when no 0.003 stance exists). By contrast, raising D_MIN to 0.44 fixed the same wolf start but broke Plant x2, TvRemote and Vase (15 -> 12). The post-walk retract (iteration 2) fixed 0 of 30 and went b 0, c 1 at the gate.",
+  "confidence": "medium. The mechanism is backed by contact-logged reruns, a same-plan 3 cm vs 6 cm split, and an independent sealed gain. The attribution inside the bundle rests on code-path isolation and an offline replay, not on a gate run of the filter alone. All of it comes from one object on one shelf geometry (the 0.84 m wolf shelf, ~3 diagnostic, 4 fresh and 5 sealed starts). The hanging-jaw numbers belong to the shared motor layer, so they should carry over, but the 0.02-0.20 m slab band has been tested on only that one slab."
+ },
+ "cost_usd": 1.40699,
+ "seconds": 223,
+ "session": "1e0d39f7-daa1-4e12-953d-2a7f267aa583",
+ "outside": [
+  "/home/yijie/.claude/CLAUDE.md",
+  "/tmp/hyps.txt",
+  "/tmp/ledger_full.txt",
+  "/tmp/ledger_summary.txt",
+  "/tmp/ledger_summary.txt\\n{",
+  "/tmp/p4.txt",
+  "/tmp/p4.txt\\n2:---",
+  "/tmp/supervisor-skip/<name>",
+  "/workspace/CLAUDE.md",
+  "/workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/058a5733e09e/skills/pick.py\\t2026-10-20",
+  "/workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/loop/iter_02/candidate/skills/pick.py\\t2026-10-20",
+  "/workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/loop/iter_04/candidate/skills/pick.py\\t2026-10-20",
+  "/workspace/tmp/rsi_scene_grasp-atomic-a/proto/skills/__init__.py.",
+  "/workspace/tmp/rsi_scene_grasp-atomic-a/proto_skills/pick.py",
+  "/workspace/tmp/rsi_scene_grasp-atomic-a/rev03/proto4/pick.py,",
+  "/workspace/tmp/rsi_scene_grasp-atomic-a/rev03/proto5/pick.py",
+  "/workspace/tmp/rsi_scene_grasp-atomic-a/rev04/proto/pick.py",
+  "/workspace/tmp/rsi_scene_grasp-atomic-a/rev05/rim_c.diff,"
+ ]
+}

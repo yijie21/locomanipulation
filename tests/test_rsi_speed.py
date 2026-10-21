@@ -140,3 +140,71 @@ class ReplayState(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def _scene_loop():
+    """scripts/rsi/loop.py under its own name (the warehouse loop has a loop.py too), sys.modules left as it was."""
+    names = ("gate", "batch", "family", "scene_round", "digest", "loop")
+    saved = {k: sys.modules.pop(k, None) for k in names}
+    sys.path.insert(0, str(HERE))
+    try:
+        return _load("scene_rsi_loop_32", HERE / "loop.py")
+    finally:
+        sys.path.remove(str(HERE))
+        for k, v in saved.items():
+            sys.modules.pop(k, None)
+            if v is not None:
+                sys.modules[k] = v
+
+
+class LoopProcedure(unittest.TestCase):
+    """TODO 32.9-32.11: the scoped Reviewers' hypotheses merge under their scope letter; a candidate's diagnostic flips
+    are counted start by start; the Manager and the Reviewer see the multi-candidate and library notes only when on."""
+
+    def setUp(self):
+        self.lp = _scene_loop()
+
+    def test_scoped_reviewers_merge_two_hypotheses_each(self):
+        from unittest import mock
+
+        def fake(role, prompt, schema, it_dir, tools, stub):
+            tag = role.split("_")[1]
+            self.assertIn("within your scope", prompt)
+            self.assertIn(self.lp.SCOPES[tag][:40], prompt)
+            hyps = [dict(id=f"H{i}", claim=f"{tag}{i}") for i in (1, 2, 3)]
+            claim = dict(task="t", starts=[f"{tag}_s1"])
+            return dict(notes=tag, hypotheses=hyps, infeasible=[claim]), dict(
+                cost_usd=1.0, session=tag, seconds=10 * len(tag)
+            )
+
+        with mock.patch.object(self.lp, "claude", fake):
+            hyps, acct = self.lp.scoped_review("propose at most 4 interventions", Path("."), None)
+        self.assertEqual([h["id"] for h in hyps["hypotheses"]], ["PH1", "PH2", "OH1", "OH2"])
+        self.assertEqual({h["scope"] for h in hyps["hypotheses"]}, {"P", "O"})
+        self.assertEqual(len(hyps["infeasible"]), 2)
+        self.assertEqual(acct["cost_usd"], 2.0)
+        self.assertEqual(sorted(acct["sessions"]), ["O", "P"])
+
+    def test_flips_pair_the_candidate_with_the_incumbent_start_by_start(self):
+        with tempfile.TemporaryDirectory() as d:
+            inc, cand = Path(d) / "inc", Path(d) / "cand"
+            inc.mkdir()
+            cand.mkdir()
+            for lab, a, b in (("s1", False, True), ("s2", True, False), ("s3", True, True), ("s4", False, False)):
+                (inc / f"{lab}.json").write_text(json.dumps(dict(ok=a)))
+                (cand / f"{lab}.json").write_text(json.dumps(dict(ok=b)))
+            (cand / "s5.json").write_text(json.dumps(dict(ok=True)))  # not run for the incumbent: not paired
+            f = self.lp.flips(inc, cand)
+        self.assertEqual((f["n"], f["ok"], f["incumbent_ok"], f["fixed"], f["broken"]), (4, 2, 2, ["s1"], ["s2"]))
+
+    def test_notes_appear_only_when_switched_on(self):
+        self.lp.configure("grasp_atomic")
+        self.lp.CANDIDATES = 1
+        self.assertEqual(self.lp.prompt_vars()["CANDIDATES_NOTE"], "")
+        self.lp.CANDIDATES = 3
+        note = self.lp.prompt_vars()["CANDIDATES_NOTE"]
+        self.assertIn("up to 3 hypothesis ids", note)
+        self.assertNotIn("{K}", note)
+        self.lp.CANDIDATES = 1
+        lib = (HERE / "experience" / "INDEX.md").exists()
+        self.assertEqual(bool(self.lp.prompt_vars()["LIBRARY"]), lib)
