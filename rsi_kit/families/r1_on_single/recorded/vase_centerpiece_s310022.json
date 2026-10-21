@@ -1,1 +1,1 @@
-{"label": "vase_centerpiece_s310022", "task": "vase_centerpiece", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, ExtendableTable__0): 1.33 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 53.36, "seated": {}}
+{"label": "vase_centerpiece_s310022", "task": "vase_centerpiece", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, ExtendableTable__0): 1.33 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 48.18, "seated": {}}

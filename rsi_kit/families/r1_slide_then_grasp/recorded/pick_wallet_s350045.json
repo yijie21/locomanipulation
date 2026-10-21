@@ -1,1 +1,1 @@
-{"label": "pick_wallet_s350045", "task": "pick_wallet", "ok": false, "why": "[goal] held(Wallet_1): no hand touches it", "fell": false, "dropped": false, "t_end": 57.88, "seated": {}}
+{"label": "pick_wallet_s350045", "task": "pick_wallet", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 58.34, "seated": {}}

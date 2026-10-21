@@ -1,1 +1,1 @@
-{"label": "b1_put_Jam_Anon_in_WhiteTrashBin_s8200070", "task": "b1_put_Jam_Anon_in_WhiteTrashBin", "ok": false, "why": "[goal] in(Jam_Anon, WhiteTrashBin): outside the container footprint by (-0.06, +0.54) m", "fell": false, "dropped": false, "t_end": 102.3, "seated": {}}
+{"label": "b1_put_Jam_Anon_in_WhiteTrashBin_s8200070", "task": "b1_put_Jam_Anon_in_WhiteTrashBin", "ok": false, "why": "[goal] in(Jam_Anon, WhiteTrashBin): outside the container footprint by (+0.03, +0.40) m", "fell": false, "dropped": false, "t_end": 92.76, "seated": {}}

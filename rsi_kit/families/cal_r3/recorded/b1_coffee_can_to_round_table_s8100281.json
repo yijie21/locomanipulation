@@ -1,1 +1,1 @@
-{"label": "b1_coffee_can_to_round_table_s8100281", "task": "b1_coffee_can_to_round_table", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, BlackRoundTable__0): 3.97 m outside BlackRoundTable__0's footprint", "fell": false, "dropped": false, "t_end": 55.14, "seated": {}}
+{"label": "b1_coffee_can_to_round_table_s8100281", "task": "b1_coffee_can_to_round_table", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, BlackRoundTable__0): 3.97 m outside BlackRoundTable__0's footprint", "fell": false, "dropped": false, "t_end": 49.32, "seated": {}}

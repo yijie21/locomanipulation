@@ -1,1 +1,1 @@
-{"label": "b1_put_CoffeeCanisterLarge_on_GreySofa__2_s8200088", "task": "b1_put_CoffeeCanisterLarge_on_GreySofa__2", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, GreySofa__2): 2.92 m outside GreySofa__2's footprint", "fell": false, "dropped": false, "t_end": 55.54, "seated": {}}
+{"label": "b1_put_CoffeeCanisterLarge_on_GreySofa__2_s8200088", "task": "b1_put_CoffeeCanisterLarge_on_GreySofa__2", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, GreySofa__2): 3.03 m outside GreySofa__2's footprint", "fell": false, "dropped": false, "t_end": 51.74, "seated": {}}

@@ -1,1 +1,1 @@
-{"label": "pick_car_key_s320006", "task": "pick_car_key", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 37.88, "seated": {}}
+{"label": "pick_car_key_s320006", "task": "pick_car_key", "ok": false, "why": "[goal] held(CarKey_2): no hand touches it", "fell": false, "dropped": false, "t_end": 68.9, "seated": {}}

@@ -1,1 +1,1 @@
-{"label": "plant_to_top_display_shelf_s310017", "task": "plant_to_top_display_shelf", "ok": false, "why": "[goal] on(Plant2_5, DisplayShelves_1__2): underside z 0.397 not on DisplayShelves_1__2 (top 1.125, +0.3 m)", "fell": false, "dropped": false, "t_end": 21.58, "seated": {}}
+{"label": "plant_to_top_display_shelf_s310017", "task": "plant_to_top_display_shelf", "ok": false, "why": "[goal] on(Plant2_5, DisplayShelves_1__2): underside z 0.397 not on DisplayShelves_1__2 (top 1.125, +0.3 m)", "fell": false, "dropped": false, "t_end": 20.88, "seated": {}}

@@ -1,1 +1,1 @@
-{"label": "b1_canister_to_dining_table_s8200092", "task": "b1_canister_to_dining_table", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, ExtendableTable__0): underside z 0.703 not on ExtendableTable__0 (top 0.746, +0.3 m)", "fell": false, "dropped": false, "t_end": 58.0, "seated": {}}
+{"label": "b1_canister_to_dining_table_s8200092", "task": "b1_canister_to_dining_table", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, ExtendableTable__0): underside z 0.703 not on ExtendableTable__0 (top 0.746, +0.3 m)", "fell": false, "dropped": false, "t_end": 55.18, "seated": {}}

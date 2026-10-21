@@ -1,1 +1,1 @@
-{"label": "pick_wolf_figurine_s320076", "task": "pick_wolf_figurine", "ok": false, "why": "[goal] held(DisplayWolf): no hand touches it", "fell": false, "dropped": false, "t_end": 44.44, "seated": {}}
+{"label": "pick_wolf_figurine_s320076", "task": "pick_wolf_figurine", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 47.58, "seated": {}}

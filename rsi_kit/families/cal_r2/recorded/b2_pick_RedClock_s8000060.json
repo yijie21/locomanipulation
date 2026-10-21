@@ -1,1 +1,1 @@
-{"label": "b2_pick_RedClock_s8000060", "task": "b2_pick_RedClock", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 82.68, "seated": {}}
+{"label": "b2_pick_RedClock_s8000060", "task": "b2_pick_RedClock", "ok": false, "why": "[goal] held(RedClock): no hand touches it", "fell": false, "dropped": false, "t_end": 71.24, "seated": {}}

@@ -1,1 +1,1 @@
-{"label": "coffee_can_to_cart_s1310013", "task": "coffee_can_to_cart", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, UtilityCart__2): 2.26 m outside UtilityCart__2's footprint", "fell": false, "dropped": false, "t_end": 85.56, "seated": {}}
+{"label": "coffee_can_to_cart_s1310013", "task": "coffee_can_to_cart", "ok": false, "why": "[goal] on(NIT_CoffeeCan_Anon, UtilityCart__2): 2.26 m outside UtilityCart__2's footprint", "fell": false, "dropped": false, "t_end": 75.54, "seated": {}}

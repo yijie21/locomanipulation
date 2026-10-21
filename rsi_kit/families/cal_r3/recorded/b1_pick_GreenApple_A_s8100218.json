@@ -1,1 +1,1 @@
-{"label": "b1_pick_GreenApple_A_s8100218", "task": "b1_pick_GreenApple_A", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 50.68, "seated": {}}
+{"label": "b1_pick_GreenApple_A_s8100218", "task": "b1_pick_GreenApple_A", "ok": false, "why": "[goal] held(GreenApple_A): no hand touches it", "fell": false, "dropped": false, "t_end": 83.76, "seated": {}}

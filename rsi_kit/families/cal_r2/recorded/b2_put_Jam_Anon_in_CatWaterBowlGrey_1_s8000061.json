@@ -1,1 +1,1 @@
-{"label": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1_s8000061", "task": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1", "ok": false, "why": "[goal] in(Jam_Anon, CatWaterBowlGrey_1): outside the container footprint by (+1.97, +2.34) m", "fell": false, "dropped": false, "t_end": 68.48, "seated": {}}
+{"label": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1_s8000061", "task": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1", "ok": false, "why": "[goal] in(Jam_Anon, CatWaterBowlGrey_1): outside the container footprint by (+2.01, +2.23) m", "fell": false, "dropped": false, "t_end": 60.28, "seated": {}}

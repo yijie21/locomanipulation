@@ -1,1 +1,1 @@
-{"label": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0_s8200045", "task": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 145.8, "seated": {}}
+{"label": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0_s8200045", "task": "b1_put_NIT_CoffeeCan_Anon_on_KitchIsland__0", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 72.4, "seated": {}}

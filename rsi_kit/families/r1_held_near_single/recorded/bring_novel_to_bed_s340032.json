@@ -1,1 +1,1 @@
-{"label": "bring_novel_to_bed_s340032", "task": "bring_novel_to_bed", "ok": false, "why": "[goal] held(BookFiction1_00): resting on DisplayShelves_1__0 (underside +0.009 m)", "fell": false, "dropped": false, "t_end": 35.78, "seated": {}}
+{"label": "bring_novel_to_bed_s340032", "task": "bring_novel_to_bed", "ok": false, "why": "[goal] held(BookFiction1_00): no hand touches it", "fell": false, "dropped": false, "t_end": 26.74, "seated": {}}

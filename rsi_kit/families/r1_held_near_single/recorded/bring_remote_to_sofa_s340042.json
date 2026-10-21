@@ -1,1 +1,1 @@
-{"label": "bring_remote_to_sofa_s340042", "task": "bring_remote_to_sofa", "ok": false, "why": "[goal] near(TvRemote_1, GreySofa__2, 0.8): 2.16 m apart (limit 0.80)", "fell": false, "dropped": false, "t_end": 40.1, "seated": {}}
+{"label": "bring_remote_to_sofa_s340042", "task": "bring_remote_to_sofa", "ok": false, "why": "[goal] near(TvRemote_1, GreySofa__2, 0.8): 2.13 m apart (limit 0.80)", "fell": false, "dropped": false, "t_end": 40.22, "seated": {}}

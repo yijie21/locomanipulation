@@ -1,1 +1,1 @@
-{"label": "b2_put_GreenPear_A_on_DisplayUnit_1__1_s8100252", "task": "b2_put_GreenPear_A_on_DisplayUnit_1__1", "ok": false, "why": "[goal] on(GreenPear_A, DisplayUnit_1__1): 4.22 m outside DisplayUnit_1__1's footprint", "fell": false, "dropped": false, "t_end": 60.32, "seated": {}}
+{"label": "b2_put_GreenPear_A_on_DisplayUnit_1__1_s8100252", "task": "b2_put_GreenPear_A_on_DisplayUnit_1__1", "ok": false, "why": "[goal] on(GreenPear_A, DisplayUnit_1__1): 4.25 m outside DisplayUnit_1__1's footprint", "fell": false, "dropped": false, "t_end": 59.08, "seated": {}}

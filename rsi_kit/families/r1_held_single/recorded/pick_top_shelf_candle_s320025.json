@@ -1,1 +1,1 @@
-{"label": "pick_top_shelf_candle_s320025", "task": "pick_top_shelf_candle", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 78.84, "seated": {}}
+{"label": "pick_top_shelf_candle_s320025", "task": "pick_top_shelf_candle", "ok": false, "why": "[goal] held(CandlePattern04_2): no hand touches it", "fell": false, "dropped": false, "t_end": 73.6, "seated": {}}

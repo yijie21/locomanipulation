@@ -1,1 +1,1 @@
-{"label": "orange_pickup_s300073", "task": "orange_pickup", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 59.0, "seated": {}}
+{"label": "orange_pickup_s300073", "task": "orange_pickup", "ok": false, "why": "[goal] held(Orange_A): no hand touches it", "fell": false, "dropped": false, "t_end": 32.96, "seated": {}}

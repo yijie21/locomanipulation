@@ -1,1 +1,1 @@
-{"label": "bring_remote_to_sofa_s340059", "task": "bring_remote_to_sofa", "ok": false, "why": "[goal] held(TvRemote_1): no hand touches it", "fell": false, "dropped": true, "t_end": 46.68, "seated": {}}
+{"label": "bring_remote_to_sofa_s340059", "task": "bring_remote_to_sofa", "ok": false, "why": "[goal] held(TvRemote_1): no hand touches it", "fell": false, "dropped": true, "t_end": 70.94, "seated": {}}

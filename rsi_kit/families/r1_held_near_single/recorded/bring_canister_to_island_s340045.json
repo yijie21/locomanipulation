@@ -1,1 +1,1 @@
-{"label": "bring_canister_to_island_s340045", "task": "bring_canister_to_island", "ok": false, "why": "[goal] held(CoffeeCanisterLarge): no hand touches it", "fell": false, "dropped": true, "t_end": 66.8, "seated": {}}
+{"label": "bring_canister_to_island_s340045", "task": "bring_canister_to_island", "ok": false, "why": "[goal] held(CoffeeCanisterLarge): no hand touches it", "fell": false, "dropped": false, "t_end": 72.46, "seated": {}}

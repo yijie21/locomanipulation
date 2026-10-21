@@ -1,1 +1,1 @@
-{"label": "tv_remote_pickup_s300067", "task": "tv_remote_pickup", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 29.2, "seated": {}}
+{"label": "tv_remote_pickup_s300067", "task": "tv_remote_pickup", "ok": false, "why": "[goal] held(TvRemote_1): no hand touches it", "fell": false, "dropped": false, "t_end": 24.5, "seated": {}}

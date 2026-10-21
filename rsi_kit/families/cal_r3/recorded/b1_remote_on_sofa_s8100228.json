@@ -1,1 +1,1 @@
-{"label": "b1_remote_on_sofa_s8100228", "task": "b1_remote_on_sofa", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 60.28, "seated": {}}
+{"label": "b1_remote_on_sofa_s8100228", "task": "b1_remote_on_sofa", "ok": false, "why": "[goal] on(TvRemote_1, GreySofa__2): 1.25 m outside GreySofa__2's footprint", "fell": false, "dropped": false, "t_end": 30.5, "seated": {}}

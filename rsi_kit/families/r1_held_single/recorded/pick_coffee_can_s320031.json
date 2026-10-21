@@ -1,1 +1,1 @@
-{"label": "pick_coffee_can_s320031", "task": "pick_coffee_can", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 73.42, "seated": {}}
+{"label": "pick_coffee_can_s320031", "task": "pick_coffee_can", "ok": false, "why": "[goal] held(NIT_CoffeeCan_Anon): no hand touches it", "fell": false, "dropped": false, "t_end": 86.88, "seated": {}}

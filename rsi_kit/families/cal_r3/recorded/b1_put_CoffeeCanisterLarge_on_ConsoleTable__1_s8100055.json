@@ -1,1 +1,1 @@
-{"label": "b1_put_CoffeeCanisterLarge_on_ConsoleTable__1_s8100055", "task": "b1_put_CoffeeCanisterLarge_on_ConsoleTable__1", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, ConsoleTable__1): 2.25 m outside ConsoleTable__1's footprint", "fell": false, "dropped": false, "t_end": 42.22, "seated": {}}
+{"label": "b1_put_CoffeeCanisterLarge_on_ConsoleTable__1_s8100055", "task": "b1_put_CoffeeCanisterLarge_on_ConsoleTable__1", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 27.72, "seated": {}}

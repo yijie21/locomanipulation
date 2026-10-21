@@ -1,1 +1,1 @@
-{"label": "b1_vase_centerpiece_s8200248", "task": "b1_vase_centerpiece", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 52.14, "seated": {"WhiteVaseMedium_1": 0.015}}
+{"label": "b1_vase_centerpiece_s8200248", "task": "b1_vase_centerpiece", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, ExtendableTable__0): 1.33 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 48.82, "seated": {"WhiteVaseMedium_1": 0.015}}

@@ -1,1 +1,1 @@
-{"label": "b1_hand_soap_to_bathroom_sink_s8100227", "task": "b1_hand_soap_to_bathroom_sink", "ok": false, "why": "[goal] on(HandSoap_1, ApartmentEnv__3): underside z -0.057 not on ApartmentEnv__3 (top 0.814, +0.3 m)", "fell": false, "dropped": true, "t_end": 66.26, "seated": {}}
+{"label": "b1_hand_soap_to_bathroom_sink_s8100227", "task": "b1_hand_soap_to_bathroom_sink", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 58.66, "seated": {}}

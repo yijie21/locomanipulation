@@ -1,1 +1,1 @@
-{"label": "mug_pickup_s300001", "task": "mug_pickup", "ok": false, "why": "[goal] held(Mug_2): resting on ExtendableTable__0 (underside +0.001 m)", "fell": false, "dropped": false, "t_end": 35.96, "seated": {}}
+{"label": "mug_pickup_s300001", "task": "mug_pickup", "ok": false, "why": "[goal] held(Mug_2): no hand touches it", "fell": false, "dropped": false, "t_end": 54.88, "seated": {}}

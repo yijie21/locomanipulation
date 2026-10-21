@@ -1,1 +1,1 @@
-{"label": "wallet_pickup_s300007", "task": "wallet_pickup", "ok": false, "why": "[goal] held(Wallet_1): no hand touches it", "fell": false, "dropped": false, "t_end": 60.3, "seated": {}}
+{"label": "wallet_pickup_s300007", "task": "wallet_pickup", "ok": false, "why": "[goal] held(Wallet_1): no hand touches it", "fell": false, "dropped": false, "t_end": 54.62, "seated": {}}

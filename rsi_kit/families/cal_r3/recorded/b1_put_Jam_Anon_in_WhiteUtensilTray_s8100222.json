@@ -1,1 +1,1 @@
-{"label": "b1_put_Jam_Anon_in_WhiteUtensilTray_s8100222", "task": "b1_put_Jam_Anon_in_WhiteUtensilTray", "ok": false, "why": "[goal] in(Jam_Anon, WhiteUtensilTray): centre 0.05 m above the rim (resting on it?)", "fell": false, "dropped": true, "t_end": 114.62, "seated": {}}
+{"label": "b1_put_Jam_Anon_in_WhiteUtensilTray_s8100222", "task": "b1_put_Jam_Anon_in_WhiteUtensilTray", "ok": false, "why": "[goal] in(Jam_Anon, WhiteUtensilTray): outside the container footprint by (+1.27, +2.07) m", "fell": false, "dropped": false, "t_end": 87.1, "seated": {}}

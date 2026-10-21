@@ -1,1 +1,1 @@
-{"label": "b1_put_Jam_Anon_in_WhiteTrashBin_s8200105", "task": "b1_put_Jam_Anon_in_WhiteTrashBin", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 99.74, "seated": {}}
+{"label": "b1_put_Jam_Anon_in_WhiteTrashBin_s8200105", "task": "b1_put_Jam_Anon_in_WhiteTrashBin", "ok": false, "why": "[goal] in(Jam_Anon, WhiteTrashBin): centre 0.39 m above the rim (resting on it?)", "fell": false, "dropped": false, "t_end": 102.24, "seated": {}}

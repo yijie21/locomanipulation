@@ -1,1 +1,1 @@
-{"label": "b1_put_TvRemote_1_in_WhiteTrashBin_s8100005", "task": "b1_put_TvRemote_1_in_WhiteTrashBin", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 126.38, "seated": {}}
+{"label": "b1_put_TvRemote_1_in_WhiteTrashBin_s8100005", "task": "b1_put_TvRemote_1_in_WhiteTrashBin", "ok": false, "why": "[goal] in(TvRemote_1, WhiteTrashBin): outside the container footprint by (+1.20, +0.18) m", "fell": false, "dropped": true, "t_end": 131.4, "seated": {}}

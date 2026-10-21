@@ -1,1 +1,1 @@
-{"label": "b1_vase_centerpiece_s8200143", "task": "b1_vase_centerpiece", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, ExtendableTable__0): 1.30 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 49.24, "seated": {"WhiteVaseMedium_1": 0.015}}
+{"label": "b1_vase_centerpiece_s8200143", "task": "b1_vase_centerpiece", "ok": false, "why": "[goal] on(WhiteVaseMedium_1, ExtendableTable__0): 1.30 m outside ExtendableTable__0's footprint", "fell": false, "dropped": false, "t_end": 46.06, "seated": {"WhiteVaseMedium_1": 0.015}}

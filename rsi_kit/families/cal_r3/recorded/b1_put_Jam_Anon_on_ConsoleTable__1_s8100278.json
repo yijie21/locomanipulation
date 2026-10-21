@@ -1,1 +1,1 @@
-{"label": "b1_put_Jam_Anon_on_ConsoleTable__1_s8100278", "task": "b1_put_Jam_Anon_on_ConsoleTable__1", "ok": false, "why": "[goal] on(Jam_Anon, ConsoleTable__1): underside z -0.066 not on ConsoleTable__1 (top 0.696, +0.3 m)", "fell": false, "dropped": true, "t_end": 139.36, "seated": {}}
+{"label": "b1_put_Jam_Anon_on_ConsoleTable__1_s8100278", "task": "b1_put_Jam_Anon_on_ConsoleTable__1", "ok": false, "why": "[goal] on(Jam_Anon, ConsoleTable__1): 3.94 m outside ConsoleTable__1's footprint", "fell": false, "dropped": false, "t_end": 117.9, "seated": {}}

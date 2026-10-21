@@ -1,1 +1,1 @@
-{"label": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3_s8100012", "task": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 63.14, "seated": {}}
+{"label": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3_s8100012", "task": "b1_put_NIT_CoffeeCan_Anon_on_ApartmentEnv__3", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 55.82, "seated": {}}

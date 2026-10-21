@@ -1,1 +1,1 @@
-{"label": "pick_thick_novel_s350072", "task": "pick_thick_novel", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 27.08, "seated": {}}
+{"label": "pick_thick_novel_s350072", "task": "pick_thick_novel", "ok": false, "why": "[goal] held(BookFiction1_01): no hand touches it", "fell": false, "dropped": false, "t_end": 27.94, "seated": {}}

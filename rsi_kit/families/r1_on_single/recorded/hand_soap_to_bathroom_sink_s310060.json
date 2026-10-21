@@ -1,1 +1,1 @@
-{"label": "hand_soap_to_bathroom_sink_s310060", "task": "hand_soap_to_bathroom_sink", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 62.08, "seated": {}}
+{"label": "hand_soap_to_bathroom_sink_s310060", "task": "hand_soap_to_bathroom_sink", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 57.88, "seated": {}}

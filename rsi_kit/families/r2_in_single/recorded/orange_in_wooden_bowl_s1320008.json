@@ -1,1 +1,1 @@
-{"label": "orange_in_wooden_bowl_s1320008", "task": "orange_in_wooden_bowl", "ok": true, "why": "", "fell": false, "dropped": false, "t_end": 90.8, "seated": {}}
+{"label": "orange_in_wooden_bowl_s1320008", "task": "orange_in_wooden_bowl", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 44.12, "seated": {}}

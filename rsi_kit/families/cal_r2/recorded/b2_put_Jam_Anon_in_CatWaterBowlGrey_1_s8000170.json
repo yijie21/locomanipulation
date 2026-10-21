@@ -1,1 +1,1 @@
-{"label": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1_s8000170", "task": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 49.88, "seated": {}}
+{"label": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1_s8000170", "task": "b2_put_Jam_Anon_in_CatWaterBowlGrey_1", "ok": false, "why": "[goal] in(Jam_Anon, CatWaterBowlGrey_1): outside the container footprint by (+1.88, +1.94) m", "fell": false, "dropped": false, "t_end": 63.54, "seated": {}}

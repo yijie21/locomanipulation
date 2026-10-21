@@ -1087,8 +1087,8 @@
 
 - [x] 30.1 量步态：空地直走 4 m，0.25 / 0.5 / 0.8 m/s；场景里三局；SONIC 对照。0.25 m/s 碎步（15 cm、抬脚 2 cm、34–40% 滑行），0.5 m/s 正常迈步。对比视频（私有）：https://claude.ai/artifact/Ss5X8HZdbX1f9RFZiqjfAe
 - [x] 30.2 `MotorConfig.walk_speed` 0.25 → 0.5；`rules.md` 第 7 版；`test_plan_for` 按配置的速度算停步短缺
-- [ ] 30.3 按 0.5 m/s 重测 8 个任务族和 3 个标定样本（`regress.py run`，约 2.5 h），和 0.25 m/s 的记录逐局比，特别看拿着东西走的掉落、窄路、停步精度（用户让先暂停，待用户开口）
-- [ ] 30.4 重测后：`kit.py pack` 更新复现材料，改 `docs/rsi.md`、报告里的数字；检查器的搬运时长规则（按 0.25 m/s 拟合，T = 32.1 + 8.13 d + 25.3·[into]）在 0.5 m/s 下偏保守，要不要重新拟合
+- [x] 30.3 按 0.5 m/s 重测 8 个任务族和 3 个标定样本（2026-10-21，用户同意 TODO 32 的全部重测；`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内。掉落、摔倒逐族见 json
+- [ ] 30.4 重测后：`kit.py pack` 已做（2026-10-21，休眠下的记录）；还要改 `docs/rsi.md`、报告里的数字；检查器的搬运时长规则（按 0.25 m/s 拟合，T = 32.1 + 8.13 d + 25.3·[into]）在 0.5 m/s 下偏保守，要不要重新拟合
 - [ ] 30.5 重测后从新克隆重跑新读者测试（29.5）
 - [ ] 30.6 可选：拐点处“原地转身再直走”改成边走边转（转身时也在蹭）
 
@@ -1111,7 +1111,8 @@
 - [ ] 32.4 S2：MuJoCo 休眠（`mjENBL_SLEEP`，实测每步 1.82 → 0.62 ms，物体被碰到会醒）。用户同意：改变结局，按改场景处理——先按 0.5 m/s 不开休眠重测全部登记（就是 30.3，单独量步速的影响），再开休眠重测，逐局比；`kit.py pack`、文档数字
   - [x] 32.4.1 0.5 m/s、不开休眠（`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（b 1 c 9，p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内；登记表 `last` 没前移
   - [x] 32.4.2 `SceneWorld(sleep=True)`；grasp_atomic 封存集 150 局：224 s（不开 328 s），成功 18 → 19、24 → 25、24 → 26，每组翻转 b 3 c 1–2，摔倒 14 → 9
-  - [ ] 32.4.3 开休眠重测全部登记（tag `sleep_20261021`），和 32.4.1 逐局比；`kit.py pack`、文档数字；r1_slide_then_grasp 在 0.5 m/s 下变差的原因
+  - [x] 32.4.3 开休眠重测全部登记（`regress_sleep_20261021.json`）；和 32.4.1 逐局比（`outputs/rsi_speed_20261021/compare_speed05_20261021_sleep_20261021.json`）：总 b 25 c 28（p 0.78），没有任务族显著变化——休眠只是快。登记表 `last` 手动前移到 `sleep_20261021`（步速和休眠都是用户定的改动；原表存 `outputs/rsi_speed_20261021/registry_before_rebase.json`），`kit.py pack`
+  - [ ] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：查原因（30.x）
 - [x] 32.5 整轮重放：`replay.py setup`（当前代码的新沙盒 + 原运行第 N 轮开始时的状态；`--ref` 固定提交）+ `loop.py run --max-iters 1`；`loop.py` 每轮开头在隐藏树存状态快照。grasp_atomic 第 3 轮桩重放从 Reviewer 走到验收门，现任的诊断局 30 / 30 和原来一致；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
 - [ ] 32.6 Reviewer 分析工具：44 个 Reviewer 会话 37% 的调用在写/跑临时脚本 → `scripts/rsi/tools/`（steps、start、trace、occ、history），沙盒有这个目录时提示词列出（`3bbc5c0`）；重放对照在跑：`outputs/rsi_speed_20261021/ab/plan_review_tools.json`（4 个状态 × 有/无 × 2，`--stop-after probe`，提交 `8e006d4`）
 - [ ] 32.7 角色调用能不能用快速输出：`-p` 支持 `--settings '{"fastMode": true}'`（文档），实测仍是 standard；文档说快速模式只走 usage credits，没开就静默回到 standard——要用户在账号里打开 usage credits（待用户）

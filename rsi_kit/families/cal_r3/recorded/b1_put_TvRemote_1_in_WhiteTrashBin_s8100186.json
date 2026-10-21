@@ -1,1 +1,1 @@
-{"label": "b1_put_TvRemote_1_in_WhiteTrashBin_s8100186", "task": "b1_put_TvRemote_1_in_WhiteTrashBin", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 137.48, "seated": {}}
+{"label": "b1_put_TvRemote_1_in_WhiteTrashBin_s8100186", "task": "b1_put_TvRemote_1_in_WhiteTrashBin", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": true, "t_end": 107.04, "seated": {}}

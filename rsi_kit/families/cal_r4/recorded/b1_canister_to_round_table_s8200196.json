@@ -1,1 +1,1 @@
-{"label": "b1_canister_to_round_table_s8200196", "task": "b1_canister_to_round_table", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, BlackRoundTable__0): 1.48 m outside BlackRoundTable__0's footprint", "fell": false, "dropped": false, "t_end": 47.24, "seated": {}}
+{"label": "b1_canister_to_round_table_s8200196", "task": "b1_canister_to_round_table", "ok": false, "why": "[goal] on(CoffeeCanisterLarge, BlackRoundTable__0): 1.48 m outside BlackRoundTable__0's footprint", "fell": false, "dropped": false, "t_end": 43.3, "seated": {}}

@@ -1,1 +1,1 @@
-{"label": "apple_in_black_bowl_s1320062", "task": "apple_in_black_bowl", "ok": false, "why": "[goal] in(GreenApple_A, BlackCeramicBowl): outside the container footprint by (+0.42, -0.06) m", "fell": false, "dropped": false, "t_end": 76.66, "seated": {}}
+{"label": "apple_in_black_bowl_s1320062", "task": "apple_in_black_bowl", "ok": false, "why": "[goal] robot fell", "fell": true, "dropped": false, "t_end": 17.1, "seated": {}}
