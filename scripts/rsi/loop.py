@@ -89,6 +89,20 @@ ISOLATION = (
 )
 FAMILY = ""
 LOOP = HIDDEN = STATE = GATE_DIR = Path()
+EFFORT: dict = {}  # role -> claude --effort level (run --effort engineer=medium; TODO 32.8)
+STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
+TOOLS_NOTE = (  # TODO 32.6: what 44 Reviewers wrote by hand, as tools (left out of the prompt when the sandbox has none)
+    "Tools for these records (they print tables; run them with {SIM_PY}, from the sandbox root, PYTHONPATH=src): "
+    "`scripts/rsi/tools/steps.py <rounds dir> [--vs <rounds dir>] [--task T] [--step a,b] [--failed]` -- every round's "
+    "steps and numbers, or with --vs the rounds whose outcome differs between two directories; "
+    "`scripts/rsi/tools/start.py <pool dir> <label>` -- a start's geometry: the object in its surface's frame, its "
+    "distance to each edge, the robot's distance and bearing; `scripts/rsi/tools/trace.py <rounds dir> <label> [--from "
+    "T] [--to T] [--every S]` -- the trace: pelvis, each wrist commanded vs measured, jaw, finger contacts, the object's "
+    "height change and offset from the nearer wrist; `scripts/rsi/tools/occ.py <x> <y> [--mark name=x,y]` -- the "
+    "navigation map around a point and the clearance there; `scripts/rsi/tools/history.py {LOOP}/loop` -- every "
+    "iteration's hypotheses, probes, decisions and gate verdicts, and the parks. Use them before writing your own "
+    "scripts; write your own for what they do not show.\n"
+)
 
 CLAIM_SCHEMA = {  # D13.2: an infeasibility claim
     "type": "object",
@@ -215,6 +229,7 @@ def prompt_vars() -> dict:
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
+        TOOLS=TOOLS_NOTE if (HERE / "tools").is_dir() else "",
     )
 
 
@@ -528,6 +543,7 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
         "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
+        *(["--effort", EFFORT[role]] if role in EFFORT else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
     ]  # fmt: skip
     session = str(uuid.uuid4())
@@ -817,6 +833,8 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     cr = verify_claims(claims, inc, it_dir) if claims else []
     jdump(it_dir / "claims.json", cr)
     park(cr, claims, n)
+    if STOP_AFTER == "probe":
+        return "replay: stopped after the probe (--stop-after probe)"
     gaps = gap_candidates()
     jdump(STATE / "gap_candidates.json", gaps)
     ctx = it_dir / "manager_context.json"
@@ -843,6 +861,12 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if dec["decision"] == "review":
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
         return None
+    return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
+
+
+def engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
+    """The Manager's decision carried out: the chosen hypothesis (or the reopened park) to the Engineer, then the
+    gate (after_engineer)."""
     reopen = dec.get("reopen_claim") if dec["decision"] == "reopen" else None
     park_ = jload(STATE / "parked.json", {}).get(reopen) if reopen else None
     if reopen and park_ is None:
@@ -933,6 +957,33 @@ def after_engineer(
     return None
 
 
+def engineer_again(n: int, src: Path, stub: bool) -> str | None:
+    """Iteration n as a replay of another run's iteration `src` from its Manager's decision on (TODO 32.8): that
+    iteration's hypotheses, probes, claims and Manager decision are taken as they were, and only the Engineer and the
+    gate run again -- so a change to the Engineer's call is compared on the same decision."""
+    it_dir = STATE / f"iter_{n:02d}"
+    it_dir.mkdir(parents=True, exist_ok=True)
+    snapshot(n)
+    for f in ("hypotheses.json", "probe.json", "claims.json", "manager.json"):
+        if (src / f).exists():
+            shutil.copy2(src / f, it_dir / f)
+    hyps, pr, dec = jload(it_dir / "hypotheses.json"), jload(it_dir / "probe.json", []), jload(it_dir / "manager.json")
+    if hyps is None or dec is None:
+        raise SystemExit(f"{src} has no hypotheses or Manager decision")
+    if dec["decision"] not in ("engineer", "reopen"):
+        raise SystemExit(f"{src}: the Manager decided {dec['decision']!r}; nothing for the Engineer")
+    inc = incumbent()
+    put_skills(Path(inc["dir"]) / "skills")
+    base_changes = changed_files()
+    base = diag_incumbent(inc, it_dir)
+    ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"), reason=dec["reason"],
+                summary_zh=dec.get("summary_zh", ""), replayed_from=str(src), cost_usd=0.0, seconds=0))  # fmt: skip
+    common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+                  FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
+                  TMP=role_tmp())  # fmt: skip
+    return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
+
+
 def reprobe(n: int, stub: bool) -> str | None:
     """Re-run iteration n's probes on its Reviewer's unchanged hypotheses and continue from the Manager: for probes
     lost to the harness or never run because a driver bug stopped the loop (the hypotheses never saw a probe result,
@@ -973,6 +1024,18 @@ def cmd_run(a) -> int:
         raise SystemExit("draw the pools first (family.py draw ... diag / accept)")
     n = len(list(STATE.glob("iter_*")))
     iters = a.max_iters
+    global STOP_AFTER
+    STOP_AFTER = getattr(a, "stop_after", None)
+    EFFORT.update(dict(x.split("=", 1) for x in getattr(a, "effort", [])))
+    if getattr(a, "engineer_from", None) is not None:  # one iteration: the Engineer and the gate on a recorded decision
+        why = (
+            stop_reason(meta)
+            or engineer_again(n, a.engineer_from.resolve(), a.stub)
+            or "replay: engineer and gate done"
+        )
+        ledger(dict(step="stop", reason=why))
+        print("stop:", why)
+        return 0
     if a.reprobe is not None:  # the re-probed iteration counts as one of --max-iters
         why = reprobe(a.reprobe, a.stub)
         if why:
@@ -1022,6 +1085,11 @@ def main(argv=None) -> int:
     r.add_argument(
         "--reprobe", type=int, default=None, help="re-probe iteration N's hypotheses first (probes lost or not run)"
     )
+    r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
+    r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
+                   help="claude --effort for a role (reviewer, manager, engineer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip
+    r.add_argument("--engineer-from", type=Path, help="replays: the next iteration takes this recorded iteration's "
+                   "hypotheses, probes and Manager decision and runs only the Engineer and the gate (TODO 32.8)")  # fmt: skip
     s = sub.add_parser("status")
     s.add_argument("family")
     a = ap.parse_args(argv)

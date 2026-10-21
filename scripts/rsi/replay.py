@@ -35,7 +35,7 @@ sys.path[:0] = [str(HERE)]
 import sandbox as SB  # noqa: E402
 
 VISIBLE, HIDDEN = "outputs/scene_rsi_20261016", "outputs/scene_rsi_20261016_hidden"
-TEXT = (".json", ".jsonl", ".md", ".patch", ".log", ".txt")
+TEXT = (".json", ".jsonl", ".md", ".patch", ".log", ".txt", ".py")
 
 
 def jl(p: Path) -> list[dict]:
@@ -170,13 +170,18 @@ def setup(src: Path, family: str, n: int, dst: Path) -> None:
     meta.update(started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), started_s=time.time(),
                 replay=dict(source=str(src), iteration=n))  # fmt: skip
     (d_state / "meta.json").write_text(json.dumps(meta, indent=1))
-    # paths of the finished sandbox -> this one
+    # paths of the finished sandbox and of its roles' scratch (loop.role_tmp) -> this one's: a role that opens a path
+    # from the history must stay inside its own sandbox, or the transcript audit voids it
+    subs = [(str(src), str(dst)), (f"rsi_scene_{src.name}", f"rsi_scene_{dst.name}")]
     for root in (d_loop, d_hid):
         for f in root.rglob("*"):
             if f.is_file() and f.suffix in TEXT:
                 t = f.read_text(errors="replace")
-                if str(src) in t:
-                    f.write_text(t.replace(str(src), str(dst)))
+                u = t
+                for a, b in subs:
+                    u = u.replace(a, b)
+                if u != t:
+                    f.write_text(u)
     print(f"{dst}: {family} as iteration {n} began (incumbent {running}, {len(calls)} gate calls, "
           f"{'snapshot' if snap.exists() else 'rebuilt from the ledger'})")  # fmt: skip
 
