@@ -87,7 +87,7 @@ Motor layer (2026-10-16, open floor, one trial each):
 
 - Modes: walking is mode 2 (pelvis + wrists; the policy places its own steps); standing still is mode 4 (pelvis +
   wrists + ankles pinned). Standing 15 s in the apartment, mode 2 widened the stance 27.7 -> 36.1 cm, mode 4
-  26.5 -> 28.0 cm. A walk at 0.5 m/s steps normally (48 cm steps); straight walks stop within 1.5-2 cm.
+  26.5 -> 28.0 cm. Walks run at 0.25 m/s, where mode 2 shuffles (15 cm steps, 2 cm foot lift); straight walks stop within 1.5-2 cm.
 - Furniture collides with the robot only below its lowest surface (a convex hull cut 2 cm under it); above that, hands
   and arms pass through cabinet sides. Free objects rest on 2 cm surface slabs. Walls and the upper parts of tall
   furniture carry extra collision boxes against the robot's arms and head.

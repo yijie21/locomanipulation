@@ -20,7 +20,7 @@ RSI 是 recursive self-improvement 的缩写：系统自己提出任务，自己
 | 谓词与成功判据 | `held`、`on`、`in`、`near`、`upright` 等 | 不能改 | `src/locomani/scene_discovery/predicates.py` |
 | 场景 | ADT 公寓的 MuJoCo 版 | 循环里不能改；人改了要重测 | `outputs/scene_discovery/adt_apartment_mars/` |
 
-走路默认 0.5 m/s（`MotorConfig.walk_speed`，2026-10-20 起）。ScaleBFM 在模式 2 下只拿到骨盆和手腕的目标，步子由它自己迈；0.25 m/s 时它碎步、抬脚 2 cm、脚贴地滑，0.5 m/s 时正常迈步（`outputs/scene_rsi_20261016/gait/`）。2026-10-20 之前的所有结果都是 0.25 m/s 下测的。
+走路默认 0.25 m/s（`MotorConfig.walk_speed`）。ScaleBFM 在模式 2 下只拿到骨盆和手腕的目标，步子由它自己迈；0.25 m/s 时它碎步、抬脚 2 cm、脚贴地滑，0.5 m/s 时正常迈步（`outputs/scene_rsi_20261016/gait/`）。2026-10-20 到 10-21 默认是 0.5 m/s；用户 10-21 改回 0.25，为了停得稳：0.5 m/s 走到位后身体还在晃就伸手，预抓夹爪误差中位 2.27 cm（0.25 m/s 1.28 cm），训练过的 8 个任务族合计 187 → 169 / 632（TODO 32.4.4）。这期间的记录（登记表的 `speed05_20261021`、`sleep_20261021`，grasp_atomic 的进化）是 0.5 m/s 下测的。
 
 起始的技能目录（种子）只有动作层和两个从旧专家移植来的抓取程序。放下、放进容器、拿着走、推开再抓，都是循环自己写出来的。种子在 git 里是第一次写回之前的那一版（`801a28c^`）。
 

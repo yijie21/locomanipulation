@@ -1083,7 +1083,7 @@
 - [ ] 29.7 空地场景 `outputs/scene/walk_mars`（动作层探针、`motor_check.py` 用）没有登记构建命令，要补进 `configs/scenes.yaml`
 - [ ] 29.8 测试 `test_scalebfm_rsi_phase4.py::Restore` 在工作树的提交钩子里继承了 `GIT_DIR`，临时仓库的 `git init` 把共享的 `.git/config` 改成 `bare = true`（10-20 09:06，已改回 `false`，测试已清掉 `GIT_*`）；别的测试里还有没有同样在钩子里跑 git 的，待查
 
-## 30. 动作层默认走路速度 0.5 m/s（用户 2026-10-20：“左右脚蹭着前进”；DECISIONS 2026-10-20 TODO 30；`outputs/scene_rsi_20261016/gait/`）
+## 30. 动作层默认走路速度 0.5 m/s（2026-10-21 改回 0.25 m/s，见 35；用户 2026-10-20：“左右脚蹭着前进”；DECISIONS 2026-10-20 TODO 30；`outputs/scene_rsi_20261016/gait/`）
 
 - [x] 30.1 量步态：空地直走 4 m，0.25 / 0.5 / 0.8 m/s；场景里三局；SONIC 对照。0.25 m/s 碎步（15 cm、抬脚 2 cm、34–40% 滑行），0.5 m/s 正常迈步。对比视频（私有）：https://claude.ai/artifact/Ss5X8HZdbX1f9RFZiqjfAe
 - [x] 30.2 `MotorConfig.walk_speed` 0.25 → 0.5；`rules.md` 第 7 版；`test_plan_for` 按配置的速度算停步短缺
@@ -1112,7 +1112,7 @@
   - [x] 32.4.1 0.5 m/s、不开休眠（`regress_speed05_20261021.json`）：总 b 41 c 50；r1_slide_then_grasp 38 → 30 / 80（b 1 c 9，p 0.011）变差，cal_r3 29 → 37 / 288（p 0.019）变好，其余在噪声内；登记表 `last` 没前移
   - [x] 32.4.2 `SceneWorld(sleep=True)`；grasp_atomic 封存集 150 局：224 s（不开 328 s），成功 18 → 19、24 → 25、24 → 26，每组翻转 b 3 c 1–2，摔倒 14 → 9
   - [x] 32.4.3 开休眠重测全部登记（`regress_sleep_20261021.json`）；和 32.4.1 逐局比（`outputs/rsi_speed_20261021/compare_speed05_20261021_sleep_20261021.json`）：总 b 25 c 28（p 0.78），没有任务族显著变化——休眠只是快。登记表 `last` 手动前移到 `sleep_20261021`（步速和休眠都是用户定的改动；原表存 `outputs/rsi_speed_20261021/registry_before_rebase.json`），`kit.py pack`
-  - [x] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：9 局全是 pick_thick_novel（搁板下的书），插入超时 5–16 cm 或把书碰开 10 cm。诊断（A800，2026-10-21，`scripts/experiments/slide_speed_20261021/probe.py`，结果 `outputs/slide_speed_20261021/remote/`）：本族三个池 190 个起点（书、钱包各 95），当前目录，运行时改动作层、不改技能。书：0.5 m/s 不等 78 / 95；到位后等 0.5 / 1.0 / 1.5 s 83 / 85 / 85（对 0.5 m/s 不等 b 11–13 c 5–6，p 0.17 / 0.084 / 0.072）；0.35 / 0.25 m/s 不等 83 / 82（p 0.17 / 0.27）。预抓夹爪误差中位 2.27 cm、55 / 95 超容差 → 等 1 s 1.22 cm、29 / 95，0.25 m/s 1.28 cm、30 / 95：假设成立（快走到位后身体还在晃就伸手），但多数在 grasp 里追回来，成功只差 4–7 局、不显著。差距集中在封存集的 40 个起点（0.25 vs 0.5 m/s：远端 36 vs 32，本机 38 vs 30），诊断池、验收池上没有（19 vs 21、27 vs 25）——登记里的 p 0.011 有一部分是这 40 个起点带来的。钱包每种设置都是 0–1 / 95（另一个问题）。远端和本机同一设置逐局 73 / 80 一致，不逐位一致。结论：动作层不改；到位后等稳留给技能层（32.4.5）
+  - [x] 32.4.4 r1_slide_then_grasp 在 0.5 m/s 下 38 → 31 / 80（b 2 c 9）：9 局全是 pick_thick_novel（搁板下的书），插入超时 5–16 cm 或把书碰开 10 cm。诊断（A800，2026-10-21，`scripts/experiments/slide_speed_20261021/probe.py`，结果 `outputs/slide_speed_20261021/remote/`）：本族三个池 190 个起点（书、钱包各 95），当前目录，运行时改动作层、不改技能。书：0.5 m/s 不等 78 / 95；到位后等 0.5 / 1.0 / 1.5 s 83 / 85 / 85（对 0.5 m/s 不等 b 11–13 c 5–6，p 0.17 / 0.084 / 0.072）；0.35 / 0.25 m/s 不等 83 / 82（p 0.17 / 0.27）。预抓夹爪误差中位 2.27 cm、55 / 95 超容差 → 等 1 s 1.22 cm、29 / 95，0.25 m/s 1.28 cm、30 / 95：假设成立（快走到位后身体还在晃就伸手），但多数在 grasp 里追回来，成功只差 4–7 局、不显著。差距集中在封存集的 40 个起点（0.25 vs 0.5 m/s：远端 36 vs 32，本机 38 vs 30），诊断池、验收池上没有（19 vs 21、27 vs 25）——登记里的 p 0.011 有一部分是这 40 个起点带来的。钱包每种设置都是 0–1 / 95（另一个问题）。远端和本机同一设置逐局 73 / 80 一致，不逐位一致。结论：动作层不改；到位后等稳留给技能层（32.4.5）。另：逐族看只有本族显著，但 8 个训练过的任务族合起来 0.25 m/s → 0.5 m/s + 休眠（`surfaces_20261020` → `sleep_20261021`）187 → 169 / 632（b 14 c 32，单侧 p 0.006，6 族下降、2 族持平），标定样本 106 → 112 / 856（b 22 c 16）——提速对循环在 0.25 m/s 下写出的技能整体有损，对没训练过的任务没有
   - [ ] 32.4.5 抓取类技能到位后等 1 s 再预抓：作为 r1_slide_then_grasp 下一次循环或 33.5 准备动作层的候选，按验收门走，不手改目录
 - [x] 32.5 整轮重放：`replay.py setup`（当前代码的新沙盒 + 原运行第 N 轮开始时的状态；`--ref` 固定提交）+ `loop.py run --max-iters 1`；`loop.py` 每轮开头在隐藏树存状态快照。grasp_atomic 第 3 轮桩重放从 Reviewer 走到验收门，现任的诊断局 30 / 30 和原来一致；以后流程改动以重放为主（用户：按推荐），最后一次完整内环确认
 - [x] 32.6 Reviewer 分析工具：44 个 Reviewer 会话 37% 的调用在写/跑临时脚本 → `scripts/rsi/tools/`（steps、start、trace、occ、history），沙盒有这个目录时提示词列出（`3bbc5c0`）。重放对照（`outputs/rsi_speed_20261021/ab/plan_review_tools*`，4 个状态 × 有/无 × 2，`--stop-after probe`）：有工具 Reviewer 31.7 min / 8.45 USD、临时脚本调用 27，没有 30.5 min / 7.45 USD、30；探针最好增益 0.12 vs 0.38。没看到好处，默认不开（32.12 的沙盒不带 `scripts/rsi/tools`）
@@ -1121,7 +1121,7 @@
 - [x] 32.9 Harness2 第 1 点：`run --candidates K`——Manager 列至多 K 个假设，K 个 Engineer 各在 `cand_k/` 副本里并行写，每个候选跑诊断池，Composer（`prompts/composer.md`）按翻转合并 / 采纳一个 / 不送，只送一个给验收门；rules.md 第 9 版第 28 条（`e48cdba`）。重放对照（`plan_candidates*`，4 个状态 × K 1 / 3 × 2）：K = 3 被接受 3 / 8（b 4.71 c 0.14），K = 1 2 / 8（b 3.71 c 0.57）；Engineer 段 25.3 vs 15.0 min。样本小，倾向采用：32.12 用 K = 3
 - [x] 32.10 Harness2 第 2 点：`reflect.py`（上下文放在仓库外，不读项目记忆）写 `scripts/rsi/experience/<family>/`：逐条判定 + 至多一条经验 + final.patch，INDEX.md；Reviewer / Engineer 提示词在库存在时指向它；9 个已完成任务族的条目（14 USD）。留一法重放（`plan_library*`，3 个状态 × 有库（去掉本族条目）/ 无库 × 2）：有库 Reviewer 27.9 vs 29.3 min、临时脚本 17 vs 24，探针增益为正的假设 3 / 6 vs 0 / 6；都没到验收门。倾向采用：32.12 带库（10-19 人写的经验库被拒，这是不同形式）
 - [x] 32.11 Harness2 第 3 点：`run --scoped-review`——两个 Reviewer 并行，流程（P）和物体/场景（O）各至多 2 条假设，编号加前缀合并。第一次重放没带上开关（`321aa26` 修好并加测试），重跑（`plan_scoped_final*`，4 个状态 × 分范围 / 单个 × 2）：分范围的 8 个里第 2 遍 4 个撞上用量上限没跑完（线程里的失败变成 KeyError，已修成 RoleFailed 并加测试），剩 4 个：探针最好增益 0 / −1 / 0 / 1，单个 8 个都是 0；Reviewer 费用约 2 倍、时长相同。没有清楚的好处，默认不开，不补跑
-- [ ] 32.12 一次完整内环确认（grasp_atomic 同一批池）
+- [ ] 32.12 一次完整内环确认（grasp_atomic 同一批池；`outputs/rsi_speed_20261021/confirm/launch.sh`）：第一次（0.5 m/s）跑了 10 分钟按用户要求停掉，改 0.25 m/s 后重起（35.1）；和 TODO 31（0.5 m/s）比时混着步速（35.3）
 - 不做：加机器（用户：先不加）；验收门期间提前起下一轮 Reviewer（门只要 5 min，被拒时数据不变）
 
 ## 33. 会换做法、知道自己身体的抓取进化（用户 2026-10-21：“有像人类一样思考，并拥有对自己身体物理边界的认知吗？”；“先写方案，五点都做”；方案 `docs/handoff/scene-rsi-strategy-plan-20261021.md`，D1–D5 待用户定）
@@ -1140,3 +1140,9 @@
 - [x] 34.1 远端 A800（`ssh -p 26804 root@14.103.60.188`）环境：uv + 阿里云镜像，mujoco 3.11、torch 2.6 cu124、onnxruntime、scipy、scikit-fmm；同步代码、物理场景、ScaleBFM 权重、gr00t_wbc ONNX，路径和这边相同（`/workspace/venvs/sim`）
 - [x] 34.2 `backends/gr00t_wbc`：下半身用 GR00T-WholeBodyControl 的 Balance / Walk ONNX（速度 + 躯干高度 + 姿态指令），手臂用现有的 IK 跟手腕目标；`SceneWorld(controller="gr00t_wbc")`，照 TODO 28 的 AMO 后端（`321aa26`）
 - [x] 34.3 对比（都在远端跑，`outputs/gr00t_wbc_compare_20261021/remote_results/`）：抗推（100–300 N）三者都不摔；gr00t 走路更顺（竖直加速度 RMS 1.40 vs 2.05、躯干角速度 0.14 vs 0.48、侧摆 1.4 vs 2.2 cm），站 30 s 脚分开 2.7 vs 7.2 cm，但骨盆漂 3.6 vs 0.6 cm、被推后迈 36–63 cm（ScaleBFM 5 cm）；蹲不到 0.60 m 以下、躯干不前倾，近地伸手误差 5.8 cm。10 个场景任务配对：ScaleBFM 55 / 92，gr00t_wbc 10 / 92（b 2 c 47），h066_p012 7 / 92（b 1 c 49），多数是预抓插入超时。结论：不换控制器
+
+## 35. 走路速度改回 0.25 m/s（用户 2026-10-21：“现在还是把机器人速度改为 0.25m/s 吧，让机器人能更稳定的停下来”；DECISIONS 2026-10-21 TODO 35）
+
+- [x] 35.1 `MotorConfig.walk_speed` 0.5 → 0.25；`rules.md` 第 10 版（第 16 条）；`plans/grasp_atomic.md`、`docs/rsi_design.md`、`docs/rsi.md`。正在跑的 32.12 确认（0.5 m/s，第 1 轮 Reviewer 跑了 10 分钟）停掉，从新提交按 0.25 m/s 重起
+- [ ] 35.2 按 0.25 m/s + 休眠重测全部登记，和 `surfaces_20261020`（0.25 m/s 不休眠）、`sleep_20261021`（0.5 m/s 休眠）逐局比；登记表 `last` 前移、`kit.py pack`、文档数字。32.12 跑完后做（同时跑会拉长 32.12 的时长）
+- [ ] 35.3 32.12 的对照：TODO 31 那次是 0.5 m/s，这次 0.25 m/s——时长（0.25 m/s 每段路慢一倍）和结果的差别混着步速，不能只算到新流程头上

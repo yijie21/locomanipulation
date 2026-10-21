@@ -46,10 +46,11 @@ FF_SPEEDS, FF_SHORT = (0.25, 0.35, 0.55), (0.045, 0.036, 0.016)  # plan program'
 
 @dataclass(frozen=True)
 class MotorConfig:
-    # m/s. 0.25 (the warehouse expert's visual.walk_speed) until 2026-10-20: mode 2 then shuffles -- 15 cm steps, 2 cm
-    # foot lift, 34-40 % of foot travel sliding on the floor; at 0.5 it steps (48 cm, 3-5 cm, 7-9 %; user 2026-10-20,
-    # outputs/scene_rsi_20261016/gait/)
-    walk_speed: float = 0.5
+    # m/s, the warehouse expert's visual.walk_speed. Mode 2 shuffles at it -- 15 cm steps, 2 cm foot lift, 34-40 % of foot
+    # travel sliding on the floor; at 0.5 it steps (48 cm, 3-5 cm, 7-9 %; outputs/scene_rsi_20261016/gait/). 0.5 from
+    # 2026-10-20 to 10-21, back to 0.25 for steadier stops (user 2026-10-21): after a 0.5 m/s walk the body still sways
+    # when the reach starts (pregrasp jaw error 2.27 vs 1.28 cm), and the trained families went 187 -> 169 / 632 (TODO 32.4.4)
+    walk_speed: float = 0.25
     walk_acc: float = 0.6  # m/s^2 (runtime.WALK_ACC)
     turn_rate: float = 0.8  # rad/s peak of an in-place turn
     face_travel_deg: float = 20.0  # a walk longer than face_travel_min_m first turns toward its goal past this

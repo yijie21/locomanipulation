@@ -1,4 +1,4 @@
-# STATE — 2026-10-21 12:30（主线：场景 RSI。TODO 32 提速和 Harness2 三点的重放对照做完；32.12 完整内环确认要起跑；A800 上的两个实验已拉回分析）
+# STATE — 2026-10-21 12:50（主线：场景 RSI。走路速度改回 0.25 m/s（TODO 35）；32.12 完整内环确认按 0.25 m/s 重起）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-20 13:10）：已推送到 origin/main = `f5fb27c`（用户“先把目前的改动 push 到远端”；远端没有新提交，不用合并）。
@@ -25,7 +25,7 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- 32.12：grasp_atomic 从空种子、同一批池，用新流程完整跑一次（`outputs/rsi_speed_20261021/confirm/launch.sh <提交>`，沙盒 `/workspace/code/rsi-scene/ga-confirm-20261021`，5 h 上限）；和 TODO 31 那次（4.9 h、5 轮、2 次采纳、验收池 26 / 40）比时长和结果，之后再定三候选和经验库是否默认开。
+- 32.12：grasp_atomic 从空种子、同一批池，新流程、0.25 m/s 完整跑一次（`outputs/rsi_speed_20261021/confirm/launch.sh <提交>`，沙盒 `/workspace/code/rsi-scene/ga-confirm-025-20261021`，5 h 上限）；跑完和 TODO 31（0.5 m/s：4.2 h 有效、5 轮、2 次采纳、验收池 26 / 40）比，差别混着步速（35.3）。之后按 0.25 m/s + 休眠重测全部登记（35.2）。
 - 32.7：快速输出要用户在账号里开 usage credits。
 - 33：D1–D5 等用户。
 - 30.4：复现材料、文档和报告里的数字改成 0.5 m/s 的；29.5.1–29.5.9 新读者偏差。
