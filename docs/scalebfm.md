@@ -85,7 +85,7 @@ third_party/Isaac-GR00T/.venv/bin/python -m locomani.tasks.bottle_visual.pipelin
 | `reference.py` | `PoseTransition` / `bounded`:连续腕参考插值与限幅 |
 | `state.py` | 91 维学生 state(`STATE_DIMS`,§6) |
 | `camera.py` | `RobotCameraObserver`:`ego_view`(`head_camera`)+ `right_wrist`,320×240 RGB,带 0.4 s 图像历史 |
-| `config.py` | `ScaleBfmBackendConfig`:`checkpoint` / `scene_dir` / `object_name` / `grip_kp` / `grip_kd` / `grip_clip`;JSON 在 `configs/backend/scalebfm.yaml` |
+| `config.py` | `ScaleBfmBackendConfig`:`checkpoint` / `scene_dir` / `object_name` / `grip_kp` / `grip_kd` / `cuda_graph` / `sleep` / `grip_clip`;JSON 在 `configs/backend/scalebfm.yaml`。`cuda_graph`(默认开):`Policy` 前 3 次调用 eager,之后把整个前向(含目标转到骨盆系)捕获成一张 CUDA graph 回放,每次 4.95 → 0.85 ms,输出和 eager 逐位一致;控制模式是图的输入(动作层会在 2 和 4 之间换 `pol.mode`,当成常量捕获会让切换失效,2026-10-21 踩过)。`sleep`(默认关):MuJoCo 的物体休眠,改变结局,只有场景线打开(TODO 32.4)。`Sim` 的场景经 `runtime.load_model` 读,编译结果缓存在 XML 旁的 `.mjb` |
 
 策略接口(每个 50 Hz tick):`root_quat[1,3,4]`(wxyz)、`base_ang_vel[1,3,3]`、`dof_pos` / `dof_vel` / `last_action`
 `[1,3,29]`(**IsaacLab 关节顺序**,metadata `joint_names`)、`target_pos[1,6,14,3]`、`target_quat[1,6,14,4]`

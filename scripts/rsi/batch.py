@@ -1,22 +1,25 @@
 """TODO 27.2.4: round batches for the scene loop and its gate (the warehouse loop's batch.py, for scene_round.py): every
-job -- one skills directory with its overrides, on some starts of a pool -- is cut into shards of SHARD_ROUNDS starts,
-and all shards share one pool of `procs` processes spread over the GPUs, so a slot takes the next shard as soon as it
-frees. Rounds already written under the current success rule are skipped (a batch resumes); a round judged under an
-older rule is set aside as `_rule<n>_<label>.*` and run again.
+job -- one skills directory with its overrides, on some starts of a pool -- puts its missing rounds into one queue, and
+`procs` worker processes spread over the GPUs take rounds from it one at a time until it is empty (TODO 32.2: a worker
+loads the scene and the policy once, about 13 s, where a process per two rounds paid it every 80 s of simulation).
+Rounds already written under the current success rule are skipped (a batch resumes); a round judged under an older
+rule is set aside as `_rule<n>_<label>.*` and run again.
 
-Every shard also holds one of SIM_SLOTS machine-wide slots (a locked file under SLOTS_DIR) while it runs, so batches
+Every worker also holds one of SIM_SLOTS machine-wide slots (a locked file under SLOTS_DIR) while it runs, so batches
 from several sandboxes at once -- two families' loops side by side (TODO 27.10.7, plan §12.6) -- share the machine
 instead of each taking `procs` (12 processes of OMP 2 already fill the container's 15.36 cores). The lock goes with
-the process holding it. A round's outcome does not depend on the schedule (the 2026-10-19 regression re-ran every
-family's sealed pool with 2 processes against records made with 12: identical)."""
+the process holding it. A round's outcome does not depend on the schedule: the 2026-10-19 regression re-ran every
+family's sealed pool with 2 processes against records made with 12, identical; TODO 32.2 re-ran grasp_atomic's sealed
+pool from queue workers against records made two rounds per process, identical."""
 
 from __future__ import annotations
 
 import fcntl
 import json
-import math
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -25,7 +28,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
-SHARD_ROUNDS = 2
 SIM_SLOTS = int(os.environ.get("RSI_SIM_SLOTS", "12"))  # simulation processes across all sandboxes at once; 0: no cap
 SLOTS_DIR = Path(os.environ.get("RSI_SIM_SLOTS_DIR", "/workspace/tmp/rsi_sim_slots"))
 # 1: held(X) = a finger touches it, off its surface (to 2026-10-16); 2: both fingers of one hand, or both hands (TODO 27.9)
@@ -98,41 +100,75 @@ def run_jobs(
     for k, job in enumerate(jobs):
         for x in todo[k]:
             retire(job.out / f"{x}.json")
-    queue = []
-    for k, job in enumerate(jobs):
-        for i in range(math.ceil(len(todo[k]) / SHARD_ROUNDS)):
-            shard = todo[k][i * SHARD_ROUNDS : (i + 1) * SHARD_ROUNDS]
-            cmd = [str(SIM_PY), str(HERE / "scene_round.py"), family, "--pool", str(pool), "--skills", str(job.skills),
-                   "--out", str(job.out), "--labels", ",".join(shard), "--set", json.dumps(job.overrides or {}),
-                   "--controller", job.controller]  # fmt: skip
-            if job.npz:
-                cmd.append("--npz")
-            queue.append(cmd)
-    running: list[tuple[subprocess.Popen, str, object]] = []  # (process, GPU, its slot)
+    q = make_queue(jobs, todo, Path(env["TMPDIR"]))
+    cmd = [str(SIM_PY), str(HERE / "scene_round.py"), family, "--pool", str(pool), "--queue", str(q)]
+    running: list[tuple[subprocess.Popen, str, object]] = []  # (worker, GPU, its slot)
+    failed = 0  # workers that died: a worker that cannot start would otherwise be relaunched for ever
     log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("a") as fh:
-        while queue or running:
-            if stop is not None and stop.is_set():
-                for p, _, slot in running:
-                    p.kill()
-                    p.wait()
-                    if slot is not None:
-                        slot.close()
-                break
-            while queue and len(running) < procs:
-                slot = take_slot() if SIM_SLOTS else None
-                if SIM_SLOTS and slot is None:  # another sandbox's batch holds every slot
+    try:
+        with log.open("a") as fh:
+            while True:
+                if stop is not None and stop.is_set():
+                    for p, _, slot in running:
+                        p.kill()
+                        p.wait()
+                        if slot is not None:
+                            slot.close()
                     break
-                d = min(devices, key=lambda x: sum(g == x for _, g, _ in running))
-                p = subprocess.Popen(queue.pop(0), cwd=REPO, env={**env, "CUDA_VISIBLE_DEVICES": d}, stdout=fh,
-                                     stderr=subprocess.STDOUT)  # fmt: skip
-                running.append((p, d, slot))
-            time.sleep(0.5)
-            for p, _, slot in running:
-                if p.poll() is not None and slot is not None:
-                    slot.close()
-            running = [(p, d, slot) for p, d, slot in running if p.poll() is None]
+                left = queued(q) if failed < 2 * procs else 0
+                while left and len(running) < min(procs, left):
+                    slot = take_slot() if SIM_SLOTS else None
+                    if SIM_SLOTS and slot is None:  # another sandbox's batch holds every slot
+                        break
+                    d = min(devices, key=lambda x: sum(g == x for _, g, _ in running))
+                    p = subprocess.Popen(cmd, cwd=REPO, env={**env, "CUDA_VISIBLE_DEVICES": d}, stdout=fh,
+                                         stderr=subprocess.STDOUT)  # fmt: skip
+                    running.append((p, d, slot))
+                if not running and not left:
+                    break
+                time.sleep(0.5)
+                for p, _, slot in running:
+                    if p.poll() is not None:
+                        failed += p.returncode != 0
+                        if slot is not None:
+                            slot.close()
+                running = [(p, d, slot) for p, d, slot in running if p.poll() is None]
+    finally:
+        shutil.rmtree(q, ignore_errors=True)
     return {k: [x for x in todo[k] if not done(jobs[k].out / f"{x}.json")] for k in todo}
+
+
+def make_queue(jobs: list[Job], todo: dict, tmp: Path) -> Path:
+    """A queue directory for scene_round.py's workers: jobs.json, and one file per missing round under todo/ (job
+    order, then label order); a worker takes a round by renaming its file into taken/ (claim_round)."""
+    tmp.mkdir(parents=True, exist_ok=True)
+    q = Path(tempfile.mkdtemp(prefix="rsi_queue_", dir=tmp))
+    (q / "todo").mkdir()
+    (q / "taken").mkdir()
+    spec = [dict(skills=str(j.skills), out=str(j.out), overrides=j.overrides or {}, npz=j.npz, controller=j.controller)
+            for j in jobs]  # fmt: skip
+    (q / "jobs.json").write_text(json.dumps(spec))
+    n = 0
+    for k in sorted(todo):
+        for x in todo[k]:
+            (q / "todo" / f"{n:06d}.json").write_text(json.dumps(dict(job=k, label=x)))
+            n += 1
+    return q
+
+
+def queued(q: Path) -> int:
+    return sum(1 for _ in (q / "todo").iterdir())
+
+
+def claim_round(q: Path) -> dict | None:
+    """The next round in the queue, taken (renamed into taken/, which only one process can do), or None when empty."""
+    for f in sorted((q / "todo").iterdir()):
+        try:
+            os.rename(f, q / "taken" / f"{f.stem}_{os.getpid()}.json")
+        except FileNotFoundError:  # another worker took it
+            continue
+        return json.loads((q / "taken" / f"{f.stem}_{os.getpid()}.json").read_text())
+    return None
 
 
 def outcomes(out: Path) -> dict:

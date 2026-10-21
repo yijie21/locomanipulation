@@ -756,9 +756,27 @@ def changed_files() -> list[str]:
     return sorted(out)
 
 
+def snapshot(n: int) -> None:
+    """The loop's mutable state as iteration n starts, so replay.py can restart a copy of the loop there (TODO 32.5):
+    the parks, the Manager's focus, the gap files, meta, the ledgers' lengths and the gate's incumbent. In the hidden
+    tree: the gate's incumbent names hidden paths, and the roles must not be led to them."""
+    d = HIDDEN / "state_before" / f"iter_{n:02d}"
+    d.mkdir(parents=True, exist_ok=True)
+    for f in ("parked.json", "focus.json", "gap_candidates.json", "gaps.jsonl", "meta.json", "interventions.jsonl"):
+        if (STATE / f).exists():
+            shutil.copy2(STATE / f, d / f)
+    if (GATE_DIR / "incumbent.json").exists():
+        shutil.copy2(GATE_DIR / "incumbent.json", d / "gate_incumbent.json")
+    n_lines = lambda f: len(f.read_text().splitlines()) if f.exists() else 0  # noqa: E731
+    jdump(
+        d / "lengths.json", dict(ledger=n_lines(STATE / "ledger.jsonl"), gate_ledger=n_lines(GATE_DIR / "ledger.jsonl"))
+    )
+
+
 def iterate(n: int, meta: dict, stub: bool) -> str | None:
     it_dir = STATE / f"iter_{n:02d}"
     it_dir.mkdir(parents=True, exist_ok=True)
+    snapshot(n)
     inc = incumbent()
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()

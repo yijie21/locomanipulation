@@ -33,6 +33,8 @@ REPO = os.environ.get("LOCOMANI_ROOT") or os.path.dirname(os.path.dirname(os.pat
 
 # Everything that is NOT in the repo. Caches, deps, conda, deploy sessions.
 WORKSPACE = os.environ.get("LOCOMANI_WORKSPACE", "/workspace")
+# compiled MuJoCo models by content key (backends/scalebfm/runtime.load_model), shared by every checkout and sandbox
+MJB_CACHE = os.path.join(WORKSPACE, "tmp", "mjb_cache")
 
 SRC = os.path.join(REPO, "src", "locomani")
 # The locomani package's own directory, computed straight from this file's location

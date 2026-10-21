@@ -70,6 +70,50 @@ def parse_set(text: str | None) -> dict:
     return json.loads(Path(text).read_text())
 
 
+def make_world(fam: dict, controller: str) -> SceneWorld:
+    if controller == "amo":  # TODO 28
+        from locomani.backends.amo.runtime import AmoPolicy
+
+        policy = AmoPolicy("cuda")
+    else:
+        policy = R.Policy("cuda", ScaleBfmBackendConfig())
+    return SceneWorld(fam["scene_dir"], policy, controller=controller)
+
+
+def run_round(
+    fam: dict, world: SceneWorld, skills, h: str, pool: Path, out: Path, label: str, overrides: dict, npz: bool,
+    controller: str,
+) -> None:  # fmt: skip
+    f = out / f"{label}.json"
+    if B.done(f):
+        return
+    B.retire(f)
+    row = json.loads((pool / f"{label}.json").read_text())
+    task = F.task(fam, row["task"])
+    start = Start.from_dict(row["start"])
+    plan = skills.plan_for(task)
+    t0 = time.time()
+    if plan is None:
+        rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
+    else:
+        res, arrays = run_episode(world, task, start, plan)
+        ex = res.execution
+        # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start
+        # (the clock onto the console table) counted as one (r1_on_single, human intervention 2, 2026-10-16)
+        dropped = not res.ok and any(
+            float(world.object_pose(k)[0][2]) < float(start.placements[k][0][2]) - DROP_M for k in task.objects
+        )
+        rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
+                   plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
+                   t_end=ex["t_end"], seated=ex["seated"])  # fmt: skip
+        if npz:
+            np.savez_compressed(out / f"{label}.npz", **arrays)
+    rec.update(skills=h, set=overrides, wall_s=round(time.time() - t0, 1), rule=B.SUCCESS_RULE, controller=controller)
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rec, indent=1, default=float))
+    tmp.rename(f)  # a killed process never leaves a half-written round
+
+
 def run(
     fam_name: str,
     pool: Path,
@@ -84,53 +128,39 @@ def run(
     skills = load_skills(skills_dir)
     skills.apply_set(skills, overrides)
     h = skills_hash(skills_dir)
-    if controller == "amo":  # TODO 28
-        from locomani.backends.amo.runtime import AmoPolicy
-
-        policy = AmoPolicy("cuda")
-    else:
-        policy = R.Policy("cuda", ScaleBfmBackendConfig())
-    world = SceneWorld(fam["scene_dir"], policy, controller=controller)
+    world = make_world(fam, controller)
     out.mkdir(parents=True, exist_ok=True)
     for label in labels:
-        f = out / f"{label}.json"
-        if B.done(f):
-            continue
-        B.retire(f)
-        row = json.loads((pool / f"{label}.json").read_text())
-        task = F.task(fam, row["task"])
-        start = Start.from_dict(row["start"])
-        plan = skills.plan_for(task)
-        t0 = time.time()
-        if plan is None:
-            rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
-        else:
-            res, arrays = run_episode(world, task, start, plan)
-            ex = res.execution
-            # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start
-            # (the clock onto the console table) counted as one (r1_on_single, human intervention 2, 2026-10-16)
-            dropped = not res.ok and any(
-                float(world.object_pose(k)[0][2]) < float(start.placements[k][0][2]) - DROP_M for k in task.objects
-            )
-            rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
-                       plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
-                       t_end=ex["t_end"], seated=ex["seated"])  # fmt: skip
-            if npz:
-                np.savez_compressed(out / f"{label}.npz", **arrays)
-        rec.update(
-            skills=h, set=overrides, wall_s=round(time.time() - t0, 1), rule=B.SUCCESS_RULE, controller=controller
-        )
-        tmp = f.with_suffix(".tmp")
-        tmp.write_text(json.dumps(rec, indent=1, default=float))
-        tmp.rename(f)  # a killed process never leaves a half-written round
+        run_round(fam, world, skills, h, pool, out, label, overrides, npz, controller)
+
+
+def work(fam_name: str, pool: Path, q: Path) -> None:
+    """A batch.py worker (TODO 32.2): take rounds from the queue `q` until it is empty. The scene and the policy load
+    once; a job's skills package loads when the worker takes its first round of that job (fresh, as a process per job
+    did), its overrides applied."""
+    fam = F.load(fam_name)
+    jobs = json.loads((q / "jobs.json").read_text())
+    world, cur, skills, h = None, None, None, ""
+    while (t := B.claim_round(q)) is not None:
+        job = jobs[t["job"]]
+        if t["job"] != cur:
+            skills = load_skills(Path(job["skills"]))
+            skills.apply_set(skills, job["overrides"])
+            h, cur = skills_hash(Path(job["skills"])), t["job"]
+        if world is None or world.controller != job["controller"]:
+            world = make_world(fam, job["controller"])
+        out = Path(job["out"])
+        out.mkdir(parents=True, exist_ok=True)
+        run_round(fam, world, skills, h, pool, out, t["label"], job["overrides"], job["npz"], job["controller"])
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("family")
     ap.add_argument("--pool", type=Path, required=True)
-    ap.add_argument("--skills", type=Path, required=True, help="a skills package directory")
-    ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--skills", type=Path, help="a skills package directory")
+    ap.add_argument("--out", type=Path)
+    ap.add_argument("--queue", type=Path, help="a batch.py queue directory: work through it (--skills/--out unused)")
     ap.add_argument("--labels", default="", help="comma-separated start labels (default: the whole pool)")
     ap.add_argument("--set", default="", help="parameter overrides: inline JSON or a JSON file")
     ap.add_argument("--npz", action="store_true", help="also save each round's motor trace")
@@ -138,6 +168,11 @@ def main(argv=None) -> int:
         "--controller", choices=("scalebfm", "amo"), default="scalebfm", help="whole-body controller (TODO 28)"
     )
     a = ap.parse_args(argv)
+    if a.queue is not None:
+        work(a.family, a.pool, a.queue)
+        return 0
+    if a.skills is None or a.out is None:
+        ap.error("--skills and --out are required without --queue")
     labels = [x for x in a.labels.split(",") if x] or F.labels(a.pool)
     run(a.family, a.pool, a.skills, a.out, labels, parse_set(a.set), a.npz, a.controller)
     return 0

@@ -54,6 +54,40 @@ PELVIS_Z = 0.76  # ScaleBFM's root_height
 MODE = 2
 
 
+def load_model(xml: str) -> mujoco.MjModel:
+    """`xml` compiled, through a binary cache (`paths.MJB_CACHE/<key>.mjb`): the ADT apartment takes 6.8 s to compile
+    and 0.13 s to load as MJB, and the MJB model is the same model (re-saved byte for byte; 2000 steps give the same
+    qpos, TODO 32.2). The key covers the XML's bytes, the size and mtime of every file it names and the MuJoCo
+    version; nothing is written beside the XML (tests compile fixtures). An unwritable cache falls back to compiling.
+    Old keys are not pruned (the apartment's is 269 MB)."""
+    import hashlib
+    import re
+
+    from locomani.paths import MJB_CACHE
+
+    text = open(xml, "rb").read()
+    h = hashlib.sha256(text + mujoco.__version__.encode())
+    for f in sorted(set(re.findall(rb'file="([^"]+)"', text))):
+        p = os.path.join(os.path.dirname(xml), f.decode())
+        st = os.stat(p) if os.path.exists(p) else None
+        h.update(f + (f"{st.st_size}:{st.st_mtime_ns}" if st else "missing").encode())
+    cache = os.path.join(MJB_CACHE, h.hexdigest()[:32] + ".mjb")
+    if os.path.exists(cache):
+        try:
+            return mujoco.MjModel.from_binary_path(cache)
+        except Exception:  # a truncated file from a killed writer: compile and replace it
+            pass
+    m = mujoco.MjModel.from_xml_path(xml)
+    try:
+        os.makedirs(MJB_CACHE, exist_ok=True)
+        tmp = f"{cache}.{os.getpid()}.tmp"
+        mujoco.mj_saveModel(m, tmp, None)
+        os.replace(tmp, cache)
+    except OSError:
+        pass
+    return m
+
+
 def rot_z(a):
     c, s = np.cos(a), np.sin(a)
     return np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]])
@@ -97,12 +131,14 @@ class Sim:
     def __init__(self, meta, video=False, backend: ScaleBfmBackendConfig | None = None, perturb: dict | None = None):
         self.cfg = backend or ScaleBfmBackendConfig()
         scene = self.cfg.scene_path()
-        self.m = mujoco.MjModel.from_xml_path(os.path.join(scene, "scene_locomani.xml"))
+        self.m = load_model(os.path.join(scene, "scene_locomani.xml"))
         self.d = mujoco.MjData(self.m)
         self.smeta = json.load(open(os.path.join(scene, "scene_meta.json")))
         self.low_dt = 0.005
         self.decim = 4
         self.m.opt.timestep = self.low_dt
+        if self.cfg.sleep:
+            self.m.opt.enableflags |= int(mujoco.mjtEnableBit.mjENBL_SLEEP)
         jn = meta["joint_names"]
         jid = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, n) for n in jn]
         assert min(jid) >= 0, "joint missing in the scene"
@@ -258,6 +294,58 @@ class Policy:
         self.toff = torch.tensor(self.fidx, dtype=torch.long, device=device)[None, :, None]
         self.mode = torch.tensor([MODE], dtype=torch.long, device=device)
         self.isel = {n: i for i, n in enumerate(self.sel)}
+        self.graph = self.cfg.cuda_graph and str(device).startswith("cuda")
+        self.eager_calls, self.g = 0, None
+        # one host buffer for every input, each part starting on a 512-byte boundary as a tensor of its own would
+        # (cuBLAS may choose its kernel by alignment, and the outputs must stay bit for bit those of the eager path)
+        shapes = dict(rq=(1, self.H, 4), av=(1, self.H, 3), dp=(1, self.H, 29), dv=(1, self.H, 29),
+                      ac=(1, self.H, 29), pw=(1, self.F, self.N, 3), qw=(1, self.F, self.N, 4), rp=(3,))  # fmt: skip
+        self.parts, o = {}, 0
+        for k, sh in shapes.items():
+            self.parts[k] = (o, sh)
+            o += -(-int(np.prod(sh)) // 128) * 128
+        self.host = np.zeros(o, np.float32)
+
+    # eager calls before the capture: the first call differs by ~6e-8 (cuBLAS set-up; motor.reset warms up)
+    EAGER_FIRST = 3
+
+    def forward(self, flat: torch.Tensor, mode: torch.Tensor) -> torch.Tensor:
+        """The packed inputs to [tgt..., action...] (flat): the targets into the root frame, then the network in `mode`
+        (the motor switches `self.mode` between 2 and 4, so the graph takes it as an input like the rest)."""
+        x = {k: flat[o : o + int(np.prod(sh))].view(sh) for k, (o, sh) in self.parts.items()}
+        root_q = x["rq"][:, -1]
+        tp = quat_apply_inverse(root_q, x["pw"] - x["rp"][None, None, None, :])
+        tq = quat_mul_inverse_left(root_q[:, None, None, :].expand(-1, self.F, self.N, -1), x["qw"])
+        tgt, act = self.w(x["rq"], x["av"], x["dp"], x["dv"], x["ac"], tp, tq, mode, self.toff)
+        self.n_tgt = tgt[0].numel()
+        self.tgt_shape = tuple(tgt[0].shape)
+        return torch.cat([tgt[0].reshape(-1), act[0].reshape(-1)])
+
+    def net(self, host: np.ndarray) -> np.ndarray:
+        """`forward` on the packed inputs: eager, or (cfg.cuda_graph) the same kernels captured once into a CUDA graph
+        and replayed on a static copy of the inputs (TODO 32.3: 7.8 -> 3.5 ms a call with twelve rounds running;
+        600 calls bit for bit the eager outputs)."""
+        if not self.graph or self.eager_calls < self.EAGER_FIRST:
+            self.eager_calls += 1
+            with torch.inference_mode():
+                return self.forward(torch.as_tensor(host, device=self.dev), self.mode).cpu().numpy()
+        if self.g is None:
+            self.pinned = torch.from_numpy(host.copy()).pin_memory()
+            self.gin = torch.as_tensor(host, device=self.dev).clone()
+            self.gmode = self.mode.clone()
+            side = torch.cuda.Stream()
+            side.wait_stream(torch.cuda.current_stream())
+            with torch.cuda.stream(side), torch.inference_mode():
+                self.forward(self.gin, self.gmode)
+            torch.cuda.current_stream().wait_stream(side)
+            self.g = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(self.g), torch.inference_mode():
+                self.gout = self.forward(self.gin, self.gmode)
+        self.pinned.numpy()[:] = host
+        self.gin.copy_(self.pinned, non_blocking=True)
+        self.gmode.copy_(self.mode)
+        self.g.replay()
+        return self.gout.cpu().numpy()
 
     def reset(self, st):
         H = self.H
@@ -284,28 +372,16 @@ class Policy:
         for n, (p, q) in targets.items():
             pw[:, self.isel[n]] = p
             qw[:, self.isel[n]] = q
-        t = lambda a: torch.as_tensor(np.asarray(a, dtype=np.float32), device=self.dev)
-        rq = t(self.buf["root_quat"])[None]
-        root_q = rq[:, -1]
-        pw_t = t(pw)[None]
-        qw_t = t(qw)[None]
-        tp = quat_apply_inverse(root_q, pw_t - t(st["root_pos"])[None, None, None, :])
-        tq = quat_mul_inverse_left(root_q[:, None, None, :].expand(-1, self.F, self.N, -1), qw_t)
-        with torch.inference_mode():
-            tgt, act = self.w(
-                rq,
-                t(self.buf["ang_vel"])[None],
-                t(self.buf["dof_pos"])[None],
-                t(self.buf["dof_vel"])[None],
-                t(self.buf["action"])[None],
-                tp,
-                tq,
-                self.mode,
-                self.toff,
-            )
+        h = self.host
+        for k, a in (("rq", self.buf["root_quat"]), ("av", self.buf["ang_vel"]), ("dp", self.buf["dof_pos"]),
+                     ("dv", self.buf["dof_vel"]), ("ac", self.buf["action"]), ("pw", pw), ("qw", qw),
+                     ("rp", st["root_pos"])):  # fmt: skip
+            o, sh = self.parts[k]
+            h[o : o + int(np.prod(sh))] = np.asarray(a, dtype=np.float32).reshape(-1)
+        out = self.net(h)
         self.buf["action"] = np.roll(self.buf["action"], -1, 0)
-        self.buf["action"][-1] = act[0].cpu().numpy()
-        return tgt[0].cpu().numpy()
+        self.buf["action"][-1] = out[self.n_tgt :]
+        return out[: self.n_tgt].reshape(self.tgt_shape)
 
 
 # --- reference builders ---------------------------------------------------------
