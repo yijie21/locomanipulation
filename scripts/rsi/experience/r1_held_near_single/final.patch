@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/__init__.py /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/__init__.py
---- /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/__init__.py	2026-10-17 12:03:45.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/__init__.py	2026-10-17 12:39:37.015226245 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/__init__.py b/__init__.py
+--- a/__init__.py	2026-10-17 12:03:45.000000000 +0000
++++ b/__init__.py	2026-10-17 12:39:37.015226245 +0000
 @@ -11,16 +11,17 @@
  
  from locomani.scene_discovery.predicates import parse
@@ -45,9 +45,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/
          mod = getattr(package, name)
          for k, v in vars(mod).items():
              if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/near.py /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/near.py
---- /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/near.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/near.py	2026-10-17 13:54:26.395996857 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/near.py b/near.py
+--- a/near.py	1970-01-01 00:00:00.000000000 +0000
++++ b/near.py	2026-10-17 13:54:26.395996857 +0000
 @@ -0,0 +1,286 @@
 +"""Skill `bring_near` (r1_held_near_single loop, iteration 0; the family's gap goal.near, rules 24): held(X) and
 +near(X, T, d) -- pick X, carry it to a stance from which it sits within d of T, and end still gripping it.
@@ -335,9 +335,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/
 +    if side not in m.gripping(body):
 +        return Outcome(False, f"dropped during the carry: the {side} hand no longer grips it", walked.t0, m.t)
 +    return Outcome(True, "", out.t0, m.t)
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/place.py /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/place.py
---- /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/place.py	2026-10-17 12:03:45.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/place.py	2026-10-17 13:50:01.472791641 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/place.py b/place.py
+--- a/place.py	2026-10-17 12:03:45.000000000 +0000
++++ b/place.py	2026-10-17 13:50:01.472791641 +0000
 @@ -113,6 +113,8 @@
  HELD_OUT_MAX_M = 0.03  # object centre at most this far out along the fingers after the lift, else set back
  UPRIGHT_TILT_DEG = 10.0  # reference pelvis tilt above which the robot stands up before its first walk
@@ -447,9 +447,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/
      return None
  
  
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/test_near.py /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/test_near.py
---- /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016/r1_held_near_single/incumbents/2d7dc7a216d5/skills/test_near.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-near-a/outputs/scene_rsi_20261016_hidden/r1_held_near_single/gate/02_00a754a08cc4/cand/skills/test_near.py	2026-10-17 13:54:26.395996857 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_near.py b/test_near.py
+--- a/test_near.py	1970-01-01 00:00:00.000000000 +0000
++++ b/test_near.py	2026-10-17 13:54:26.395996857 +0000
 @@ -0,0 +1,211 @@
 +"""held(X) and near(X, T, d) (near.py): `plan_for` sends held(X) with exactly one near(X, T, d) of the same X, upright(X)
 +or not, to `near.bring_near` over the PLAN_HELD pick; the end stance puts the carried object's predicted xy within

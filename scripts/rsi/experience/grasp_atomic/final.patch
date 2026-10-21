@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/__init__.py /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/__init__.py
---- /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/__init__.py	2026-10-20 12:39:55.000000000 +0000
-+++ /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/__init__.py	2026-10-20 17:33:33.806239643 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/__init__.py b/__init__.py
+--- a/__init__.py	2026-10-20 12:39:55.000000000 +0000
++++ b/__init__.py	2026-10-20 17:33:33.806239643 +0000
 @@ -1,5 +1,6 @@
 -"""The scene RSI loop's skill library, atomic seed (TODO 31, user 2026-10-20): no skill yet. A sandbox built for a family
 -whose `sandbox.seed` names this directory starts its skills package from it (scripts/rsi/sandbox.py).
@@ -29,9 +29,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/grasp-atomic-a/out
      return None
  
  
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/pick.py /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/pick.py
---- /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016/grasp_atomic/incumbents/0d3a2b28dad6/skills/pick.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/grasp-atomic-a/outputs/scene_rsi_20261016_hidden/grasp_atomic/gate/05_47dae34f3d70/cand/skills/pick.py	2026-10-20 17:33:33.842239633 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	1970-01-01 00:00:00.000000000 +0000
++++ b/pick.py	2026-10-20 17:33:33.842239633 +0000
 @@ -0,0 +1,416 @@
 +"""pick(ctx, X): the plain end-to-end pick for `held(X)` (grasp_atomic H1, iteration 1), built on the motor layer only;
 +the hand clearance against surface slabs and fronts (2a, 3a) is iteration 3's H2 and H1, narrowed in iteration 4 so

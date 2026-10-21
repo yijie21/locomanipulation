@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/incumbents/b897126e9dde/skills/pick.py /workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/incumbents/0109bde905a8/skills/pick.py
---- /workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/incumbents/b897126e9dde/skills/pick.py	2026-10-16 03:33:04.000000000 +0000
-+++ /workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/incumbents/0109bde905a8/skills/pick.py	2026-10-16 08:20:09.643070480 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	2026-10-16 03:33:04.000000000 +0000
++++ b/pick.py	2026-10-16 08:20:09.643070480 +0000
 @@ -2,15 +2,36 @@
  furniture to a stance at an approachable edge from which a side of the object fits the jaw (its own box, `grasp_yaw`),
  reach the jaw to the pre-grasp with the motor layer (whole-body IK + servo), then the 65-object line's closed-loop hand

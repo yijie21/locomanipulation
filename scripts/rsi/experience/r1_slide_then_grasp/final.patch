@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/cover.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py
---- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/cover.py	2026-10-17 14:56:38.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/cover.py	2026-10-17 17:23:21.097959461 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/cover.py b/cover.py
+--- a/cover.py	2026-10-17 14:56:38.000000000 +0000
++++ b/cover.py	2026-10-17 17:23:21.097959461 +0000
 @@ -4,7 +4,8 @@
  RESTING_GAP_M below X's underside, with no lower bound: a wolf figurine lifted 10 cm on the corner display shelf's
  middle shelf failed as "resting on" the shelf 0.40 m above it. `resting_on` re-implements that rule from the object's
@@ -33,9 +33,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs
 +        axis = int(np.argmax(np.abs(back)))
 +        out = min(out, float(np.sign(back[axis]) * to_surface_frame(xy, s)[axis] - flat[axis]))
 +    return float(out)
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/grasp_program.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py
---- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/grasp_program.py	2026-10-17 14:56:38.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/grasp_program.py	2026-10-17 17:24:00.761754299 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/grasp_program.py b/grasp_program.py
+--- a/grasp_program.py	2026-10-17 14:56:38.000000000 +0000
++++ b/grasp_program.py	2026-10-17 17:24:00.761754299 +0000
 @@ -98,13 +98,30 @@
      return palm_R.T @ (obj_pos - tool)
  
@@ -194,9 +194,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs
          if not m.tick():
              return done(False, f"fell in {phase}")
  
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/held.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py
---- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/held.py	2026-10-17 14:56:38.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/held.py	2026-10-17 17:38:24.575229666 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/held.py b/held.py
+--- a/held.py	2026-10-17 14:56:38.000000000 +0000
++++ b/held.py	2026-10-17 17:38:24.575229666 +0000
 @@ -3,6 +3,12 @@
  The goal's held(X) reads X as still resting on a shelf above it (cover.py: a wolf figurine lifted 10 cm on the corner
  display shelf's middle shelf failed as "resting on" the shelf 0.40 m above it). A pick that ends with X under such a
@@ -253,9 +253,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs
          if cover.overhead(world, key):
              step = ctx.note("back_off", m.sidestep(forward=-WITHDRAW_BACK_M), under=cover.overhead(world, key))
              if m.fell_at is not None:
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/pick.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py
---- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/pick.py	2026-10-17 14:56:38.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/pick.py	2026-10-17 17:38:24.575229666 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	2026-10-17 14:56:38.000000000 +0000
++++ b/pick.py	2026-10-17 17:38:24.575229666 +0000
 @@ -60,7 +60,17 @@
  (`back_out`) and plans and runs again from the object's pose now, up to RETRY_ATTEMPTS times. Part of what fails is
  one attempt, not the start: a coffee-table candle knocked 5 cm in the settle by the controller's lunge after a 3.2 cm
@@ -346,9 +346,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs
  
  
  def min_jaw(pitch: float, points=None, clear: float | None = None) -> float:
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/test_held.py /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/test_held.py
---- /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/bb14d5bf66d8/skills/test_held.py	2026-10-17 14:56:38.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-slide-a/outputs/scene_rsi_20261016/r1_slide_then_grasp/incumbents/fba81e5762ec/skills/test_held.py	2026-10-17 17:38:24.575229666 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_held.py b/test_held.py
+--- a/test_held.py	2026-10-17 14:56:38.000000000 +0000
++++ b/test_held.py	2026-10-17 17:38:24.575229666 +0000
 @@ -108,6 +108,36 @@
          self.assertFalse(out.ok)
          self.assertIn("resting on ['U']", out.why)

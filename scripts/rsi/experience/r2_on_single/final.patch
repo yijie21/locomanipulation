@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/__init__.py /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/__init__.py
---- /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/__init__.py	2026-10-18 07:51:10.000000000 +0000
-+++ /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/__init__.py	2026-10-18 14:44:12.143713969 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/__init__.py b/__init__.py
+--- a/__init__.py	2026-10-18 07:51:10.000000000 +0000
++++ b/__init__.py	2026-10-18 14:44:12.143713969 +0000
 @@ -9,6 +9,7 @@
  
  from __future__ import annotations
@@ -53,9 +53,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/sc
  def apply_set(package, overrides: dict) -> list[str]:
      """Set parameters on a loaded skills package: "NAME" (the package's own), "module.NAME", or "module.NAME.key"
      (an entry of a dict parameter). Unknown names raise (a typo must not run silently). Returns the keys set."""
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/grasp_program.py /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/grasp_program.py
---- /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/grasp_program.py	2026-10-18 07:51:10.000000000 +0000
-+++ /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/grasp_program.py	2026-10-18 14:44:12.147713946 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/grasp_program.py b/grasp_program.py
+--- a/grasp_program.py	2026-10-18 07:51:10.000000000 +0000
++++ b/grasp_program.py	2026-10-18 14:44:12.147713946 +0000
 @@ -31,6 +31,7 @@
      lift_seconds=2.0,
      disturb_limit_m=0.05,
@@ -73,9 +73,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/sc
              if gate["on"] and max(abs(off[1]), abs(off[2])) > gate["lateral_m"] and gate_held < gate["hold_s"]:
                  gate_held += dt
              else:
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/pick.py /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/pick.py
---- /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/pick.py	2026-10-18 07:51:10.000000000 +0000
-+++ /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/pick.py	2026-10-18 14:44:12.151713925 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	2026-10-18 07:51:10.000000000 +0000
++++ b/pick.py	2026-10-18 14:44:12.151713925 +0000
 @@ -70,7 +70,18 @@
  an entry stopping 5 cm short instead of 2.5 (the jaw 3-4.6 cm from the centre), no lateral correction, twice the
  squeeze (about 20 N), a 1.5 cm rise threshold for a pivoted book, and held.pick_held's pull out to NARROW pull_m
@@ -345,9 +345,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/sc
  def route(occ, nav, start_xy, goal_xy) -> list | None:
      """navigate.path, or -- when the start is inside a floor object's inflation, where the field cannot start -- a
      straight leg out to the nearest free cell first."""
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/place.py /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/place.py
---- /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/place.py	2026-10-18 07:51:10.000000000 +0000
-+++ /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/place.py	2026-10-18 14:53:04.240710540 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/place.py b/place.py
+--- a/place.py	2026-10-18 07:51:10.000000000 +0000
++++ b/place.py	2026-10-18 14:53:04.240710540 +0000
 @@ -74,7 +74,12 @@
    on one finger); the open jaw moves onto the object's centre along the wrist y (clearance.centre_move), backs out
    RETRACT_M along the fingers level, then rises RETRACT_RISE_M (the rising retract dragged leaning objects over).
@@ -654,9 +654,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/sc
      if m.fell_at is not None:
          return None, f"putting it back: {'; '.join(off)}"
      return surface_below(world, key, (home["surface"],), margin=0.0), "walked back"
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/test_held.py /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/test_held.py
---- /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/test_held.py	2026-10-18 07:51:10.000000000 +0000
-+++ /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/test_held.py	2026-10-18 14:44:12.151713925 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_held.py b/test_held.py
+--- a/test_held.py	2026-10-18 07:51:10.000000000 +0000
++++ b/test_held.py	2026-10-18 14:44:12.151713925 +0000
 @@ -257,6 +257,180 @@
              np.testing.assert_allclose(via, [1.8 - out, 2.0, 0.45], atol=1e-12, err_msg=str(upper))
  
@@ -849,9 +849,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/sc
      def test_a_fall_while_backing_out_ends_the_pick(self):
          ctx = self._ctx()
  
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/test_plan_for.py /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/test_plan_for.py
---- /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016/r2_on_single/incumbents/fba81e5762ec/skills/test_plan_for.py	2026-10-18 07:51:10.000000000 +0000
-+++ /workspace/code/rsi-scene/r2-on-a/outputs/scene_rsi_20261016_hidden/r2_on_single/gate/05_d99d433524f3/cand/skills/test_plan_for.py	2026-10-18 14:49:48.797816784 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_plan_for.py b/test_plan_for.py
+--- a/test_plan_for.py	2026-10-18 07:51:10.000000000 +0000
++++ b/test_plan_for.py	2026-10-18 14:49:48.797816784 +0000
 @@ -1,13 +1,13 @@
 -"""The put-down's pure parts (place.py): `plan_for` sends a goal of on(...) and upright(...) to `place.place_on` once per
 -on(X, S) in goal order and keeps held(X) on the pick; a spot sees what rests on the target by its pose, not by the

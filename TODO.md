@@ -1102,6 +1102,7 @@
 - [x] 31.5 参照线：原子种子、旧种子、当前目录在同一个封存集上按 0.5 m/s 测——种子 0/50，旧种子 2/50，当前目录 24/50
 - [x] 31.6 跑内环（2026-10-20 12:47–17:42 UTC，6 轮，第 0 轮因 Reviewer `ls /workspace/tmp/` 作废；验收门 5 次，采纳 2 次：第 1 轮 `058a5733e09e` 验收 20/40、第 5 轮重开杯子搁置后 `47dae34f3d70` 26/40，b6 c0 p 0.016；按未搁置 36 局 ≥ 70% 停）。封存集 50 局：第 1 版 18/50，第 2 版 24/50（95% 区间 35–62%，摔 5 局），和当前目录打平但强项不同（狼摆件/杯子/花瓶 vs 遥控/蜡烛/绿植），木勺两边 0/5；被拒候选 18/23/21——第 3 轮候选 23/50，50 局分不开它和第 2 版。模型费 57 USD
 - [x] 31.7 进化过程页面（时间线 + 逐物体热图 + 视频）：https://claude.ai/artifact/Cm4CZTFfFp8tvid6GxyKKp ，源在 `outputs/scene_rsi_20261016/grasp_atomic_media/`（`page_data.py` → `build_page.py`）
+- [x] 31.8 页面第 2 版（用户 2026-10-21：mentor 看不懂 8 个原子技能、每个物体怎么一步步变好、最终怎么串起来）：同一个链接重发。8 个原子动作各一段演示视频（TODO 31 沙盒自己的代码、0.5 m/s 拍，`v2/prim_demo.py`）；每轮的问题 / 写的代码 / 验收结果 + 7 段前后对比视频（被拒候选的验收起点用同样代码重跑，8 局 7 局逐位一致）；10 个物体各一张成绩表（诊断 3 局 × 6 个版本、封存 5 局）、怎么变好的、最终调用顺序图（步骤 → 原子动作，按哪一轮写进来的着色）和视频；每段视频下方标当前步骤和它调用的原子动作。源在 `outputs/scene_rsi_20261016/grasp_atomic_media/v2/`（`extract.py`、`rerun.sh`、`prim_demo.py`、`media_v2.py`、`build_v2.py`）
 
 ## 32. RSI 提速，再按顺序做 Harness2 的 3 点（用户 2026-10-21：“现在的一个改动需要的验证时间还是太久了，动辄 5-8 个小时……工程上的效率提升……pipeline 的优化”；“那按照这个顺序吧 3 点都按顺序做了”；DECISIONS 2026-10-21 TODO 32）
 
@@ -1121,7 +1122,9 @@
 - [x] 32.9 Harness2 第 1 点：`run --candidates K`——Manager 列至多 K 个假设，K 个 Engineer 各在 `cand_k/` 副本里并行写，每个候选跑诊断池，Composer（`prompts/composer.md`）按翻转合并 / 采纳一个 / 不送，只送一个给验收门；rules.md 第 9 版第 28 条（`e48cdba`）。重放对照（`plan_candidates*`，4 个状态 × K 1 / 3 × 2）：K = 3 被接受 3 / 8（b 4.71 c 0.14），K = 1 2 / 8（b 3.71 c 0.57）；Engineer 段 25.3 vs 15.0 min。样本小，倾向采用：32.12 用 K = 3
 - [x] 32.10 Harness2 第 2 点：`reflect.py`（上下文放在仓库外，不读项目记忆）写 `scripts/rsi/experience/<family>/`：逐条判定 + 至多一条经验 + final.patch，INDEX.md；Reviewer / Engineer 提示词在库存在时指向它；9 个已完成任务族的条目（14 USD）。留一法重放（`plan_library*`，3 个状态 × 有库（去掉本族条目）/ 无库 × 2）：有库 Reviewer 27.9 vs 29.3 min、临时脚本 17 vs 24，探针增益为正的假设 3 / 6 vs 0 / 6；都没到验收门。倾向采用：32.12 带库（10-19 人写的经验库被拒，这是不同形式）
 - [x] 32.11 Harness2 第 3 点：`run --scoped-review`——两个 Reviewer 并行，流程（P）和物体/场景（O）各至多 2 条假设，编号加前缀合并。第一次重放没带上开关（`321aa26` 修好并加测试），重跑（`plan_scoped_final*`，4 个状态 × 分范围 / 单个 × 2）：分范围的 8 个里第 2 遍 4 个撞上用量上限没跑完（线程里的失败变成 KeyError，已修成 RoleFailed 并加测试），剩 4 个：探针最好增益 0 / −1 / 0 / 1，单个 8 个都是 0；Reviewer 费用约 2 倍、时长相同。没有清楚的好处，默认不开，不补跑
-- [ ] 32.12 一次完整内环确认（grasp_atomic 同一批池；`outputs/rsi_speed_20261021/confirm/launch.sh`）：第一次（0.5 m/s）跑了 10 分钟按用户要求停掉，改 0.25 m/s 后重起（35.1）；和 TODO 31（0.5 m/s）比时混着步速（35.3）
+- [ ] 32.12 一次完整内环确认（grasp_atomic 同一批池；`outputs/rsi_speed_20261021/confirm/launch.sh`）：第一次（0.5 m/s）跑了 10 分钟按用户要求停掉；0.25 m/s 重起（`6062c1e`，沙盒 `/workspace/code/rsi-scene/ga-confirm-025-20261021`，12:39–16:11 UTC，3.5 h，58 USD）：第 1 轮 3 个候选 Composer 采纳一个，验收 0 → 21/40（TODO 31 第 1 轮 20/40）；第 2 轮多赢 3 少赢 1 拒绝，狼摆件被搁置；第 3 轮木勺、杯子被搁置，Manager 重开杯子，夹杯壁 3/3 撤销搁置，多赢 5 少赢 1（p 0.11）拒绝；第 4 轮被会话审计作废、内环停止——误报：Reviewer 只在最后的结构化输出里写了“Not used: anything under scene_rsi_20261016_hidden”，没有读（32.13）。每轮 58–65 min（验收门 2–3 min，原来 4–7）。要不要续跑待用户定
+- [ ] 32.13 会话审计把角色自己的结构化输出也算进“点名禁区路径”：32.12 第 4 轮的 Reviewer 在说明里写“没用 …_hidden 下的东西”就作废了整轮。选项：审计不看最后的 StructuredOutput（读文件的工具调用照查），或提示词写明连名字都别写；改哪个算规则改动，待用户定
+- [x] 32.14 经验库里有别的沙盒隐藏目录的名字（final.patch 的绝对路径、entry.json 的 outside 列表），角色照抄就会触发审计：`reflect.py` 的 diff 改用 a/ b/ 相对根，outside 写到库外（`/workspace/tmp/rsi_reflect/<family>/outside.json`；现有 9 条的存在 `outputs/rsi_speed_20261021/experience_outside/`），9 个条目已改写；测试 `ExperienceLibrary`（相对根、库里不含禁区路径）
 - 不做：加机器（用户：先不加）；验收门期间提前起下一轮 Reviewer（门只要 5 min，被拒时数据不变）
 
 ## 33. 会换做法、知道自己身体的抓取进化（用户 2026-10-21：“有像人类一样思考，并拥有对自己身体物理边界的认知吗？”；“先写方案，五点都做”；方案 `docs/handoff/scene-rsi-strategy-plan-20261021.md`，D1–D5 待用户定）

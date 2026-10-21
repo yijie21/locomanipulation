@@ -69,8 +69,15 @@ def outcomes(d: Path) -> dict:
 
 
 def diff(a: Path, b: Path) -> str:
-    return subprocess.run(["diff", "-ruN", "-x", "__pycache__", "-x", "*.pyc", str(a), str(b)], capture_output=True,
-                          text=True).stdout  # fmt: skip
+    """`a` -> `b` with the two roots written as a/ and b/: an absolute root names the source sandbox's hidden tree
+    (the gate's candidate), and a role that copies such a path from the library voids its iteration (2026-10-21)."""
+    out = subprocess.run(["diff", "-ruN", "-x", "__pycache__", "-x", "*.pyc", str(a), str(b)], capture_output=True,
+                         text=True).stdout  # fmt: skip
+    return relabel(out, str(a), str(b))
+
+
+def relabel(patch: str, a: str, b: str) -> str:
+    return patch.replace(a + "/", "a/").replace(b + "/", "b/")
 
 
 def gather(src: Path, family: str, ctx: Path) -> None:
@@ -203,7 +210,11 @@ def main(argv=None) -> int:
         so, acct = reflect(ctx, a.family)
         d = a.out / a.family
         d.mkdir(parents=True, exist_ok=True)
-        (d / "entry.json").write_text(json.dumps(dict(so, **acct), indent=1, ensure_ascii=False))
+        # the paths the session named outside its context stay beside the context: the library is read by later
+        # roles, and a path into another sandbox's hidden tree copied from it voids their iteration (2026-10-21)
+        (ctx.parent / "outside.json").write_text(json.dumps(acct["outside"], indent=1))
+        entry = dict(so, **{k: v for k, v in acct.items() if k != "outside"})
+        (d / "entry.json").write_text(json.dumps(entry, indent=1, ensure_ascii=False))
         (d / "EXPERIENCE.md").write_text(render(a.family, so, acct))
         if (ctx / "final.patch").exists():
             shutil.copy2(ctx / "final.patch", d / "final.patch")

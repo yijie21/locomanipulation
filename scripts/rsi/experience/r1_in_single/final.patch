@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/__init__.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/__init__.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/__init__.py	2026-10-17 05:57:48.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/__init__.py	2026-10-17 06:42:23.721961541 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/__init__.py b/__init__.py
+--- a/__init__.py	2026-10-17 05:57:48.000000000 +0000
++++ b/__init__.py	2026-10-17 06:42:23.721961541 +0000
 @@ -11,15 +11,16 @@
  
  from locomani.scene_discovery.predicates import parse
@@ -41,9 +41,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/sc
          mod = getattr(package, name)
          for k, v in vars(mod).items():
              if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/into.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/into.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/into.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/into.py	2026-10-17 09:50:57.946603836 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/into.py b/into.py
+--- a/into.py	1970-01-01 00:00:00.000000000 +0000
++++ b/into.py	2026-10-17 09:50:57.946603836 +0000
 @@ -0,0 +1,443 @@
 +"""Skill `place_into` (r1_in_single loop, iteration 0; the family's gap place_into.single, rules 24): put a free object
 +into a container C. place.place_on's pick (its switches and SIMPLE overrides), its plan before the pick with the creep
@@ -488,9 +488,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/sc
 +        jaw, rot = m.jaw_centre(side)
 +        ctx.note("raise_back", m.reach(side, jaw + np.array([0.0, 0.0, dz]), rot), dz_cm=round(100 * dz, 1))
 +    return Outcome(False, f"{why} [kept in the {side} hand]", m.t, m.t)
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/pick.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/pick.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/pick.py	2026-10-17 05:57:48.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/pick.py	2026-10-17 11:19:19.772986787 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	2026-10-17 05:57:48.000000000 +0000
++++ b/pick.py	2026-10-17 11:19:19.772986787 +0000
 @@ -35,7 +35,13 @@
  pitches the wrist GRASP_PITCH_DEG nose-down, which lifts the housing behind the jaw, and holds the jaw at least
  `min_jaw` above the top. An object under another shelf stays level (pitched, the shelf plant was knocked off its shelf),
@@ -575,9 +575,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/sc
  
  
  def needs_pinch(world, key: str, pos, pitch: float, rise: float) -> bool:
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/place.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/place.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/place.py	2026-10-17 05:57:48.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/place.py	2026-10-17 06:40:52.750408995 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/place.py b/place.py
+--- a/place.py	2026-10-17 05:57:48.000000000 +0000
++++ b/place.py	2026-10-17 06:40:52.750408995 +0000
 @@ -549,21 +549,9 @@
      when the pelvis is still low). None when ready, else the failure (`_fail`, object set down)."""
      world, m = ctx.world, ctx.motor
@@ -632,9 +632,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/sc
  def walk_corners(m, corners, goal_yaw: float) -> Outcome:
      """pick.walk_route's walk over route corners already planned (the first is where the robot was to start)."""
      if len(corners) < 2:
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/test_held.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/test_held.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/test_held.py	2026-10-17 05:57:48.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/test_held.py	2026-10-17 11:11:05.663663902 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_held.py b/test_held.py
+--- a/test_held.py	2026-10-17 05:57:48.000000000 +0000
++++ b/test_held.py	2026-10-17 11:11:05.663663902 +0000
 @@ -136,9 +136,14 @@
              world.meta["surfaces"]["U"] = dict(xy=[2.0, 2.0], half_extent=[0.2, 0.2], yaw=0.0, top=0.9)
          return world
@@ -693,9 +693,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/sc
      def test_the_via_rises_farther_outside_the_edge_for_a_covered_object(self):
          plan = Outcome(True, info=dict(face=0.0, edge_xy=np.array([1.8, 2.0])))
          for upper, out in ((False, pick.VIA_OUT_M), (True, pick.COVERED_VIA_OUT_M)):
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/test_into.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/test_into.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/test_into.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/test_into.py	2026-10-17 09:50:57.946603836 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_into.py b/test_into.py
+--- a/test_into.py	1970-01-01 00:00:00.000000000 +0000
++++ b/test_into.py	2026-10-17 09:50:57.946603836 +0000
 @@ -0,0 +1,253 @@
 +"""`into.place_into`'s pure parts: `plan_for` sends exactly one in(X, C), alone or with upright(X), to it; the drop
 +stances at a container on a surface (edge-normal, deep) and on the floor; the near drop at the pick's edge, its
@@ -950,9 +950,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/sc
 +
 +if __name__ == "__main__":
 +    unittest.main()
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/test_plan_for.py /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/test_plan_for.py
---- /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016/r1_in_single/incumbents/1961d7779155/skills/test_plan_for.py	2026-10-17 05:57:48.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-in-a/outputs/scene_rsi_20261016_hidden/r1_in_single/gate/03_56bde6992e0a/cand/skills/test_plan_for.py	2026-10-17 06:43:08.873610178 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_plan_for.py b/test_plan_for.py
+--- a/test_plan_for.py	2026-10-17 05:57:48.000000000 +0000
++++ b/test_plan_for.py	2026-10-17 06:43:08.873610178 +0000
 @@ -87,7 +87,6 @@
              ["upright(Can)"],
              ["held(Can)", "upright(Book)"],

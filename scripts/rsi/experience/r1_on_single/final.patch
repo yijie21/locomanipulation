@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/__init__.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/__init__.py
---- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/__init__.py	2026-10-16 16:17:40.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/__init__.py	2026-10-16 22:32:19.379373118 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/__init__.py b/__init__.py
+--- a/__init__.py	2026-10-16 16:17:40.000000000 +0000
++++ b/__init__.py	2026-10-16 22:32:19.379373118 +0000
 @@ -11,21 +11,35 @@
  
  from locomani.scene_discovery.predicates import parse
@@ -48,9 +48,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/sc
          mod = getattr(package, name)
          for k, v in vars(mod).items():
              if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/clearance.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/clearance.py
---- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/clearance.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/clearance.py	2026-10-16 22:36:08.482137800 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/clearance.py b/clearance.py
+--- a/clearance.py	1970-01-01 00:00:00.000000000 +0000
++++ b/clearance.py	2026-10-16 22:36:08.482137800 +0000
 @@ -0,0 +1,117 @@
 +"""Where the robot's gripper and a carried object fit (r1_on_single loop iteration 4): the carried object's footprint at
 +the yaw it rides in the hand, whether it lies inside a surface's flat top, and the gripper's least clearance to the
@@ -169,9 +169,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/sc
 +    """How far (m) the open jaw moves along the wrist y onto an object whose centre is `d` along it from the jaw
 +    centre: none within `min_m`, else `d` clamped to +-`max_m`."""
 +    return 0.0 if abs(d) <= min_m else float(np.clip(d, -max_m, max_m))
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/grasp_program.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/grasp_program.py
---- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/grasp_program.py	2026-10-16 16:17:40.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/grasp_program.py	2026-10-16 22:32:19.383373095 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/grasp_program.py b/grasp_program.py
+--- a/grasp_program.py	2026-10-16 16:17:40.000000000 +0000
++++ b/grasp_program.py	2026-10-16 22:32:19.383373095 +0000
 @@ -30,6 +30,7 @@
      contact_timeout_s=0.8,
      lift_seconds=2.0,
@@ -203,9 +203,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/sc
          elif phase == "entry":
              off = object_in_palm(palm, tool_m, grip)
              if (
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/pick.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/pick.py
---- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/pick.py	2026-10-16 16:17:40.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/pick.py	2026-10-16 22:32:19.383373095 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	2026-10-16 16:17:40.000000000 +0000
++++ b/pick.py	2026-10-16 22:32:19.383373095 +0000
 @@ -22,7 +22,11 @@
  out to TOP_MAX_DEPTH_M, then the other hand from the mirrored stance (on the kitchen island's free west side every
  right-hand stance stands against a bar stool; the left hand's stance is on the stool's far side). A fallback plan is
@@ -274,9 +274,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/sc
  def plan_hand(world, start_xy, key: str, side: str):
      """(plan, hand, why): `plan_approach` for `side`; only when that finds none, the fallback passes -- the same hand
      with a top-down pinch out to TOP_MAX_DEPTH_M, then the other hand (stance mirrored) -- whose plan is refused when
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/place.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/place.py
---- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/place.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/place.py	2026-10-16 22:39:24.373185885 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/place.py b/place.py
+--- a/place.py	1970-01-01 00:00:00.000000000 +0000
++++ b/place.py	2026-10-16 22:39:24.373185885 +0000
 @@ -0,0 +1,714 @@
 +"""Skill `place_on` (r1_on_single loop, iteration 0; the family's gap place_on_surface.single, rules 24): put a free
 +object down on a named surface. `pick.pick` as it is, step back (stand up if the pick left the pelvis low), walk to a
@@ -992,9 +992,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/sc
 +        return None
 +    i = SIDES.index(side)
 +    return round(100 * float(np.linalg.norm(m.trace[k0 + 1]["ref_wrists"][i] - m.trace[k0 - 1]["ref_wrists"][i])), 1)
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/test_plan_for.py /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/test_plan_for.py
---- /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016/r1_on_single/incumbents/861a9364b7b9/skills/test_plan_for.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-on-a/outputs/scene_rsi_20261016_hidden/r1_on_single/gate/06_9da5a5e404f4/cand/skills/test_plan_for.py	2026-10-16 22:38:37.657406147 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_plan_for.py b/test_plan_for.py
+--- a/test_plan_for.py	1970-01-01 00:00:00.000000000 +0000
++++ b/test_plan_for.py	2026-10-16 22:38:37.657406147 +0000
 @@ -0,0 +1,487 @@
 +"""The put-down's pure parts (place.py): `plan_for` sends a goal of on(...) and upright(...) to `place.place_on` once per
 +on(X, S) in goal order and keeps held(X) on the pick; a spot sees what rests on the target by its pose, not by the

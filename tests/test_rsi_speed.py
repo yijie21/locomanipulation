@@ -241,3 +241,31 @@ class RunFlags(unittest.TestCase):
                      "--effort", "engineer=medium", "--engineer-from", "/x/iter_02"])  # fmt: skip
         self.assertEqual((seen["candidates"], seen["scoped_review"], seen["stop_after"]), (3, True, "probe"))
         self.assertEqual((seen["effort"], str(seen["engineer_from"])), (["engineer=medium"], "/x/iter_02"))
+
+
+class ExperienceLibrary(unittest.TestCase):
+    """2026-10-21: the library's patches named other sandboxes' hidden trees, and a Reviewer that writes such a name
+    voids its iteration. Patches carry a/ and b/ roots; the library holds no path a role may not name."""
+
+    def test_a_patch_is_written_with_relative_roots(self):
+        import re
+
+        _path = list(sys.path)
+        sys.path.insert(0, str(HERE))
+        try:
+            reflect = _load("scene_rsi_reflect", HERE / "reflect.py")
+        finally:
+            sys.path[:] = _path
+        a, b = "/w/s/outputs/x/incumbents/h/skills", "/w/s/outputs/x_hidden/f/gate/02/cand/skills"
+        raw = f"diff -ruN {a}/pick.py {b}/pick.py\n--- {a}/pick.py\t2026\n+++ {b}/pick.py\t2026\n@@ -1 +1 @@\n-x\n+y\n"
+        out = reflect.relabel(raw, a, b)
+        self.assertNotIn("_hidden", out)
+        self.assertTrue(re.search(r"^--- a/pick\.py", out, re.M) and re.search(r"^\+\+\+ b/pick\.py", out, re.M))
+
+    def test_the_library_names_no_off_limits_path(self):
+        import re
+
+        bad = re.compile(r"_hidden|rsi_kit|\.claude/|/workspace/")
+        for p in sorted((HERE / "experience").rglob("*")):
+            if p.is_file():
+                self.assertIsNone(bad.search(p.read_text(errors="replace")), p)

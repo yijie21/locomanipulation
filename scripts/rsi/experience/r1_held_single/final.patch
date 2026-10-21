@@ -1,6 +1,6 @@
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/__init__.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/__init__.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/__init__.py	2026-10-16 23:16:11.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/__init__.py	2026-10-17 01:05:47.872749253 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/__init__.py b/__init__.py
+--- a/__init__.py	2026-10-16 23:16:11.000000000 +0000
++++ b/__init__.py	2026-10-17 01:05:47.872749253 +0000
 @@ -11,19 +11,22 @@
  
  from locomani.scene_discovery.predicates import parse
@@ -38,9 +38,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/
          mod = getattr(package, name)
          for k, v in vars(mod).items():
              if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/cover.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/cover.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/cover.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/cover.py	2026-10-17 01:03:27.320812602 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/cover.py b/cover.py
+--- a/cover.py	1970-01-01 00:00:00.000000000 +0000
++++ b/cover.py	2026-10-17 01:03:27.320812602 +0000
 @@ -0,0 +1,36 @@
 +"""Which surfaces held(X) reads X as resting on, and which of them cover X (r1_held_single loop iterations 0-1).
 +
@@ -78,9 +78,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/
 +    """`resting_on` less X's own support (its scene-file surface): the shelves above X."""
 +    own = world.meta["objects"][key].get("surface")
 +    return [k for k in resting_on(world, key) if k != own]
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/grasp_program.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/grasp_program.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/grasp_program.py	2026-10-16 23:16:11.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/grasp_program.py	2026-10-17 04:59:15.406032103 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/grasp_program.py b/grasp_program.py
+--- a/grasp_program.py	2026-10-16 23:16:11.000000000 +0000
++++ b/grasp_program.py	2026-10-17 04:59:15.406032103 +0000
 @@ -42,6 +42,10 @@
  HOLD_S = 2.0  # bfm_grasp (decision 3 of the controller comparison)
  RISE_MIN = 0.05
@@ -189,9 +189,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/
                      enter("lift", stamp)
                  elif elapsed >= SIMPLE["close_seconds"] + SIMPLE["contact_timeout_s"]:
                      return done(False, "no bilateral pad contact after the close")
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/held.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/held.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/held.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/held.py	2026-10-17 01:03:39.384811127 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/held.py b/held.py
+--- a/held.py	1970-01-01 00:00:00.000000000 +0000
++++ b/held.py	2026-10-17 01:03:39.384811127 +0000
 @@ -0,0 +1,60 @@
 +"""held(X), alone or with upright(X), after the pick (r1_held_single loop iteration 0).
 +
@@ -253,9 +253,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/
 +    ok = side in gripping and not under
 +    why = "" if ok else f"after the pick: resting on {under}, gripping {gripping}"
 +    return Outcome(ok, why, out.t0, m.t)
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/pick.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/pick.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/pick.py	2026-10-16 23:16:11.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/pick.py	2026-10-17 05:18:39.943912009 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/pick.py b/pick.py
+--- a/pick.py	2026-10-16 23:16:11.000000000 +0000
++++ b/pick.py	2026-10-17 05:18:39.943912009 +0000
 @@ -26,7 +26,35 @@
  
  A default-off switch the put-down (place.py, r1_on_single loop iteration 4) turns on around its pick, so held(X)'s pick
@@ -686,9 +686,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/
  
  
  def is_top(world, key: str) -> bool:
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/test_held.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/test_held.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/test_held.py	1970-01-01 00:00:00.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/test_held.py	2026-10-17 05:18:39.943912009 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_held.py b/test_held.py
+--- a/test_held.py	1970-01-01 00:00:00.000000000 +0000
++++ b/test_held.py	2026-10-17 05:18:39.943912009 +0000
 @@ -0,0 +1,580 @@
 +"""held(X) after the pick (held.py, cover.py) -- the predicate's resting rule, nothing added when X is under no other
 +surface, a level pull-out and a back-off from under a shelf, a side grasp levelled about X's centre for upright(X) --
@@ -1270,9 +1270,9 @@ diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/
 +
 +if __name__ == "__main__":
 +    unittest.main()
-diff -ruN -x __pycache__ -x '*.pyc' /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/test_plan_for.py /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/test_plan_for.py
---- /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016/r1_held_single/incumbents/9da5a5e404f4/skills/test_plan_for.py	2026-10-16 23:16:11.000000000 +0000
-+++ /workspace/code/rsi-scene/r1-held-a/outputs/scene_rsi_20261016_hidden/r1_held_single/gate/05_498b72b75889/cand/skills/test_plan_for.py	2026-10-17 05:04:07.660122790 +0000
+diff -ruN -x __pycache__ -x '*.pyc' a/test_plan_for.py b/test_plan_for.py
+--- a/test_plan_for.py	2026-10-16 23:16:11.000000000 +0000
++++ b/test_plan_for.py	2026-10-17 05:04:07.660122790 +0000
 @@ -5,8 +5,8 @@
  lift-to-release time, the pad margin, the plan made before the pick -- and the pick's settle abort, inert unless set,
  backing out from the measured jaw; the put-down's pick switches (inert at None), its stance and the spot rule for a
