@@ -135,6 +135,9 @@ UNREAL_ASSETS = os.environ.get("UNREAL_ASSETS", os.path.join(UNREAL_ROOT, "level
 # cached separately (scripts/build_isaac_assets.sh).
 ROBOT_MJCF = os.path.join(SONIC, "gear_sonic", "data", "robot_model", "model_data", "g1", "g1_29dof_with_dex1.xml")
 
+ADT_DATA = os.path.join(
+    WORKSPACE, "datasets", "adt"
+)  # Aria Digital Twin slice: links/, sequences/, objects/ (scripts/adt_*.py)
 TMP = os.environ.get("LOCOMANI_TMP", os.path.join(WORKSPACE, "tmp"))  # session logs, exporter sessions, instance locks
 
 

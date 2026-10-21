@@ -365,9 +365,9 @@ python3 scripts/adt_download.py sequences Apartment_release_clean_seq131_M1292
 python3 scripts/adt_download.py objects
 ```
 
-做什么：先在 Project Aria 网站申请 Aria Digital Twin 的下载链接（每人一份，不进 git），把 `ADT_download_urls.json` 和 `DTC_objects_ADT_download_urls.json` 放进 `/workspace/datasets/adt/links/`。第一条下载公寓那段序列的真值（约 20 MB），第二条下载序列里出现的所有物体模型（约 4.6 GB）。每个文件都按 sha1 校验，中断后重跑会接着下载。数据只能用于非商业研究，不能再分发。
+做什么：先在 Project Aria 网站申请 Aria Digital Twin 的下载链接（每人一份，不进 git），把 `ADT_download_urls.json` 和 `DTC_objects_ADT_download_urls.json` 放进 `<workspace>/datasets/adt/links/`（`<workspace>` 是 `LOCOMANI_WORKSPACE`，默认 `/workspace`；三个 `adt_*.py` 脚本都从它读数据根目录）。第一条下载公寓那段序列的真值（约 20 MB），第二条下载序列里出现的所有物体模型（约 4.6 GB）。每个文件都按 sha1 校验，中断后重跑会接着下载。数据只能用于非商业研究，不能再分发。
 
-验证：`ls /workspace/datasets/adt/sequences/Apartment_release_clean_seq131_M1292` 里有 `instances.json`，`/workspace/datasets/adt/objects/` 下有几百个物体目录。
+验证：`ls <workspace>/datasets/adt/sequences/Apartment_release_clean_seq131_M1292` 里有 `instances.json`，`<workspace>/datasets/adt/objects/` 下有几百个物体目录。
 
 ## 11. ScaleBFM 权重（场景 RSI）
 
