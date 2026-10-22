@@ -242,6 +242,21 @@ class RunFlags(unittest.TestCase):
         self.assertEqual((seen["candidates"], seen["scoped_review"], seen["stop_after"]), (3, True, "probe"))
         self.assertEqual((seen["effort"], str(seen["engineer_from"])), (["engineer=medium"], "/x/iter_02"))
 
+    def test_three_engineers_and_a_composer_by_default(self):
+        # TODO 32.15 (user 2026-10-22): the 32.12 configuration is the default; --candidates 1 is the old loop
+        from unittest import mock
+
+        lp = _scene_loop()
+        seen = {}
+        with (
+            mock.patch.object(lp, "cmd_run", lambda a: seen.update(vars(a)) or 0),
+            mock.patch.object(lp, "configure", lambda f: None),
+        ):
+            lp.main(["run", "grasp_atomic"])
+            self.assertEqual(seen["candidates"], 3)
+            lp.main(["run", "grasp_atomic", "--candidates", "1"])
+            self.assertEqual(seen["candidates"], 1)
+
 
 class ExperienceLibrary(unittest.TestCase):
     """2026-10-21: the library's patches named other sandboxes' hidden trees, and a Reviewer that writes such a name
@@ -261,6 +276,21 @@ class ExperienceLibrary(unittest.TestCase):
         out = reflect.relabel(raw, a, b)
         self.assertNotIn("_hidden", out)
         self.assertTrue(re.search(r"^--- a/pick\.py", out, re.M) and re.search(r"^\+\+\+ b/pick\.py", out, re.M))
+
+    def test_a_sandbox_gets_the_library_without_its_own_family(self):
+        sb = _load("scene_rsi_sandbox", HERE / "sandbox.py")
+        with tempfile.TemporaryDirectory() as d:
+            lib = Path(d) / "scripts" / "rsi" / "experience"
+            for fam in ("grasp_atomic", "pick_single"):
+                (lib / fam).mkdir(parents=True)
+                (lib / fam / "entry.json").write_text(json.dumps(dict(experience=dict(cue=f"cue of {fam}"))))
+            (lib / "INDEX.md").write_text("grasp_atomic pick_single\n")
+            sb.library_without(Path(d), "grasp_atomic")
+            index = (lib / "INDEX.md").read_text()
+            self.assertFalse((lib / "grasp_atomic").exists())
+            self.assertIn("cue of pick_single", index)
+            self.assertNotIn("grasp_atomic", index)
+            sb.library_without(Path(d) / "none", "grasp_atomic")  # a sandbox without the library: nothing to do
 
     def test_the_library_names_no_off_limits_path(self):
         import re

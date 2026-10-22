@@ -14,23 +14,28 @@ where it stopped:
 2. `lint`: the family's tasks; one whose goal holds at every drawn start (or at the scene pose) blocks the family;
 3. `loop`: loop.py run in the sandbox, to its end;
 4. `sealed`: sealed.py --all in the sandbox;
-5. `writeback`: writeback.py into the catalog (nothing when the final is the seed);
-6. `tests`: the scene runner's and the catalog's own tests;
-7. `regress`: the family enters regress.py's registry; every registered family's sealed pool re-runs under the
+5. `reflect`: reflect.py writes the family's entry into the experience library, scripts/rsi/experience (TODO 32.15:
+   the library is in every sandbox by default, so later families read it once it is committed); a failure leaves
+   the library without the entry and does not block;
+6. `writeback`: writeback.py into the catalog (nothing when the final is the seed);
+7. `tests`: the scene runner's and the catalog's own tests;
+8. `regress`: the family enters regress.py's registry; every registered family's sealed pool re-runs under the
    catalog (tag `after_<family>`); a family worse at p <= 0.05 blocks;
-8. `capability`: carry_time.py (the put-down's planned carry time against the route, for the creep rule), then
+9. `capability`: carry_time.py (the put-down's planned carry time against the route, for the creep rule), then
    capability_write.py from the registry, then every task set re-bucketed (capability/feasibility/after_<family>_<set>).
 
-Up to `--parallel` families run steps 1-4 at once (the simulation slots in batch.py share the machine); steps 5-8
+Up to `--parallel` families run steps 1-5 at once (the simulation slots in batch.py share the machine); steps 6-9
 take one family at a time, in the order the loops end, and merge three-way, so the second family keeps the first's
 write-back. A blocked family stops with its reason in its state file and the others go on; a person looks, fixes,
-and sets its `step` back. Nothing is committed: the write-backs and tables are left in the working tree.
+and sets its `step` back. Nothing is committed: the write-backs, library entries and tables are left in the working
+tree.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -59,10 +64,11 @@ TASK_SETS = {
     "templates": None,  # scene_feasibility.py's own templates over the stance overlay
     "demo1": REPO / "outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/tasks.jsonl",
 }
-STEPS = ("sandbox", "lint", "loop", "sealed", "writeback", "tests", "regress", "capability", "done")
+STEPS = ("sandbox", "lint", "loop", "sealed", "reflect", "writeback", "tests", "regress", "capability", "done")
+CLAUDE_DIR = Path(shutil.which("claude") or "/usr/local/bin/claude").parent  # the roles' and reflect.py's claude
 ENV = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "OMP_NUM_THREADS": "2", "NUMPY_MADVISE_HUGEPAGE": "0",
-       "MUJOCO_GL": "egl", "PATH": "/usr/local/bin:/usr/bin:/bin"}  # fmt: skip
-SERIAL = threading.Lock()  # steps 5-8: one family at a time
+       "MUJOCO_GL": "egl", "PATH": f"/usr/local/bin:/usr/bin:/bin:{CLAUDE_DIR}"}  # fmt: skip
+SERIAL = threading.Lock()  # steps 6-9: one family at a time
 
 
 class Blocked(RuntimeError):
@@ -151,6 +157,12 @@ class Family:
         summ = json.loads((self.hidden / "sealed" / "summary.json").read_text())
         self.save(sealed=dict(final=summ["final"], rate=summ["final_rate"], ci=summ.get("final_rate_ci"),
                               vs_seed=summ["final_vs_seed"]))  # fmt: skip
+
+    def reflect_(self) -> None:
+        rc = sh(["python3", str(HERE / "reflect.py"), str(self.sandbox), self.name], REPO, self.logs / "reflect.log")
+        if rc:
+            log(f"{self.name}: reflect.py exited {rc} (see {self.logs / 'reflect.log'}); no library entry")
+        self.save(reflect=dict(rc=rc))
 
     def writeback_(self) -> None:
         rc = sh(

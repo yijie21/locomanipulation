@@ -14,11 +14,16 @@ earlier skill catalog, the scene RSI records or the earlier grasp programs) chan
 - `strip`: paths removed from what `keep` kept;
 - `scene_exclude`: entries of the scene directory not linked (outputs/scene_discovery is then a directory of links to
   the scene's other entries and its physics copy, instead of one link).
+
+The experience library (scripts/rsi/experience, TODO 32.10) goes in without the family's own entry, and its index is
+rebuilt: a re-run does not read how its family's earlier run ended (leave-one-out, as TODO 32.12 ran; the default
+since TODO 32.15, user 2026-10-22).
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -85,6 +90,19 @@ def apply_spec(dest: Path, family: str) -> dict:
     return spec
 
 
+def library_without(dest: Path, family: str) -> None:
+    """The sandbox's experience library without `family`'s entry (module docstring); nothing when it holds none."""
+    lib = dest / "scripts" / "rsi" / "experience"
+    if not lib.is_dir():
+        return
+    if (lib / family).exists():
+        shutil.rmtree(lib / family)
+    mod = importlib.util.spec_from_file_location("rsi_reflect", HERE / "reflect.py")
+    reflect = importlib.util.module_from_spec(mod)
+    mod.loader.exec_module(reflect)
+    reflect.index(lib)
+
+
 def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in)."""
     if dest.exists():
@@ -93,6 +111,7 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     archive = subprocess.run(["git", "archive", ref], cwd=REPO, check=True, capture_output=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True)
     spec = apply_spec(dest, family)
+    library_without(dest, family)
     links = [(rel, REPO / rel) for rel in LINKS]
     if spec.get("scene_exclude") is not None:
         scene = json.loads((dest / "scripts" / "rsi" / "families" / f"{family}.json").read_text())["scene"]

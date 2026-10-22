@@ -111,7 +111,7 @@ python3 scripts/rsi/sandbox.py $S pick_single
 cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 ```
 
-做什么：建沙盒并抽池，然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数，Manager 选一条，Engineer 写代码，验收门判。
+做什么：建沙盒并抽池，然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数，Manager 选至多 3 条，3 个 Engineer 并行写代码，Composer 合成一个候选，验收门判（`--candidates 1` 只用一个 Engineer、没有 Composer）。沙盒里带经验库，不含这个任务族自己的那条。
 得到什么：账本在 `$S/outputs/scene_rsi_20261016/pick_single/loop/`。原来这一族跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
 
 ```bash
@@ -156,8 +156,8 @@ $PY scripts/rsi/outer.py family $R on_single
 $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --parallel 2 > $R/driver.log 2>&1 &
 ```
 
-做什么：对每个任务族依次建沙盒、检查任务、跑内环、跑封存集、写回、跑单元测试、回归、更新能力表；同时最多跑两个任务族。
-得到什么：每个任务族的状态在 `$R/run/<任务族>.json`，各步日志在 `$R/run/<任务族>/`；写回改动了技能目录（没提交），能力表 `configs/scene_discovery/capability_mars_scalebfm.yaml` 更新。一个任务族 2–8 小时。
+做什么：对每个任务族依次建沙盒、检查任务、跑内环、跑封存集、给经验库写一条、写回、跑单元测试、回归、更新能力表；同时最多跑两个任务族。
+得到什么：每个任务族的状态在 `$R/run/<任务族>.json`，各步日志在 `$R/run/<任务族>/`；写回改动了技能目录、经验库多了这一族的条目（都没提交），能力表 `configs/scene_discovery/capability_mars_scalebfm.yaml` 更新。一个任务族 2–8 小时。
 
 ## 7. L3：从头复现
 

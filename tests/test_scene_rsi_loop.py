@@ -499,10 +499,20 @@ class OuterRun(unittest.TestCase):
             self.assertEqual((f.state["step"], calls), ("lint", ["sandbox"]))
             self.assertIn("goal holds", json.loads(f.state_file.read_text())["blocked"])
             g = self.run_mod.Family(Path(d), "r2_on_single")  # a restarted driver reads the state
-            with mock.patch.multiple(g, lint_=ok("lint"), loop_=ok("loop"), sealed_=ok("sealed")):
+            with mock.patch.multiple(
+                g, lint_=ok("lint"), loop_=ok("loop"), sealed_=ok("sealed"), reflect_=ok("reflect")
+            ):
                 self.assertTrue(g.advance("writeback"))
             self.assertEqual((g.state["step"], g.state["blocked"]), ("writeback", None))
-            self.assertEqual(calls, ["sandbox", "lint", "loop", "sealed"])
+            self.assertEqual(calls, ["sandbox", "lint", "loop", "sealed", "reflect"])
+
+    def test_the_steps_find_claude(self):
+        # the loop's roles and reflect.py call `claude`; a PATH of system directories alone missed ~/.local/bin
+        import shutil
+
+        found = shutil.which("claude")
+        if found:
+            self.assertIn(str(Path(found).parent), self.run_mod.ENV["PATH"].split(":"))
 
 
 class ReviewReplay(unittest.TestCase):

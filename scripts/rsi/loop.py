@@ -1,7 +1,8 @@
 """TODO 27.2.4 (plan docs/handoff/scene-rsi-plan-20261016.md §2, D6-D8, D11): the scene RSI inner loop on one task
 family -- the warehouse loop (scalebfm_warehouse_rsi_20261014/loop.py) with skills as candidates. One iteration:
 Reviewer (claude -p) -> Prober (the hypotheses' parameter overrides on the diagnostic pool) -> Manager (claude -p) ->
-Engineer (claude -p: code in the skills package and/or overrides) -> Gate (gate.py) -> ledger. State lives in files under
+Engineers (claude -p, three in parallel by default: code in the skills package and/or overrides) -> Composer (claude -p:
+one candidate from their drafts) -> Gate (gate.py) -> ledger. State lives in files under
 <sandbox>/outputs/scene_rsi_20261016/<family>/loop, so the driver stops and resumes at any iteration.
 
 Runs inside a sandbox checkout (sandbox.py). The roles see the sandbox, rules.md and the plan; the acceptance and sealed
@@ -97,7 +98,8 @@ LOOP = HIDDEN = STATE = GATE_DIR = Path()
 EFFORT: dict = dict(reviewer="xhigh", manager="xhigh", engineer="xhigh", composer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
 SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
-CANDIDATES = 1  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step)
+CANDIDATES = 3  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step); 3 by
+# default since TODO 32.15 (user 2026-10-22: "设置成默认的吧"), --candidates 1 is the one-Engineer loop, no Composer
 LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience library
     "The experience library, scripts/rsi/experience/INDEX.md: what earlier families' loops found, one entry per family "
     "(per change a verdict -- helped, hurt, no observed effect, confounded --, at most one lesson with its cue, and the "
@@ -1336,7 +1338,7 @@ def cmd_run(a) -> int:
     iters = a.max_iters
     global STOP_AFTER
     global CANDIDATES
-    CANDIDATES = max(1, getattr(a, "candidates", 1) or 1)
+    CANDIDATES = max(1, getattr(a, "candidates", CANDIDATES) or 1)
     global SCOPED
     SCOPED = bool(getattr(a, "scoped_review", False))
     meta.update(candidates=CANDIDATES, scoped_review=SCOPED)
@@ -1402,7 +1404,10 @@ def main(argv=None) -> int:
         "--reprobe", type=int, default=None, help="re-probe iteration N's hypotheses first (probes lost or not run)"
     )
     r.add_argument(
-        "--candidates", type=int, default=1, help="Engineers per iteration, merged by a Composer (TODO 32.9)"
+        "--candidates",
+        type=int,
+        default=CANDIDATES,
+        help="Engineers per iteration, merged by a Composer (TODO 32.9; default 3 since TODO 32.15; 1: no Composer)",
     )
     r.add_argument("--scoped-review", action="store_true", help="two scoped Reviewers (TODO 32.11)")
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")

@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 10, 2026-10-21)
+# Rules for the scene RSI loop (TODO 27, version 11, 2026-10-22)
 
 The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
 rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
@@ -92,9 +92,15 @@ rule is a new version of this file, committed, and counted as one human interven
     no earlier skill catalog, loop record or grasp program; do not look for them outside it (version 8, user
     2026-10-20).
 
-28. An iteration may build several candidates (`run --candidates K`, TODO 32.9): the Manager lists up to K hypotheses,
+28. An iteration builds several candidates (`run --candidates K`, TODO 32.9; K = 3 by default since version 11, and
+    K = 1 is one Engineer without a Composer): the Manager lists up to K hypotheses,
     K Engineers build them in parallel from the incumbent (each in its own copy of the skills package), each candidate
     runs on the diagnostic pool, and the Composer merges into one candidate the edits whose diagnostic flips show
     their mechanism, adopts one candidate, or keeps the incumbent. Only that one candidate reaches the gate, so each
     gate call stays one paired test (code); the Composer ties every kept or dropped edit to the starts and the trace
     moment that decided it (prompt) (version 9, user 2026-10-21).
+
+29. The sandbox holds the experience library (scripts/rsi/experience, TODO 32.10): one entry per family that finished
+    before, without this family's own (code: sandbox.py), and the outer loop adds the family's entry when it ends
+    (outer_run.py). Its numbers come from other objects and surfaces; this family's rounds decide (prompt) (version
+    11, user 2026-10-22: three candidates, the Composer and the library are the default after TODO 32.12).
