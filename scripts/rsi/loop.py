@@ -862,19 +862,29 @@ def own_link_targets() -> list[str]:
     return sorted({os.path.realpath(x) for x in links if x.is_symlink()})
 
 
-def climbs_out(text: str, targets: list[str]) -> bool:
+def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     """TODO 36 (review 2026-10-22, L8; review_outer finding 2): a path-like token in a tool input with a `..` segment,
-    resolved from the sandbox root (symlinks first, as the shell does), that lands outside the sandbox and outside the
-    targets of its own links. `ls outputs/scene_discovery/<scene>/mesh/../../../` listed the origin's outputs/."""
+    resolved (symlinks first, as the shell does) from the directory the command runs in, that lands outside the sandbox
+    and outside the targets of its own links. `ls outputs/scene_discovery/<scene>/mesh/../../../` listed the origin's
+    outputs/. The directory is the sandbox root, or the last `cd` before the token in this command or in an earlier one
+    (`cwd`, which transcript_leaks carries from line to line; a shell that left the sandbox is back at its root on the
+    next call). Resolving everything from the root voided a review that ran `cd <loop>/pool && diff a
+    ../../../../../src/.../pick.py`, a path inside the sandbox (2026-10-22, option B's iteration 6)."""
     repo = os.path.realpath(REPO)
     inside = lambda path, root: path == root or path.startswith(root.rstrip("/") + "/")  # noqa: E731
-    for tok in re.findall(r"[^\s\"'`;|&<>()$\\,]+", text):
-        if ".." not in tok.split("/") or tok.startswith("~"):
-            continue
-        path = os.path.realpath(tok if tok.startswith("/") else os.path.join(REPO, tok))
-        if not inside(path, repo) and not any(inside(path, t) for t in targets):
-            return True
-    return False
+    state = cwd if cwd is not None else {}
+    base = state.get("dir", repo)
+    toks = re.findall(r"[^\s\"'`;|&<>()$\\,]+", text.replace("\\n", " ").replace("\\t", " "))
+    out = False
+    for i, tok in enumerate(toks):
+        path = os.path.realpath(tok if tok.startswith("/") else os.path.join(base, tok))
+        if ".." in tok.split("/") and not tok.startswith("~"):
+            if not inside(path, repo) and not any(inside(path, t) for t in targets):
+                out = True
+        if i and toks[i - 1] == "cd" and not tok.startswith(("~", "-")):
+            base = path
+    state["dir"] = base if inside(base, repo) else repo
+    return out
 
 
 def transcript_leaks(session: str | None) -> list[str]:
@@ -884,11 +894,12 @@ def transcript_leaks(session: str | None) -> list[str]:
     own = re.compile(r"[^\"\s]*\.claude/projects/[^\"\s/]+/" + re.escape(str(session)) + r"/tool-results/[^\"\s]*")
     pats, found = leak_patterns(), set()
     targets = own_link_targets() if ORIGIN != REPO else None
+    cwd = {}
     with p.open() as fh:
         for line in fh:
             line = own.sub("", audited(line))
             found |= {k for k, pat in pats.items() if re.search(pat, line)}
-            if targets is not None and ".." in line and climbs_out(line, targets):
+            if targets is not None and climbs_out(line, targets, cwd):
                 found.add("origin")
     return sorted(found)
 

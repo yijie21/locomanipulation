@@ -506,6 +506,30 @@ class RoleSafety(unittest.TestCase):
         self.assertFalse(self.lp.climbs_out("ls outputs/scene_discovery/scn/mesh/../ third_party/x/../y", targets))
         self.assertFalse(self.lp.climbs_out("ls ./src/../outputs", targets))
 
+    def test_a_cd_sets_where_dotdot_resolves(self):
+        """2026-10-22: `cd <loop>/pool && diff a ../../../../../src/...` stays inside the sandbox; it was resolved from
+        the root and voided a review."""
+        sandbox, origin = self.root / "sb", self.root / "origin"
+        (origin / "third_party").mkdir(parents=True)
+        (sandbox / "outputs" / "a" / "b" / "c").mkdir(parents=True)
+        (sandbox / "src").mkdir()
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        self.patch(REPO=sandbox, ORIGIN=origin)
+        targets = self.lp.own_link_targets()
+        cmd = f"cd {sandbox}/outputs/a/b/c && diff x ../../../../src/p.py"
+        self.assertFalse(self.lp.climbs_out(json.dumps([["Bash", {"command": cmd}, None]]), targets))
+        self.assertFalse(
+            self.lp.climbs_out(json.dumps({"command": "cd outputs/a/b/c\ncat ../../../../src/p.py"}), targets)
+        )
+        self.assertTrue(self.lp.climbs_out("cd outputs/a/b/c && ls ../../../../../", targets))
+        self.assertTrue(self.lp.climbs_out("ls outputs/a/b/c/../../../../../", targets))
+        cwd = {}  # carried from one tool call to the next
+        self.assertFalse(self.lp.climbs_out("cd outputs/a/b/c", targets, cwd))
+        self.assertFalse(self.lp.climbs_out("cat ../../../../src/p.py", targets, cwd))
+        self.assertTrue(self.lp.climbs_out("ls ../../../../../", targets, cwd))
+        self.assertFalse(self.lp.climbs_out(f"cd {origin}", targets, cwd))  # the origin pattern catches the path itself
+        self.assertEqual(cwd["dir"], os.path.realpath(sandbox))  # a shell that left the sandbox is back at its root
+
     def test_voided_drafts_move_to_the_hidden_tree(self):
         hid = self.root / "hid"
         hid.mkdir()
