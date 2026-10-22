@@ -5,8 +5,9 @@ Engineer (claude -p: code in the skills package and/or overrides) -> Gate (gate.
 <sandbox>/outputs/scene_rsi_20261016/<family>/loop, so the driver stops and resumes at any iteration.
 
 Runs inside a sandbox checkout (sandbox.py). The roles see the sandbox, rules.md and the plan; the acceptance and sealed
-pools and the gate live in the hidden tree (`..._hidden/`), and every role transcript is grepped for that name and for
-paths outside the sandbox: a hit voids the iteration (the warehouse loop's audit, own tool-results excepted).
+pools and the gate live in the hidden tree (`..._hidden/`), and every tool call in a role's transcript is grepped for
+that name and for paths outside the sandbox: a hit voids the iteration (the warehouse loop's audit, own tool-results
+excepted; since TODO 32.13 only the calls' inputs are read, not the role's thinking, text or StructuredOutput answer).
 
 The Engineer may change only the sandbox's skills package (src/locomani/tasks/scene/skills/); anything else it touches
 voids the call and is restored. On a rejection the package goes back to the incumbent's snapshot.
@@ -36,6 +37,7 @@ diagnostic starts only (no gate call), and a finished start lifts the park and s
 from __future__ import annotations
 
 import argparse
+import calendar
 import collections
 import hashlib
 import json
@@ -348,7 +350,7 @@ def stop_reason(meta: dict) -> str | None:
     gates = [e for e in es if e.get("step") == "gate" and not e.get("void")]
     if len(gates) >= MAX_GATE_CALLS:
         return f"gate calls {len(gates)} >= {MAX_GATE_CALLS}"
-    if (time.time() - meta["started_s"]) / 3600 >= MAX_WALL_H:
+    if wall_h(meta) >= MAX_WALL_H:
         return f"wall clock >= {MAX_WALL_H} h"
     cost = sum(e.get("cost_usd", 0.0) for e in es)
     if COST_CAP is not None and cost >= COST_CAP:
@@ -696,10 +698,46 @@ def transcript_leaks(session: str | None) -> list[str]:
     pats, found = leak_patterns(), set()
     with p.open() as fh:
         for line in fh:
-            if '"tool_use"' in line:
-                line = own.sub("", line)
-                found |= {k for k, pat in pats.items() if re.search(pat, line)}
+            line = own.sub("", audited(line))
+            found |= {k for k, pat in pats.items() if re.search(pat, line)}
     return sorted(found)
+
+
+def audited(line: str) -> str:
+    """What the audit reads of a transcript line: the inputs of its tool calls, with the line's `wireToolInputs` copy
+    of them, but not the role's answer (its StructuredOutput call) and not its thinking or text. Opening a file or
+    running a command takes a tool call; an answer or a thought may name an off-limits tree to say it was not used
+    (TODO 32.13, user 2026-10-22: 32.12's iteration 4 Reviewer and two Engineers were voided for that; the old grep
+    read whole lines, and every block of a reply that ended in a tool call carries "tool_use" as its stop_reason).
+    A line that does not parse is read whole."""
+    if '"tool_use"' not in line:
+        return ""
+    try:
+        msg = json.loads(line)
+        content = msg["message"]["content"]
+    except (ValueError, KeyError, TypeError):
+        return line
+    if not isinstance(content, list):
+        return line
+    wire = msg.get("wireToolInputs") if isinstance(msg.get("wireToolInputs"), dict) else {}
+    calls = [[c.get("name"), c.get("input"), wire.get(c.get("id"))] for c in content
+             if isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") != "StructuredOutput"]  # fmt: skip
+    return json.dumps(calls, ensure_ascii=False) if calls else ""
+
+
+def reaudit(n: int) -> None:
+    """Iteration n's review, if the audit voided it, read again under the present audit before its hypotheses are
+    re-probed (TODO 32.13): a hit, or a transcript gone, refuses the re-probe."""
+    rev = [e for e in entries() if e.get("step") == "review" and e.get("iter") == n]
+    if not rev or not rev[-1].get("void"):
+        return
+    sessions = rev[-1].get("sessions") or [rev[-1]["session"]]
+    if any(transcript(s) is None for s in sessions):
+        raise SystemExit(f"iteration {n}'s review transcript is gone: it cannot be audited again")
+    leaks = sorted({x for s in sessions for x in transcript_leaks(s)})
+    if leaks:
+        raise SystemExit(f"iteration {n}'s review still names off-limits paths ({', '.join(leaks)})")
+    ledger(dict(step="reaudit", iter=n, sessions=sessions, was=rev[-1].get("leaks"), leaks=[]))
 
 
 # -- steps ------------------------------------------------------------------------------------------------------------
@@ -862,10 +900,11 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
             "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
         )
     jdump(it_dir / "hypotheses.json", hyps)
-    leaks = sorted({x for sess in acct.pop("sessions", None) or [acct["session"]] for x in transcript_leaks(sess)})
+    sessions = acct.pop("sessions", None) or [acct["session"]]
+    leaks = sorted({x for sess in sessions for x in transcript_leaks(sess)})
     n_claims = len(hyps["infeasible"]) if isinstance(hyps.get("infeasible"), list) else 0
     ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), n_claims=n_claims, void=bool(leaks),
-                leaks=leaks, **acct))  # fmt: skip
+                leaks=leaks, **acct, **({"sessions": sessions} if len(sessions) > 1 else {})))  # fmt: skip
     if leaks:
         return f"reviewer of iteration {n} named off-limits paths ({', '.join(leaks)})"
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
@@ -1235,19 +1274,22 @@ def engineer_again(n: int, src: Path, stub: bool) -> str | None:
 def reprobe(n: int, stub: bool) -> str | None:
     """Re-run iteration n's probes on its Reviewer's unchanged hypotheses and continue from the Manager: for probes
     lost to the harness or never run because a driver bug stopped the loop (the hypotheses never saw a probe result,
-    so they stand). The earlier Manager call is voided
-    in the ledger; the human fix that made this necessary goes in interventions.jsonl."""
+    so they stand), or after a review the audit voided and a fixed audit passes (`reaudit`). The earlier Manager call
+    is voided in the ledger; the human fix that made this necessary goes in interventions.jsonl."""
     it_dir = STATE / f"iter_{n:02d}"
     hyps = jload(it_dir / "hypotheses.json")
     if hyps is None:
         raise SystemExit(f"{it_dir} has no hypotheses")
+    reaudit(n)
+    managed = (it_dir / "manager.json").exists()
     for f in ("probe", "manager.json", "probe.json"):
         p = it_dir / f
         if p.is_dir():
             shutil.rmtree(p)
         elif p.exists():
             p.rename(p.with_name(p.name + ".void"))
-    (STATE / "focus.json").unlink(missing_ok=True)
+    if managed:  # the voided Manager's focus; before a Manager ran, focus.json is the one this Reviewer was given
+        (STATE / "focus.json").unlink(missing_ok=True)
     ledger(dict(step="void", iter=n, reason="re-probing the same hypotheses after a driver fix (interventions.jsonl)"))
     inc = incumbent()
     put_skills(Path(inc["dir"]) / "skills")
@@ -1257,15 +1299,35 @@ def reprobe(n: int, stub: bool) -> str | None:
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp())  # fmt: skip
-    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus={},
+    extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
+
+
+def wall_h(meta: dict) -> float:
+    """Hours the run has been running: since its start, less the time it stood between a stop and a resume."""
+    return (time.time() - meta["started_s"] - meta.get("paused_s", 0.0)) / 3600
+
+
+def resume(meta: dict) -> None:
+    """A run started again after its own stop: the hours it stood stopped do not count against MAX_WALL_H (32.12
+    stood stopped for a day while the audit was fixed, TODO 32.13)."""
+    es = entries()
+    if not es or es[-1].get("step") != "stop":
+        return
+    t = calendar.timegm(time.strptime(es[-1]["t"], "%Y-%m-%dT%H:%M:%SZ"))
+    if t < meta["started_s"]:  # a stop from before this run started (a replay's copied ledger)
+        return
+    gap = time.time() - t
+    meta["paused_s"] = meta.get("paused_s", 0.0) + gap
+    ledger(dict(step="resume", stopped_h=round(gap / 3600, 2), wall_h=round(wall_h(meta), 2)))
 
 
 def cmd_run(a) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
     meta = jload(STATE / "meta.json") or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL,
                                               family=FAMILY, max_wall_h=MAX_WALL_H)  # fmt: skip
+    resume(meta)
     meta.update(cost_cap_usd=COST_CAP, model=MODEL, max_wall_h=MAX_WALL_H)  # this run's limits (roles read meta.json)
     jdump(STATE / "meta.json", meta)
     if not (LOOP / "pool_diag").exists() or not accept_pool().exists():

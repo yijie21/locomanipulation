@@ -269,3 +269,95 @@ class ExperienceLibrary(unittest.TestCase):
         for p in sorted((HERE / "experience").rglob("*")):
             if p.is_file():
                 self.assertIsNone(bad.search(p.read_text(errors="replace")), p)
+
+
+def _line(*blocks) -> str:
+    """An assistant line as Claude Code writes it, with `wireToolInputs`, its copy of every call's input by id."""
+    wire = {b["id"]: b["input"] for b in blocks if b["type"] == "tool_use"}  # every block: stop_reason "tool_use"
+    msg = dict(role="assistant", content=list(blocks), stop_reason="tool_use")
+    return json.dumps(dict(type="assistant", message=msg, wireToolInputs=wire)) + "\n"
+
+
+def _call(name: str, **inp) -> dict:
+    return dict(type="tool_use", id=f"t_{name}", name=name, input=inp)
+
+
+class TranscriptAudit(unittest.TestCase):
+    """TODO 32.13 (user 2026-10-22): the audit reads the inputs of every tool call but the role's answer, and not its
+    thinking or text -- 32.12's iteration 4 was voided because the Reviewer's StructuredOutput said it had not used
+    the hidden tree. A review voided that way is
+    audited again before `--reprobe` reuses its hypotheses; a run resumed after its own stop does not count the
+    hours it stood stopped."""
+
+    HID = "outputs/scene_rsi_20261016_hidden/grasp_atomic"
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.lp.configure("grasp_atomic")
+        self.d = tempfile.TemporaryDirectory()
+        self.state = Path(self.d.name)
+        self.files = {}
+        for p in (mock.patch.object(self.lp, "STATE", self.state),
+                  mock.patch.object(self.lp, "transcript", lambda s: self.files.get(s))):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(self.d.cleanup)
+
+    def session(self, name: str, *lines: str) -> str:
+        p = self.state / f"{name}.jsonl"
+        p.write_text("".join(lines))
+        self.files[name] = p
+        return name
+
+    def test_the_answer_is_not_audited_and_every_other_call_is(self):
+        answer = _call("StructuredOutput", notes=f"Not used: anything under {self.HID}")
+        said = [dict(type=k, **{k: f"I did not open {self.HID}"}) for k in ("thinking", "text")]
+        peek = _call("Bash", command=f"ls {self.HID}/")
+        self.assertEqual(self.lp.transcript_leaks(self.session("a", _line(answer), *(_line(b) for b in said))), [])
+        blob = json.dumps(dict(type="api-request-blob", message=dict(content=[*said, answer]))) + "\n"
+        self.assertEqual(self.lp.transcript_leaks(self.session("e", blob)), [])
+        self.assertEqual(self.lp.transcript_leaks(self.session("b", _line(peek))), ["gate"])
+        self.assertEqual(self.lp.transcript_leaks(self.session("c", _line(peek, answer))), ["gate"])
+        self.assertEqual(self.lp.transcript_leaks(self.session("d", _line(_call("Read", file_path=f"/x/{self.HID}")))),
+                         ["gate"])  # fmt: skip
+
+    def review(self, session: str) -> None:
+        self.lp.ledger(dict(step="review", iter=4, n_hypotheses=4, void=True, leaks=["gate"], session=session))
+
+    def test_a_voided_review_passes_the_fixed_audit_before_reuse(self):
+        self.review(self.session("ok", _line(_call("StructuredOutput", notes=f"Not used: {self.HID}"))))
+        self.lp.reaudit(4)
+        last = self.lp.entries()[-1]
+        self.assertEqual((last["step"], last["iter"], last["leaks"], last["was"]), ("reaudit", 4, [], ["gate"]))
+
+    def test_a_review_that_still_names_the_tree_or_lost_its_transcript_is_refused(self):
+        self.review(self.session("bad", _line(_call("Bash", command=f"cat {self.HID}/pool"))))
+        with self.assertRaises(SystemExit):
+            self.lp.reaudit(4)
+        self.review("gone")
+        with self.assertRaises(SystemExit):
+            self.lp.reaudit(4)
+        self.assertNotIn("reaudit", [e["step"] for e in self.lp.entries()])
+
+    def stopped(self, hours_ago: float) -> None:
+        t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours_ago * 3600))
+        with (self.state / "ledger.jsonl").open("a") as fh:
+            fh.write(json.dumps(dict(t=t, step="stop", reason="x")) + "\n")
+
+    def test_a_resumed_run_does_not_count_the_hours_it_stood_stopped(self):
+        meta = dict(started_s=time.time() - 25 * 3600)
+        self.stopped(21.5)  # ran 3.5 h, stood stopped 21.5 h
+        self.lp.resume(meta)
+        self.assertAlmostEqual(self.lp.wall_h(meta), 3.5, places=2)
+        self.assertEqual(self.lp.entries()[-1]["step"], "resume")
+        self.lp.resume(meta)  # the last entry is no longer a stop: nothing more is taken off
+        self.assertAlmostEqual(self.lp.wall_h(meta), 3.5, places=2)
+
+    def test_a_stop_from_before_the_run_started_is_not_a_pause(self):
+        meta = dict(started_s=time.time() - 3600)
+        self.stopped(2)  # a replay's ledger copied from its source run
+        self.lp.resume(meta)
+        self.assertAlmostEqual(self.lp.wall_h(meta), 1.0, places=2)
+        self.assertNotIn("paused_s", meta)

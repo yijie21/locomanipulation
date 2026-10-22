@@ -1,4 +1,4 @@
-# STATE — 2026-10-21 12:50（主线：场景 RSI。走路速度改回 0.25 m/s（TODO 35）；32.12 完整内环确认按 0.25 m/s 重起）
+# STATE — 2026-10-22（主线：场景 RSI。32.13 审计改成只查工具调用；32.12 从第 4 轮的 Prober 续跑，0.25 m/s）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-20 13:10）：已推送到 origin/main = `f5fb27c`（用户“先把目前的改动 push 到远端”；远端没有新提交，不用合并）。
@@ -25,7 +25,7 @@
 
 ## 下一步（编号见 `TODO.md`）
 
-- 32.12：grasp_atomic 从空种子、同一批池，新流程、0.25 m/s 完整跑一次（`outputs/rsi_speed_20261021/confirm/launch.sh <提交>`，沙盒 `/workspace/code/rsi-scene/ga-confirm-025-20261021`，5 h 上限）；跑完和 TODO 31（0.5 m/s：4.2 h 有效、5 轮、2 次采纳、验收池 26 / 40）比，差别混着步速（35.3）。之后按 0.25 m/s + 休眠重测全部登记（35.2）。
+- 32.12：grasp_atomic 从空种子、同一批池，新流程、0.25 m/s（沙盒 `/workspace/code/rsi-scene/ga-confirm-025-20261021`，5 h 上限）：前 4 轮 3.53 h、第 1 轮采纳，10-22 从第 4 轮的 Prober 续跑（`resume.sh`，日志 `run_resume.log`）；跑完和 TODO 31（0.5 m/s：4.2 h 有效、5 轮、2 次采纳、验收池 26 / 40）比，差别混着步速（35.3）。之后按 0.25 m/s + 休眠重测全部登记（35.2）。
 - 32.7：快速输出要用户在账号里开 usage credits。
 - 33：D1–D5 等用户。
 - 30.4：复现材料、文档和报告里的数字改成 0.5 m/s 的；29.5.1–29.5.9 新读者偏差。
@@ -44,8 +44,8 @@
 cd /workspace/code/locomanipulation && . scripts/paths.sh && export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2 && PY=$VENV_SIM_PY
 # 全部任务族和标定样本按当前技能目录重测（后台跑，日志看每族一行）
 nohup setsid $PY scripts/rsi/regress.py run <tag> --procs 12 > /workspace/tmp/regress_<tag>.log 2>&1 &
-# 32.12 完整内环确认（参数是要导出的提交）
-nohup setsid outputs/rsi_speed_20261021/confirm/launch.sh <commit> > /workspace/code/rsi-scene/ga-confirm-20261021.log 2>&1 &
+# 32.12 完整内环确认：launch.sh <提交> 从头起；resume.sh 从第 4 轮的 Prober 续跑
+nohup setsid outputs/rsi_speed_20261021/confirm/resume.sh > outputs/rsi_speed_20261021/confirm/run_resume.log 2>&1 &
 PYTHONPATH=src $PY scripts/rsi/successes.py            # 按任务统计做成 / 偶尔成 / 没成
 PYTHONPATH=src $PY scripts/rsi/kit.py pack              # 30.4：重测后重打复现材料，再按名字提交 rsi_kit/
 # 步态对比视频（空地直走 4 m，两种速度）：输出在 outputs/scene_rsi_20261016/gait/
