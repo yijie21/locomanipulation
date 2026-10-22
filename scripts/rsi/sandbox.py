@@ -27,8 +27,15 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path[:0] = [str(REPO / "src")]
+
+from locomani import paths  # noqa: E402
+
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 LINKS = ("third_party", "outputs/scene_discovery")
+# What the sandbox's own python runs see: the workspace (so paths.py resolves the same tmp and models there) and
+# the usual tmp; nothing else of this shell.
+SUB_ENV = {"PYTHONPATH": "src", "TMPDIR": paths.TMP, "LOCOMANI_WORKSPACE": paths.WORKSPACE, "PATH": "/usr/bin:/bin"}
 
 
 def git(dest: Path, *args, **kw):
@@ -38,8 +45,9 @@ def git(dest: Path, *args, **kw):
 def closure(dest: Path, entries: list[str]) -> set[str]:
     """The locomani modules importing `entries` loads in the sandbox (scripts/rsi and src on the path)."""
     code = "import sys; sys.path[:0] = ['scripts/rsi', 'src']\n" + "".join(f"import {e}\n" for e in entries)
-    env = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "PATH": "/usr/bin:/bin"}
-    r = subprocess.run([str(SIM_PY), "-X", "importtime", "-c", code], cwd=dest, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [str(SIM_PY), "-X", "importtime", "-c", code], cwd=dest, env=SUB_ENV, capture_output=True, text=True
+    )
     if r.returncode:
         raise SystemExit(f"closure import failed:\n{r.stderr[-2000:]}")
     names = {line.rsplit("|", 1)[-1].strip() for line in r.stderr.splitlines() if "|" in line}
@@ -122,10 +130,13 @@ def build(dest: Path, family: str) -> None:
     loop = dest / "outputs" / "scene_rsi_20261016" / family
     hidden = dest / "outputs" / "scene_rsi_20261016_hidden" / family
     fam = dest / "scripts" / "rsi" / "family.py"
-    env = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "PATH": "/usr/bin:/bin"}
     for pool, out in (("diag", loop / "pool_diag"), ("accept", hidden / "pool_accept")):
         r = subprocess.run(
-            [str(SIM_PY), str(fam), "draw", family, pool, str(out)], cwd=dest, env=env, capture_output=True, text=True
+            [str(SIM_PY), str(fam), "draw", family, pool, str(out)],
+            cwd=dest,
+            env=SUB_ENV,
+            capture_output=True,
+            text=True,
         )
         if r.returncode:
             raise SystemExit(r.stderr[-2000:])

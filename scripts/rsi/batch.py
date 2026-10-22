@@ -17,6 +17,7 @@ import json
 import math
 import os
 import subprocess
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -24,10 +25,14 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path[:0] = [str(REPO / "src")]
+
+from locomani import paths  # noqa: E402
+
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 SHARD_ROUNDS = 2
 SIM_SLOTS = int(os.environ.get("RSI_SIM_SLOTS", "12"))  # simulation processes across all sandboxes at once; 0: no cap
-SLOTS_DIR = Path(os.environ.get("RSI_SIM_SLOTS_DIR", "/workspace/tmp/rsi_sim_slots"))
+SLOTS_DIR = Path(os.environ.get("RSI_SIM_SLOTS_DIR", os.path.join(paths.TMP, "rsi_sim_slots")))  # <workspace>/tmp/...
 # 1: held(X) = a finger touches it, off its surface (to 2026-10-16); 2: both fingers of one hand, or both hands (TODO 27.9)
 SUCCESS_RULE = 2
 
@@ -92,7 +97,7 @@ def run_jobs(
     shards and drops the rest."""
     devices = gpus.split(",")
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
-    env.setdefault("TMPDIR", "/workspace/tmp")
+    env.setdefault("TMPDIR", paths.TMP)
     every = pool_labels(pool)
     todo = {k: [x for x in (job.labels or every) if not done(job.out / f"{x}.json")] for k, job in enumerate(jobs)}
     for k, job in enumerate(jobs):

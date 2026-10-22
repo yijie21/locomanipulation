@@ -57,6 +57,8 @@ import digest as DG  # noqa: E402
 import family as F  # noqa: E402
 from gate import candidate_hash, overrides  # noqa: E402
 
+from locomani import paths  # noqa: E402
+
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 PLAN = REPO / "docs" / "handoff" / "scene-rsi-plan-20261016.md"
@@ -72,10 +74,10 @@ STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share 
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
 REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
 # (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
-PROCS = 12
-GPUS = "0,1"
+PROCS = int(os.environ.get("RSI_PROCS", "12"))  # simulation processes; the runbook's machine: 12 over 2 GPUs
+GPUS = os.environ.get("RSI_GPUS", "0,1")  # CUDA devices the shards rotate over (one GPU: RSI_GPUS=0 RSI_PROCS=6)
 ORIGIN = (REPO / "third_party").resolve().parent  # a sandbox links third_party to the origin checkout
-SCRATCH_ROOT = Path("/workspace/tmp")
+SCRATCH_ROOT = Path(paths.TMP)  # <LOCOMANI_WORKSPACE>/tmp: the roles' scratch directory and the leak check's "scratch"
 ROLE_GRACE_S = 120  # after a role answers, its leftover processes get this long before the driver kills them
 SKILLS_NOTE = (
     "the incumbent's skills; `pick.py` chooses the edge, the grasp yaw and the stance, `grasp_program.py` is the "

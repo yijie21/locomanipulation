@@ -44,10 +44,11 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import regress  # noqa: E402
 
+from locomani import paths  # noqa: E402
 from locomani.scene_discovery.predicates import parse  # noqa: E402
 
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
-SANDBOXES = Path("/workspace/code/rsi-scene")
+SANDBOXES = Path(paths.WORKSPACE) / "code" / "rsi-scene"  # <LOCOMANI_WORKSPACE>/code/rsi-scene/<family>, as the runbook
 SCENE = REPO / "outputs" / "scene_discovery" / "adt_apartment_mars"
 FEAS = REPO / "outputs" / "scene_rsi_20261016" / "capability" / "feasibility"
 OVERLAY = REPO / "outputs" / "scene_rsi_20261016" / "capability" / "stance" / "adt_apartment_mars.json"
@@ -60,8 +61,8 @@ TASK_SETS = {
     "demo1": REPO / "outputs/scene_discovery/adt_apartment/discovery/opus_20261005b/tasks.jsonl",
 }
 STEPS = ("sandbox", "lint", "loop", "sealed", "writeback", "tests", "regress", "capability", "done")
-ENV = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "OMP_NUM_THREADS": "2", "NUMPY_MADVISE_HUGEPAGE": "0",
-       "MUJOCO_GL": "egl", "PATH": "/usr/local/bin:/usr/bin:/bin"}  # fmt: skip
+ENV = {"PYTHONPATH": "src", "TMPDIR": paths.TMP, "LOCOMANI_WORKSPACE": paths.WORKSPACE, "OMP_NUM_THREADS": "2",
+       "NUMPY_MADVISE_HUGEPAGE": "0", "MUJOCO_GL": "egl", "PATH": "/usr/local/bin:/usr/bin:/bin"}  # fmt: skip
 SERIAL = threading.Lock()  # steps 5-8: one family at a time
 
 
@@ -132,7 +133,7 @@ class Family:
     def lint_(self) -> None:
         fam = family_file(self.name)
         rows = [json.loads(x) for x in (REPO / fam["tasks_file"]).read_text().splitlines() if x.strip()]
-        with tempfile.TemporaryDirectory(dir="/workspace/tmp") as d:
+        with tempfile.TemporaryDirectory(dir=paths.TMP) as d:
             tasks = Path(d) / self.name / "tasks.jsonl"
             tasks.parent.mkdir()
             tasks.write_text("".join(json.dumps(r) + "\n" for r in rows if r["id"] in fam["tasks"]))

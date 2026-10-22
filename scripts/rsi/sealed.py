@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -56,8 +57,8 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("family")
     ap.add_argument("--all", action="store_true", help="also run the intermediate incumbents")
-    ap.add_argument("--procs", type=int, default=12)
-    ap.add_argument("--gpus", default="0,1")
+    ap.add_argument("--procs", type=int, default=int(os.environ.get("RSI_PROCS", "12")))
+    ap.add_argument("--gpus", default=os.environ.get("RSI_GPUS", "0,1"))
     a = ap.parse_args(argv)
     hidden = REPO / "outputs" / "scene_rsi_20261016_hidden" / a.family
     pool, out = hidden / "pool_sealed", hidden / "sealed"

@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import collections
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -114,8 +115,8 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("tag")
     r.add_argument("--families")
-    r.add_argument("--procs", type=int, default=12)
-    r.add_argument("--gpus", default="0,1")
+    r.add_argument("--procs", type=int, default=int(os.environ.get("RSI_PROCS", "12")))
+    r.add_argument("--gpus", default=os.environ.get("RSI_GPUS", "0,1"))
     r.add_argument("--catalog", type=Path, default=CATALOG)
     a_ = sub.add_parser("add")
     a_.add_argument("family")

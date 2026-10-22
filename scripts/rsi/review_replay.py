@@ -139,7 +139,7 @@ def review(family: str, arm: str, tag: str, library: Path | None = None) -> None
     hyps, acct = L.claude("reviewer", prompt, L.HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent")
     (it_dir / "hypotheses.json").write_text(json.dumps(hyps, indent=1))
     acct["leaks"] = L.transcript_leaks(acct["session"])
-    acct["outside"] = outside_reads(acct["session"], [REPO, L.role_tmp(), Path("/workspace/tmp")])
+    acct["outside"] = outside_reads(acct["session"], [REPO, L.role_tmp(), L.SCRATCH_ROOT])
     acct["arm"] = arm
     (it_dir / "acct.json").write_text(json.dumps(acct, indent=1, default=str))
     record_dir().mkdir(parents=True, exist_ok=True)
