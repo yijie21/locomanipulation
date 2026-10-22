@@ -530,6 +530,27 @@ class RoleSafety(unittest.TestCase):
         self.assertFalse(self.lp.climbs_out(f"cd {origin}", targets, cwd))  # the origin pattern catches the path itself
         self.assertEqual(cwd["dir"], os.path.realpath(sandbox))  # a shell that left the sandbox is back at its root
 
+    def test_code_and_the_role_scratch_are_no_climb(self):
+        """2026-10-22, option B's iteration 7: two drafts voided for `from .. import hull` in the code they wrote and for
+        `cd <scratch>/engineer_2 && ln -s ../x`; `cd ..` from the root and `../../x` paths still count."""
+        sandbox, origin, scratch = self.root / "sb", self.root / "origin", self.root / "scratch"
+        (origin / "third_party").mkdir(parents=True)
+        sandbox.mkdir()
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        self.patch(REPO=sandbox, ORIGIN=origin, SCRATCH_ROOT=scratch)
+        (self.lp.role_tmp() / "engineer_2").mkdir(parents=True)
+        targets = self.lp.own_link_targets()
+        write = [["Write", {"file_path": f"{sandbox}/x/recipes/__init__.py", "content": "from .. import hull\n"}, None]]
+        self.assertFalse(self.lp.climbs_out(self.lp.climb_view(json.dumps(write)), targets))
+        heredoc = "python3 - <<'EOF'\nfrom .. import pick as P\nEOF"
+        self.assertFalse(self.lp.climbs_out(json.dumps([["Bash", {"command": heredoc}, None]]), targets))
+        cmd = f"cd {self.lp.role_tmp()}/engineer_2 && ln -sf ../replay/x.npz alias/x.npz"
+        self.assertFalse(self.lp.climbs_out(json.dumps([["Bash", {"command": cmd}, None]]), targets))
+        self.assertTrue(self.lp.climbs_out("cd .. && ls", targets))
+        self.assertTrue(self.lp.climbs_out("cat ../../x", targets))
+        edit = [["Edit", {"file_path": f"{sandbox}/../origin/x.py", "old_string": "a", "new_string": "b"}, None]]
+        self.assertTrue(self.lp.climbs_out(self.lp.climb_view(json.dumps(edit)), targets))
+
     def test_voided_drafts_move_to_the_hidden_tree(self):
         hid = self.root / "hid"
         hid.mkdir()

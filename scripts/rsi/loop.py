@@ -869,19 +869,24 @@ def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     outputs/. The directory is the sandbox root, or the last `cd` before the token in this command or in an earlier one
     (`cwd`, which transcript_leaks carries from line to line; a shell that left the sandbox is back at its root on the
     next call). Resolving everything from the root voided a review that ran `cd <loop>/pool && diff a
-    ../../../../../src/.../pick.py`, a path inside the sandbox (2026-10-22, option B's iteration 6)."""
+    ../../../../../src/.../pick.py`, a path inside the sandbox (2026-10-22, option B's iteration 6). The role's own
+    scratch tree (role_tmp) counts as inside, and a bare `..` counts only as a `cd` target: `from .. import hull` in a
+    script an Engineer wrote is no path (iteration 7 voided two drafts for that and for `cd <scratch>/engineer_2 && ln
+    -s ../x`); `transcript_leaks` also leaves file contents out of this check (`climb_view`)."""
     repo = os.path.realpath(REPO)
     inside = lambda path, root: path == root or path.startswith(root.rstrip("/") + "/")  # noqa: E731
+    roots = [repo, os.path.realpath(role_tmp()), *targets]
     state = cwd if cwd is not None else {}
     base = state.get("dir", repo)
     toks = re.findall(r"[^\s\"'`;|&<>()$\\,]+", text.replace("\\n", " ").replace("\\t", " "))
     out = False
     for i, tok in enumerate(toks):
         path = os.path.realpath(tok if tok.startswith("/") else os.path.join(base, tok))
-        if ".." in tok.split("/") and not tok.startswith("~"):
-            if not inside(path, repo) and not any(inside(path, t) for t in targets):
+        is_cd = i and toks[i - 1] == "cd"
+        if ".." in tok.split("/") and not tok.startswith("~") and (tok != ".." or is_cd):
+            if not any(inside(path, r) for r in roots):
                 out = True
-        if i and toks[i - 1] == "cd" and not tok.startswith(("~", "-")):
+        if is_cd and not tok.startswith(("~", "-")):
             base = path
     state["dir"] = base if inside(base, repo) else repo
     return out
@@ -899,9 +904,25 @@ def transcript_leaks(session: str | None) -> list[str]:
         for line in fh:
             line = own.sub("", audited(line))
             found |= {k for k, pat in pats.items() if re.search(pat, line)}
-            if targets is not None and climbs_out(line, targets, cwd):
+            if targets is not None and climbs_out(climb_view(line), targets, cwd):
                 found.add("origin")
     return sorted(found)
+
+
+CONTENT_KEYS = ("content", "new_string", "old_string", "edits", "new_source")  # what a tool writes, not where
+
+
+def climb_view(audited_line: str) -> str:
+    """The tool inputs `climbs_out` reads: the audited calls without the contents a Write / Edit puts into a file (the
+    off-limits patterns still read those: code that names a forbidden path would open it when it runs)."""
+    try:
+        calls = json.loads(audited_line)
+    except ValueError:
+        return audited_line
+    if not isinstance(calls, list):
+        return audited_line
+    strip = lambda d: {k: v for k, v in d.items() if k not in CONTENT_KEYS} if isinstance(d, dict) else d  # noqa: E731
+    return json.dumps([[c[0], strip(c[1]), strip(c[2])] if isinstance(c, list) and len(c) == 3 else c for c in calls])
 
 
 def audited(line: str) -> str:
