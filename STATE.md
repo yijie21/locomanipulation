@@ -1,4 +1,4 @@
-# STATE — 2026-10-22（主线：场景 RSI。32.12 跑完：新流程 1 轮做到 31/50；32.15 把三 Engineer + Composer + 经验库设为默认；下一步 35.2）
+# STATE — 2026-10-22（主线：场景 RSI。32.12 跑完：新流程 1 轮做到 31/50；32.15 把三 Engineer + Composer + 经验库设为默认；10-22 用户：研究初期不做严格对照，35.2 等重测取消；下一步 33，D1–D5 待定）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-20 13:10）：已推送到 origin/main = `f5fb27c`（用户“先把目前的改动 push 到远端”；远端没有新提交，不用合并）。
@@ -29,12 +29,12 @@
 - 32.15（完成 10-22）：`--candidates` 默认 3，沙盒带经验库（去掉本族），外环加 `reflect` 步；`rules.md` 第 11 版。
 - 32.7：快速输出要用户在账号里开 usage credits。
 - 33：D1–D5 等用户。
-- 30.4：复现材料、文档和报告里的数字改成 0.5 m/s 的；29.5.1–29.5.9 新读者偏差。
+- 10-22 用户“不需要得到非常严格的数据对比，现在只是研究初期”：35.2、30.4、30.5、29.5.9、32.4.5、27.2.1.2、27.7、27.13.3 放弃，27.6 推迟到写论文前；33.1 / 33.2 去掉事先的重放标定。还要做的小项：29.5.1–29.5.8 文档偏差、29.7、29.8。
 
 ## 未解决 / 卡点
 
-- 已确认：登记表和复现材料已是 0.5 m/s + 休眠的记录（`sleep_20261021`，30.3 / 32.4.3 做完）；报告和文档里的数字还是 0.25 m/s 的（30.4）。
-- 已确认：同一台机器上用复现材料重测 pick_single 不是逐局相同（b 3 c 3，总数相同）。原因**待验证**：假设是 TorchScript 第一次调用的数值差或克隆的绝对路径不同（29.5.6）。
+- 已确认：登记表基准和复现材料是 0.5 m/s + 休眠的记录（`sleep_20261021`），动作层默认已是 0.25 m/s；按用户 10-22 不重测，下次外环的回归拿它比，结论只作参考。
+- 已确认：同一台机器上用复现材料重测 pick_single 不是逐局相同（b 3 c 3，总数相同）。用户 10-22：不查原因，文档改成“总数相近”（29.5.6）。
 - 已确认：10-20 09:06 一个测试在工作树的提交钩子里把共享的 `.git/config` 改成 `bare = true`，已改回、测试已修；别的测试里有没有同样的问题**待查**（29.8）。
 - 已确认：A800 和本机同一设置的场景局只有 73 / 80 结局相同，远端的局不能和本机的配对。
 - 规则：`pkill -f` 会杀到命令行含同样字样的 shell，停进程用明确的 PID 或会话号（`pkill -s <sid>`）；不改正在跑的 bash 脚本。
@@ -48,7 +48,7 @@ nohup setsid $PY scripts/rsi/regress.py run <tag> --procs 12 > /workspace/tmp/re
 # 32.12 完整内环确认：launch.sh <提交> 从头起；resume.sh 从第 4 轮的 Prober 续跑
 nohup setsid outputs/rsi_speed_20261021/confirm/resume.sh > outputs/rsi_speed_20261021/confirm/run_resume.log 2>&1 &
 PYTHONPATH=src $PY scripts/rsi/successes.py            # 按任务统计做成 / 偶尔成 / 没成
-PYTHONPATH=src $PY scripts/rsi/kit.py pack              # 30.4：重测后重打复现材料，再按名字提交 rsi_kit/
+PYTHONPATH=src $PY scripts/rsi/kit.py pack              # 登记表基准前移后重打复现材料，再按名字提交 rsi_kit/
 # 步态对比视频（空地直走 4 m，两种速度）：输出在 outputs/scene_rsi_20261016/gait/
 CUDA_VISIBLE_DEVICES=1 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 PYTHONPATH=src $PY outputs/scene_rsi_20261016/gait/gait_video.py 0.25 0.5
 # 报告视频：先 bash scripts/start_unreal.sh --gpu 1（渲染时不跑仿真），脚本 /workspace/tmp/report_unreal_v4.sh；停：bash scripts/stop_unreal.sh
