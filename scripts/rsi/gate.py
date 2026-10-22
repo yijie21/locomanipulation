@@ -26,6 +26,7 @@ Pairing must be complete (TODO 36, review 2026-10-22): when either arm lacks a r
 died, the incumbent's own round is missing) the call ends with a void verdict (accepted false, "void": true, reason
 "pairing incomplete: ..."), never a verdict on fewer pairs. A crash still leaves no ledger line (the loop reads that from
 the exit code and the hash).
+A tally also carries `per_class` (TODO 33.15): wins and losses by the round records' failure class, reported, not judged.
 On acceptance the candidate's rounds become the incumbent's. The verdict JSON is the only output a loop role reads.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -147,6 +148,30 @@ def overrides(cand: Path) -> dict:
     return json.loads((cand / "candidate.json").read_text()).get("set") or {}
 
 
+def per_class(cand: dict, inc: dict, keys: list[str]) -> dict:
+    """TODO 33.15 (plan section 3.5): the tally by failure class (`failure_class` in the round records; a record
+    without one counts as "unknown"). A win (b) counts under the class the incumbent failed with -- what the candidate
+    fixed --, a loss (c) under the class the candidate fails with -- what it broke; `cand_fail` / `inc_fail` count each
+    arm's failures by class. Reported in the verdict, not judged."""
+    out: dict[str, dict] = {}
+
+    def row(k: str) -> dict:
+        return out.setdefault(k, dict(b=0, c=0, cand_fail=0, inc_fail=0))
+
+    cls = lambda r: r.get("failure_class") or "unknown"  # noqa: E731
+    for k in keys:
+        a, i = cand[k], inc[k]
+        if not a["ok"]:
+            row(cls(a))["cand_fail"] += 1
+        if not i["ok"]:
+            row(cls(i))["inc_fail"] += 1
+        if a["ok"] and not i["ok"]:
+            row(cls(i))["b"] += 1
+        elif i["ok"] and not a["ok"]:
+            row(cls(a))["c"] += 1
+    return dict(sorted(out.items()))
+
+
 def tally(cand: dict, inc: dict) -> dict:
     keys = sorted(set(cand) & set(inc))
     b = sum(cand[k]["ok"] and not inc[k]["ok"] for k in keys)
@@ -161,7 +186,8 @@ def tally(cand: dict, inc: dict) -> dict:
                 candidate_fell=sum(cand[k]["fell"] for k in keys), incumbent_fell=sum(inc[k]["fell"] for k in keys),
                 candidate_dropped=sum(cand[k]["dropped"] for k in keys),
                 incumbent_dropped=sum(inc[k]["dropped"] for k in keys),
-                candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])))  # fmt: skip
+                candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])),
+                per_class=per_class(cand, inc, keys))  # fmt: skip
 
 
 def main(argv=None) -> int:

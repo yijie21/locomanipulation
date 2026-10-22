@@ -6,6 +6,7 @@ iteration 0 made 75 tool calls over 173 turns, and about 30 of them rebuilt the 
 per-round step dumps, the objects' and containers' sizes from the scene file, the object's distance to the holding
 wrist over the carry. Every turn re-reads the whole conversation, so those turns cost the most. The digest holds:
 
+- first, the failed rounds by failure class (TODO 33.15) and the rounds no class fits;
 - per task: the goal, its objects' facts (size, mass, how flat it rests against a Dex1 pad, its support's top; a
   container's inner box, depth and rim; a target surface's top), where the failures first fail, and the step numbers
   that best separate the task's successes from its failures;
@@ -159,6 +160,8 @@ def separators(rows: list[dict]) -> list[str]:
 def round_line(r: dict, tr: dict) -> str:
     flags = "".join(f for f, on in (("F", r.get("fell")), ("D", r.get("dropped"))) if on)
     head = f"{r['label']} {'OK  ' if r['ok'] else 'fail'}{(' ' + flags) if flags else ''} t {r.get('t_end', 0):.0f}s"
+    if not r["ok"] and r.get("failure_class"):
+        head += f" [{r['failure_class']}]"
     step, why = first_fail(r) if not r["ok"] else ("", "")
     lines = [head + (f" | first fail {step}: {why}" if step else (f" | {why}" if not r["ok"] else ""))]
     if not r["ok"] and r.get("why"):
@@ -172,6 +175,26 @@ def round_line(r: dict, tr: dict) -> str:
     for x, m in tr.items():
         lines.append(f"    trace {x}: " + ", ".join(f"{k} {v}" for k, v in m.items()))
     return "\n".join(lines)
+
+
+UNPLACED = ("other", "unknown")  # failure classes the classifier could not name
+
+
+def class_lines(rounds: list[dict]) -> list[str]:
+    """TODO 33.15 (plan section 3.5): the failed rounds by the driver's failure class (`failure_class`, from
+    scripts/rsi/failure_class.py; a record without one is "unknown"), then the rounds no class fits, which the Reviewer
+    looks at first: the classified ones have a known shape and a standing suggestion."""
+    fails = [r for r in rounds if not r.get("ok")]
+    if not fails:
+        return []
+    cls = lambda r: r.get("failure_class") or "unknown"  # noqa: E731
+    counts = collections.Counter(cls(r) for r in fails)
+    out = ["Failure classes: " + ", ".join(f"{k} {n}" for k, n in counts.most_common()), ""]
+    odd = [r for r in fails if cls(r) in UNPLACED]
+    if odd:
+        out += ["Rounds no class fits (look at these first):"]
+        out += [f"- {r['label']}: {first_fail(r)[0] or 'goal'}: {shape(first_fail(r)[1])[:90]}" for r in odd] + [""]
+    return out
 
 
 def build(diag: Path, family: str) -> str:
@@ -189,6 +212,7 @@ def build(diag: Path, family: str) -> str:
            f"{ok}/{len(rounds)} succeed; fell {sum(bool(r.get('fell')) for r in rounds)}, dropped "
            f"{sum(bool(r.get('dropped')) for r in rounds)}. Built by digest.py from the round files in {diag} and "
            "the scene file; open a round's .json / .npz for anything not here.", ""]  # fmt: skip
+    out += class_lines(rounds)
     for task, rows in sorted(by_task.items()):
         goal = fam["rows"][task]["goal"] if task in fam["rows"] else []
         movables = list(F.task(fam, task).objects) if task in fam["rows"] else []

@@ -30,6 +30,14 @@ rejected. TODO 33.14 (D11): the Manager context leads with `recurring` (mechanis
 never built, from its `repeats` links), and `reopen` is not offered after MAX_REOPEN_RUN reopens in a row. TODO 33.13
 (rules.md 30): a draft whose skills package holds a string constant equal to an object's name is void.
 
+TODO 33.15-33.17 (user 2026-10-22: "把 33.15 到 33.18 先做了吧，开始下一轮的 RSI"; rules.md 31-33, version 15): round
+records carry a failure class (scene_round.py, failure_class.py); the gate reports its tally per class; the digest leads
+with the classes. After the probe each hypothesis gets a `status` (probe_status). A mechanism proposed in two or more
+iterations, never built and not refuted takes one Engineer slot (force_build, a `forced` ledger row) unless the
+Manager's `skip` names one of SKIP_CHECKS as failing. After a rejection the Manager reads `repair_notes`: the failure
+classes, the gate's per-class tally and CLASS_SUGGEST. `run --stop-rate R` sets the 70 % stop for a run continued from
+a strong incumbent.
+
 Infeasibility (plan §8, D13): a Reviewer's claim that some starts cannot be done with the present actions must give the
 actions it assumed, a hard constraint as a check file (claim_check.py), exits, what would refute it, and 1-3 attempts.
 The driver runs the check and the attempts (closed loop); both must hold to park the starts. Parked starts keep
@@ -89,7 +97,23 @@ MAX_HYPOTHESES = 4
 POOL_KEEP = 2  # TODO 33.8 (D7, user 2026-10-22): rejected candidates kept for the Manager's `base` and the Composer
 MAX_REOPEN_RUN = 2  # TODO 33.14 (D11): Manager `reopen` decisions in a row at most
 MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
-STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
+STOP_RATE_DEFAULT = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
+STOP_RATE = STOP_RATE_DEFAULT  # this run's (`run --stop-rate`, resolve_settings; TODO 33, user 2026-10-22)
+SKIP_CHECKS = ("interface_kept", "safety_checks_kept", "changed_code_reached", "evidence_not_refuting")  # TODO 33.17
+STATUSES = ("hypothesis", "verified", "refuted", "mixed")  # TODO 33.17: a hypothesis after its probe
+# TODO 33.17 (plan section 3.4, from DexAgent's diagnose_stage3_failure): what a failure class's next step usually is,
+# shown to the Manager after a rejection (repair_notes); the class comes from scripts/rsi/failure_class.py (33.15)
+CLASS_SUGGEST = {
+    "too_wide": "the object does not fit the open jaw on the side presented: scripts/rsi/graspability.py (rotate the "
+    "approach to a side that fits, a rim pinch, a top pinch)",
+    "side_reach": "the hand did not get to the grasp: a nearer stance, or re-approach through stage() (rules.md 31)",
+    "pinch_reach": "the top pinch's wrist attitude was not delivered: a twist the arm delivers, a lower pre-grasp",
+    "walk_off": "the walk stopped off the stance: re-walk through stage() with stance_check, or a stance with more "
+    "clearance",
+    "knocked": "the object moved before the grip: a raised-hand approach, a path clear of it",
+    "slip": "gripped, then lost: grip_check / lift_check and a re-grip through stage()",
+    "fell": "the robot fell: a controller or motor-layer limit, an escalation (rules.md 20), not a skill fix",
+}
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
 REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
 # (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
@@ -189,10 +213,12 @@ HYPOTHESES_SCHEMA = {
             "maxItems": MAX_HYPOTHESES,
             "items": {
                 "type": "object",
-                "required": ["id", "claim", "evidence", "delta", "predicted_fixed", "predicted_broken"],
+                "required": ["id", "claim", "instead", "evidence", "delta", "predicted_fixed", "predicted_broken"],
                 "properties": {
                     "id": {"type": "string"},
                     "claim": {"type": "string"},
+                    "instead": {"type": "string"},  # TODO 33.17: what to change, in one sentence
+                    "status": {"enum": list(STATUSES)},  # set by the driver after the probe (probe_status)
                     "evidence": {"type": "string"},
                     "delta": {"type": "object", "properties": {"set": {"type": "object"}}, "required": ["set"]},
                     "needs_code": {"type": "string"},
@@ -212,6 +238,10 @@ MANAGER_SCHEMA = {
         "hypotheses": {"type": "array", "items": {"type": "string"}},  # TODO 32.9: one per Engineer, best first
         "reopen_claim": {"type": "string"},  # 27.8.7: the park whose exit the Engineer builds
         "base": {"type": "string"},  # TODO 33.8: a candidate_pool hash the Engineers start from
+        "skip": {  # TODO 33.17: a forced hypothesis not built, with the check that fails ({"H2": "interface_kept"})
+            "type": "object",
+            "additionalProperties": {"enum": list(SKIP_CHECKS)},
+        },
         "repeats": {  # TODO 33.14: this iteration's hypotheses that are earlier iterations' mechanisms ("NN:id")
             "type": "array",
             "items": {
@@ -1063,7 +1093,7 @@ def iteration_line(n: int, rows: list[dict]) -> str:
         elif st == "probe":
             parts.append("probe " + ", ".join(
                 f"{r['id']} {r.get('ok_before')}->{r.get('ok_after')}/{r.get('n')} (predicted fixed "
-                f"{r.get('predicted_fixed_hit', 0)}/{r.get('predicted_fixed_n', 0)})"
+                f"{r.get('predicted_fixed_hit', 0)}/{r.get('predicted_fixed_n', 0)}{', ' + r['status'] if r.get('status') else ''})"
                 for r in e.get("results") or [] if isinstance(r, dict) and "id" in r))  # fmt: skip
         elif st == "manager":
             what = e.get("hypotheses") or e.get("reopen_claim") or e.get("hypothesis") or ""
@@ -1099,6 +1129,11 @@ def iteration_line(n: int, rows: list[dict]) -> str:
                 parts.append(f"pool cleared ({', '.join(e['cleared'])})")
             else:
                 parts.append(f"pool +{e.get('added')} kept {', '.join(e.get('kept') or [])}")
+        elif st == "forced":
+            parts.append(f"forced build {e.get('hypothesis')} (mechanism {', '.join(e.get('mechanism') or [])}, "
+                         f"replaced {e.get('replaced')})")  # fmt: skip
+        elif st == "forced_skip":
+            parts.append(f"forced build of {e.get('hypothesis')} skipped: {e.get('check')}")
         elif st == "void_iter":
             parts.append(f"VOID: the {e.get('role')} named off-limits paths ({', '.join(e.get('leaks') or [])})")
         else:
@@ -1214,7 +1249,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
-    stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", evidence="stub",
+    stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", instead="stub", evidence="stub",
                   delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},
                   predicted_fixed=[], predicted_broken=[])])  # fmt: skip
     if SCOPED:
@@ -1275,6 +1310,8 @@ def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, d
 def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
     """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`)."""
     pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
+    set_statuses(hyps, pr)  # TODO 33.17
+    jdump(it_dir / "hypotheses.json", hyps)
     jdump(it_dir / "probe.json", pr)
     ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr]))
     claims = [c for c in hyps.get("infeasible") or [] if isinstance(c, dict)]  # older hypotheses carry a string
@@ -1289,6 +1326,9 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     es = entries()
     may_reopen = reopen_allowed(es)
     lead = dict(recurring=recurring(es))  # TODO 33.14: first in the context
+    notes = repair_notes(es, base, n)  # TODO 33.17: after a rejection
+    if notes:
+        lead["repair_notes"] = notes
     if not may_reopen:
         lead["reopen_blocked"] = (f"the last {MAX_REOPEN_RUN} iterations were reopens (rules.md 28, version 14): build a "
                                   "hypothesis this iteration")  # fmt: skip
@@ -1303,7 +1343,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     leaks = transcript_leaks(acct["session"])
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"),
                 hypotheses=dec.get("hypotheses") if CANDIDATES > 1 else None, reopen_claim=dec.get("reopen_claim"),
-                base=dec.get("base"), repeats=dec.get("repeats"),
+                base=dec.get("base"), repeats=dec.get("repeats"), skip=dec.get("skip"),
                 reason=dec["reason"], summary_zh=dec["summary_zh"], escalation=dec.get("escalation"), infeasible=dec.get("infeasible"),
                 gap_proposals=dec.get("gap_proposals"), leaks=leaks, void=bool(leaks), **acct))  # fmt: skip
     if dec.get("gap_proposals") and not leaks:
@@ -1321,6 +1361,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if dec["decision"] == "review":
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
         return None
+    dec = force_build(n, dec, hyps, it_dir)  # TODO 33.17 (rules.md 33)
     return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
 
 
@@ -1692,6 +1733,110 @@ def recurring(es: list[dict]) -> list[dict]:
     return sorted(out, key=lambda g: (-g["proposed"], g["latest"]))
 
 
+def probe_status(h: dict, r: dict | None) -> str:
+    """TODO 33.17 (plan section 3.4, D14): a hypothesis after its probe. `verified`: the probe fixed a start and broke
+    none; `refuted`: it fixed none; `mixed`: it fixed some and broke some. One with no parameter delta (its test needs
+    code, `needs_code`) or whose probe failed to run stays `hypothesis`: nothing was measured."""
+    if not ((h.get("delta") or {}).get("set")) or not r or "error" in r or "fixed" not in r:
+        return "hypothesis"
+    fixed, broken = len(r.get("fixed") or []), len(r.get("broken") or [])
+    if fixed == 0:
+        return "refuted"
+    return "verified" if broken == 0 else "mixed"
+
+
+def set_statuses(hyps: dict, pr: list[dict]) -> None:
+    """Every hypothesis's `status` from its probe result (probe_status), on the hypothesis and on its probe row."""
+    by = {r.get("id"): r for r in pr}
+    for h in hyps.get("hypotheses") or []:
+        if isinstance(h, dict) and "id" in h:
+            h["status"] = probe_status(h, by.get(h["id"]))
+            if h["id"] in by:
+                by[h["id"]]["status"] = h["status"]
+
+
+def statuses(es: list[dict]) -> dict[str, str]:
+    """`NN:id` -> status, from the ledger's probe rows (rows from before TODO 33.17 carry none)."""
+    out = {}
+    for e in es:
+        if e.get("step") == "probe" and isinstance(e.get("iter"), int):
+            for r in e.get("results") or []:
+                if isinstance(r, dict) and r.get("id") and r.get("status"):
+                    out[hyp_key(e["iter"], r["id"])] = r["status"]
+    return out
+
+
+def force_build(n: int, dec: dict, hyps: dict, it_dir: Path) -> dict:
+    """TODO 33.17 (plan section 3.4, D14; user 2026-10-22: "把 33.15 到 33.18 先做了吧"): a mechanism Reviewers proposed
+    in two or more iterations (recurring, with this Manager's `repeats` in the ledger already), never given to an
+    Engineer, with a member among this iteration's hypotheses, and not refuted (its latest probed member's status) takes
+    one Engineer slot -- the last one -- unless the Manager's `skip` names one of SKIP_CHECKS for it. The first such
+    mechanism only (the most proposed). Returns the decision the Engineers carry out; the Manager's own stays in
+    manager.json. 32.12 proposed the dish soap's narrow side five times and built it none; option B built it in its
+    eighth iteration, two after the prompt rule (33.14) asked for it."""
+    if dec.get("decision") != "engineer":
+        return dec
+    es = entries()
+    st = statuses(es)
+    known = [h["id"] for h in hyps.get("hypotheses") or [] if isinstance(h, dict) and "id" in h]
+    for g in recurring(es):
+        mine = [m for m in g["ids"] if m.startswith(f"{n:02d}:") and m.split(":", 1)[1] in known]
+        if not mine:
+            continue
+        probed = [m for m in sorted(g["ids"]) if st.get(m) and st[m] != "hypothesis"]
+        if probed and st[probed[-1]] == "refuted":
+            continue
+        hid = mine[0].split(":", 1)[1]
+        skip = dec.get("skip") or {}
+        check = skip.get(hid) or skip.get(mine[0])
+        if check in SKIP_CHECKS:
+            ledger(dict(step="forced_skip", iter=n, hypothesis=hid, mechanism=g["ids"], check=check))
+            return dec
+        if CANDIDATES > 1:
+            ids = [h for h in (dec.get("hypotheses") or []) if h in known] or [dec.get("hypothesis")]
+            ids = [h for h in ids if h in known] or [known[0]]
+            ids = (ids * CANDIDATES)[:CANDIDATES]
+            replaced = ids[-1]
+            ids[-1] = hid
+            out = dict(dec, hypotheses=ids)
+        else:
+            replaced = dec.get("hypothesis")
+            out = dict(dec, hypothesis=hid)
+        ledger(dict(step="forced", iter=n, hypothesis=hid, replaced=replaced, mechanism=g["ids"],
+                    proposed=g["proposed"], skip_given=check))  # fmt: skip
+        jdump(it_dir / "manager_forced.json", out)
+        return out
+    return dec
+
+
+def repair_notes(es: list[dict], diag: Path, n: int) -> dict | None:
+    """TODO 33.17 (plan sections 3.4, 3.5): when the last iteration before `n` ended with a gate rejection or the
+    Composer kept the incumbent, what the Manager reads first after `recurring`: the incumbent's diagnostic failures by
+    class (`failure_class`, 33.15), the rejected candidate's tally by class from the gate (wins under the class the
+    incumbent failed with, losses under the class the candidate failed with), and the standing suggestion per class
+    (CLASS_SUGGEST). DexAgent attaches its diagnosis to every rejection the same way."""
+    prev = max((e["iter"] for e in es if isinstance(e.get("iter"), int) and e["iter"] < n), default=None)
+    if prev is None:
+        return None
+    rows = [e for e in es if e.get("iter") == prev]
+    gate = next((e for e in reversed(rows) if e.get("step") == "gate" and not e.get("void")), None)
+    kept = any(e.get("step") == "compose" and e.get("decision") == "keep" for e in rows)
+    if gate and not gate.get("accepted"):
+        r = gate.get("result") or gate.get("stage1") or {}
+        trigger = f"iteration {prev}: the gate rejected ({_cut(gate.get('reason'), 80)})"
+    elif kept and not gate:
+        r, trigger = {}, f"iteration {prev}: the Composer kept the incumbent"
+    else:
+        return None
+    classes = collections.Counter(
+        (x.get("failure_class") or "unknown") for x in B.outcomes(diag).values() if not x.get("ok")
+    )  # fmt: skip
+    per = r.get("per_class") or {}
+    names = sorted(set(classes) | set(per), key=lambda k: (-classes.get(k, 0), k))
+    return dict(trigger=trigger, diag_failures_by_class=dict(classes.most_common()), gate_by_class=per,
+                suggestions={k: CLASS_SUGGEST[k] for k in names if k in CLASS_SUGGEST})  # fmt: skip
+
+
 def reopen_allowed(es: list[dict]) -> bool:
     """TODO 33.14 (D11): no more than MAX_REOPEN_RUN Manager `reopen` decisions in a row (the last valid decision per
     iteration). 32.12's iterations 3-5 were all reopens of one park each."""
@@ -2033,9 +2178,11 @@ def parse_effort(items: list[str]) -> dict:
 
 
 def resolve_settings(a, meta: dict, resuming: bool) -> dict:
-    """TODO 36 (review 2026-10-22, L3): a run's candidates, scoped_review and max_wall_h are what the command line says,
-    else -- when the run is resumed (meta.json has `started`) -- what meta.json recorded, else the module default. A
-    resume used to rewrite them (32.12 needed RSI_MAX_WALL_H=5 again; an older K = 1 run resumed as K = 3)."""
+    """TODO 36 (review 2026-10-22, L3): a run's candidates, scoped_review, max_wall_h and stop_rate are what the command
+    line says, else -- when the run is resumed (meta.json has `started`) -- what meta.json recorded, else the module
+    default. A resume used to rewrite them (32.12 needed RSI_MAX_WALL_H=5 again; an older K = 1 run resumed as K = 3).
+    `stop_rate` (`--stop-rate`, user 2026-10-22): grasp_atomic continued from an incumbent at 29/40 on the acceptance
+    pool, which the default 70 % stop would end at once."""
 
     def pick(cli, key, default):
         return cli if cli is not None else (meta[key] if resuming and key in meta else default)
@@ -2045,7 +2192,17 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", WALL_DEFAULT_H)),
+        stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", STOP_RATE_DEFAULT)),
     )
+
+
+def settings_changes(cfg: dict, meta: dict, resuming: bool) -> dict:
+    """What a resume changes in the run's settings (a `settings` ledger row). A key an older run did not record compares
+    with the default it ran under (stop_rate: 0.70 before 2026-10-22)."""
+    if not resuming:
+        return {}
+    was = {k: meta.get(k, STOP_RATE_DEFAULT if k == "stop_rate" else None) for k in cfg}
+    return {k: dict(old=was[k], new=v) for k, v in cfg.items() if was[k] is not None and was[k] != v}
 
 
 def is_abnormal(why: str) -> bool:
@@ -2090,14 +2247,17 @@ def cmd_run(a) -> int:
 
 
 def _run(a, efforts: dict) -> int:
-    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H
+    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
     meta = prior or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, family=FAMILY)
     resume(meta)
     cfg = resolve_settings(a, meta, resuming)
     CANDIDATES, SCOPED, MAX_WALL_H = cfg["candidates"], cfg["scoped_review"], cfg["max_wall_h"]
-    changed = {k: dict(old=meta[k], new=v) for k, v in cfg.items() if resuming and k in meta and meta[k] != v}
+    STOP_RATE = cfg["stop_rate"]
+    if not cfg["stop_rate"] > 0:
+        raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
+    changed = settings_changes(cfg, meta, resuming)
     if changed:
         ledger(dict(step="settings", **changed))
     meta.update(cost_cap_usd=COST_CAP, model=MODEL, **cfg)  # this run's limits (roles read meta.json)
@@ -2178,6 +2338,8 @@ def main(argv=None) -> int:
         "a resumed run keeps its recorded value unless given)",
     )
     r.add_argument("--scoped-review", action="store_true", default=None, help="two scoped Reviewers (TODO 32.11)")
+    r.add_argument("--stop-rate", type=float, default=None, help="stop when the incumbent wins this share of the "
+                   "acceptance pool (default 0.70; a resumed run keeps its recorded value unless given)")  # fmt: skip
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer, composer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip

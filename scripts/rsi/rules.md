@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 14, 2026-10-22)
+# Rules for the scene RSI loop (TODO 27, version 15, 2026-10-22)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -90,7 +90,9 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     (version 14, TODO 33.8, user 2026-10-22: early research): accepted when b - c >= 3 and c <= b / 3 on the full
     pool; the one-sided McNemar p is reported, not required (until then p <= 0.05 was, which alone needs 5:0, so a
     change that fixes one object's 4 acceptance starts could never pass). A candidate rejected under the older rule
-    may be judged again; the sealed pool at the end still decides what the run reports.
+    may be judged again; the sealed pool at the end still decides what the run reports. The loop stops for the sealed
+    pool when the incumbent wins 70 % of the acceptance pool; a run continued from a strong incumbent sets its own
+    share with `run --stop-rate` (version 15, user 2026-10-22: grasp_atomic continued from 29/40).
 
 26. When task-wide parks cover more than half the acceptance pool, the gate judges on an acceptance pool of the same
     size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a
@@ -136,3 +138,26 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     by features, the generic pick as the fallback, so a similar object reuses it. A flow is never chosen by an
     object's name: a string constant equal to a scene object's key, body, ADT instance name or name stem (Mug_2,
     Mug_2_object, Mug) outside a docstring voids the draft (code); semantic fields (category, prototype) are features.
+
+31. Every grasp step of a skill goes through `stage()` (src/locomani/tasks/scene/stage.py, TODO 33.16, D12): the motor
+    call, a check of the measured state after it (`stance_check`, `reach_check` with its stall ratio `track_ratio`,
+    `grip_check`, `lift_check`, or the skill's own) and an `on_fail` action (re-walk, re-approach, open and grip again,
+    give up), within the round's retry budget. A step that missed is not followed by the next one as if it had worked:
+    32.12's incumbent closed the jaw after reaching 10-36 cm off. The thresholds and the on_fail actions are the loop's
+    to evolve (prompt) (version 15, user 2026-10-22: "把 33.15 到 33.18 先做了吧").
+
+32. Every round record carries `failure_class` (too_wide, side_reach, pinch_reach, walk_off, knocked, slip, fell,
+    other) and `events` (the walk's end, the pre-grasp's end, the grip, the lift, the hand's closest approach, the
+    object's first move and the hand that moved it), computed by the driver from the trace and the scene file
+    (scripts/rsi/failure_class.py, TODO 33.15); the gate reports its tally per class and the digest leads with the
+    classes. `src/locomani/tasks/scene/graspability.py` (and scripts/rsi/graspability.py) says, without simulating,
+    whether an object fits the open jaw on each side, how far to turn so a side that fits faces the jaw, and which
+    preparatory action would make it fit (TODO 33.18, D13). Neither is evidence that a change helps; only the gate is
+    (code: the driver writes them; prompt) (version 15).
+
+33. Each hypothesis gets a `status` from its probe: verified (it fixed a diagnostic start and broke none), refuted (it
+    fixed none), mixed, or hypothesis (not probed: its test needs code). A mechanism Reviewers proposed in two or more
+    iterations, given to no Engineer and not refuted takes one Engineer slot, unless the Manager's `skip` names the
+    check that fails: interface_kept, safety_checks_kept, changed_code_reached or evidence_not_refuting. After a
+    rejection the Manager reads the failure classes, the gate's per-class tally and a standing suggestion per class
+    (code: loop.py force_build, repair_notes; TODO 33.17, D14) (version 15).

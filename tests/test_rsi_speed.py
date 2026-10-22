@@ -259,12 +259,16 @@ class RunFlags(unittest.TestCase):
             lp.main(["run", "grasp_atomic", "--candidates", "1"])
             self.assertEqual(seen["candidates"], 1)
         none = Namespace(candidates=None, scoped_review=None)
-        self.assertEqual(lp.resolve_settings(none, {}, False), dict(candidates=3, scoped_review=False, max_wall_h=6.0))
+        self.assertEqual(
+            lp.resolve_settings(none, {}, False),
+            dict(candidates=3, scoped_review=False, max_wall_h=6.0, stop_rate=0.70),
+        )
         old = dict(started="x", candidates=1, scoped_review=True, max_wall_h=5.0)
         with mock.patch.dict("os.environ", clear=False):
             os.environ.pop("RSI_MAX_WALL_H", None)
             self.assertEqual(
-                lp.resolve_settings(none, old, True), dict(candidates=1, scoped_review=True, max_wall_h=5.0)
+                lp.resolve_settings(none, old, True),
+                dict(candidates=1, scoped_review=True, max_wall_h=5.0, stop_rate=0.70),
             )
             self.assertEqual(lp.resolve_settings(none, old, False)["candidates"], 3)  # fresh run ignores stale meta
             self.assertEqual(

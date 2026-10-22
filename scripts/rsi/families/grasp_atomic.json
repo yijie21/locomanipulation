@@ -56,6 +56,8 @@
    "scripts/rsi/scene_round.py",
    "scripts/rsi/sealed.py",
    "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
    "scripts/rsi/experience",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",
@@ -79,7 +81,9 @@
    "locomani.tasks.scene.navigate",
    "locomani.tasks.scene.start",
    "locomani.backends.scalebfm.runtime",
-   "locomani.backends.scalebfm.motor"
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.stage"
   ],
   "strip": [
    "configs/experiments",
