@@ -351,12 +351,12 @@ blender --background assets/blender/logistics_room.blend --python scripts/unreal
 
 ```bash
 [ -x /venv/main/bin/python ] || uv venv /venv/main --python 3.12
-uv pip install --python /venv/main/bin/python trimesh==4.12.2 opencv-python-headless numpy scipy matplotlib pyyaml ruff==0.16.1 huggingface_hub
+uv pip install --python /venv/main/bin/python mujoco==3.11.0 trimesh==4.12.2 opencv-python-headless numpy scipy matplotlib pyyaml ruff==0.16.1 huggingface_hub
 ```
 
 做什么：建场景的脚本（`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 等）和写回时的代码格式化用这个环境，不用 `.venv_sim`。Vast 的基础镜像自带 `/venv/main`，第一条会跳过。没有 `/venv/main` 写权限的机器可以建在 `~/venv/main`（两条命令里的路径照换）：`make` 和 `scripts/rsi/writeback.py` 先读环境变量 `LOCOMANI_VENV`，没有就依次找 `/venv/main`、`~/venv/main`。
 
-验证：`/venv/main/bin/python -c "import trimesh, cv2; print(trimesh.__version__)"` 输出 `4.12.2`。
+验证：`/venv/main/bin/python -c "import mujoco, trimesh, cv2; print(mujoco.__version__, trimesh.__version__)"` 输出 `3.11.0 4.12.2`。`adt_to_scene.py` 经 `locomani.sim.make_dex1_model` 导入 mujoco，没有它第一步就停。
 
 ## 10. ADT 数据（场景 RSI）
 
