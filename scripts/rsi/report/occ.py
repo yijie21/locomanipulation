@@ -3,7 +3,7 @@ furniture and walls, `+` within the robot's body radius of them -- no place for 
 points, and the clearance (distance to the nearest occupied cell) at each.
 What 18 of 44 Reviewers rebuilt by hand (`occ.py`, `occ_look.py`, `occ_ascii.py`).
 
-    PYTHONPATH=src python3 scripts/rsi/tools/occ.py <x> <y> [--r 1.2] [--mark name=x,y ...] [--scene <scene dir>]
+    PYTHONPATH=src python3 scripts/rsi/report/occ.py <x> <y> [--r 1.2] [--mark name=x,y ...] [--scene <scene dir>]
 """
 
 from __future__ import annotations

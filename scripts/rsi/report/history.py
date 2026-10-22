@@ -2,7 +2,7 @@
 probe before -> after), the infeasibility claims and parks, the Manager's decision, the Engineer's mechanism and the
 gate's verdict; then the parks standing now. What 34 of 44 Reviewers dug out of the context and ledger JSON by hand.
 
-    python3 scripts/rsi/tools/history.py <loop dir>     # outputs/scene_rsi_20261016/<family>/loop
+    python3 scripts/rsi/report/history.py <loop dir>     # outputs/scene_rsi_20261016/<family>/loop
 """
 
 from __future__ import annotations

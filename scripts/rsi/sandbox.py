@@ -21,9 +21,10 @@ since TODO 32.15, user 2026-10-22). For a family with a `sandbox` block it also 
 final.patch (the old grasp code; rule 27 -- in TODO 32.12 an Engineer read experience/pick_single/final.patch) and
 without the entries of the family file's `library_exclude` (a list of family names). TODO 36 (review 2026-10-22).
 
-Every sandbox, block or not, is built without CLAUDE.md, AGENTS.md, scripts/rsi/tools and scripts/rsi/library: the role
-sessions load the sandbox's CLAUDE.md / AGENTS.md, which send them to STATE, `make check` and commits, and the tools
-were turned off in TODO 32.6 (TODO 36).
+Every sandbox, block or not, is built without CLAUDE.md, AGENTS.md and scripts/rsi/report: the role sessions load the
+sandbox's CLAUDE.md / AGENTS.md, which send them to STATE, `make check` and commits, and report/ holds the Reviewer
+tools turned off in TODO 32.6 (moved there from scripts/rsi/tools in TODO 36.8, with the report scripts; the 10-19
+library scripts/rsi/library was deleted then; both are still stripped from a sandbox built from an older commit).
 
 The acceptance and sealed pools' seeds are not in the sandbox's copy of the family file: build writes them to
 outputs/scene_rsi_20261016_hidden/<family>/seeds.json and blanks them in the file before the sandbox's git commit, so no
@@ -46,7 +47,9 @@ REPO = HERE.parents[1]
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 LINKS = ("third_party", "outputs/scene_discovery")
 HIDDEN = "outputs/scene_rsi_20261016_hidden"
-DEFAULT_STRIP = ("CLAUDE.md", "AGENTS.md", "scripts/rsi/tools", "scripts/rsi/library")  # TODO 36 (review 2026-10-22)
+# TODO 36 (review 2026-10-22); scripts/rsi/report since TODO 36.8 (the human analysis and report scripts, the old
+# tools/ among them); tools/ and library/ stay listed for `build --ref` of a commit from before 36.8
+DEFAULT_STRIP = ("CLAUDE.md", "AGENTS.md", "scripts/rsi/report", "scripts/rsi/tools", "scripts/rsi/library")
 
 
 def git(dest: Path, *args, **kw):

@@ -9,8 +9,8 @@ Outputs mirror the sources under outputs/scene_rsi_20261016/report/rounds_202610
 `diag/<step family>/<version>/`, `untrained/<sample>/rounds/`; report_media.py and report_unreal.py read them with
 `--rounds rounds_20261020`. `check` lists each round's outcome then and now.
 
-    PYTHONPATH=src $PY scripts/rsi/report_rerun.py run [--procs 8]
-    PYTHONPATH=src $PY scripts/rsi/report_rerun.py check
+    PYTHONPATH=src $PY scripts/rsi/report/report_rerun.py run [--procs 8]
+    PYTHONPATH=src $PY scripts/rsi/report/report_rerun.py check
 """
 
 from __future__ import annotations
@@ -21,8 +21,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
-sys.path[:0] = [str(HERE), str(REPO / "src")]
+REPO = HERE.parents[2]  # scripts/rsi/report/ since TODO 36.8
+sys.path[:0] = [str(HERE), str(HERE.parent), str(REPO / "src")]
 
 import batch as B  # noqa: E402
 import regress as RG  # noqa: E402

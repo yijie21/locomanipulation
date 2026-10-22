@@ -7,15 +7,17 @@ one candidate from their drafts) -> Gate (gate.py) -> ledger. State lives in fil
 
 Runs inside a sandbox checkout (sandbox.py). The roles see the sandbox, rules.md and the plan; the acceptance and sealed
 pools and the gate live in the hidden tree (`..._hidden/`), and every tool call in a role's transcript is grepped for
-that name and for paths outside the sandbox: a hit voids the iteration (the warehouse loop's audit, own tool-results
-excepted; since TODO 32.13 only the calls' inputs are read, not the role's thinking, text or StructuredOutput answer).
+that name and for paths outside the sandbox (the warehouse loop's audit, own tool-results excepted; since TODO 32.13 only
+the calls' inputs are read, not the role's thinking, text or StructuredOutput answer). A hit voids what the role
+produced and the loop goes on (TODO 36.7, user 2026-10-22): a Reviewer's, Manager's or Composer's (or the only
+Engineer's) voids the iteration, one Engineer's of K only its draft; two voided iterations in a row stop the loop.
 
 The Engineer may change only the sandbox's skills package (src/locomani/tasks/scene/skills/); anything else it touches
 voids the call and is restored. On a rejection the package goes back to the incumbent's snapshot.
 
 Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, gate calls >= 12,
-wall clock >= MAX_WALL_H, 3 rejections in a row with no new hypothesis, a Manager `stop` (model cost has no cap since
-the user lifted it on 2026-10-19; RSI_COST_CAP_USD sets one); and
+wall clock >= MAX_WALL_H, a Manager `stop` (model cost has no cap since the user lifted it on 2026-10-19;
+RSI_COST_CAP_USD sets one), MAX_VOID_STREAK iterations in a row voided by the audit (an abnormal stop); and
 (D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
 least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
 tasks (`accept_pool`, rule 26).
@@ -73,7 +75,8 @@ COST_CAP = float(os.environ["RSI_COST_CAP_USD"]) if "RSI_COST_CAP_USD" in os.env
 WALL_DEFAULT_H = 6.0
 MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", WALL_DEFAULT_H))  # cmd_run resolves it again (resolve_settings)
 MAX_GATE_CALLS = 12
-MAX_REJECT_STREAK = 3
+MAX_VOID_STREAK = 2  # TODO 36.7 (user 2026-10-22): voided iterations in a row that stop the loop
+HISTORY_FULL = 2  # TODO 36.7: the Manager reads the last 2 iterations' ledger rows in full, older ones one line each
 MAX_HYPOTHESES = 4
 MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
 STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
@@ -129,18 +132,6 @@ CANDIDATES_NOTE = (  # TODO 32.9: what the Manager reads when an iteration build
     "into one candidate for the gate, adopts one, or keeps the incumbent.\n"
 )
 PATCHED = re.compile(r"^\+\+\+ \S+/skills/(\S+)", re.M)  # the files a candidate patch changes
-TOOLS_NOTE = (  # TODO 32.6: what 44 Reviewers wrote by hand, as tools (left out of the prompt when the sandbox has none)
-    "Tools for these records (they print tables; run them with {SIM_PY}, from the sandbox root, PYTHONPATH=src): "
-    "`scripts/rsi/tools/steps.py <rounds dir> [--vs <rounds dir>] [--task T] [--step a,b] [--failed]` -- every round's "
-    "steps and numbers, or with --vs the rounds whose outcome differs between two directories; "
-    "`scripts/rsi/tools/start.py <pool dir> <label>` -- a start's geometry: the object in its surface's frame, its "
-    "distance to each edge, the robot's distance and bearing; `scripts/rsi/tools/trace.py <rounds dir> <label> [--from "
-    "T] [--to T] [--every S]` -- the trace: pelvis, each wrist commanded vs measured, jaw, finger contacts, the object's "
-    "height change and offset from the nearer wrist; `scripts/rsi/tools/occ.py <x> <y> [--mark name=x,y]` -- the "
-    "navigation map around a point and the clearance there; `scripts/rsi/tools/history.py {LOOP}/loop` -- every "
-    "iteration's hypotheses, probes, decisions and gate verdicts, and the parks. Use them before writing your own "
-    "scripts; write your own for what they do not show.\n"
-)
 
 CLAIM_SCHEMA = {  # D13.2: an infeasibility claim
     "type": "object",
@@ -280,7 +271,6 @@ def prompt_vars() -> dict:
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
-        TOOLS=TOOLS_NOTE if (HERE / "tools").is_dir() else "",
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
         LIBRARY=LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "",
     )
@@ -368,8 +358,33 @@ def run_cost(es: list[dict], meta: dict | None) -> float:
     return sum(e.get("cost_usd", 0.0) for e in es if str(e.get("t", "")) >= t0)
 
 
+def voided_in_a_row(es: list[dict]) -> list[int]:
+    """The latest iterations, oldest first, that the audit voided (`void_iter` rows), counted back one by one from the
+    newest iteration in the ledger until one that was not voided or has no rows. An iteration a re-probe (`void`) or
+    re-audit (`reaudit`) row takes up again after its void_iter row is not void any more."""
+    status: dict[int, bool] = {}
+    for e in es:
+        if "iter" not in e or not isinstance(e["iter"], int):
+            continue
+        n = e["iter"]
+        if e.get("step") == "void_iter":
+            status[n] = True
+        elif e.get("step") in ("void", "reaudit"):
+            status[n] = False
+        else:
+            status.setdefault(n, False)
+    out, n = [], max(status, default=-1)
+    while status.get(n):
+        out.append(n)
+        n -= 1
+    return out[::-1]
+
+
 def stop_reason(meta: dict) -> str | None:
     es = entries()
+    voided = voided_in_a_row(es)
+    if len(voided) >= MAX_VOID_STREAK:  # TODO 36.7: an abnormal stop (is_abnormal)
+        return f"audit: iterations {', '.join(map(str, voided))} voided in a row (roles named off-limits paths)"
     accepted = [e for e in es if e.get("step") == "gate" and e.get("accepted") and not e.get("void")]
     n_accept = len(B.pool_labels(accept_pool()))
     here = incumbent_ok_here(es)
@@ -386,16 +401,7 @@ def stop_reason(meta: dict) -> str | None:
     cost = run_cost(es, meta)
     if COST_CAP is not None and cost >= COST_CAP:
         return f"model cost {cost:.0f} >= {COST_CAP:.0f} USD"
-    streak = 0
-    for e in reversed(es):
-        if e.get("step") == "gate" and not e.get("void"):  # TODO 36 (review 2026-10-22): a void row is no rejection
-            if e.get("accepted"):
-                break
-            streak += 1
-    reviews = [e for e in es if e.get("step") == "review"]
-    if streak >= MAX_REJECT_STREAK and reviews and reviews[-1].get("n_hypotheses", 0) == 0:
-        return f"{streak} rejections in a row and the last review had no new hypothesis"
-    m = [e for e in es if e.get("step") == "manager"]
+    m = [e for e in es if e.get("step") == "manager" and not e.get("void")]  # a voided Manager decided nothing
     if m and m[-1].get("decision") == "stop":
         return "manager: stop"
     inc = jload(GATE_DIR / "incumbent.json")
@@ -982,7 +988,89 @@ def parameters_of(inc: dict) -> dict:
     return json.loads(r.stdout) if r.returncode == 0 else {"error": r.stderr[-500:]}
 
 
-def context(inc: dict, extra: dict) -> dict:
+def _cut(x, k: int) -> str:
+    t = " ".join(str(x if x is not None else "").split())
+    return t if len(t) <= k else t[: k - 3] + "..."
+
+
+def iteration_line(n: int, rows: list[dict]) -> str:
+    """Iteration n's ledger rows as one line (TODO 36.7): the hypotheses (from iter_NN/hypotheses.json), the probes,
+    the claims' parks and reopens, the Manager's decision, each Engineer's draft, the Composer and the gate."""
+    hyps = (jload(STATE / f"iter_{n:02d}" / "hypotheses.json", {}) or {}).get("hypotheses") or []
+    parts = [f"iteration {n}"]
+    for e in rows:
+        st = e.get("step")
+        if st == "review":
+            if e.get("void"):
+                parts.append(f"review void ({', '.join(e.get('leaks') or [])})")
+            else:
+                parts.append(f"review: {e.get('n_hypotheses', 0)} hypotheses, {e.get('n_claims', 0)} claims")
+                hs = [f"{h['id']} {_cut(h.get('claim'), 140)}" for h in hyps if isinstance(h, dict) and "id" in h]
+                if hs:
+                    parts.append("; ".join(hs))
+        elif st == "probe":
+            parts.append("probe " + ", ".join(
+                f"{r['id']} {r.get('ok_before')}->{r.get('ok_after')}/{r.get('n')} (predicted fixed "
+                f"{r.get('predicted_fixed_hit', 0)}/{r.get('predicted_fixed_n', 0)})"
+                for r in e.get("results") or [] if isinstance(r, dict) and "id" in r))  # fmt: skip
+        elif st == "manager":
+            what = e.get("hypotheses") or e.get("reopen_claim") or e.get("hypothesis") or ""
+            what = ",".join(what) if isinstance(what, list) else what
+            parts.append(f"manager {e.get('decision')} {what}{' (void)' if e.get('void') else ''}: "
+                         f"{_cut(e.get('reason'), 200)}")  # fmt: skip
+        elif st == "engineer":
+            k = f" {e['candidate']}" if e.get("candidate") is not None else ""
+            how = "void" if e.get("void") else f"duplicate of {e['duplicate_of']}" if e.get("duplicate_of") else "ok"
+            how += f", error {_cut(e['error'], 80)}" if e.get("error") else ""
+            how += f", stray {e['stray']}" if e.get("stray") else ""
+            parts.append(f"engineer{k} {e.get('hypothesis') or ''}: {how} -- {_cut(e.get('mechanism'), 120)}")
+        elif st == "compose":
+            parts.append(f"composer {e.get('decision')}{' ' + str(e['adopted']) if e.get('adopted') else ''}"
+                         f"{' (void)' if e.get('void') else ''}: {_cut(e.get('reason') or e.get('notes'), 120)}")  # fmt: skip
+        elif st == "gate":
+            r = e.get("result") or {}
+            v = "void" if e.get("void") else "accepted" if e.get("accepted") else "rejected"
+            bc = f" b {r['b']} c {r['c']} p {r['p_one_sided']:.3g}" if "b" in r and "p_one_sided" in r else ""
+            parts.append(f"gate {v}{bc}{' ' + e['hash'] if e.get('hash') else ''}: {_cut(e.get('reason'), 100)}")
+        elif st == "park":
+            parts.append(
+                f"park {e.get('claim')} {e.get('task')} ({e.get('scope')}, {len(e.get('starts') or [])} starts)"
+            )
+        elif st == "unpark":
+            parts.append(f"unpark {e.get('claim')} {e.get('task')} by {e.get('by')}"
+                         f"{' (claim wrong)' if e.get('claim_wrong') else ''}")  # fmt: skip
+        elif st == "reopen_test":
+            parts.append(f"reopen test {e.get('claim')}: {len(e.get('ok') or [])}/{e.get('n')}")
+        elif st == "void_iter":
+            parts.append(f"VOID: the {e.get('role')} named off-limits paths ({', '.join(e.get('leaks') or [])})")
+        else:
+            parts.append(f"{st}: {_cut(e.get('reason') or e.get('error') or '', 120)}".rstrip(": "))
+    return " | ".join(parts)
+
+
+def compact_history(es: list[dict], full: int = HISTORY_FULL) -> list:
+    """TODO 36.7 (user 2026-10-22): the ledger for the Manager -- the rows from the last `full` iterations' first row on
+    as they are (without `usage`), everything before as one line per iteration (iteration_line) and one per row
+    outside an iteration (a stop, a resume). 32.12's iteration 5 Manager read 96 KB, 70% of it history."""
+    rows = [{k: v for k, v in e.items() if k != "usage"} for e in es]
+    iters = sorted({e["iter"] for e in rows if isinstance(e.get("iter"), int)})
+    keep = set(iters[-full:]) if full > 0 else set()
+    cut = next((i for i, e in enumerate(rows) if e.get("iter") in keep), len(rows))
+    out, seen = [], {}
+    for e in rows[:cut]:
+        n = e.get("iter")
+        if isinstance(n, int):
+            seen.setdefault(n, []).append(e)
+            if len(seen[n]) == 1:
+                out.append(n)  # placeholder: the line goes where the iteration's first row was
+        else:
+            out.append(_cut(f"{e.get('t', '')} {e.get('step')}: " + json.dumps(
+                {k: v for k, v in e.items() if k not in ("t", "step")}, ensure_ascii=False), 240))  # fmt: skip
+    return [iteration_line(x, seen[x]) if isinstance(x, int) else x for x in out] + rows[cut:]
+
+
+def context(inc: dict, extra: dict, compact: bool = False) -> dict:
+    """The role's context file. `compact` (the Manager, TODO 36.7): older iterations one line each (compact_history)."""
     es = entries()
     meta = jload(STATE / "meta.json", {})
     # TODO 36 (review 2026-10-22, L6): this run's cost only (not rows a replay copied), and the wall clock the
@@ -999,7 +1087,7 @@ def context(inc: dict, extra: dict) -> dict:
             stop_rate=STOP_RATE,
             **wall,
         ),  # fmt: skip
-        history=[{k: v for k, v in e.items() if k not in ("usage",)} for e in es],
+        history=compact_history(es) if compact else [{k: v for k, v in e.items() if k != "usage"} for e in es],
         rejected_hashes=sorted(
             {
                 e["hash"]
@@ -1079,7 +1167,8 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), n_claims=n_claims, void=bool(leaks),
                 leaks=leaks, **acct, **({"sessions": sessions} if len(sessions) > 1 else {})))  # fmt: skip
     if leaks:
-        return f"reviewer of iteration {n} named off-limits paths ({', '.join(leaks)})"
+        void_iteration(n, "reviewer", leaks)
+        return None
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
@@ -1135,7 +1224,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     jdump(STATE / "gap_candidates.json", gaps)
     ctx = it_dir / "manager_context.json"
     jdump(ctx, context(inc, dict(extra, hypotheses=hyps, probe=pr, claims=cr, parked=jload(STATE / "parked.json", {}),
-                                 gap_candidates=gaps)))  # fmt: skip
+                                 gap_candidates=gaps), compact=True))  # fmt: skip
     prompt = fill((HERE / "prompts" / "manager.md").read_text(), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
     dec, acct = claude(
@@ -1146,13 +1235,14 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"),
                 hypotheses=dec.get("hypotheses") if CANDIDATES > 1 else None, reopen_claim=dec.get("reopen_claim"),
                 reason=dec["reason"], summary_zh=dec["summary_zh"], escalation=dec.get("escalation"), infeasible=dec.get("infeasible"),
-                gap_proposals=dec.get("gap_proposals"), leaks=leaks, **acct))  # fmt: skip
+                gap_proposals=dec.get("gap_proposals"), leaks=leaks, void=bool(leaks), **acct))  # fmt: skip
     if dec.get("gap_proposals") and not leaks:
         with (STATE / "gaps.jsonl").open("a") as fh:
             for g in dec["gap_proposals"]:
                 fh.write(json.dumps(dict(t=now(), iter=n, **g), ensure_ascii=False) + "\n")
     if leaks:
-        return f"manager of iteration {n} named off-limits paths ({', '.join(leaks)})"
+        void_iteration(n, "manager", leaks)
+        return None
     if dec["decision"] == "stop":
         return "manager: stop"
     if dec["decision"] == "review":
@@ -1215,7 +1305,8 @@ def after_engineer(
     if leaks or stray:
         hide_void(n, cand, it_dir / "code.patch")
     if leaks:
-        return f"engineer of iteration {n} named off-limits paths ({', '.join(leaks)})"
+        void_iteration(n, "engineer", leaks)
+        return None
     if stray:
         ledger(
             dict(
@@ -1243,6 +1334,15 @@ def hide_void(n: int, *paths: Path) -> None:
             if (dst / p.name).exists():
                 shutil.rmtree(dst / p.name) if (dst / p.name).is_dir() else (dst / p.name).unlink()
             shutil.move(str(p), str(dst / p.name))
+
+
+def void_iteration(n: int, role: str, leaks: list[str]) -> None:
+    """TODO 36.7 (user 2026-10-22, "按你的建议的来"): a leak voids what the leaking role produced and the loop goes
+    on. A Reviewer's, Manager's or Composer's leak -- or the only Engineer's (K = 1, a reopen) -- voids iteration n:
+    the incumbent stays and the next iteration starts; MAX_VOID_STREAK of them in a row stop the loop (stop_reason).
+    One Engineer's of K voids only its draft (multi_engineer_step). Until then any of these stopped the loop."""
+    ledger(dict(step="void_iter", iter=n, role=role, leaks=leaks))
+    print(f"iteration {n} void: the {role} named off-limits paths ({', '.join(leaks)})")
 
 
 def gate_lines() -> list[str]:
@@ -1372,7 +1472,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         t.join()
     stray = revert_strays(base_changes)
     put_skills(Path(inc["dir"]) / "skills")
-    cands, jobs, first = [], [], {}  # first: candidate hash -> the draft kept (identical drafts run once, 36 L5)
+    cands, jobs, first, leaked = [], [], {}, {}  # first: candidate hash -> the draft kept (identical drafts run once)
     for k, hid, w, _, _ in calls:
         res = out.get(k)
         if isinstance(res, Exception) or res is None:
@@ -1394,6 +1494,8 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, changed=sorted(set(PATCHED.findall(patch))),
                     stray=stray, mechanism=eng["mechanism"], set=eng["set"], void=void, leaks=leaks,
                     **({"duplicate_of": dup["number"]} if dup else {}), **acct))  # fmt: skip
+        if leaks:
+            leaked[k] = leaks
         if leaks or stray:  # voided drafts leave the visible tree
             hide_void(n, w, cand, it_dir / f"code_{k}.patch")
         if dup:
@@ -1408,6 +1510,8 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
             )
     if not cands:
         ledger(dict(step="compose", iter=n, decision="none", reason="no valid candidate", stray=stray))
+        if leaked and len(leaked) == len(calls):  # every draft voided by its Engineer's leak: the iteration is void
+            void_iteration(n, "engineers", sorted({x for v in leaked.values() for x in v}))
         return None
     if not stub:
         B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
@@ -1433,8 +1537,11 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     ledger(dict(step="compose", iter=n, decision=comp["decision"], adopted=comp.get("adopted"), notes=comp["notes"],
                 mechanism=comp.get("mechanism", ""), set=comp.get("set"), stray=stray, void=bool(leaks or stray),
                 leaks=leaks, **acct))  # fmt: skip
-    if leaks or stray:
-        return f"composer of iteration {n} named off-limits paths ({', '.join(leaks)})" if leaks else None
+    if leaks or stray:  # its working copy leaves the visible tree as a voided draft does
+        hide_void(n, it_dir / "compose")
+        if leaks:
+            void_iteration(n, "composer", leaks)
+        return None
     if comp["decision"] == "keep":
         return None
     if comp["decision"] == "adopt":
@@ -1586,8 +1693,9 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
 
 
 def is_abnormal(why: str) -> bool:
-    """A stop that is a failure, not a finish: a role call that failed, an audit stop, a gate error."""
-    return why.startswith(("role call failed", "gate error")) or "named off-limits" in why
+    """A stop that is a failure, not a finish: a role call that failed, a gate error, the audit voiding
+    MAX_VOID_STREAK iterations in a row (TODO 36.7; "named off-limits" is the reason older runs stopped with)."""
+    return why.startswith(("role call failed", "gate error", "audit:")) or "named off-limits" in why
 
 
 class Terminated(BaseException):

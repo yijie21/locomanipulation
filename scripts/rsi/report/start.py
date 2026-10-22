@@ -2,8 +2,8 @@
 file), the object in that surface's frame with its distance to every edge, the surface height and approach edges, and
 the robot's distance and bearing to the object. What 40 of 44 Reviewers computed by hand from scene_meta.json.
 
-    PYTHONPATH=src python3 scripts/rsi/tools/start.py <pool dir> <label> [<label> ...] [--scene <scene dir>]
-    PYTHONPATH=src python3 scripts/rsi/tools/start.py <pool dir> --task pick_Mug_2
+    PYTHONPATH=src python3 scripts/rsi/report/start.py <pool dir> <label> [<label> ...] [--scene <scene dir>]
+    PYTHONPATH=src python3 scripts/rsi/report/start.py <pool dir> --task pick_Mug_2
 """
 
 from __future__ import annotations

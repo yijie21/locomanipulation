@@ -1199,17 +1199,21 @@
   - 改正“每个任务族在前一个的写回上进化”的说法；
   - `replay.py` 不继承源运行的 `paused_s`
 - [x] 36.6 规则第 12 版（开头和第 2、3、8、16、22、23、27、28、29 条）；`docs/rsi_design.md`、`docs/rsi.md`、change-map；新测试 `tests/test_rsi_eval_fixes.py`、`tests/test_rsi_sandbox_fixes.py`，`tests/test_rsi_speed.py` 加 `RunExit`、`RoleSafety` 等
-- [ ] 36.7 待用户定：
+- [x] 36.7 待用户定（用户 2026-10-22：“按你的建议的来”；后两条中的墙钟和外环串行没做，移到 36.10）：
   - 越界处理统一：现在 Reviewer、Manager、Composer 或唯一的 Engineer 越界就停整个内环，三个 Engineer 里一份越界只作废那份；
   - “连续 3 次被拒且没有新假设”从没触发过（要 Reviewer 一条假设都没有），删掉还是改成“连续 3 次被拒”；
   - 墙钟只在每轮开头查，最后一轮会超出 40–72 分钟；
   - 外环里的任务族要不要串行、每个写回先提交：现在都从这一轮开始时的提交出发；
   - Manager 上下文随账本线性长（第 5 轮 96 KB，70% 是历史），要不要压缩早期轮次
-- [ ] 36.8 待用户定，建议删减：
+  - 做了（10-22）：越界只作废这个角色交的东西、内环接着跑——Reviewer、Manager、Composer 或唯一的 Engineer（K = 1、重开）越界作废这一轮（账本 `void_iter`），K 个 Engineer 中一个越界只作废它那份，全部越界算这一轮作废；连续两轮作废是异常停止（`audit: ...`，退出码 3）；被作废的 Manager 的 `stop` 不算数；规则第 13 版（第 3 条）
+  - 做了：删掉“连续 3 次被拒且没有新假设”（`MAX_REJECT_STREAK`）和外环 `NORMAL_STOP` 里对应的一项
+  - 做了：Manager 读的 `history` 最近两轮逐行，更早的每轮一行（假设、探针、决定、草稿、Composer、验收门、搁置）；32.12 第 5 轮 Manager 上下文 93.4 → 41.5 KB（历史 73.3 → 22.1 KB），第 4 轮 83.7 → 44.9；Reviewer、Engineer、Composer 的上下文（第 5 轮 77–92 KB，同样的历史）没改。测试 `LeakPolicy`、`ManagerHistory`
+- [x] 36.8 待用户定，建议删减（用户 2026-10-22：“按你的建议的来”）：
   - `scripts/rsi/library/`：10-19 被否的人写经验库；
   - `review_replay.py`：被 `replay.py` + `--stop-after` 取代，且和现在的 `reviewer.md` 对不上；
   - Reviewer 工具 `tools/` 和 `TOOLS_NOTE`：32.6 已关；
   - 约 2.1k 行没测试的展示脚本挪到 `scripts/rsi/report/`，其中 4 个没人调用
+  - 做了（10-22）：删了 `library/`、`review_replay.py`（和它的测试）、`TOOLS_NOTE` 和 Reviewer 提示词里的 `{TOOLS}`；`tools/` 的 5 个脚本没删，挪进 `scripts/rsi/report/`（人分析时还在用，比如 `occ.py`；偏离建议）；`report_media`、`report_unreal`、`report_rerun`、`visualize`、`clip_audit` 和没人调用的 `evolution_media`、`grip_closeup`、`sunk_closeup` 挪进 `report/`（文档还提到它们，没删）；没人调用的第 4 个 `switch_check.py` 是动作层检查，留在 `motor_check.py` 旁边；沙盒去掉 `report/`（旧的 `tools/`、`library/` 留在去掉列表里，给 `build --ref` 旧提交用）；`outputs/` 下页面脚本、`/workspace/tmp/report_unreal_v4.sh` 的路径改了（不入库）
 - [ ] 36.9 没修，记下：
   - 碰倒旁边的物体不记录；
   - 物体穿过家具上部仍算拿起（27.13）；
@@ -1218,4 +1222,6 @@
   - 回归每次写回做 11 个检验，不校正；
   - 验收门结论里的失败原因分布是隐藏池的一点信息（有意的）；
   - 外环回归先登记任务族再跑，被挡、恢复后登记表里还留着它
-
+- [ ] 36.10 36.7 里没定的两条（用户 2026-10-22“按你的建议的来”：外环串行等第 2 轮外环恢复时再定）：
+  - 外环里的任务族要不要串行、每个写回先提交：现在都从这一轮开始时的提交出发；
+  - 墙钟只在每轮开头查，最后一轮会超出 40–72 分钟（没给建议，没定）

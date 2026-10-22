@@ -13,7 +13,7 @@ the lift, then the robot and the object's final resting place. Translucent magen
 positions (the ghost-gripper rule). Each video gets a <= 500 KB preview (previews/) and a poster JPG (its last frame).
 
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \\
-        scripts/rsi/report_media.py [--only on_02,u_wolf_cart] [--out <dir>]
+        scripts/rsi/report/report_media.py [--only on_02,u_wolf_cart] [--out <dir>]
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ import numpy as np
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = HERE.parents[2]  # scripts/rsi/report/ since TODO 36.8
 sys.path[:0] = [str(HERE)]
 
 import visualize as V  # noqa: E402

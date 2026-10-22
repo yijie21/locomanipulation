@@ -3,7 +3,7 @@ each wrist's commanded vs measured position and the error, the jaw opening, the 
 object's height change and its offset from the nearer wrist (creep in the hand shows as that offset drifting). Step
 boundaries from the round's JSON are marked. What 36 of 44 Reviewers rebuilt by hand (`trace.py`, `creep.py`, `fk.py`).
 
-    python3 scripts/rsi/tools/trace.py <rounds dir> <label> [--from 12.5] [--to 20] [--every 0.2] [--obj Mug_2]
+    python3 scripts/rsi/report/trace.py <rounds dir> <label> [--from 12.5] [--to 20] [--every 0.2] [--obj Mug_2]
 """
 
 from __future__ import annotations

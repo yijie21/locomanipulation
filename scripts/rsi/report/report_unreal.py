@@ -21,7 +21,7 @@ container is saturated (scripts/unreal/editor_guard.sh), so nothing CPU-heavy ru
 
     bash scripts/start_unreal.sh --gpu 1
     PYTHONPATH=src:$PYTHONPATH MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" \\
-        scripts/rsi/report_unreal.py ps_00 [on_02 u_wolf_cart ... | all] \\
+        scripts/rsi/report/report_unreal.py ps_00 [on_02 u_wolf_cart ... | all] \\
         [--out outputs/scene_rsi_20261016/report/media_unreal]
 """
 
@@ -38,7 +38,7 @@ import numpy as np
 from PIL import Image
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = HERE.parents[2]  # scripts/rsi/report/ since TODO 36.8
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import report_media as RM  # noqa: E402

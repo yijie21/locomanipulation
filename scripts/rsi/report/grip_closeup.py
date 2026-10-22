@@ -5,7 +5,7 @@ The trace's `jaw` is the gripper command: -0.06 while gripping (the grip force i
 joint's -0.02 limit, so `visualize.Scene.set` (and the Unreal replay, which pushes its qpos) draws the two fingers
 crossed and outside the object.
 
-    MUJOCO_GL=egl PYTHONPATH=src $PY scripts/rsi/grip_closeup.py <round base> <t> <out.jpg>
+    MUJOCO_GL=egl PYTHONPATH=src $PY scripts/rsi/report/grip_closeup.py <round base> <t> <out.jpg>
 """
 
 import math
@@ -17,7 +17,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE), str(HERE.parents[1] / "src")]
+sys.path[:0] = [str(HERE), str(HERE.parents[2] / "src")]  # scripts/rsi/report/ since TODO 36.8
 import report_media as RM  # noqa: E402
 import visualize as V  # noqa: E402
 

@@ -12,7 +12,7 @@ them on the physics-only copy; the state is the same). Writes under --out:
 Translucent magenta balls are the commanded wrist positions (the ghost-gripper rule; the traces carry no attitude).
 
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \\
-        scripts/rsi/visualize.py [--sandbox /workspace/code/rsi-scene/pick-a] \\
+        scripts/rsi/report/visualize.py [--sandbox /workspace/code/rsi-scene/pick-a] \\
         [--out outputs/scene_rsi_20261016/visual] [--only clue,step,infeasible,overview]
 """
 
@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
-REPO = HERE.parents[1]
+REPO = HERE.parents[2]  # scripts/rsi/report/ since TODO 36.8
 sys.path[:0] = [str(REPO / "scripts" / "experiments" / "rsi_demo_20261015"), str(REPO / "src")]
 
 import demo_video as dv  # noqa: E402

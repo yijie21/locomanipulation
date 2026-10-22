@@ -80,8 +80,8 @@ REFLECT = threading.Lock()  # reflect.py rebuilds the library's INDEX.md; two fa
 SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"  # the catalog writeback.py writes into
 ROLLBACK_STEPS = ("tests", "regress", "capability")  # a block here puts the catalog back
 # loop.py stop reasons that end a run normally (stop_reason, TODO 36 review 2026-10-22); any other is abnormal
-NORMAL_STOP = re.compile(
-    r"the incumbent wins|gate calls \d+ >=|wall clock >=|model cost \d+ >=|\d+ rejections in a row|manager: stop$"
+NORMAL_STOP = re.compile(  # TODO 36.7: the "rejections in a row" stop is gone; "audit: ..." is abnormal
+    r"the incumbent wins|gate calls \d+ >=|wall clock >=|model cost \d+ >=|manager: stop$"
 )
 
 

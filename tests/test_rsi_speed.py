@@ -316,6 +316,7 @@ class RunExit(unittest.TestCase):
         self.assertEqual(self.run_(lambda n, m, s: "role call failed: x"), 3)
         self.assertEqual(self.run_(lambda n, m, s: "reviewer of iteration 1 named off-limits paths (gate)"), 3)
         self.assertEqual(self.run_(lambda n, m, s: "gate error at iteration 2 (see gate.log)"), 3)
+        self.assertEqual(self.run_(lambda n, m, s: "audit: iterations 1, 2 voided in a row (x)"), 3)  # TODO 36.7
 
     def test_a_crash_and_a_sigterm_write_a_stop_row(self):
         import signal
@@ -533,6 +534,142 @@ class RoleSafety(unittest.TestCase):
         self.assertEqual(seen["CLAUDE_CODE_DISABLE_CLAUDE_MDS"], "1")
         self.assertTrue(seen["TMPDIR"].endswith("engineer_2"))
         self.assertEqual(self.lp.role_dir("manager"), self.lp.role_tmp())
+
+
+class LeakPolicy(unittest.TestCase):
+    """TODO 36.7 (user 2026-10-22, "按你的建议的来"): a leak voids what the leaking role produced and the loop goes on;
+    two voided iterations in a row stop it abnormally; a voided Manager's `stop` decides nothing; the streak stop
+    ("3 rejections in a row and no new hypothesis") is gone."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        root = Path(self.d.name)
+        (root / "pool_diag").mkdir()
+        hid = root / "outputs" / "scene_rsi_20261016_hidden" / "fam"  # as RoleSafety: never HIDDEN at Path()
+        hid.mkdir(parents=True)
+        for p in (mock.patch.multiple(self.lp, STATE=root / "state", LOOP=root, HIDDEN=hid, GATE_DIR=hid / "gate",
+                                      accept_pool=lambda: root),
+                  mock.patch.dict(os.environ)):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+        os.environ.pop("RSI_MAX_WALL_H", None)
+        (root / "state").mkdir()
+
+    def rows(self, *rows):
+        for r in rows:
+            self.lp.ledger(r)
+
+    def test_voided_in_a_row_counts_consecutive_iterations_back_from_the_newest(self):
+        v = self.lp.voided_in_a_row
+        self.assertEqual(v([]), [])
+        es = [dict(step="review", iter=0), dict(step="void_iter", iter=0), dict(step="review", iter=1)]
+        self.assertEqual(v(es), [])
+        es.append(dict(step="void_iter", iter=1))
+        self.assertEqual(v(es), [0, 1])
+        self.assertEqual(v([dict(step="void_iter", iter=0), dict(step="void_iter", iter=2)]), [2])  # 1 has no rows
+        es.append(dict(step="void", iter=1))  # --reprobe 1 takes the iteration up again
+        self.assertEqual(v(es), [])
+
+    def test_two_voided_iterations_in_a_row_stop_the_loop_abnormally(self):
+        from argparse import Namespace
+        from unittest import mock
+
+        def iterate(n, meta, stub):  # every Reviewer leaks
+            self.rows(dict(step="review", iter=n, void=True, leaks=["gate"]))
+            self.lp.void_iteration(n, "reviewer", ["gate"])
+            return None
+
+        with mock.patch.object(self.lp, "iterate", iterate):
+            rc = self.lp.cmd_run(Namespace(max_iters=5, reprobe=None, stub=True))
+        self.assertEqual(rc, 3)
+        es = self.lp.entries()
+        self.assertEqual([e["iter"] for e in es if e["step"] == "void_iter"], [0, 1])
+        self.assertEqual(es[-1]["step"], "stop")
+        self.assertTrue(es[-1]["reason"].startswith("audit: iterations 0, 1 voided in a row"))
+
+    def test_one_voided_iteration_and_the_loop_goes_on(self):
+        from argparse import Namespace
+        from unittest import mock
+
+        def iterate(n, meta, stub):  # iterations 0 and 2 leak, 1 and 3 run through
+            self.rows(dict(step="review", iter=n, void=n % 2 == 0))
+            if n % 2 == 0:
+                self.lp.void_iteration(n, "composer", ["x"])
+            return None
+
+        with mock.patch.object(self.lp, "iterate", iterate):
+            rc = self.lp.cmd_run(Namespace(max_iters=4, reprobe=None, stub=True))
+        self.assertEqual(rc, 0)
+        self.assertEqual(len([e for e in self.lp.entries() if e["step"] == "review"]), 4)
+        self.assertFalse([e for e in self.lp.entries() if e["step"] == "stop"])
+
+    def test_a_voided_managers_stop_decides_nothing_and_rejections_never_stop(self):
+        meta = dict(started_s=time.time())
+        self.rows(dict(step="manager", iter=0, decision="stop", void=True))
+        self.assertIsNone(self.lp.stop_reason(meta))
+        for i in range(1, 6):  # five rejections in a row, the last review without hypotheses: no stop any more
+            self.rows(
+                dict(step="review", iter=i, n_hypotheses=0), dict(step="gate", iter=i, accepted=False, hash=f"h{i}")
+            )
+        self.assertIsNone(self.lp.stop_reason(meta))
+        self.assertFalse(hasattr(self.lp, "MAX_REJECT_STREAK"))
+        self.rows(dict(step="manager", iter=6, decision="stop"))
+        self.assertEqual(self.lp.stop_reason(meta), "manager: stop")
+
+
+class ManagerHistory(unittest.TestCase):
+    """TODO 36.7 (user 2026-10-22): the Manager reads the last two iterations' ledger rows in full and each earlier
+    iteration as one line (32.12's iteration 5 Manager context: 93 -> 42 KB)."""
+
+    def test_older_iterations_become_one_line_each(self):
+        import inspect
+        from unittest import mock
+
+        lp = _scene_loop()
+        with tempfile.TemporaryDirectory() as d:
+            st = Path(d)
+            for n in range(4):
+                (st / f"iter_{n:02d}").mkdir()
+                (st / f"iter_{n:02d}" / "hypotheses.json").write_text(
+                    json.dumps(dict(hypotheses=[dict(id="H1", claim=f"claim of iteration {n} " + "x" * 300)]))
+                )
+            es = []
+            for n in range(4):
+                es += [
+                    dict(t="t", step="review", iter=n, n_hypotheses=1, n_claims=0, usage={"big": 1}),
+                    dict(step="probe", iter=n, results=[dict(id="H1", n=30, ok_before=10, ok_after=12,
+                                                             predicted_fixed_hit=1, predicted_fixed_n=2)]),
+                    dict(step="manager", iter=n, decision="engineer", hypotheses=["H1", "H1"], reason="r" * 400),
+                    dict(step="engineer", iter=n, candidate=1, hypothesis="H1", mechanism="m", void=False),
+                    dict(step="engineer", iter=n, candidate=2, hypothesis="H1", mechanism="m", void=True),
+                    dict(step="compose", iter=n, decision="adopt", adopted=1, notes="n"),
+                    dict(step="gate", iter=n, accepted=False, hash=f"h{n}", reason="p",
+                         result=dict(b=5, c=1, p_one_sided=0.109375)),
+                ]  # fmt: skip
+                if n == 0:
+                    es.append(dict(t="t", step="stop", reason="wall clock >= 5 h"))
+            with mock.patch.object(lp, "STATE", st):
+                h = lp.compact_history(es)
+        self.assertEqual(len(h), 3 + 2 * 7)  # iteration 0, the stop, iteration 1 as lines; 2 and 3 row by row
+        line0, stop, line1 = h[:3]
+        self.assertTrue(line0.startswith("iteration 0 | review: 1 hypotheses"))
+        self.assertIn("H1 claim of iteration 0", line0)
+        self.assertIn("probe H1 10->12/30 (predicted fixed 1/2)", line0)
+        self.assertIn("manager engineer H1,H1", line0)
+        self.assertIn("engineer 2 H1: void", line0)
+        self.assertIn("composer adopt 1", line0)
+        self.assertIn("gate rejected b 5 c 1 p 0.109 h0", line0)
+        self.assertLess(len(line0), 1200)
+        self.assertIn("stop", stop)
+        self.assertTrue(line1.startswith("iteration 1 |"))
+        self.assertEqual([e["iter"] for e in h[3:]], [2] * 7 + [3] * 7)
+        self.assertNotIn("usage", h[3])
+        self.assertEqual(lp.compact_history(es, full=10)[0]["step"], "review")  # nothing older: all rows
+        self.assertIn("compact=True", inspect.getsource(lp.after_review))  # only the Manager reads it compact
 
 
 class ExperienceLibrary(unittest.TestCase):

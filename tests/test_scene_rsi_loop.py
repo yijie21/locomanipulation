@@ -544,10 +544,11 @@ class OuterRun(unittest.TestCase):
             led.write_text(json.dumps(dict(step="stop", reason="x")) + "\n" + json.dumps(dict(step="gate")) + "\n")
             self.assertIsNone(run.last_stop(led))  # a stop followed by more work is not the end
         for ok in ("the incumbent wins 30/40 >= 70%: sealed set", "gate calls 12 >= 12", "wall clock >= 20 h",
-                   "model cost 900 >= 800 USD", "4 rejections in a row and the last review had no new hypothesis",
-                   "manager: stop"):  # fmt: skip
+                   "model cost 900 >= 800 USD", "manager: stop"):  # fmt: skip
             self.assertTrue(run.NORMAL_STOP.search(ok), ok)
         for bad in ("role call failed: boom", "manager of iteration 3 named off-limits paths (x)",
+                    "audit: iterations 3, 4 voided in a row (roles named off-limits paths)",
+                    "4 rejections in a row and the last review had no new hypothesis",  # the stop TODO 36.7 removed
                     "replay: engineer and gate done"):  # fmt: skip
             self.assertFalse(run.NORMAL_STOP.search(bad), bad)
 
@@ -585,31 +586,6 @@ class OuterRun(unittest.TestCase):
         found = shutil.which("claude")
         if found:
             self.assertIn(str(Path(found).parent), self.run_mod.ENV["PATH"].split(":"))
-
-
-class ReviewReplay(unittest.TestCase):
-    """The digest replay (review_replay.py, plan section 12.2)."""
-
-    def test_one_probe_per_parameter_set_and_the_plain_arm_drops_the_digest(self):
-        saved = {k: sys.modules.pop(k, None) for k in ("loop", "digest")}
-        try:
-            rr = _fresh("scene_rsi_review_replay", "review_replay.py")
-        finally:
-            for k, v in saved.items():
-                sys.modules.pop(k, None)
-                if v is not None:
-                    sys.modules[k] = v
-        key = rr.delta_key
-        self.assertEqual(key(dict(delta={"set": {"a.X": 1, "a.Y": 2}})), key(dict(delta={"set": {"a.Y": 2, "a.X": 1}})))
-        self.assertNotEqual(key(dict(delta={"set": {"a.X": 1}})), key(dict(delta={"set": {"a.X": 1.0001}})))
-        prompt = (HERE / "prompts" / "reviewer.md").read_text()
-        self.assertIn("{DIGEST}", prompt)
-        self.assertNotIn("{DIGEST}", rr.DIGEST_ITEM.sub("", prompt))
-        lib = rr.DIGEST_ITEM.sub(lambda m: m.group(0) + rr.LIBRARY_ITEM, prompt)  # the library arm: item 5 after 4
-        self.assertLess(lib.index("4. {DIGEST}"), lib.index("5. {LIBRARY}"))
-        cmd = "cd /workspace/code/rsi-scene/replay2-r2on; sed -n 1,9p /workspace/code/locomanipulation/docs/x.md | head"
-        self.assertEqual(rr.PATH.findall(cmd), ["/workspace/code/rsi-scene/replay2-r2on",
-                                                "/workspace/code/locomanipulation/docs/x.md"])  # fmt: skip
 
 
 class CreepSection(unittest.TestCase):

@@ -1,6 +1,6 @@
 """TODO 36 (review 2026-10-22): the scene RSI sandbox's fixes (scripts/rsi/): the acceptance and sealed seeds leave the
 sandbox's family file for the hidden tree, the experience library of a family with a `sandbox` block carries no earlier
-grasp code, every sandbox is built without CLAUDE.md / AGENTS.md / tools / library, and reflect.py scrubs the paths a
+grasp code, every sandbox is built without CLAUDE.md / AGENTS.md / report (36.8), and reflect.py scrubs the paths a
 role may not name from a library entry."""
 
 import json
@@ -144,7 +144,13 @@ class SandboxLibrary(unittest.TestCase):
     def test_the_default_strip(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            for rel in ("CLAUDE.md", "AGENTS.md", "scripts/rsi/tools/steps.py", "scripts/rsi/library/a.md"):
+            for rel in (
+                "CLAUDE.md",
+                "AGENTS.md",
+                "scripts/rsi/report/steps.py",
+                "scripts/rsi/tools/steps.py",
+                "scripts/rsi/library/a.md",
+            ):
                 _write(root / rel)
             _write(root / "Makefile")
             _write(root / "scripts" / "rsi" / "loop.py")
@@ -161,11 +167,16 @@ class SandboxLibrary(unittest.TestCase):
         self.assertNotIn("AGENTS.md", keep)
 
     def test_nothing_the_loop_runs_needs_the_stripped_files(self):
-        # the loop shows the tools note only when the directory exists; nothing but docs / lint scripts name the guides
+        # no role prompt names the report/ tools (TODO 36.8 dropped the tools note); nothing but docs / lint scripts
+        # name the guides, and nothing the loop runs imports from report/
         loop = (HERE / "loop.py").read_text()
-        self.assertIn('(HERE / "tools").is_dir()', loop)
+        self.assertNotIn("TOOLS_NOTE", loop)
+        for f in (HERE / "prompts").glob("*.md"):
+            self.assertNotRegex(f.read_text(), r"\{TOOLS\}|rsi/report|rsi/tools", f.name)
         for name in ("loop", "gate", "batch", "scene_round", "sealed", "digest", "claim_check", "family"):
-            self.assertNotRegex((HERE / f"{name}.py").read_text(), r"CLAUDE\.md|AGENTS\.md|rsi/library", name)
+            self.assertNotRegex(
+                (HERE / f"{name}.py").read_text(), r"CLAUDE\.md|AGENTS\.md|rsi/library|rsi/report", name
+            )
 
 
 class ReflectScrub(unittest.TestCase):

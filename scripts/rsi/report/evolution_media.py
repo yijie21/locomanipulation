@@ -10,7 +10,7 @@ their 50 Hz traces. Writes under --out:
 without it the card is the Manager's summary of that iteration. Its "_names" entry maps object keys to row names.
 
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \\
-        scripts/rsi/evolution_media.py --sandbox /workspace/code/rsi-scene/grasp-atomic-a --family grasp_atomic \\
+        scripts/rsi/report/evolution_media.py --sandbox /workspace/code/rsi-scene/grasp-atomic-a --family grasp_atomic \\
         --out outputs/scene_rsi_20261016/grasp_atomic_media [--cards cards.json] [--only step,overview]
 """
 

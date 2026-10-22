@@ -1,7 +1,7 @@
 """TODO 27.14: where a placed object rests against the board it was put on, from a round's trace: one close camera at
 board height, the board as rendered and see-through (surface_height_audit.py says why it sinks).
 
-    MUJOCO_GL=egl PYTHONPATH=src $PY scripts/rsi/sunk_closeup.py <round base> <t> <host body or geom prefix> <out.jpg>
+    MUJOCO_GL=egl PYTHONPATH=src $PY scripts/rsi/report/sunk_closeup.py <round base> <t> <host body or geom prefix> <out.jpg>
 """
 
 import math
@@ -12,7 +12,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
-sys.path[:0] = [str(HERE), str(HERE.parents[1] / "src")]
+sys.path[:0] = [str(HERE), str(HERE.parents[2] / "src")]  # scripts/rsi/report/ since TODO 36.8
 import report_media as RM  # noqa: E402
 import visualize as V  # noqa: E402
 

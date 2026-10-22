@@ -2,7 +2,7 @@
 step's name, time span and scalar fields -- or, with --vs, the rounds whose outcome differs between two directories
 (an incumbent's and a candidate's) side by side. What 41 of 44 Reviewers wrote by hand (`summ.py`, `steps.py`).
 
-    python3 scripts/rsi/tools/steps.py <rounds dir> [--vs <rounds dir>] [--task pick_Mug_2] [--labels a,b]
+    python3 scripts/rsi/report/steps.py <rounds dir> [--vs <rounds dir>] [--task pick_Mug_2] [--labels a,b]
         [--failed] [--step walk,pre] [--brief]
 """
 

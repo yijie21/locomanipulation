@@ -19,7 +19,7 @@ into (the scenery geom or body; with boxes, `wall` or the furniture piece), and 
 least --depth deep.
 
     PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \\
-        scripts/rsi/clip_audit.py <round base without suffix> ... [--every 5] [--depth 0.02] \\
+        scripts/rsi/report/clip_audit.py <round base without suffix> ... [--every 5] [--depth 0.02] \\
         [--colliders outputs/scene_discovery/adt_apartment_mars]
 """
 

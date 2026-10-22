@@ -157,7 +157,7 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 ```
 
 做什么：对每个任务族依次建沙盒、检查任务、跑内环、跑封存集、给经验库写一条、写回、跑单元测试、回归、更新能力表；同时最多跑两个任务族。
-得到什么：每个任务族的状态在 `$R/run/<任务族>.json`，各步日志在 `$R/run/<任务族>/`；写回改动了技能目录、经验库多了这一族的条目（都没提交），能力表 `configs/scene_discovery/capability_mars_scalebfm.yaml` 更新。一个任务族 2–8 小时。内环异常停下（角色调用失败、审计停下、验收门出错）、写回后的测试或回归没过，这个任务族就停在那一步，原因写在状态文件的 `blocked`；写回之后被挡的，技能目录已恢复到写回之前（`restored`）。查完把 `step` 改回要重跑的那一步再起。
+得到什么：每个任务族的状态在 `$R/run/<任务族>.json`，各步日志在 `$R/run/<任务族>/`；写回改动了技能目录、经验库多了这一族的条目（都没提交），能力表 `configs/scene_discovery/capability_mars_scalebfm.yaml` 更新。一个任务族 2–8 小时。内环异常停下（角色调用失败、审计连续作废两轮、验收门出错）、写回后的测试或回归没过，这个任务族就停在那一步，原因写在状态文件的 `blocked`；写回之后被挡的，技能目录已恢复到写回之前（`restored`）。查完把 `step` 改回要重跑的那一步再起。
 
 ## 7. L3：从头复现
 
@@ -179,16 +179,16 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 ## 8. 看过程：图和视频
 
 ```bash
-MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/visualize.py --sandbox $S --out outputs/rsi_repro/visual
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/visualize.py --sandbox $S --out outputs/rsi_repro/visual
 ```
 
 做什么：从一个沙盒的账本和轨迹画出每次被接受的改动：线索图、改动前后同一起点的对比视频。
-得到什么：`outputs/rsi_repro/visual/` 下的图和视频，网页用的预览版每段不超过 500 KB。约 10 分钟。报告里的 Unreal 版视频用 `report_unreal.py`，它读的是原来那几个沙盒，只能在原来的机器上跑。
+得到什么：`outputs/rsi_repro/visual/` 下的图和视频，网页用的预览版每段不超过 500 KB。约 10 分钟。报告里的 Unreal 版视频用 `scripts/rsi/report/report_unreal.py`，它读的是原来那几个沙盒，只能在原来的机器上跑。
 
 ## 9. 常见错误
 
 - `scene_lint.py` 报 error：不要开跑循环。先看 `lint.json` 里是哪一类（物体掉下去、目标开局就成立、竖直轴不对），多半是场景没按第 2 节的顺序建，或者少了面板、碰撞盒。
 - 内环一开始就停，`loop.log` 里说缺 `pool_diag`：沙盒没建完，重新跑 `sandbox.py`。
-- 账本里某次迭代或草稿标 `void`：角色读了验收池或沙盒外的文件，或者 Engineer 改了技能目录以外的文件。三个 Engineer 中一份草稿越界，只作废这一份，这一轮接着走；Reviewer、Manager、Composer 或唯一的 Engineer 越界，内环停下，`loop.py` 退出码 3，查完用 `--reprobe N` 续跑。验收门调用标 `void` 是有起点缺了局，这次不算数。
+- 账本里某次迭代或草稿标 `void`：角色读了验收池或沙盒外的文件，或者 Engineer 改了技能目录以外的文件。三个 Engineer 中一份草稿越界，只作废这一份，这一轮接着走；Reviewer、Manager、Composer 或唯一的 Engineer 越界，这一轮作废（账本记 `void_iter`），现任不变，进下一轮；连续两轮作废，内环停下，`loop.py` 退出码 3，查完用 `--reprobe N` 续跑（TODO 36.7）。验收门调用标 `void` 是有起点缺了局，这次不算数。
 - 回归打印 `worse at p <= 0.05`：有任务族变差，登记表不推进。先查最近改了什么，再决定是否接受。
 - 仿真很慢、结局和记录差很多：确认 `OMP_NUM_THREADS=2`，并且机器上没有别的仿真在跑（所有批次共用 12 个仿真槽）。
