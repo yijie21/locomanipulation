@@ -248,7 +248,7 @@ class Sim:
 class Policy:
     def __init__(self, device="cuda", backend: ScaleBfmBackendConfig | None = None):
         self.cfg = backend or ScaleBfmBackendConfig()
-        self.w, self.meta, _, _ = load_policy(self.cfg.checkpoint, MODE_TABLE, META, FK_XML, device)
+        self.w, self.meta, _, _ = load_policy(self.cfg.checkpoint_path(), MODE_TABLE, META, FK_XML, device)
         self.dev = device
         self.H = self.meta["history_buffer_size"]
         self.fidx = list(self.meta["future_idx"])

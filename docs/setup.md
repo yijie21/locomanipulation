@@ -372,14 +372,14 @@ python3 scripts/adt_download.py objects
 ## 11. ScaleBFM 权重（场景 RSI）
 
 ```bash
-/venv/main/bin/python -c "from huggingface_hub import hf_hub_download as d; d('WeishuaiZeng/ScaleBFM', 'checkpoint/humanoid_transformer_m/model_22200.pt', local_dir='/workspace/tmp/scalebfm')"
-mkdir -p /workspace/models/scalebfm
-mv /workspace/tmp/scalebfm/checkpoint/humanoid_transformer_m/model_22200.pt /workspace/models/scalebfm/humanoid_transformer_m_22200.pt
+/venv/main/bin/python -c "from huggingface_hub import hf_hub_download as d; d('WeishuaiZeng/ScaleBFM', 'checkpoint/humanoid_transformer_m/model_22200.pt', local_dir='$LOCOMANI_WORKSPACE/tmp/scalebfm')"
+mkdir -p $LOCOMANI_WORKSPACE/models/scalebfm
+mv $LOCOMANI_WORKSPACE/tmp/scalebfm/checkpoint/humanoid_transformer_m/model_22200.pt $LOCOMANI_WORKSPACE/models/scalebfm/humanoid_transformer_m_22200.pt
 ```
 
-做什么：下载场景 RSI 用的全身控制器 ScaleBFM（M 型号、第 22200 步，73 MB），放到代码默认读的位置（`ScaleBfmBackendConfig.checkpoint`）。它的模式表和元数据在仓库的 `assets/scalebfm/` 里，不用下载。
+做什么：下载场景 RSI 用的全身控制器 ScaleBFM（M 型号、第 22200 步，73 MB），放到代码默认读的位置 `<workspace>/models/scalebfm/`（`paths.SCALEBFM_CHECKPOINT`，`ScaleBfmBackendConfig.checkpoint` 为空串时用它；`<workspace>` 是 `LOCOMANI_WORKSPACE`，默认 `/workspace`）。它的模式表和元数据在仓库的 `assets/scalebfm/` 里，不用下载。
 
-验证：`sha256sum /workspace/models/scalebfm/humanoid_transformer_m_22200.pt` 以 `88d5a79946c03ed2` 开头。
+验证：`sha256sum $LOCOMANI_WORKSPACE/models/scalebfm/humanoid_transformer_m_22200.pt` 以 `88d5a79946c03ed2` 开头。
 
 ## 12. Claude CLI（场景 RSI 的 L1 以上）
 

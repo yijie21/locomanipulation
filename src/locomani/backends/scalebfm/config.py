@@ -13,19 +13,22 @@ import os
 from dataclasses import dataclass
 
 from locomani.config_base import apply_overrides, config_dump, config_from_dict, config_load, config_to_dict
-from locomani.paths import REPO
+from locomani.paths import REPO, SCALEBFM_CHECKPOINT
 
 SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
 class ScaleBfmBackendConfig:
-    checkpoint: str = "/workspace/models/scalebfm/humanoid_transformer_m_22200.pt"  # HF WeishuaiZeng/ScaleBFM, step 22200 (the only checkpoint ever used)
+    checkpoint: str = ""  # HF WeishuaiZeng/ScaleBFM, step 22200 (the only checkpoint ever used); "" = <LOCOMANI_WORKSPACE>/models/scalebfm/humanoid_transformer_m_22200.pt (paths.SCALEBFM_CHECKPOINT)
     scene_dir: str = ""  # MJCF + scene_meta.json directory; "" = outputs/scene/sim (the bottle scene; the spike used outputs/scene/crate_bimanual)
     object_name: str = "water_bottle"  # scene_meta `objects` entry the sim tracks as the target (spike: blue_crate)
     grip_kp: float = 1.0  # dex1 gripper PD gain, ctrl units x gear 250 N; 1.0/0.025 is what every visual-expert driver set (yplus200); spike default 40/1.0 limit-cycled the 87 g finger (runtime.py)
     grip_kd: float = 0.025  # dex1 gripper PD damping, see grip_kp
     grip_clip: float = 4.0  # ctrl clamp on the gripper PD (x gear 250 N); the joint's actuatorfrcrange +-20 N makes anything above 0.08 inert. Hard-coded 4.0 in Sim until 2026-10-12; the bottle line pokes sim.grip_clip = 0.6 per round; the SONIC line's hand law is 20 (grasp_cache.py FORCE_MAX)
+
+    def checkpoint_path(self) -> str:
+        return self.checkpoint or SCALEBFM_CHECKPOINT
 
     def scene_path(self) -> str:
         return self.scene_dir or os.path.join(REPO, "outputs", "scene", "sim")

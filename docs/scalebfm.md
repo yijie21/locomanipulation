@@ -28,7 +28,7 @@ LeRobot v2.1 数据集 → GR00T 3000 步 checkpoint → 配对闭环评测(§6 
 | 项 | 要求 |
 |---|---|
 | Python | 统一用 `third_party/Isaac-GR00T/.venv/bin/python`(GR00T 训练 venv 里带 torch + mujoco);不同 PyTorch 环境之间观测到过微小重放差异,不要混用 |
-| 模型 | `/workspace/models/scalebfm/humanoid_transformer_m_22200.pt`(HF `WeishuaiZeng/ScaleBFM`,唯一用过的 checkpoint);`assets/scalebfm/{mode_table.pt, model_22200_tensorrt_metadata.json, g1_29dof_fk.xml}`。路径在 `ScaleBfmBackendConfig.checkpoint`,`pipeline/provenance.verify_runtime_assets()` 对它们做哈希 |
+| 模型 | `<workspace>/models/scalebfm/humanoid_transformer_m_22200.pt`(HF `WeishuaiZeng/ScaleBFM`,唯一用过的 checkpoint;`<workspace>` 是 `LOCOMANI_WORKSPACE`,默认 `/workspace`);`assets/scalebfm/{mode_table.pt, model_22200_tensorrt_metadata.json, g1_29dof_fk.xml}`。路径是 `paths.SCALEBFM_CHECKPOINT`,`ScaleBfmBackendConfig.checkpoint` 空串即默认(`checkpoint_path()`),`pipeline/provenance.verify_runtime_assets()` 对它们做哈希 |
 | 场景 | `outputs/scene/sim`(瓶子场景,`scene_meta.json` + MJCF),由 `ScaleBfmBackendConfig.scene_dir` 指定,空串即默认;`object_name` 在场景里不存在时 `Sim` 不跟踪物体(`crate_b`/`table_top` 为 None),空地 `outputs/scene/walk` 的刹车诊断就这么跑(2026-10-13) |
 | expert(CPU) | `CUDA_VISIBLE_DEVICES='' MUJOCO_GL=osmesa OMP_NUM_THREADS=1 PYTHONPATH=src` —— 单线程、软件渲染、不占 GPU,可以在别人的采集栈旁边跑(它没有 SONIC deploy 那种 LowState 保护;但 GPU 上的仿真探针会打断别人的 SONIC 采集,见 §9) |
 | 采集 / 训练(GPU) | `collect.py` 固定 `policy_device="cuda"`、`MUJOCO_GL=egl`;先按 `STATE.md` 核对 GPU 归属 |

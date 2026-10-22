@@ -2,7 +2,7 @@
 defaults:
 - _scalebfm
 - _self_
-checkpoint: /workspace/models/scalebfm/humanoid_transformer_m_22200.pt
+checkpoint: ''  # <LOCOMANI_WORKSPACE>/models/scalebfm/humanoid_transformer_m_22200.pt (paths.SCALEBFM_CHECKPOINT)
 scene_dir: ''
 object_name: water_bottle
 grip_kp: 1.0
