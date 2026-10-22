@@ -17,6 +17,13 @@ from locomani.tasks.scene.world import SceneWorld, Task
 
 SETTLE_S = 1.0  # standing still after the objects are placed
 HOLD_S = 2.0  # the goal is judged after this long standing still at the end of the plan
+# TODO 36 (review 2026-10-22): simulated seconds a whole episode (settle, plan, hold) may take; the motor primitives time
+# out one by one but a skill may retry for ever. The longest recorded round is 98 s.
+EPISODE_LIMIT_S = 300.0
+
+
+class EpisodeTimeLimit(BaseException):
+    """Raised by the limited tick; a BaseException so a skill's own `except Exception` cannot swallow it."""
 
 
 @dataclass
@@ -48,8 +55,10 @@ def goal_keys(goal) -> list[str]:
     return keys
 
 
-def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: float = HOLD_S):
-    """`plan(ctx) -> Outcome`. Returns (RoundResult, trace arrays)."""
+def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: float = HOLD_S,
+                limit_s: float = EPISODE_LIMIT_S):  # fmt: skip
+    """`plan(ctx) -> Outcome`. Returns (RoundResult, trace arrays). A plan still stepping at `limit_s` simulated seconds
+    ends the round as a failure, why "episode time limit" (TODO 36, review 2026-10-22)."""
     m, wall = world.motor, time.time()
     m.track = {world.meta["objects"][k]["body"]: world.free[k] for k in task.objects}
     m.reset(start.robot_xy, start.robot_yaw)
@@ -58,14 +67,31 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
     seated = {k: round(world.seat(k), 4) for k in start.placements}  # placements drawn on older surface heights
     seated = {k: v for k, v in seated.items() if v > 0}
     ctx = SkillContext(world, task, np.random.default_rng(start.seed))
-    ctx.note("settle", m.hold(SETTLE_S))
+    # the stepping layer's cap: every primitive ticks through m.tick (hand programs included)
+    had_tick, tick = "tick" in vars(m), m.tick
+
+    def limited() -> bool:
+        if m.t >= limit_s:
+            raise EpisodeTimeLimit
+        return tick()
+
+    m.tick, timed_out, error = limited, False, ""
     try:
-        out = plan(ctx)
-        error = ""
-    except Exception as e:  # a skill's bug is the round's failure, recorded, not the batch's crash
-        out, error = Outcome(False, f"skill error: {type(e).__name__}: {e}", m.t, m.t), repr(e)
-    if m.fell_at is None:
-        ctx.note("hold", m.hold(hold_s))
+        ctx.note("settle", m.hold(SETTLE_S))
+        try:
+            out = plan(ctx)
+        except Exception as e:  # a skill's bug is the round's failure, recorded, not the batch's crash
+            out, error = Outcome(False, f"skill error: {type(e).__name__}: {e}", m.t, m.t), repr(e)
+        if m.fell_at is None:
+            ctx.note("hold", m.hold(hold_s))
+    except EpisodeTimeLimit:
+        timed_out, out = True, Outcome(False, "episode time limit", m.t, m.t)
+        ctx.note("episode_time_limit", out)
+    finally:
+        if had_tick:
+            m.tick = tick
+        else:
+            del m.tick
     keys = [k for k in goal_keys(task.goal) if k in world.meta["objects"]]
     ok, why = world.check(task.goal)(world.state(keys))
     fell = m.fell_at is not None
@@ -82,4 +108,6 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         t_end=round(m.t, 2),
         wall_s=round(time.time() - wall, 1),
     )
+    if timed_out:
+        return RoundResult(False, "episode time limit", False, execution), m.arrays()
     return RoundResult(bool(ok and not fell), why if not ok else ("fell" if fell else ""), False, execution), m.arrays()

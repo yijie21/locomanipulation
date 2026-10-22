@@ -15,6 +15,13 @@ dir: the first rounds are tag `rounds`), so a write-back re-runs it too. `run` r
 with Wilson intervals, b, c and the one-sided McNemar p both ways, writes `<registry dir>/regress_<tag>.json`, and --
 unless a family is worse at p <= 0.05 -- moves every family's `last` to `<tag>`. `capability_args` gives
 capability_write.py's arguments from the registry.
+
+Reference-only families (TODO 36, review 2026-10-22; user 2026-10-22 decision: early research, the 0.5 m/s + sleep
+baseline (`sleep_20261021`) is compared for reference only after the walk went back to 0.25 m/s): when a family's
+recorded rounds (`last`) and the new ones were made under different motor signatures (`batch.motor_signature`, the
+round's "motor"), or the recorded ones carry none, the comparison still reports b / c / p but the family is marked
+"reference", is never in `worse` (so outer_run's regress step cannot raise Blocked on it) and its `last` moves to the
+new tag whatever the other families did -- the old baseline would otherwise stay incomparable for ever.
 """
 
 from __future__ import annotations
@@ -52,6 +59,17 @@ def pool_of(family: str, row: dict) -> Path:
     return Path(row.get("pool") or Path(row["sandbox"]) / HIDDEN / family / "pool_sealed")
 
 
+def motors(rounds: dict) -> set:
+    """The motor signatures of a batch's records (None: a record without one)."""
+    return {r.get("motor") for r in rounds.values()}
+
+
+def reference_only(old: dict, new: dict) -> bool:
+    """TODO 36: the two batches are not comparable as a regression: either lacks a motor signature, or they differ."""
+    a, b = motors(old), motors(new)
+    return None in a or None in b or a != b
+
+
 def compare(old: dict, new: dict) -> dict:
     keys = sorted(set(old) & set(new))
     b = sum(new[k]["ok"] and not old[k]["ok"] for k in keys)
@@ -65,6 +83,7 @@ def compare(old: dict, new: dict) -> dict:
     ok_old, ok_new = sum(old[k]["ok"] for k in keys), sum(new[k]["ok"] for k in keys)
     return dict(n=len(keys), old=ok_old, new=ok_new, old_ci=wilson(ok_old, len(keys)), new_ci=wilson(ok_new, len(keys)),
                 b=b, c=c, p_worse=round(mcnemar_one_sided(c, b), 4), p_better=round(mcnemar_one_sided(b, c), 4),
+                reference=reference_only({k: old[k] for k in keys}, {k: new[k] for k in keys}),
                 fell=sum(bool(new[k].get("fell")) for k in keys), dropped=sum(bool(new[k].get("dropped")) for k in keys),
                 per_task={t: f"{a}/{n} -> {z}/{n}" for t, (a, z, n) in sorted(per.items())})  # fmt: skip
 
@@ -78,17 +97,21 @@ def run(tag: str, families: list[str] | None, procs: int, gpus: str, catalog: Pa
                    rounds_dir(f, row, tag) / "_regress.log", gpus)  # fmt: skip
     report = {f: compare(B.outcomes(rounds_dir(f, reg[f], reg[f]["last"])), B.outcomes(rounds_dir(f, reg[f], tag)))
               for f in names}  # fmt: skip
-    worse = sorted(f for f, r in report.items() if r["p_worse"] <= WORSE_P)
-    out = dict(tag=tag, catalog=str(catalog), families=report, worse=worse,
+    worse = sorted(f for f, r in report.items() if r["p_worse"] <= WORSE_P and not r["reference"])
+    reference = sorted(f for f, r in report.items() if r["reference"])
+    out = dict(tag=tag, catalog=str(catalog), families=report, worse=worse, reference=reference,
                total=dict(b=sum(r["b"] for r in report.values()), c=sum(r["c"] for r in report.values())))  # fmt: skip
     (REGISTRY.parent / f"regress_{tag}.json").write_text(json.dumps(out, indent=1))
     for f, r in report.items():
         print(f"{f:24s} {r['old']:3d} -> {r['new']:3d} / {r['n']}  {r['old_ci']} -> {r['new_ci']}  b {r['b']} c {r['c']}  "
-              f"p(worse) {r['p_worse']} p(better) {r['p_better']}  fell {r['fell']} dropped {r['dropped']}")  # fmt: skip
+              f"p(worse) {r['p_worse']} p(better) {r['p_better']}  fell {r['fell']} dropped {r['dropped']}"
+              f"{'  [reference only: another motor signature]' if r['reference'] else ''}")  # fmt: skip
     print(f"total b {out['total']['b']} c {out['total']['c']}; worse at p <= {WORSE_P}: {worse or 'none'}")
-    if not worse:
-        for f in names:
-            reg[f]["last"] = tag
+    if reference:
+        print(f"reference only (motor signature differs or the baseline has none): {reference}")
+    for f in names if not worse else reference:  # a reference family's baseline is incomparable: always move it
+        reg[f]["last"] = tag
+    if not worse or reference:
         REGISTRY.write_text(json.dumps(reg, indent=1))
     return out
 

@@ -1,17 +1,22 @@
-# Rules for the scene RSI loop (TODO 27, version 11, 2026-10-22)
+# Rules for the scene RSI loop (TODO 27, version 12, 2026-10-22)
 
-The only human knowledge the loop reads (plan D11). It is distilled from the project's notes and the warehouse loop's
-rules. Every rule says where it is enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new
-rule is a new version of this file, committed, and counted as one human intervention.
+With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
+reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
+enforced: **code** (the gate, the runner or the driver refuses) or **prompt**. A new rule is a new version of this
+file; it, or a change to a family plan's text, is committed and counted as one human intervention.
 
 ## The task and its limits (code)
 
 1. The scene, the controller (ScaleBFM M 22200), the motor layer, the simulator, the goal predicates and the success
    rule are frozen. Making a task easier is not an improvement. The Engineer may change only the skills package
    (`src/locomani/tasks/scene/skills/`); any other changed file voids the candidate (the driver checks and restores).
-2. A start is never removed from a pool. A start a skill refuses ("no side fits the jaw...") still counts as a failure.
+2. A start is never removed from a pool (rule 26's redraw of the acceptance pool aside). A start a skill refuses ("no
+   side fits the jaw...") still counts as a failure. A round still running at 300 simulated seconds ends as a failure,
+   "episode time limit" (code, version 12).
 3. A candidate is accepted only by `gate.py` on the hidden acceptance pool. Nothing else counts as evidence that a
-   change helps. The gate's per-round files are off limits; its verdict JSON is what a role may read.
+   change helps. The gate's per-round files are off limits; its verdict JSON is what a role may read. While a role
+   runs the hidden tree cannot be read, and the sandbox's family file has no acceptance or sealed seeds (code, version
+   12).
 4. A candidate is the skills package plus parameter overrides (`candidate.json` {"set": ...}, `skills.apply_set` keys:
    "NAME", "module.NAME", "module.NAME.key"). An unknown key is refused (code).
 
@@ -22,7 +27,8 @@ rule is a new version of this file, committed, and counted as one human interven
 6. Use per-round statistics (the value at the deciding moment, a round's min or max), then aggregate across rounds.
    Per-frame aggregates are weighted by dwell time; stalled rounds dominate them.
 7. Only closed-loop re-runs from a start are evidence (the Prober's). Replaying commands or re-solving IK offline is not.
-8. A diagnostic pool of 50 starts measures direction only; the same configuration has moved 6/10 to 2/10 on repeats.
+8. A diagnostic pool (a few starts per task) measures direction only; the same configuration has moved 6/10 to 2/10
+   on repeats.
 9. Subsets picked because they succeeded fall back towards the mean. Do not tune on the rounds that succeed now.
 10. Before saying information is absent, look for it for a few minutes. Before calling a constant decisive, find every
     caller of it.
@@ -38,8 +44,9 @@ rule is a new version of this file, committed, and counted as one human interven
 14. Open loop, ScaleBFM's hands land 2-9 cm and 10-30 deg off at grasp poses; the motor layer's reach servo (jaw centre
     + wrist attitude integral) brings them to about 1 cm. During a fast entry the hand lags the command by up to 10 cm.
 15. Standing in mode 2 the feet slide apart (27.7 -> 36.1 cm in 15 s); mode 4 pins them.
-16. Walks run at 0.25 m/s (version 10, user 2026-10-21: steadier stops; versions 7-9 ran at 0.5 m/s, after which the
-    body still swayed when the reach began). At this speed ScaleBFM shuffles, its feet sliding on the floor. Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks straight lines only;
+16. Walks run at 0.25 m/s (version 10; versions 7-9 ran at 0.5 m/s). At this speed ScaleBFM shuffles, its feet
+    sliding on the floor. Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks
+    straight lines only;
     `navigate.walk_path` plans around furniture on the occupancy map (body radius 0.35 m: at 0.26 m an arm caught the
     kitchen island and the robot fell).
 17. Furniture collides with the robot only below its lowest surface; free objects rest on surface slabs.
@@ -62,11 +69,11 @@ rule is a new version of this file, committed, and counted as one human interven
     still count as failures in every pool and are no longer repair targets. A park reopens, and is recorded as wrong,
     as soon as an incumbent finishes one of its starts. A skill too big for one Engineer call goes to the outer loop
     as a gap proposal. An exit that fits one Engineer call is built on the Manager's `reopen` (version 3): the
-    candidate runs on that park's diagnostic starts only, and goes to the gate only if it finishes one of them (the
-    park then lifts).
+    candidate runs on that park's diagnostic starts only, and goes to the gate only if it finishes one of them. The
+    park lifts only if the gate accepts it (version 12; until then a rejected reopen lifted it too).
 23. `held(X)` needs both fingers of one hand on X (or both hands) and X off every surface (success rule 2,
-    2026-10-16). Under rule 1 one finger was enough: a mug hanging on closed fingers counted. Rounds judged under rule 1
-    are set aside as `_rule1_*` and run again.
+    2026-10-16). Rounds recorded under an older success rule or other motor settings are set aside and run again
+    (code).
 24. A family the outer loop made for a gap (its file's `about` names the new skills, e.g. `r1_on_single`: no skill
     puts an object down) exists to build those skills here: the first candidates may be a plain end-to-end version
     (`plan_for` covering the goal, the existing pick reused), improved one Engineer call at a time. They are not gap
@@ -90,7 +97,8 @@ rule is a new version of this file, committed, and counted as one human interven
     end-to-end version, improved one Engineer call at a time (rule 24 without an existing pick to reuse). Grasps are
     computed from the scene's geometry (the object's box and mesh, its surface, the gripper's size). The sandbox holds
     no earlier skill catalog, loop record or grasp program; do not look for them outside it (version 8, user
-    2026-10-20).
+    2026-10-20). Its experience library keeps the lessons, not the code earlier runs ended with (code: no
+    `final.patch`; version 12 -- in TODO 32.12 an Engineer read one).
 
 28. An iteration builds several candidates (`run --candidates K`, TODO 32.9; K = 3 by default since version 11, and
     K = 1 is one Engineer without a Composer): the Manager lists up to K hypotheses,
@@ -98,9 +106,12 @@ rule is a new version of this file, committed, and counted as one human interven
     runs on the diagnostic pool, and the Composer merges into one candidate the edits whose diagnostic flips show
     their mechanism, adopts one candidate, or keeps the incumbent. Only that one candidate reaches the gate, so each
     gate call stays one paired test (code); the Composer ties every kept or dropped edit to the starts and the trace
-    moment that decided it (prompt) (version 9, user 2026-10-21).
+    moment that decided it (prompt) (version 9, user 2026-10-21). A reopen uses one Engineer. Identical drafts run
+    once. A file changed outside the skills copies voids every draft of the iteration: the Engineers share the sandbox,
+    so it cannot be told whose it is (code, version 12).
 
 29. The sandbox holds the experience library (scripts/rsi/experience, TODO 32.10): one entry per family that finished
-    before, without this family's own (code: sandbox.py), and the outer loop adds the family's entry when it ends
+    before, without this family's own or those its file's `library_exclude` names (code: sandbox.py), and the outer
+    loop adds the family's entry when it ends
     (outer_run.py). Its numbers come from other objects and surfaces; this family's rounds decide (prompt) (version
     11, user 2026-10-22: three candidates, the Composer and the library are the default after TODO 32.12).

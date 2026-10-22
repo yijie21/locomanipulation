@@ -2,8 +2,9 @@
 job -- one skills directory with its overrides, on some starts of a pool -- puts its missing rounds into one queue, and
 `procs` worker processes spread over the GPUs take rounds from it one at a time until it is empty (TODO 32.2: a worker
 loads the scene and the policy once, about 13 s, where a process per two rounds paid it every 80 s of simulation).
-Rounds already written under the current success rule are skipped (a batch resumes); a round judged under an older
-rule is set aside as `_rule<n>_<label>.*` and run again.
+Rounds already written under the current success rule and motor signature (`motor_signature`) are skipped (a batch
+resumes); a round judged under an older rule, or made under another motor configuration (or none recorded), is set aside
+as `_rule<n>_<label>.*` / `_motor<sig>_<label>.*` and run again.
 
 Every worker also holds one of SIM_SLOTS machine-wide slots (a locked file under SLOTS_DIR) while it runs, so batches
 from several sandboxes at once -- two families' loops side by side (TODO 27.10.7, plan §12.6) -- share the machine
@@ -44,24 +45,65 @@ class Job:
     controller: str = "scalebfm"  # scene_round --controller (TODO 28: "amo")
 
 
-def done(f: Path) -> bool:
-    """A round file judged under the current success rule."""
+def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | None = None,
+                    cuda_graph: bool | None = None) -> str:  # fmt: skip
+    """TODO 36 (review 2026-10-22): a short hash of the motor-relevant settings a round ran under -- every MotorConfig
+    field (walk_speed ...), the SceneWorld `sleep` flag, the ScaleBFM backend's cuda_graph, the controller name. A round
+    carries it ("motor"); `done` treats a record made under another signature as not done, as it does one judged under an
+    older success rule (the 0.25 vs 0.5 m/s records were indistinguishable until now). Without arguments: the signature
+    of the defaults, which is what a batch's workers build (scene_round.make_world); the workers pass the values their
+    world actually holds, so a changed default moves both sides together."""
+    import dataclasses
+    import hashlib
+    import inspect
+
+    from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
+    from locomani.backends.scalebfm.motor import MotorConfig
+    from locomani.tasks.scene.world import SceneWorld
+
+    if motor_cfg is None:
+        motor_cfg = MotorConfig()
+    if sleep is None:
+        sleep = inspect.signature(SceneWorld.__init__).parameters["sleep"].default
+    if cuda_graph is None:
+        cuda_graph = ScaleBfmBackendConfig().cuda_graph
+    spec = dict(
+        controller=controller, motor=dataclasses.asdict(motor_cfg), sleep=bool(sleep), cuda_graph=bool(cuda_graph)
+    )
+    return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:10]
+
+
+def stale(f: Path, motor: str | None = None) -> str | None:
+    """Why the round file `f` is not a current record: "missing", "rule <n>", "motor <sig>" (made under another motor
+    signature, or none recorded); None when current. `motor` None skips the motor check."""
     if not f.exists():
-        return False
+        return "missing"
     try:
-        return json.loads(f.read_text()).get("rule", 1) == SUCCESS_RULE
+        rec = json.loads(f.read_text())
     except (OSError, ValueError):
-        return False
+        return "unreadable"
+    if rec.get("rule", 1) != SUCCESS_RULE:
+        return f"rule {rec.get('rule', 1)}"
+    if motor is not None and rec.get("motor") != motor:
+        return f"motor {rec.get('motor') or 'none'}"
+    return None
+
+
+def done(f: Path, motor: str | None = None) -> bool:
+    """A round file judged under the current success rule (and, with `motor`, made under that motor signature)."""
+    return stale(f, motor) is None
 
 
 def retire(f: Path) -> None:
-    """Keep an older rule's round beside the new one, out of `outcomes` (underscore names are skipped)."""
+    """Keep an older rule's (or motor signature's) round beside the new one, out of `outcomes` (underscore names are
+    skipped)."""
     if not f.exists():
         return
-    rule = json.loads(f.read_text()).get("rule", 1)
+    rec = json.loads(f.read_text())
+    tag = f"rule{rec.get('rule', 1)}" if rec.get("rule", 1) != SUCCESS_RULE else f"motor{rec.get('motor') or 'none'}"
     for p in (f, f.with_suffix(".npz")):
         if p.exists():
-            p.rename(p.with_name(f"_rule{rule}_{p.name}"))
+            p.rename(p.with_name(f"_{tag}_{p.name}"))
 
 
 def take_slot():
@@ -96,8 +138,16 @@ def run_jobs(
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
     env.setdefault("TMPDIR", "/workspace/tmp")
     every = pool_labels(pool)
-    todo = {k: [x for x in (job.labels or every) if not done(job.out / f"{x}.json")] for k, job in enumerate(jobs)}
+    motor = [motor_signature(job.controller) for job in jobs]
+    todo = {
+        k: [x for x in (job.labels or every) if not done(job.out / f"{x}.json", motor[k])] for k, job in enumerate(jobs)
+    }
     for k, job in enumerate(jobs):
+        old = [(x, stale(job.out / f"{x}.json", motor[k])) for x in todo[k]]
+        old = [(x, w) for x, w in old if w.startswith("motor")]
+        if old:  # TODO 36 (review 2026-10-22): rounds of another motor config are run again, not kept
+            print(f"batch: {len(old)} round(s) in {job.out} made under another motor signature than {motor[k]} "
+                  f"({old[0][1]}...) -> not done, run again", flush=True)  # fmt: skip
         for x in todo[k]:
             retire(job.out / f"{x}.json")
     q = make_queue(jobs, todo, Path(env["TMPDIR"]))
@@ -135,7 +185,7 @@ def run_jobs(
                 running = [(p, d, slot) for p, d, slot in running if p.poll() is None]
     finally:
         shutil.rmtree(q, ignore_errors=True)
-    return {k: [x for x in todo[k] if not done(jobs[k].out / f"{x}.json")] for k in todo}
+    return {k: [x for x in todo[k] if not done(jobs[k].out / f"{x}.json", motor[k])] for k in todo}
 
 
 def make_queue(jobs: list[Job], todo: dict, tmp: Path) -> Path:

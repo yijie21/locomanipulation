@@ -9,7 +9,7 @@ candidate (the first one: `--seed-incumbent`, the repository's skills).
 Steps, stopping at the first rejection:
 1. static: the skills package loads and the overrides apply; the hash was never rejected; it is not the incumbent.
 2. sentinel: SENTINELS incumbent rounds re-run must reproduce its stored outcomes (ok and end time) -- the motor
-   layer and the scene are shared code, a change there must not move the incumbent.
+   layer and the scene are shared code, a change there must not move the incumbent. One start per task (`sentinel_labels`).
 3. stage 1: STAGE1 starts drawn from every task in proportion to its share of the pool (`stage1_labels`); reject
    when the candidate's net wins (b - c) <= 0. (Until 2026-10-18 the first STAGE1 labels by name: about half of a
    multi-task family's tasks, so a candidate that changed only a later task was rejected without one round of it.)
@@ -17,6 +17,10 @@ Steps, stopping at the first rejection:
 5. verdict: accept iff b - c >= MIN_NET, one-sided exact McNemar p <= ALPHA, falls <= incumbent + 1,
    drops <= incumbent + 1 -- or, against an incumbent with no success on the pool, drops <= half the candidate's
    successes when that is more (`drop_limit`; user 2026-10-18: a family starting from zero has no drops to compare).
+Pairing must be complete (TODO 36, review 2026-10-22): when either arm lacks a round for a requested start (a worker
+died, the incumbent's own round is missing) the call ends with a void verdict (accepted false, "void": true, reason
+"pairing incomplete: ..."), never a verdict on fewer pairs. A crash still leaves no ledger line (the loop reads that from
+the exit code and the hash).
 On acceptance the candidate's rounds become the incumbent's. The verdict JSON is the only output a loop role reads.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -93,6 +97,26 @@ def stage1_labels(labels: list[str], n: int = STAGE1) -> list[str]:
     return sorted(x for t, v in by.items() for x in v[: take[t]])
 
 
+def sentinel_labels(labels: list[str], n: int = SENTINELS) -> list[str]:
+    """TODO 36 (review 2026-10-22): the incumbent re-run's starts, one per task (tasks by name, the first label of each),
+    up to `n`; a family with fewer tasks than `n` gets a second start of each task in turn. (Until 2026-10-22 the first
+    `n` labels by name: all of one task.) The sentinel only compares the incumbent with its own stored rounds, so which
+    starts it takes changes what drift it can see, not any verdict's rule."""
+    by: dict[str, list[str]] = {}
+    for x in sorted(labels):
+        by.setdefault(x.rsplit("_s", 1)[0], []).append(x)
+    out, i = [], 0
+    while len(out) < min(n, len(labels)):
+        out += [v[i] for t, v in sorted(by.items()) if i < len(v)][: n - len(out)]
+        i += 1
+    return sorted(out)
+
+
+def incomplete(labels, *arms: dict) -> list[str]:
+    """The labels some arm has no round for."""
+    return sorted(x for x in labels if any(x not in arm for arm in arms))
+
+
 def drop_limit(t: dict) -> int:
     """The most drops a candidate may have on the pool (verdict step 5)."""
     limit = t["incumbent_dropped"] + 1
@@ -145,6 +169,12 @@ def main(argv=None) -> int:
     verdict = dict(candidate=str(a.candidate), hash=h, started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
     verdict["call"] = len([x for x in history if not x.get("dry_run")]) + 1
 
+    def void(stage: str, miss: list[str], **extra) -> int:
+        """TODO 36: a call whose pairing is incomplete judges nothing: a ledger line, rejected and void."""
+        return finish(
+            False, f"pairing incomplete: {stage} lacks {len(miss)} start(s): {', '.join(miss)}", void=True, **extra
+        )
+
     def finish(accepted: bool, reason: str, **extra) -> int:
         verdict.update(accepted=accepted, reason=reason, dry_run=a.dry_run, **extra)
         verdict["finished"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -173,20 +203,30 @@ def main(argv=None) -> int:
     log = work / "run.log"
     jobs = [
         B.Job(inc_dir / "skills", inc_rounds, overrides(inc_dir)),  # the incumbent's own rounds, once per incumbent
-        B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(labels[:SENTINELS])),
+        B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(sentinel_labels(labels))),
         B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(stage1_labels(labels))),
     ]
     B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus)
     inc_out = B.outcomes(inc_rounds)
     again = B.outcomes(work / "sentinel")
+    miss = incomplete(sentinel_labels(labels), inc_out, again)
+    if miss:
+        return void("sentinel or incumbent", miss)
     drift = [k for k in again if (again[k]["ok"], again[k].get("t_end")) != (inc_out[k]["ok"], inc_out[k].get("t_end"))]
     if drift:
         return finish(False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void")
+    s1 = stage1_labels(labels)
+    miss = incomplete(s1, inc_out, B.outcomes(work / "candidate"))
+    if miss:
+        return void("stage 1", miss)
     t1 = tally(B.outcomes(work / "candidate"), inc_out)
     if t1["b"] - t1["c"] <= 0:
         return finish(False, f"stage 1: net wins {t1['b'] - t1['c']} <= 0 on {t1['n']} pairs", stage1=t1)
     B.run_jobs([B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"))], a.family, a.pool,
                a.procs, log, a.gpus)  # fmt: skip
+    miss = incomplete(labels, inc_out, B.outcomes(work / "candidate"))
+    if miss:
+        return void("final", miss, stage1=t1)
     t = tally(B.outcomes(work / "candidate"), inc_out)
     fails = []
     if t["b"] - t["c"] < MIN_NET:

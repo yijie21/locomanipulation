@@ -11,8 +11,10 @@ held(X) + near(X, Y) a third (`held+near_single`: carry it there), and so on; up
 finished family under --loops) are gaps too, with the tasks they name. Ranked by tasks unlocked / estimated cost:
 EST_USD_EXTEND for a gap whose skill exists (the pick_single loop spent 73 USD of model fees on its first five
 iterations), EST_USD_NEW per skill the checker says is missing; the first MAX_GAPS are selected (D9; its 2000 USD
-budget was lifted by the user on 2026-10-19, so the estimate only ranks), and they run one after another, each on
-the catalog the previous one wrote back (no merge of two loops' edits to one skill). Writes `<round dir>/selection.json`.
+budget was lifted by the user on 2026-10-19, so the estimate only ranks), and they run in one round, each in its
+own sandbox (`git archive HEAD`; the write-backs stay uncommitted, so every family starts from the round's HEAD and
+not from the catalog the previous one wrote back -- outer_run.py merges the write-backs three-way, TODO 36, review
+2026-10-22). Writes `<round dir>/selection.json`.
 
 `family <round dir> <gap>`: families/<name>.json for a selected gap -- at most MAX_TASKS tasks, spread over the gap's
 range (sorted by how far outside the measured settings they are, then every k-th), pools 50 / 60 / 80 with seeds in a

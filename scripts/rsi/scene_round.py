@@ -5,7 +5,7 @@ motor trace) per start into --out. One process loads the policy and the scene on
 
 Round record: label, task, ok, why (the goal's), fell, dropped (the goal missed and a task object ended more than DROP_M
 below where it started), plan_ok / plan_why, steps (every skill step's outcome), skills (the package's content hash), set, wall_s,
-rule (batch.SUCCESS_RULE: which `held` judged it).
+rule (batch.SUCCESS_RULE: which `held` judged it), motor (batch.motor_signature: the motor settings it ran under).
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src $PY scripts/rsi/scene_round.py pick_single \\
@@ -84,20 +84,35 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
     return SceneWorld(fam["scene_dir"], policy, controller=controller)
 
 
+def world_signature(world: SceneWorld, controller: str) -> str:
+    """TODO 36 (review 2026-10-22): `batch.motor_signature` of the settings this world actually holds."""
+    pol = getattr(world.motor, "pol", None)
+    cuda_graph = getattr(getattr(pol, "cfg", None), "cuda_graph", None)  # amo / gr00t policies: the default
+    return B.motor_signature(controller, world.motor.cfg, world.sim.cfg.sleep, cuda_graph)
+
+
 def run_round(
     fam: dict, world: SceneWorld, skills, h: str, pool: Path, out: Path, label: str, overrides: dict, npz: bool,
     controller: str,
 ) -> None:  # fmt: skip
     f = out / f"{label}.json"
-    if B.done(f):
+    motor = world_signature(world, controller)
+    if B.done(f, motor):
         return
     B.retire(f)
     row = json.loads((pool / f"{label}.json").read_text())
     task = F.task(fam, row["task"])
     start = Start.from_dict(row["start"])
-    plan = skills.plan_for(task)
     t0 = time.time()
-    if plan is None:
+    try:
+        plan = skills.plan_for(task)
+        plan_err = ""
+    except Exception as e:  # TODO 36 (review 2026-10-22): a plan_for bug is the round's failure, not the worker's death
+        plan, plan_err = None, f"plan_for raised: {type(e).__name__}: {e}"
+    if plan_err:
+        rec = dict(label=label, task=task.id, ok=False, why=plan_err, fell=False, dropped=False, plan_ok=False,
+                   plan_why=plan_err, error=plan_err)  # fmt: skip
+    elif plan is None:
         rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
     else:
         res, arrays = run_episode(world, task, start, plan)
@@ -112,7 +127,14 @@ def run_round(
                    t_end=ex["t_end"], seated=ex["seated"])  # fmt: skip
         if npz:
             np.savez_compressed(out / f"{label}.npz", **arrays)
-    rec.update(skills=h, set=overrides, wall_s=round(time.time() - t0, 1), rule=B.SUCCESS_RULE, controller=controller)
+    rec.update(
+        skills=h,
+        set=overrides,
+        wall_s=round(time.time() - t0, 1),
+        rule=B.SUCCESS_RULE,
+        controller=controller,
+        motor=motor,
+    )
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(rec, indent=1, default=float))
     tmp.rename(f)  # a killed process never leaves a half-written round

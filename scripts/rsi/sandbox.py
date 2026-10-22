@@ -17,7 +17,18 @@ earlier skill catalog, the scene RSI records or the earlier grasp programs) chan
 
 The experience library (scripts/rsi/experience, TODO 32.10) goes in without the family's own entry, and its index is
 rebuilt: a re-run does not read how its family's earlier run ended (leave-one-out, as TODO 32.12 ran; the default
-since TODO 32.15, user 2026-10-22).
+since TODO 32.15, user 2026-10-22). For a family with a `sandbox` block it also goes in without any entry's
+final.patch (the old grasp code; rule 27 -- in TODO 32.12 an Engineer read experience/pick_single/final.patch) and
+without the entries of the family file's `library_exclude` (a list of family names). TODO 36 (review 2026-10-22).
+
+Every sandbox, block or not, is built without CLAUDE.md, AGENTS.md, scripts/rsi/tools and scripts/rsi/library: the role
+sessions load the sandbox's CLAUDE.md / AGENTS.md, which send them to STATE, `make check` and commits, and the tools
+were turned off in TODO 32.6 (TODO 36).
+
+The acceptance and sealed pools' seeds are not in the sandbox's copy of the family file: build writes them to
+outputs/scene_rsi_20261016_hidden/<family>/seeds.json and blanks them in the file before the sandbox's git commit, so no
+role can regenerate the hidden starts from family.py draw (family.load reads them back from the hidden file). The
+diagnostic seed stays. TODO 36 (review 2026-10-22).
 """
 
 from __future__ import annotations
@@ -34,6 +45,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 LINKS = ("third_party", "outputs/scene_discovery")
+HIDDEN = "outputs/scene_rsi_20261016_hidden"
+DEFAULT_STRIP = ("CLAUDE.md", "AGENTS.md", "scripts/rsi/tools", "scripts/rsi/library")  # TODO 36 (review 2026-10-22)
 
 
 def git(dest: Path, *args, **kw):
@@ -90,13 +103,50 @@ def apply_spec(dest: Path, family: str) -> dict:
     return spec
 
 
+def default_strip(dest: Path) -> None:
+    """DEFAULT_STRIP (module docstring) removed from every sandbox. TODO 36 (review 2026-10-22)."""
+    for rel in DEFAULT_STRIP:
+        t = dest / rel
+        if t.is_dir() and not t.is_symlink():
+            shutil.rmtree(t)
+        elif t.exists() or t.is_symlink():
+            t.unlink()
+
+
+def hide_seeds(dest: Path, family: str) -> dict:
+    """The acceptance and sealed seeds out of the sandbox's family file into the hidden seeds.json (module docstring);
+    returns what was written. Run before the sandbox's git commit. TODO 36 (review 2026-10-22)."""
+    f = dest / "scripts" / "rsi" / "families" / f"{family}.json"
+    fam = json.loads(f.read_text())
+    hidden = {k: v["seed"] for k, v in fam.get("pools", {}).items() if k != "diag" and v.get("seed") is not None}
+    if hidden:
+        out = dest / HIDDEN / family / "seeds.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(hidden, indent=1))
+        for k in hidden:
+            fam["pools"][k]["seed"] = None
+        f.write_text(json.dumps(fam, indent=1, ensure_ascii=False) + "\n")
+    return hidden
+
+
 def library_without(dest: Path, family: str) -> None:
-    """The sandbox's experience library without `family`'s entry (module docstring); nothing when it holds none."""
+    """The sandbox's experience library without `family`'s entry (module docstring); nothing when it holds none. With a
+    `sandbox` block in the family file: also no entry's final.patch nor the line pointing at it, and no entry of the
+    file's `library_exclude`. TODO 36 (review 2026-10-22)."""
     lib = dest / "scripts" / "rsi" / "experience"
     if not lib.is_dir():
         return
-    if (lib / family).exists():
-        shutil.rmtree(lib / family)
+    fam_file = dest / "scripts" / "rsi" / "families" / f"{family}.json"
+    fam = json.loads(fam_file.read_text()) if fam_file.exists() else {}
+    for name in [family, *fam.get("library_exclude", [])]:
+        if (lib / name).exists():
+            shutil.rmtree(lib / name)
+    if fam.get("sandbox"):
+        for d in sorted(p for p in lib.iterdir() if p.is_dir()):
+            (d / "final.patch").unlink(missing_ok=True)
+            md = d / "EXPERIENCE.md"
+            if md.exists():
+                md.write_text("".join(x for x in md.read_text().splitlines(keepends=True) if "final.patch" not in x))
     mod = importlib.util.spec_from_file_location("rsi_reflect", HERE / "reflect.py")
     reflect = importlib.util.module_from_spec(mod)
     mod.loader.exec_module(reflect)
@@ -111,7 +161,9 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     archive = subprocess.run(["git", "archive", ref], cwd=REPO, check=True, capture_output=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True)
     spec = apply_spec(dest, family)
+    default_strip(dest)
     library_without(dest, family)
+    hide_seeds(dest, family)
     links = [(rel, REPO / rel) for rel in LINKS]
     if spec.get("scene_exclude") is not None:
         scene = json.loads((dest / "scripts" / "rsi" / "families" / f"{family}.json").read_text())["scene"]
@@ -140,7 +192,7 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
         "scene RSI sandbox",
     )
     loop = dest / "outputs" / "scene_rsi_20261016" / family
-    hidden = dest / "outputs" / "scene_rsi_20261016_hidden" / family
+    hidden = dest / HIDDEN / family
     fam = dest / "scripts" / "rsi" / "family.py"
     env = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "PATH": "/usr/bin:/bin"}
     for pool, out in (("diag", loop / "pool_diag"), ("accept", hidden / "pool_accept")):

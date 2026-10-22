@@ -2,7 +2,8 @@
 the skill catalog, as write-backs 1-7 did by hand. The family's changes are its final incumbent's skills against the
 seed it started from (the gate's `incumbent_seed`); they merge three-way into the catalog as it is now (`git
 merge-file`), so a family that ran beside another keeps the other's write-back. The final incumbent's parameter
-overrides (`module.CONSTANT`) are then written into the constants. Conflicts -- a file both changed in the same
+overrides (`module.CONSTANT`, or `module.DICT.key` for an entry of a dict literal) are then written into the
+constants; a package-level name without a module is a conflict. Conflicts -- a file both changed in the same
 place, a constant not found, a file the family deleted that the catalog changed -- are listed and nothing is
 written; so is a family whose final is its seed.
 
@@ -51,6 +52,46 @@ def fold(src: str, const: str, value, family: str) -> tuple[str, bool]:
     return src[: m.start(2)] + f"{value!r}  {note}" + src[m.end() :], True
 
 
+def fold_entry(src: str, const: str, path: list[str], value, family: str) -> tuple[str, bool]:
+    """TODO 36 (review 2026-10-22): `CONST = {..., "key": <old>, ...}` -> the entry `path` (one or more keys down nested
+    dict literals) set to `value`, with `# (<old> until <family>'s set)` on the entry's last line (skills.apply_set's
+    `module.CONST.key`); (text, found). Found only for a module-level dict literal whose entry is a literal."""
+    try:
+        tree = ast.parse(src)
+    except SyntaxError:
+        return src, False
+    node = None
+    for st in tree.body:
+        if isinstance(st, ast.Assign) and any(isinstance(t, ast.Name) and t.id == const for t in st.targets):
+            node = st.value
+        elif isinstance(st, ast.AnnAssign) and isinstance(st.target, ast.Name) and st.target.id == const:
+            node = st.value
+    for key in path:
+        if not isinstance(node, ast.Dict):
+            return src, False
+        hit = [v for k, v in zip(node.keys, node.values) if isinstance(k, ast.Constant) and k.value == key]
+        node = hit[-1] if hit else None
+    if node is None or isinstance(node, ast.Dict):
+        return src, False
+    try:
+        old = repr(ast.literal_eval(node))
+    except ValueError:
+        return src, False
+    lines = src.splitlines(keepends=True)
+    first, last = node.lineno - 1, node.end_lineno - 1
+    # ast columns are UTF-8 byte offsets
+    head = lines[first].encode()[: node.col_offset].decode()
+    tail = lines[last].encode()[node.end_col_offset :].decode()
+    note = f"(was {old} until {family}'s set)"
+    if "#" in tail:  # keep the line's own comment after ours
+        i = tail.index("#")
+        tail = tail[:i] + f"# {note} " + tail[i + 1 :].lstrip()
+    else:
+        tail = tail.rstrip("\n").rstrip() + f"  # {note}\n"
+    lines[first : last + 1] = [head + repr(value) + tail]
+    return "".join(lines), True
+
+
 def plan(sandbox: Path, family: str, catalog: Path) -> dict:
     gate = sandbox / "outputs" / "scene_rsi_20261016_hidden" / family / "gate"
     inc = json.loads((gate / "incumbent.json").read_text())
@@ -92,12 +133,31 @@ def plan(sandbox: Path, family: str, catalog: Path) -> dict:
                 texts[rel] = r.stdout
                 out["merged"].append(rel)
     for key, value in sorted(overrides.items()):
-        module, const = key.rsplit(".", 1)
-        rel = module.replace(".", "/") + ".py"
+        parts = key.split(".")
+        if len(parts) < 2:  # a package-level NAME (skills/__init__.py): no module to fold into
+            out["conflicts"].append(f"override {key}: a package-level parameter has no module; fold it by hand")
+            continue
+        # module.CONST, or module.CONST.key[.key...] (an entry of a dict literal, skills.apply_set); the module is the
+        # longest prefix that is a file
+        for i in range(len(parts) - 1, 0, -1):
+            rel = "/".join(parts[:i]) + ".py"
+            if rel in texts or (catalog / rel).exists():
+                break
+        else:
+            rel, i = "/".join(parts[:-1]) + ".py", len(parts) - 1
+        const, entry = parts[i], parts[i + 1 :]
         src = texts.get(rel) if rel in texts else (catalog / rel).read_text() if (catalog / rel).exists() else None
-        new, found = fold(src, const, value, family) if src is not None else (None, False)
+        if src is None:
+            new, found = None, False
+        elif entry:
+            new, found = fold_entry(src, const, entry, value, family)
+        else:
+            new, found = fold(src, const, value, family)
         if not found:
-            out["conflicts"].append(f"override {key}: no literal module constant {const} in {rel}")
+            what = (
+                f"no literal dict entry {'.'.join([const, *entry])}" if entry else f"no literal module constant {const}"
+            )
+            out["conflicts"].append(f"override {key}: {what} in {rel}")
             continue
         texts[rel] = new
         out["folded"][key] = value

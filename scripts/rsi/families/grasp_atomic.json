@@ -41,8 +41,6 @@
  "sandbox": {
   "seed": "scripts/rsi/seeds/atomic",
   "keep": [
-   "AGENTS.md",
-   "CLAUDE.md",
    "Makefile",
    "pyproject.toml",
    ".gitignore",

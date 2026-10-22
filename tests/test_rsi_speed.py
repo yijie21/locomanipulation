@@ -243,7 +243,9 @@ class RunFlags(unittest.TestCase):
         self.assertEqual((seen["effort"], str(seen["engineer_from"])), (["engineer=medium"], "/x/iter_02"))
 
     def test_three_engineers_and_a_composer_by_default(self):
-        # TODO 32.15 (user 2026-10-22): the 32.12 configuration is the default; --candidates 1 is the old loop
+        # TODO 32.15 (user 2026-10-22): the 32.12 configuration is the default; --candidates 1 is the old loop.
+        # TODO 36 (review 2026-10-22, L3): the parser leaves unset flags at None; resolve_settings decides
+        from argparse import Namespace
         from unittest import mock
 
         lp = _scene_loop()
@@ -253,9 +255,284 @@ class RunFlags(unittest.TestCase):
             mock.patch.object(lp, "configure", lambda f: None),
         ):
             lp.main(["run", "grasp_atomic"])
-            self.assertEqual(seen["candidates"], 3)
+            self.assertEqual((seen["candidates"], seen["scoped_review"]), (None, None))
             lp.main(["run", "grasp_atomic", "--candidates", "1"])
             self.assertEqual(seen["candidates"], 1)
+        none = Namespace(candidates=None, scoped_review=None)
+        self.assertEqual(lp.resolve_settings(none, {}, False), dict(candidates=3, scoped_review=False, max_wall_h=6.0))
+        old = dict(started="x", candidates=1, scoped_review=True, max_wall_h=5.0)
+        with mock.patch.dict("os.environ", clear=False):
+            os.environ.pop("RSI_MAX_WALL_H", None)
+            self.assertEqual(
+                lp.resolve_settings(none, old, True), dict(candidates=1, scoped_review=True, max_wall_h=5.0)
+            )
+            self.assertEqual(lp.resolve_settings(none, old, False)["candidates"], 3)  # fresh run ignores stale meta
+            self.assertEqual(
+                lp.resolve_settings(Namespace(candidates=2, scoped_review=None), old, True)["candidates"], 2
+            )
+            os.environ["RSI_MAX_WALL_H"] = "4"
+            self.assertEqual(lp.resolve_settings(none, old, True)["max_wall_h"], 4.0)
+
+    def test_effort_names_are_validated(self):
+        lp = _scene_loop()
+        self.assertEqual(lp.parse_effort(["engineer=medium", "engineer_2=low", "reviewer_P=high"]),
+                         {"engineer": "medium", "engineer_2": "low", "reviewer_P": "high"})  # fmt: skip
+        with self.assertRaises(SystemExit) as c:
+            lp.parse_effort(["enginer=medium"])
+        self.assertIn("composer", str(c.exception))
+
+
+class RunExit(unittest.TestCase):
+    """TODO 36 (review 2026-10-22, L3, L4): exit codes, the stop row of a crash or a SIGTERM, and a resume that keeps
+    the run's recorded settings (with a `settings` row when a flag changes one)."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        root = Path(self.d.name)
+        (root / "pool_diag").mkdir()
+        for p in (mock.patch.multiple(self.lp, STATE=root / "state", LOOP=root, HIDDEN=root / "hid",
+                                      accept_pool=lambda: root, stop_reason=lambda m: None),
+                  mock.patch.dict(os.environ)):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+        os.environ.pop("RSI_MAX_WALL_H", None)
+
+    def run_(self, iterate, **kw):
+        from argparse import Namespace
+        from unittest import mock
+
+        a = Namespace(max_iters=1, reprobe=None, stub=True, **kw)
+        with mock.patch.object(self.lp, "iterate", iterate):
+            return self.lp.cmd_run(a)
+
+    def test_normal_stops_exit_0_and_abnormal_ones_3(self):
+        self.assertEqual(self.run_(lambda n, m, s: None), 0)
+        self.assertEqual(self.run_(lambda n, m, s: "manager: stop"), 0)
+        self.assertEqual(self.run_(lambda n, m, s: "gate calls 12 >= 12"), 0)
+        self.assertEqual(self.run_(lambda n, m, s: "role call failed: x"), 3)
+        self.assertEqual(self.run_(lambda n, m, s: "reviewer of iteration 1 named off-limits paths (gate)"), 3)
+        self.assertEqual(self.run_(lambda n, m, s: "gate error at iteration 2 (see gate.log)"), 3)
+
+    def test_a_crash_and_a_sigterm_write_a_stop_row(self):
+        import signal
+
+        def boom(n, m, s):
+            raise ValueError("boom")
+
+        self.assertEqual(self.run_(boom), 3)
+        last = self.lp.entries()[-1]
+        self.assertEqual(last["step"], "stop")
+        self.assertIn("crashed: ValueError", last["reason"])
+
+        def term(n, m, s):
+            os.kill(os.getpid(), signal.SIGTERM)
+            time.sleep(5)
+
+        self.assertEqual(self.run_(term), 3)
+        self.assertEqual(self.lp.entries()[-1]["reason"], "terminated")
+        meta = self.lp.jload(self.lp.STATE / "meta.json")
+        self.lp.resume(meta)  # the crash's downtime is a pause
+        self.assertEqual(self.lp.entries()[-1]["step"], "resume")
+
+    def test_a_resume_keeps_the_recorded_settings_and_logs_a_change(self):
+        self.run_(lambda n, m, s: None, candidates=1, scoped_review=None)
+        meta = self.lp.jload(self.lp.STATE / "meta.json")
+        self.assertEqual((meta["candidates"], self.lp.CANDIDATES), (1, 1))
+        self.run_(lambda n, m, s: None, candidates=None, scoped_review=None)
+        self.assertEqual(self.lp.CANDIDATES, 1)
+        self.assertNotIn("settings", [e["step"] for e in self.lp.entries()])
+        self.run_(lambda n, m, s: None, candidates=2, scoped_review=None)
+        row = [e for e in self.lp.entries() if e["step"] == "settings"][-1]
+        self.assertEqual(row["candidates"], dict(old=1, new=2))
+
+
+class GateVerdict(unittest.TestCase):
+    """TODO 36 (review 2026-10-22, L1, L2, L6, L12): the verdict is the gate's new ledger line for this candidate."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        self.root = Path(self.d.name)
+        self.cand = self.root / "cand"
+        (self.cand / "skills").mkdir(parents=True)
+        (self.cand / "skills" / "__init__.py").write_text("A = 1\n")
+        (self.cand / "candidate.json").write_text('{"set": {}}')
+        self.gate = self.root / "gate"
+        self.gate.mkdir()
+        for p in (mock.patch.multiple(self.lp, STATE=self.root / "state", LOOP=self.root, HIDDEN=self.root,
+                                      GATE_DIR=self.gate, accept_pool=lambda: self.root,
+                                      redraw_accept=lambda: None),
+                  mock.patch.object(self.lp, "unparked_view", lambda r: None)):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+
+    def gate_run(self, line, rc=1):
+        from types import SimpleNamespace
+        from unittest import mock
+
+        def run(*a, **k):
+            if line is not None:
+                with (self.gate / "ledger.jsonl").open("a") as fh:
+                    fh.write(json.dumps(line) + "\n")
+            return SimpleNamespace(returncode=rc, stdout="", stderr="")
+
+        with mock.patch.object(self.lp.subprocess, "run", run):
+            return self.lp.gate_candidate(3, self.root / "it", self.cand, True)
+
+    def test_a_crashed_gate_stops_the_run_and_keeps_no_stale_verdict(self):
+        (self.root / "it").mkdir()
+        h = self.lp.candidate_hash(self.cand)
+        stale = dict(hash="old", accepted=True, reason="accepted")
+        (self.gate / "ledger.jsonl").write_text(json.dumps(stale) + "\n")
+        why = self.gate_run(None, rc=1)  # exits 1 with no new line: a crash, not a rejection
+        self.assertIn("gate error at iteration 3", why)
+        self.assertEqual(self.lp.entries()[-1]["step"], "gate_error")
+        self.assertIn("gate error", self.gate_run(dict(hash="other", accepted=False, reason="x")))
+        self.assertIn("gate error", self.gate_run(dict(hash=h, accepted=False, reason="x"), rc=2))
+        self.assertNotIn("gate", [e["step"] for e in self.lp.entries()])
+
+    def test_a_void_verdict_is_a_void_gate_row_and_a_rejection_keeps_the_park(self):
+        (self.root / "it").mkdir()
+        h = self.lp.candidate_hash(self.cand)
+        self.lp.jdump(self.lp.STATE / "parked.json", {"p": dict(task="t", scope="task", starts=["t_s1"], exits=[])})
+        self.gate_run(dict(hash=h, accepted=False, void=True, reason="pairing incomplete"), rc=0)
+        row = [e for e in self.lp.entries() if e["step"] == "gate"][-1]
+        self.assertEqual((row["void"], row["accepted"]), (True, False))
+        self.assertEqual(self.lp.stop_reason.__name__, "stop_reason")
+        # the park stays after a reopen candidate the gate rejected or voided
+        from unittest import mock
+
+        with mock.patch.object(self.lp, "subprocess", self.lp.subprocess):
+            pass
+        self.lp.settle_reopen(3, "p", ["t_s1"], accepted=False)
+        self.assertIn("p", self.lp.jload(self.lp.STATE / "parked.json"))
+
+    def test_budget_counts_this_runs_cost_and_the_stop_rate_uses_the_current_pool(self):
+        es = [dict(t="2026-10-01T00:00:00Z", cost_usd=5.0), dict(t="2026-10-22T00:00:00Z", cost_usd=2.0)]
+        self.assertEqual(self.lp.run_cost(es, dict(started="2026-10-20T00:00:00Z")), 2.0)
+        pool = str(self.root)
+        old = dict(step="gate", accepted=True, result=dict(candidate_ok=45, incumbent_ok=30, n=60), pool="/old")
+        rej = dict(step="gate", accepted=False, result=dict(candidate_ok=20, incumbent_ok=30, n=60), pool=pool)
+        self.assertIsNone(self.lp.incumbent_ok_here([old]))  # other pool: keep today's rule
+        self.assertEqual(self.lp.incumbent_ok_here([old, rej]), 30)
+        self.assertEqual(
+            self.lp.incumbent_ok_here([old, rej, dict(rej, void=True, result=dict(candidate_ok=1, incumbent_ok=1))]), 30
+        )
+
+
+class RoleSafety(unittest.TestCase):
+    """TODO 36 (review 2026-10-22, L5, L8, L9, L10, L13): hidden tree lock, commits undone, climb-out audit, voided
+    drafts hidden, the role env."""
+
+    def setUp(self):
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        self.root = Path(self.d.name)
+        # every test here runs with a hidden dir of its own: a role call with HIDDEN at Path() once locked the repo root
+        self.hid = self.root / "outputs" / "scene_rsi_20261016_hidden" / "fam"
+        self.hid.mkdir(parents=True)
+        self.patch(HIDDEN=self.hid)
+
+    def patch(self, **kw):
+        from unittest import mock
+
+        p = mock.patch.multiple(self.lp, **kw)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_hidden_dir_is_locked_while_roles_run_and_restored_after(self):
+        hid = self.hid
+        hid.chmod(0o750)
+        self.patch(STATE=self.root / "state")
+        (self.root / "state").mkdir()
+        with self.lp.hidden_locked():
+            with self.lp.hidden_locked():  # a parallel role shares the lock
+                self.assertEqual(hid.stat().st_mode & 0o777, 0)
+            self.assertEqual(hid.stat().st_mode & 0o777, 0)
+        self.assertEqual(hid.stat().st_mode & 0o777, 0o750)
+        with self.assertRaises(RuntimeError), self.lp.hidden_locked():
+            raise RuntimeError()
+        self.assertEqual(hid.stat().st_mode & 0o777, 0o750)
+        # a crash left it locked: unlock_hidden puts the mode back
+        self.lp.hidden_mode_file().write_text("0o750")
+        hid.chmod(0)
+        self.lp.unlock_hidden()
+        self.assertEqual(hid.stat().st_mode & 0o777, 0o750)
+
+    def test_a_role_commit_becomes_working_tree_changes(self):
+        import subprocess
+
+        git = lambda *a: subprocess.run(["git", *a], cwd=self.root, capture_output=True, text=True, check=True)  # noqa: E731
+        git("init", "-q")
+        git("config", "user.email", "t@t")
+        git("config", "user.name", "t")
+        (self.root / "a.txt").write_text("1")
+        git("add", "a.txt")
+        git("commit", "-qm", "base")
+        self.patch(REPO=self.root)
+        head0 = self.lp.git_head()
+        self.assertIsNone(self.lp.undo_commits(head0))
+        (self.root / "a.txt").write_text("2")
+        (self.root / "b.txt").write_text("new")
+        git("add", "-A")
+        git("commit", "-qm", "role")
+        note = self.lp.undo_commits(head0)
+        self.assertEqual(note["was"], head0)
+        self.assertEqual(self.lp.git_head(), head0)
+        self.assertEqual(self.lp.changed_files(), ["a.txt", "b.txt"])
+
+    def test_climbing_out_through_a_link_is_flagged(self):
+        sandbox, origin = self.root / "sb", self.root / "origin"
+        (origin / "third_party").mkdir(parents=True)
+        (origin / "outputs" / "scene_discovery" / "scn" / "mesh").mkdir(parents=True)
+        (origin / "outputs" / "secret").mkdir()
+        (sandbox / "outputs" / "scene_discovery").mkdir(parents=True)
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        os.symlink(origin / "outputs" / "scene_discovery" / "scn", sandbox / "outputs" / "scene_discovery" / "scn")
+        self.patch(REPO=sandbox, ORIGIN=origin)
+        targets = self.lp.own_link_targets()
+        bad = "ls outputs/scene_discovery/scn/mesh/../../../"
+        self.assertTrue(self.lp.climbs_out(json.dumps([["Bash", {"command": bad}, None]]), targets))
+        self.assertTrue(self.lp.climbs_out("cd third_party/..", targets))
+        self.assertFalse(self.lp.climbs_out("ls outputs/scene_discovery/scn/mesh/../ third_party/x/../y", targets))
+        self.assertFalse(self.lp.climbs_out("ls ./src/../outputs", targets))
+
+    def test_voided_drafts_move_to_the_hidden_tree(self):
+        hid = self.root / "hid"
+        hid.mkdir()
+        self.patch(HIDDEN=hid)
+        cand = self.root / "loop" / "cand_2"
+        cand.mkdir(parents=True)
+        (cand / "f.py").write_text("x")
+        patch = self.root / "loop" / "code_2.patch"
+        patch.write_text("p")
+        self.lp.hide_void(4, cand, patch)
+        self.assertFalse(cand.exists() or patch.exists())
+        self.assertTrue((hid / "void" / "iter_04" / "cand_2" / "f.py").exists())
+
+    def test_the_role_env_drops_claude_md_files_and_scratch_is_per_role(self):
+        from unittest import mock
+
+        seen = {}
+
+        def run_role(cmd, prompt, env, session, *a, **k):
+            seen.update(env)
+            return json.dumps(dict(structured_output={"ok": 1}, total_cost_usd=0)), "", 0, []
+
+        self.patch(SCRATCH_ROOT=self.root / "scratch", REPO=self.root)
+        with mock.patch.object(self.lp, "run_role", run_role), mock.patch.object(self.lp, "git_head", lambda: ""):
+            self.lp.claude("engineer_2", "p", {}, self.root, "")
+        self.assertEqual(seen["CLAUDE_CODE_DISABLE_CLAUDE_MDS"], "1")
+        self.assertTrue(seen["TMPDIR"].endswith("engineer_2"))
+        self.assertEqual(self.lp.role_dir("manager"), self.lp.role_tmp())
 
 
 class ExperienceLibrary(unittest.TestCase):

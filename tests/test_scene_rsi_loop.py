@@ -331,6 +331,17 @@ class Infeasibility(unittest.TestCase):
         self.assertIn("book", lp.jload(lp.STATE / "parked.json"))
         with mock.patch.object(lp.B, "run_jobs", spy({"book_pickup_s2"})):
             self.assertTrue(lp.reopen_test(6, root / "it6", cand, "book"))
+        # TODO 36 (review 2026-10-22): finishing a start does not lift the park; only an accepting gate does
+        self.assertIn("book", lp.jload(lp.STATE / "parked.json"))
+        won = lp.reopen_won(root / "it6", "book")
+        self.assertEqual(won, ["book_pickup_s2"])
+        lp.settle_reopen(6, "book", won, accepted=False)
+        self.assertIn("book", lp.jload(lp.STATE / "parked.json"))
+        rej = lp.entries()[-1]
+        self.assertEqual(
+            (rej["step"], rej["claim"], rej["task"], rej["won"]), ("reopen_rejected", "book", "book_pickup", won)
+        )
+        lp.settle_reopen(6, "book", won, accepted=True)
         self.assertEqual(lp.jload(lp.STATE / "parked.json"), {})
         up = [e for e in lp.entries() if e["step"] == "unpark"]
         self.assertEqual((up[-1]["by"], up[-1]["claim_wrong"], up[-1]["won"]), ("reopen", False, ["book_pickup_s2"]))
@@ -505,6 +516,67 @@ class OuterRun(unittest.TestCase):
                 self.assertTrue(g.advance("writeback"))
             self.assertEqual((g.state["step"], g.state["blocked"]), ("writeback", None))
             self.assertEqual(calls, ["sandbox", "lint", "loop", "sealed", "reflect"])
+
+    def test_a_crash_blocks_the_family_not_the_round(self):
+        # TODO 36 (review 2026-10-22): a KeyError / missing JSON in a step is a block with its repr
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as d:
+            f = self.run_mod.Family(Path(d), "r2_on_single")
+
+            def crash():
+                raise KeyError("worse")
+
+            with mock.patch.multiple(f, sandbox_=lambda: None, lint_=crash):
+                self.assertFalse(f.advance("writeback"))
+            self.assertEqual(f.state["step"], "lint")
+            self.assertIn("KeyError", f.state["blocked"])
+
+    def test_a_loop_ends_normally_only_on_a_normal_stop(self):
+        run = self.run_mod
+        with tempfile.TemporaryDirectory() as d:
+            led = Path(d) / "ledger.jsonl"
+            self.assertIsNone(run.last_stop(led))  # no ledger
+            led.write_text(
+                json.dumps(dict(step="gate")) + "\n" + json.dumps(dict(step="stop", reason="gate calls 8 >= 8")) + "\n"
+            )
+            self.assertEqual(run.last_stop(led), "gate calls 8 >= 8")
+            led.write_text(json.dumps(dict(step="stop", reason="x")) + "\n" + json.dumps(dict(step="gate")) + "\n")
+            self.assertIsNone(run.last_stop(led))  # a stop followed by more work is not the end
+        for ok in ("the incumbent wins 30/40 >= 70%: sealed set", "gate calls 12 >= 12", "wall clock >= 20 h",
+                   "model cost 900 >= 800 USD", "4 rejections in a row and the last review had no new hypothesis",
+                   "manager: stop"):  # fmt: skip
+            self.assertTrue(run.NORMAL_STOP.search(ok), ok)
+        for bad in ("role call failed: boom", "manager of iteration 3 named off-limits paths (x)",
+                    "replay: engineer and gate done"):  # fmt: skip
+            self.assertFalse(run.NORMAL_STOP.search(bad), bad)
+
+    def test_a_family_blocked_after_the_writeback_gets_the_catalog_back(self):
+        import shutil
+        from unittest import mock
+
+        run = self.run_mod
+        with tempfile.TemporaryDirectory() as d:
+            skills = Path(d) / "skills"
+            skills.mkdir()
+            (skills / "pick.py").write_text("old")
+            f = run.Family(Path(d), "r2_on_single")
+            f.state["step"] = "writeback"
+
+            def writeback():
+                shutil.copytree(skills, f.snapshot)  # what writeback_ does first
+                (skills / "pick.py").write_text("new")
+                (skills / "extra.py").write_text("added")
+
+            def tests():
+                raise run.Blocked("tests fail")
+
+            with mock.patch.object(run, "SKILLS", skills), mock.patch.multiple(f, writeback_=writeback, tests_=tests):
+                self.assertFalse(f.advance("done"))
+            self.assertEqual((skills / "pick.py").read_text(), "old")
+            self.assertFalse((skills / "extra.py").exists())
+            self.assertIn("put back", f.state["restored"])
+            self.assertEqual(f.state["step"], "tests")
 
     def test_the_steps_find_claude(self):
         # the loop's roles and reflect.py call `claude`; a PATH of system directories alone missed ~/.local/bin

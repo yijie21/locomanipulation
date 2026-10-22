@@ -1122,10 +1122,10 @@
 - [x] 32.9 Harness2 第 1 点：`run --candidates K`——Manager 列至多 K 个假设，K 个 Engineer 各在 `cand_k/` 副本里并行写，每个候选跑诊断池，Composer（`prompts/composer.md`）按翻转合并 / 采纳一个 / 不送，只送一个给验收门；rules.md 第 9 版第 28 条（`e48cdba`）。重放对照（`plan_candidates*`，4 个状态 × K 1 / 3 × 2）：K = 3 被接受 3 / 8（b 4.71 c 0.14），K = 1 2 / 8（b 3.71 c 0.57）；Engineer 段 25.3 vs 15.0 min。样本小，倾向采用：32.12 用 K = 3
 - [x] 32.10 Harness2 第 2 点：`reflect.py`（上下文放在仓库外，不读项目记忆）写 `scripts/rsi/experience/<family>/`：逐条判定 + 至多一条经验 + final.patch，INDEX.md；Reviewer / Engineer 提示词在库存在时指向它；9 个已完成任务族的条目（14 USD）。留一法重放（`plan_library*`，3 个状态 × 有库（去掉本族条目）/ 无库 × 2）：有库 Reviewer 27.9 vs 29.3 min、临时脚本 17 vs 24，探针增益为正的假设 3 / 6 vs 0 / 6；都没到验收门。倾向采用：32.12 带库（10-19 人写的经验库被拒，这是不同形式）
 - [x] 32.11 Harness2 第 3 点：`run --scoped-review`——两个 Reviewer 并行，流程（P）和物体/场景（O）各至多 2 条假设，编号加前缀合并。第一次重放没带上开关（`321aa26` 修好并加测试），重跑（`plan_scoped_final*`，4 个状态 × 分范围 / 单个 × 2）：分范围的 8 个里第 2 遍 4 个撞上用量上限没跑完（线程里的失败变成 KeyError，已修成 RoleFailed 并加测试），剩 4 个：探针最好增益 0 / −1 / 0 / 1，单个 8 个都是 0；Reviewer 费用约 2 倍、时长相同。没有清楚的好处，默认不开，不补跑
-- [x] 32.12 一次完整内环确认（grasp_atomic 同一批池；`outputs/rsi_speed_20261021/confirm/launch.sh`）：第一次（0.5 m/s）跑了 10 分钟按用户要求停掉；0.25 m/s 重起（`6062c1e`，沙盒 `/workspace/code/rsi-scene/ga-confirm-025-20261021`，12:39–16:11 UTC，3.5 h，58 USD）：第 1 轮 3 个候选 Composer 采纳一个，验收 0 → 21/40（TODO 31 第 1 轮 20/40）；第 2 轮多赢 3 少赢 1 拒绝，狼摆件被搁置；第 3 轮木勺、杯子被搁置，Manager 重开杯子，夹杯壁 3/3 撤销搁置，多赢 5 少赢 1（p 0.11）拒绝；第 4 轮被会话审计作废、内环停止——误报：Reviewer 只在最后的结构化输出里写了“Not used: anything under scene_rsi_20261016_hidden”，没有读（32.13）。每轮 58–65 min（验收门 2–3 min，原来 4–7）。10-22 用户“按推荐”：审计改完（32.13）从第 4 轮的 Prober 续跑（`--reprobe 4`，沿用它的 4 条假设；墙钟不算停着的时间，5 h 里剩 1.47 h；`outputs/rsi_speed_20261021/confirm/resume.sh`）；沙盒的经验库换成去掉隐藏路径的版本（32.14），记进 interventions.jsonl。续跑：第 4 轮 Manager 重开木勺（斜捏，搁置的 3 个诊断起点成 1 个 → 撤销搁置），第 5 轮重开狼摆件（卧室出生、走窄门，1/1 → 撤销）；两轮都建在第 3 轮被拒的改动上，验收池 40 局逐局结果和第 3 轮完全相同（25 vs 21，多赢 5 少赢 1，p 0.11）→ 都拒。03:58 UTC 墙钟满 5 h 停（有效 5.00 h，87.5 USD），只采纳 1 次（第 1 轮）：验收 21/40，封存 31/50（62%，48–74%；TODO 31 第 2 版 24/50，步速不同，见 35.3）
+- [x] 32.12 一次完整内环确认（grasp_atomic 同一批池；`outputs/rsi_speed_20261021/confirm/launch.sh`）：第一次（0.5 m/s）跑了 10 分钟按用户要求停掉；0.25 m/s 重起（`6062c1e`，沙盒 `/workspace/code/rsi-scene/ga-confirm-025-20261021`，12:39–16:11 UTC，3.5 h，58 USD）：第 1 轮 3 个候选 Composer 采纳一个，验收 0 → 21/40（TODO 31 第 1 轮 20/40）；第 2 轮多赢 3 少赢 1 拒绝，狼摆件被搁置；第 3 轮木勺、杯子被搁置，Manager 重开杯子，夹杯壁 3/3 撤销搁置，多赢 5 少赢 1（p 0.11）拒绝；第 4 轮被会话审计作废、内环停止——误报：Reviewer 只在最后的结构化输出里写了“Not used: anything under scene_rsi_20261016_hidden”，没有读（32.13）。每轮 58–65 min（验收门 2–3 min，原来 4–7）。10-22 用户“按推荐”：审计改完（32.13）从第 4 轮的 Prober 续跑（`--reprobe 4`，沿用它的 4 条假设；墙钟不算停着的时间，5 h 里剩 1.47 h；`outputs/rsi_speed_20261021/confirm/resume.sh`）；沙盒的经验库换成去掉隐藏路径的版本（32.14），记进 interventions.jsonl。续跑：第 4 轮 Manager 重开木勺（斜捏，搁置的 3 个诊断起点成 1 个 → 撤销搁置），第 5 轮重开狼摆件（卧室出生、走窄门，1/1 → 撤销）；两轮都建在第 3 轮被拒的改动上，验收池 40 局逐局结果和第 3 轮完全相同（25 vs 21，多赢 5 少赢 1，p 0.11）→ 都拒。03:58 UTC 墙钟满 5 h 停（有效 5.00 h，87.5 USD），只采纳 1 次（第 1 轮）：验收 21/40，封存 31/50（62%，48–74%；TODO 31 第 2 版 24/50，步速不同，见 35.3）（10-22 复查，TODO 36：第 1 轮被 Composer 采用的草稿，其 Engineer 读过经验库里 pick_single 的 `final.patch`（旧抓取代码），违反第 27 条；31 vs 20 的比较因此不干净）
 - [x] 32.13 会话审计把角色自己的结构化输出也算进“点名禁区路径”：32.12 第 4 轮的 Reviewer 在说明里写“没用 …_hidden 下的东西”就作废了整轮。用户 10-22 “按推荐”：审计只读工具调用的输入（和 `wireToolInputs` 里的副本），不读 StructuredOutput 回答、thinking、说明文字（旧的整行 grep 也读了它们：以工具调用结束的回复每一块都带 `"stop_reason": "tool_use"`）；`--reprobe` 沿用被审计作废的假设前按新规则重查，停下到续跑的时间不计入墙钟。按新规则重查两次运行的全部角色会话：32.12 的 3 次作废（第 1、2 轮各一个 Engineer 写“这个符号链接指到沙盒外”、第 4 轮 Reviewer）都是这种误报，TODO 31 第 0 轮的 `ls /workspace/tmp/` 照样作废，其余不变（`tests/test_rsi_speed.py` TranscriptAudit）
 - [x] 32.14 经验库里有别的沙盒隐藏目录的名字（final.patch 的绝对路径、entry.json 的 outside 列表），角色照抄就会触发审计：`reflect.py` 的 diff 改用 a/ b/ 相对根，outside 写到库外（`/workspace/tmp/rsi_reflect/<family>/outside.json`；现有 9 条的存在 `outputs/rsi_speed_20261021/experience_outside/`），9 个条目已改写；测试 `ExperienceLibrary`（相对根、库里不含禁区路径）
-- [x] 32.15 三个 Engineer + Composer + 经验库设为默认（用户 2026-10-22：“设置成默认的吧”；依据 32.12 / 35.3：同速下第 1 轮封存 31 vs 20 / 50，p 0.0096）：`loop.py run` 的 `--candidates` 默认 3（`--candidates 1` = 原来一个 Engineer、没有 Composer）；`sandbox.py` 建沙盒时带经验库、去掉本族条目并重建索引（32.12 是手工删的）；`outer_run.py` 在封存集后加 `reflect` 步给经验库写本族条目（失败不挡写回），顺带修了它的 PATH 里没有 `claude`（`~/.local/bin`，外环从没整轮跑过，内环一步也会找不到）；`rules.md` 第 11 版（第 28 条改写、新第 29 条）；测试 `RunFlags`、`ExperienceLibrary`、`OuterRun`；`docs/rsi_design.md` 第 5、9 节、`docs/rsi.md`、change-map
+- [x] 32.15 三个 Engineer + Composer + 经验库设为默认（用户 2026-10-22：“设置成默认的吧”；依据 32.12 / 35.3：同速下第 1 轮封存 31 vs 20 / 50，p 0.0096）：`loop.py run` 的 `--candidates` 默认 3（`--candidates 1` = 原来一个 Engineer、没有 Composer）；`sandbox.py` 建沙盒时带经验库、去掉本族条目并重建索引（32.12 是手工删的）；`outer_run.py` 在封存集后加 `reflect` 步给经验库写本族条目（失败不挡写回），顺带修了它的 PATH 里没有 `claude`（`~/.local/bin`，外环从没整轮跑过，内环一步也会找不到）；`rules.md` 第 11 版（第 28 条改写、新第 29 条）；测试 `RunFlags`、`ExperienceLibrary`、`OuterRun`；`docs/rsi_design.md` 第 5、9 节、`docs/rsi.md`、change-map（10-22 复查，TODO 36：第 1 轮被 Composer 采用的草稿，其 Engineer 读过经验库里 pick_single 的 `final.patch`（旧抓取代码），违反第 27 条；31 vs 20 的比较因此不干净）
 - 不做：加机器（用户：先不加）；验收门期间提前起下一轮 Reviewer（门只要 5 min，被拒时数据不变）
 
 ## 33. 会换做法、知道自己身体的抓取进化（用户 2026-10-21：“有像人类一样思考，并拥有对自己身体物理边界的认知吗？”；“先写方案，五点都做”；方案 `docs/handoff/scene-rsi-strategy-plan-20261021.md`，D1–D8 待用户定；10-22 并入 HarnessPro 两点、RoboHarness 一点、Dream-RSI 两点，用户“直接并进来，先不开始实验”）
@@ -1155,3 +1155,67 @@
 - [x] 35.1 `MotorConfig.walk_speed` 0.5 → 0.25；`rules.md` 第 10 版（第 16 条）；`plans/grasp_atomic.md`、`docs/rsi_design.md`、`docs/rsi.md`。正在跑的 32.12 确认（0.5 m/s，第 1 轮 Reviewer 跑了 10 分钟）停掉，从新提交按 0.25 m/s 重起
 - [-] 35.2 按 0.25 m/s + 休眠重测全部登记，和 `surfaces_20261020`（0.25 m/s 不休眠）、`sleep_20261021`（0.5 m/s 休眠）逐局比；登记表 `last` 前移、`kit.py pack`、文档数字。32.12 跑完后做（同时跑会拉长 32.12 的时长）（放弃 2026-10-22，用户 2026-10-22：“不需要得到非常严格的数据对比，现在只是研究初期”。0.25 m/s 比 0.5 m/s 好是已知的（TODO 35 之前 8 族 187 vs 169 / 632，35.3 的对照），不再逐局重测。登记表基准还是 `sleep_20261021`（0.5 m/s + 休眠）：下次外环的回归步就拿它比，速度不同，结论只作参考，有任务族被挡先看是不是速度造成的）
 - [x] 35.3 32.12 的对照：TODO 31 那次是 0.5 m/s，这次 0.25 m/s——时长（0.25 m/s 每段路慢一倍）和结果的差别混着步速，不能只算到新流程头上。做了（10-22，`outputs/rsi_speed_20261021/confirm/control_025/`）：TODO 31 的两版在 0.25 m/s 下重跑同一批封存起点，第 1 版 18 → 20、第 2 版 24 → 28 / 50（对 0.5 m/s：多赢 8 少赢 4，p 0.19）；同速下 32.12 第 1 版 31 vs TODO 31 第 2 版 28（多赢 9 少赢 6，p 0.30，分不开），vs TODO 31 第 1 版 20（多赢 15 少赢 4，p 0.0096）。32.12 第 1 版在主仓库重跑和沙盒 50/50 结局相同。两条流程各只跑一次，第 1 轮本身的方差没量过
+
+## 36. RSI 流程复查（用户 2026-10-22：“从头到尾捋一遍我们的 RSI 流程……是不是有一些设计的比较臃肿，或者前后矛盾，或者不够严格或者有 bug 的地方，先 self-improve 一下”；DECISIONS 2026-10-22 TODO 36）
+
+- [x] 36.1 四路只读审查（驱动；验收门与评测；规则、提示词与文档；沙盒与外环），约 60 条，逐条核对后分三路按文件修
+- [x] 36.2 泄漏和隔离：
+  - 有 `sandbox` 块的任务族，经验库不带 `final.patch`：32.12 第 1 轮被采用的草稿，其 Engineer 读过 pick_single 的；
+  - 家族文件加 `library_exclude`；
+  - 所有沙盒去掉 CLAUDE.md、AGENTS.md、`tools/`、`library/`；
+  - 角色和 reflect 会话设 `CLAUDE_CODE_DISABLE_CLAUDE_MDS`：实测一次会话，`/workspace/CLAUDE.md` 和 `~/.claude/CLAUDE.md` 都不再进；
+  - 验收、封存种子移到隐藏目录的 `seeds.json`；
+  - 角色调用期间隐藏目录权限 000；
+  - 带 `..` 的路径按链接解析，爬回原仓库算越界；
+  - 角色在沙盒里的提交被撤回检查；
+  - 作废的草稿移进隐藏目录；
+  - reflect 写条目前清掉禁区路径
+- [x] 36.3 驱动（`loop.py`）：
+  - 验收门结论按“新的一行 + 候选哈希”认：原来读最后一行，验收门崩了会记成上一次的结论；
+  - 重开的候选被拒时保留搁置：32.12 第 3–5 轮三个搁置都被被拒的候选撤销了；
+  - 续跑沿用 `meta.json` 的候选数、分范围、墙钟上限，改了记账本；
+  - 崩溃和 SIGTERM 记停止行，退出码 0 正常、3 异常；
+  - 每个 Engineer 一个临时目录，重复草稿只跑一次；
+  - Manager 的花费只算本次运行，预算里加墙钟，账本记它选的几条假设和 `reopen_claim`；
+  - `--effort` 拒收未知角色；
+  - 70% 停止在重抽验收池后用现任在新池上的成绩；
+  - Engineer 提示词说清草稿，改用真能加载技能包的检查；
+  - Manager 提示词和重开、多候选一致；
+  - 隐藏目录锁只动 `..._hidden/` 下的目录：修复时一个测试把仓库根目录锁成了 000，用户手动恢复
+- [x] 36.4 评测：
+  - 配对不全时验收门记作废，不按少的局下结论；
+  - `plan_for` 抛错算失败局，不再杀工作进程；
+  - 每局记录动作层设置签名，签名不同的旧局重跑；
+  - 回归遇签名不同只作参照、不挡、推进 `last`，落实 10-22 决定；
+  - 一局仿真 300 s 上限；
+  - 写回能折字典项覆盖，137 个覆盖键里有 30 个是这种；
+  - `sealed.py` 不再重复跑种子；
+  - 哨兵每个任务一局
+- [x] 36.5 外环（`outer_run.py`）：
+  - 内环异常停下（退出码或账本最后的停止原因）就挡住；
+  - 任何异常都记 `blocked`，各步先查退出码；
+  - 写回后被挡的任务族恢复技能目录；
+  - reflect 串行；
+  - 改正“每个任务族在前一个的写回上进化”的说法；
+  - `replay.py` 不继承源运行的 `paused_s`
+- [x] 36.6 规则第 12 版（开头和第 2、3、8、16、22、23、27、28、29 条）；`docs/rsi_design.md`、`docs/rsi.md`、change-map；新测试 `tests/test_rsi_eval_fixes.py`、`tests/test_rsi_sandbox_fixes.py`，`tests/test_rsi_speed.py` 加 `RunExit`、`RoleSafety` 等
+- [ ] 36.7 待用户定：
+  - 越界处理统一：现在 Reviewer、Manager、Composer 或唯一的 Engineer 越界就停整个内环，三个 Engineer 里一份越界只作废那份；
+  - “连续 3 次被拒且没有新假设”从没触发过（要 Reviewer 一条假设都没有），删掉还是改成“连续 3 次被拒”；
+  - 墙钟只在每轮开头查，最后一轮会超出 40–72 分钟；
+  - 外环里的任务族要不要串行、每个写回先提交：现在都从这一轮开始时的提交出发；
+  - Manager 上下文随账本线性长（第 5 轮 96 KB，70% 是历史），要不要压缩早期轮次
+- [ ] 36.8 待用户定，建议删减：
+  - `scripts/rsi/library/`：10-19 被否的人写经验库；
+  - `review_replay.py`：被 `replay.py` + `--stop-after` 取代，且和现在的 `reviewer.md` 对不上；
+  - Reviewer 工具 `tools/` 和 `TOOLS_NOTE`：32.6 已关；
+  - 约 2.1k 行没测试的展示脚本挪到 `scripts/rsi/report/`，其中 4 个没人调用
+- [ ] 36.9 没修，记下：
+  - 碰倒旁边的物体不记录；
+  - 物体穿过家具上部仍算拿起（27.13）；
+  - 诊断池里三个候选在同一个工作进程里接连跑，前一个改的模块状态可能带到后一个；
+  - 空种子任务族写不回技能目录；
+  - 回归每次写回做 11 个检验，不校正；
+  - 验收门结论里的失败原因分布是隐藏池的一点信息（有意的）；
+  - 外环回归先登记任务族再跑，被挡、恢复后登记表里还留着它
+

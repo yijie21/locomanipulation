@@ -13,7 +13,8 @@ their diagnostic records, the gate's ledger, calls and incumbent, the parks, the
 the interventions -- from the hidden `state_before/iter_NN` snapshot the loop writes since TODO 32.5, or rebuilt from
 the ledger for runs before it. The running incumbent's diagnostic rounds and its rounds on the acceptance pool are
 dropped, so the replay re-runs them under today's simulator (TODO 32.4 changed the physics); everything else is
-history. Paths of the finished sandbox are rewritten to the new one. meta.json starts the wall clock now.
+history. Paths of the finished sandbox are rewritten to the new one. meta.json starts the wall clock now (paused_s 0; copied resume rows dropped;
+candidates, scoped_review and max_wall_h are the source's).
 
 `report` gives, per replay: the iteration's role minutes, turns and cost, the Manager's decision, the gate's verdict
 (accepted, n, candidate and incumbent successes, b, c, p) and the Engineer's mechanism.
@@ -97,7 +98,8 @@ def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD") -> None:
     d_state.mkdir(parents=True, exist_ok=True)
     rows = jl(state / "ledger.jsonl")
     rows = rows[: lengths["ledger"]] if lengths else [r for r in rows if r.get("iter") is not None and r["iter"] < n]
-    write_jl(d_state / "ledger.jsonl", [r for r in rows if r.get("step") != "stop"])
+    # TODO 36 (review 2026-10-22): a copied resume row is time the source stood stopped; the replay's clock starts now
+    write_jl(d_state / "ledger.jsonl", [r for r in rows if r.get("step") not in ("stop", "resume")])
     for k in range(n):
         shutil.copytree(state / f"iter_{k:02d}", d_state / f"iter_{k:02d}")
     if (state / "seed_candidate").exists():
@@ -167,7 +169,9 @@ def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD") -> None:
             d_state / "interventions.jsonl", [r for r in jl(state / "interventions.jsonl") if r.get("iteration", n) < n]
         )
     meta = json.loads((state / "meta.json").read_text())
-    meta.update(started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), started_s=time.time(),
+    # candidates / scoped_review / max_wall_h stay the source run's (the loop takes meta on a resume when its flags are
+    # absent); paused_s does not: the source's stopped hours are not the replay's (TODO 36, review 2026-10-22)
+    meta.update(started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), started_s=time.time(), paused_s=0.0,
                 replay=dict(source=str(src), iteration=n))  # fmt: skip
     (d_state / "meta.json").write_text(json.dumps(meta, indent=1))
     # paths of the finished sandbox and of its roles' scratch (loop.role_tmp) -> this one's: a role that opens a path

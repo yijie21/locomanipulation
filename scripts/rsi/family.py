@@ -3,7 +3,8 @@ tasks file, the task ids, the pools' seeds and sizes) and its start pools. A poo
 `<task>_s<seed>.json` = {"task", "start"}: start i of a pool takes the family's task i mod n and seed `seed + i`
 (start.sample_start, with the family's `spawn` option; a start the scene cannot give -- no free spot, no reachable spawn -- or one where the goal already
 holds (scene_discovery.lint.goal_holds, plan §12) moves on to the next seed and is recorded). The diagnostic pool lives in the loop's tree, the acceptance and sealed pools in its hidden tree, and the
-sealed pool is drawn only after the loop ends.
+sealed pool is drawn only after the loop ends. In a sandbox the acceptance and sealed seeds are blank in the family file
+and read from outputs/scene_rsi_20261016_hidden/<family>/seeds.json (sandbox.py hide_seeds, TODO 36, review 2026-10-22).
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/family.py draw pick_single diag <dir>
@@ -30,8 +31,17 @@ from locomani.tasks.scene.world import BODY_RADIUS_M, Task  # noqa: E402
 SKIP_LIMIT = 20  # seeds tried per start before the pool gives up on that task
 
 
+def hidden_seeds(name: str) -> dict:
+    """The seeds a sandbox keeps out of its family file (sandbox.py hide_seeds); {} when it holds none."""
+    p = REPO / "outputs" / "scene_rsi_20261016_hidden" / name / "seeds.json"
+    return json.loads(p.read_text()) if p.exists() else {}
+
+
 def load(name: str) -> dict:
     fam = json.loads((HERE / "families" / f"{name}.json").read_text())
+    for pool, spec in fam.get("pools", {}).items():  # TODO 36 (review 2026-10-22): blank seeds -> the hidden file's
+        if spec.get("seed") is None and pool in (hid := hidden_seeds(name)):
+            fam["pools"][pool] = dict(spec, seed=hid[pool])
     fam["scene_dir"] = REPO / fam["scene"]
     fam["meta"] = json.loads((fam["scene_dir"] / "scene_meta.json").read_text())
     rows = {
@@ -48,6 +58,8 @@ def task(fam: dict, task_id: str) -> Task:
 def draw(fam: dict, pool: str, out: Path) -> dict:
     """Write the pool's starts into `out`; returns {"written": n, "skipped": [(task, seed, why)]}."""
     spec = fam["pools"][pool]
+    if spec.get("seed") is None:
+        raise SystemExit(f"{fam['name']}: the {pool} pool's seed is blank and the hidden seeds.json has none")
     occ, nav = build(fam["meta"], body_radius=BODY_RADIUS_M)
     out.mkdir(parents=True, exist_ok=True)
     tasks = list(fam["tasks"])

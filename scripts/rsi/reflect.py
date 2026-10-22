@@ -58,6 +58,21 @@ SCHEMA = {
 }
 BUILD = Path("/workspace/tmp/rsi_reflect")
 PATH = re.compile(r"(?:/workspace|/home|/tmp)/[^\s\"'`;|&)]+")
+# TODO 36 (review 2026-10-22): the paths a role may not name (the pattern of tests/test_rsi_speed.py ExperienceLibrary);
+# the library is read by later roles, and a name copied from it voids their iteration
+FORBIDDEN = re.compile(r"_hidden|rsi_kit|\.claude/|/workspace/")
+FORBIDDEN_TOKEN = re.compile(r"[^\s\"'`;|&)\\<>]*(?:_hidden|rsi_kit|\.claude/|/workspace/)[^\s\"'`;|&)\\<>]*")
+PLACEHOLDER = "<redacted-path>"
+
+
+def scrub(text: str, what: str) -> str:
+    """`text` with every token naming a FORBIDDEN path replaced by PLACEHOLDER; SystemExit if any name remains."""
+    out = FORBIDDEN_TOKEN.sub(PLACEHOLDER, text)
+    if m := FORBIDDEN.search(out):
+        raise SystemExit(
+            f"{what}: still names an off-limits path after the scrub: {out[max(0, m.start() - 40) : m.end() + 40]!r}"
+        )
+    return out
 
 
 def jl(p: Path) -> list[dict]:
@@ -144,7 +159,8 @@ def reflect(ctx: Path, family: str) -> tuple[dict, dict]:
            "--session-id", session]  # fmt: skip
     t0 = time.time()
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_SSE")}
-    env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", TMPDIR=str(ctx.parent))
+    # TODO 36 (review 2026-10-22): no CLAUDE.md from the context dir's ancestors (/workspace) or the operator's home
+    env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", CLAUDE_CODE_DISABLE_CLAUDE_MDS="1", TMPDIR=str(ctx.parent))
     r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=ctx, env=env)
     out = json.loads(r.stdout)
     so = out.get("structured_output")
@@ -214,10 +230,15 @@ def main(argv=None) -> int:
         # roles, and a path into another sandbox's hidden tree copied from it voids their iteration (2026-10-21)
         (ctx.parent / "outside.json").write_text(json.dumps(acct["outside"], indent=1))
         entry = dict(so, **{k: v for k, v in acct.items() if k != "outside"})
-        (d / "entry.json").write_text(json.dumps(entry, indent=1, ensure_ascii=False))
-        (d / "EXPERIENCE.md").write_text(render(a.family, so, acct))
+        texts = {
+            "entry.json": json.dumps(entry, indent=1, ensure_ascii=False),
+            "EXPERIENCE.md": render(a.family, so, acct),
+        }
         if (ctx / "final.patch").exists():
-            shutil.copy2(ctx / "final.patch", d / "final.patch")
+            texts["final.patch"] = (ctx / "final.patch").read_text(errors="replace")
+        texts = {k: scrub(v, f"{a.family}/{k}") for k, v in texts.items()}  # all three, or none, are written
+        for k, v in texts.items():
+            (d / k).write_text(v)
         print(f"{a.family}: {len(so.get('edits', []))} rows, {'no entry' if so.get('no_entry') else 'an entry'}, "
               f"{acct['cost_usd']} USD, {acct['seconds']} s, outside {acct['outside'][:5]}")  # fmt: skip
     index(a.out)

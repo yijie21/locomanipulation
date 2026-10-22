@@ -65,7 +65,8 @@ def main(argv=None) -> int:
         res = F.draw(F.load(a.family), "sealed", pool)
         print(f"sealed pool: {res['written']} starts, unavailable {res['unavailable']}")
     vs = versions(hidden / "gate")
-    order = [vs[-1], vs[0]] + (vs[1:-1] if a.all else [])
+    # TODO 36 (review 2026-10-22): nothing accepted -> vs[-1] is the seed; it ran twice as [seed, seed]
+    order = list(dict.fromkeys([vs[-1], vs[0]] + (vs[1:-1] if a.all else [])))
     jobs = [B.Job(d / "skills", out / name, overrides(d)) for name, d in order]
     missing = B.run_jobs(jobs, a.family, pool, a.procs, out / "run.log", a.gpus)
     summary = dict(pool=str(pool), versions={name: tally(B.outcomes(out / name)) for name, _ in order},
