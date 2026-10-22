@@ -22,6 +22,14 @@ RSI_COST_CAP_USD sets one), MAX_VOID_STREAK iterations in a row voided by the au
 least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
 tasks (`accept_pool`, rule 26).
 
+The candidate pool (TODO 33.8, D7, user 2026-10-22): the gate (rule 2: b - c >= 3 and c <= b / 3, no p) leaves the
+best POOL_KEEP rejected candidates with b > c in loop/candidates_pool.json, cleared when the incumbent changes. The
+Manager may give `base: <hash>` (the Engineers start from that candidate, the gate still compares with the incumbent);
+the Composer may merge a pool candidate's edits or adopt one as it stands (`adopted_pool`), e.g. one an older gate rule
+rejected. TODO 33.14 (D11): the Manager context leads with `recurring` (mechanisms proposed in two or more iterations,
+never built, from its `repeats` links), and `reopen` is not offered after MAX_REOPEN_RUN reopens in a row. TODO 33.13
+(rules.md 30): a draft whose skills package holds a string constant equal to an object's name is void.
+
 Infeasibility (plan §8, D13): a Reviewer's claim that some starts cannot be done with the present actions must give the
 actions it assumed, a hard constraint as a check file (claim_check.py), exits, what would refute it, and 1-3 attempts.
 The driver runs the check and the attempts (closed loop); both must hold to park the starts. Parked starts keep
@@ -64,7 +72,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
-from gate import candidate_hash, overrides  # noqa: E402
+from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
 
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
@@ -78,6 +86,8 @@ MAX_GATE_CALLS = 12
 MAX_VOID_STREAK = 2  # TODO 36.7 (user 2026-10-22): voided iterations in a row that stop the loop
 HISTORY_FULL = 2  # TODO 36.7: the Manager reads the last 2 iterations' ledger rows in full, older ones one line each
 MAX_HYPOTHESES = 4
+POOL_KEEP = 2  # TODO 33.8 (D7, user 2026-10-22): rejected candidates kept for the Manager's `base` and the Composer
+MAX_REOPEN_RUN = 2  # TODO 33.14 (D11): Manager `reopen` decisions in a row at most
 MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
 STOP_RATE = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
@@ -201,6 +211,15 @@ MANAGER_SCHEMA = {
         "hypothesis": {"type": "string"},
         "hypotheses": {"type": "array", "items": {"type": "string"}},  # TODO 32.9: one per Engineer, best first
         "reopen_claim": {"type": "string"},  # 27.8.7: the park whose exit the Engineer builds
+        "base": {"type": "string"},  # TODO 33.8: a candidate_pool hash the Engineers start from
+        "repeats": {  # TODO 33.14: this iteration's hypotheses that are earlier iterations' mechanisms ("NN:id")
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["now", "same_as"],
+                "properties": {"now": {"type": "string"}, "same_as": {"type": "array", "items": {"type": "string"}}},
+            },
+        },
         "focus": {"type": "string"},
         "reason": {"type": "string"},
         "escalation": {"type": "string"},
@@ -228,6 +247,7 @@ COMPOSER_SCHEMA = {  # TODO 32.9
     "properties": {
         "decision": {"enum": ["merge", "adopt", "keep"]},
         "adopted": {"type": "integer"},
+        "adopted_pool": {"type": "string"},  # TODO 33.8: adopt a candidate_pool entry (its hash) as it stands
         "set": {"type": "object"},
         "mechanism": {"type": "string"},
         "notes": {"type": "string"},
@@ -1016,6 +1036,7 @@ def iteration_line(n: int, rows: list[dict]) -> str:
         elif st == "manager":
             what = e.get("hypotheses") or e.get("reopen_claim") or e.get("hypothesis") or ""
             what = ",".join(what) if isinstance(what, list) else what
+            what += f" on pool {e['base']}" if e.get("base") else ""
             parts.append(f"manager {e.get('decision')} {what}{' (void)' if e.get('void') else ''}: "
                          f"{_cut(e.get('reason'), 200)}")  # fmt: skip
         elif st == "engineer":
@@ -1041,6 +1062,11 @@ def iteration_line(n: int, rows: list[dict]) -> str:
                          f"{' (claim wrong)' if e.get('claim_wrong') else ''}")  # fmt: skip
         elif st == "reopen_test":
             parts.append(f"reopen test {e.get('claim')}: {len(e.get('ok') or [])}/{e.get('n')}")
+        elif st == "pool":
+            if e.get("cleared"):
+                parts.append(f"pool cleared ({', '.join(e['cleared'])})")
+            else:
+                parts.append(f"pool +{e.get('added')} kept {', '.join(e.get('kept') or [])}")
         elif st == "void_iter":
             parts.append(f"VOID: the {e.get('role')} named off-limits paths ({', '.join(e.get('leaks') or [])})")
         else:
@@ -1088,11 +1114,16 @@ def context(inc: dict, extra: dict, compact: bool = False) -> dict:
             **wall,
         ),  # fmt: skip
         history=compact_history(es) if compact else [{k: v for k, v in e.items() if k != "usage"} for e in es],
+        # TODO 33.8: rejections under the present gate rule; one an older rule rejected may be judged again
         rejected_hashes=sorted(
             {
                 e["hash"]
                 for e in es
-                if e.get("step") == "gate" and not e.get("accepted") and not e.get("void") and e.get("hash")
+                if e.get("step") == "gate"
+                and not e.get("accepted")
+                and not e.get("void")
+                and e.get("hash")
+                and e.get("rule", 1) == GATE_RULE
             }
         ),
         **extra,
@@ -1223,17 +1254,24 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     gaps = gap_candidates()
     jdump(STATE / "gap_candidates.json", gaps)
     ctx = it_dir / "manager_context.json"
-    jdump(ctx, context(inc, dict(extra, hypotheses=hyps, probe=pr, claims=cr, parked=jload(STATE / "parked.json", {}),
-                                 gap_candidates=gaps), compact=True))  # fmt: skip
+    es = entries()
+    may_reopen = reopen_allowed(es)
+    lead = dict(recurring=recurring(es))  # TODO 33.14: first in the context
+    if not may_reopen:
+        lead["reopen_blocked"] = (f"the last {MAX_REOPEN_RUN} iterations were reopens (rules.md 28, version 14): build a "
+                                  "hypothesis this iteration")  # fmt: skip
+    body = context(inc, dict(extra, hypotheses=hyps, probe=pr, claims=cr, parked=jload(STATE / "parked.json", {}),
+                             gap_candidates=gaps, candidate_pool=pool_view(inc, base)), compact=True)  # fmt: skip
+    jdump(ctx, dict(lead, **body))
     prompt = fill((HERE / "prompts" / "manager.md").read_text(), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
-    dec, acct = claude(
-        "manager", prompt, MANAGER_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent,Bash", stub_m if stub else None
-    )
+    dec, acct = claude("manager", prompt, manager_schema(may_reopen), it_dir, "Edit,Write,NotebookEdit,Agent,Bash",
+                       stub_m if stub else None)  # fmt: skip
     jdump(it_dir / "manager.json", dec)
     leaks = transcript_leaks(acct["session"])
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"),
                 hypotheses=dec.get("hypotheses") if CANDIDATES > 1 else None, reopen_claim=dec.get("reopen_claim"),
+                base=dec.get("base"), repeats=dec.get("repeats"),
                 reason=dec["reason"], summary_zh=dec["summary_zh"], escalation=dec.get("escalation"), infeasible=dec.get("infeasible"),
                 gap_proposals=dec.get("gap_proposals"), leaks=leaks, void=bool(leaks), **acct))  # fmt: skip
     if dec.get("gap_proposals") and not leaks:
@@ -1243,12 +1281,35 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if leaks:
         void_iteration(n, "manager", leaks)
         return None
+    if dec["decision"] == "reopen" and not may_reopen:  # the schema left it out; an invalid decision ends the iteration
+        ledger(dict(step="manager_invalid", iter=n, reason=f"reopen after {MAX_REOPEN_RUN} reopens in a row"))
+        return None
     if dec["decision"] == "stop":
         return "manager: stop"
     if dec["decision"] == "review":
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
         return None
     return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
+
+
+def base_of(n: int, dec: dict) -> dict | None:
+    """The Manager's `base` (TODO 33.8): its candidate_pool entry, or None (no base given; an unknown hash is recorded
+    and the Engineers start from the incumbent)."""
+    h = dec.get("base")
+    if not h:
+        return None
+    e = pool_entry(h)
+    if e is None:
+        ledger(dict(step="base_unknown", iter=n, base=h, pool=[x["hash"] for x in pool_load()]))
+    return e
+
+
+def base_brief(e: dict | None) -> dict | None:
+    """What an Engineer or the Composer reads of the base: the gate still compares the result with the incumbent."""
+    if e is None:
+        return None
+    return dict(hash=e["hash"], dir=e["dir"], set=overrides(Path(e["dir"])), gate=e.get("gate"),
+                older_rule=e.get("rule", 1) != GATE_RULE)  # fmt: skip
 
 
 def engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
@@ -1262,14 +1323,19 @@ def engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> 
         ledger(dict(step="reopen_test", iter=n, claim=reopen, n=0, ok=[], why={}, error="no such park"))
         return None
     chosen = next((h for h in hyps["hypotheses"] if h["id"] == dec.get("hypothesis")), None)
+    bentry = base_of(n, dec)  # TODO 33.8: the working copy starts from a pool candidate instead of the incumbent
+    if bentry:
+        put_skills(Path(bentry["dir"]) / "skills")
     ctx = it_dir / "engineer_context.json"
     claims_of = STATE / f"iter_{int(park_['iter']):02d}" / "claims.json" if reopen else None
     tried = [r for r in jload(claims_of, []) if r.get("id") == reopen] if reopen else []
     jdump(ctx, context(inc, dict(hypothesis=None if reopen else chosen, manager=dec,
                                  probe=[] if reopen else [p for p in pr if p.get("id") == dec.get("hypothesis")],
-                                 park=dict(park_, id=reopen, checked=tried) if reopen else None)))  # fmt: skip
+                                 park=dict(park_, id=reopen, checked=tried) if reopen else None,
+                                 base=base_brief(bentry))))  # fmt: skip
     prompt = fill((HERE / "prompts" / "engineer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **common)
-    stub_e = dict(mechanism="stub", files_changed=[], set={**inc["set"], **(chosen or {}).get("delta", {}).get("set", {})},
+    start_set = overrides(Path(bentry["dir"])) if bentry else inc["set"]
+    stub_e = dict(mechanism="stub", files_changed=[], set={**start_set, **(chosen or {}).get("delta", {}).get("set", {})},
                   tests="none")  # fmt: skip
     eng, acct = claude("engineer", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_e if stub else None)
     return after_engineer(n, it_dir, inc, eng, acct, base_changes, stub, reopen)
@@ -1317,6 +1383,10 @@ def after_engineer(
                 reason=f"engineer changed files outside the skills package: {stray}",
             )
         )
+        return None
+    named = named_objects(cand / "skills")  # TODO 33.13 (rules.md 30)
+    if named:
+        named_void(n, named, "the candidate")
         return None
     if reopen and not reopen_test(n, it_dir, cand, reopen):
         return None
@@ -1395,7 +1465,9 @@ def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple |
     rounds = GATE_DIR / f"{verdict.get('call', 0):02d}_{verdict['hash']}" / "candidate"
     ledger(dict(step="gate", iter=n, accepted=accepted, reason=verdict["reason"], hash=verdict["hash"],
                 result=verdict.get("result"), stage1=verdict.get("stage1"), unparked=unparked_view(rounds),
-                pool=str(accept_pool()), void=void))  # fmt: skip
+                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1)))  # fmt: skip
+    if not stub:
+        pool_update(n, cand, verdict, accepted)
     if reopen:
         settle_reopen(n, reopen[0], reopen[1], accepted)
     return None
@@ -1424,6 +1496,244 @@ def flips(inc_dir: Path, cand_dir: Path) -> dict:
                 broken=[x for x in both if a[x]["ok"] and not b[x]["ok"]])  # fmt: skip
 
 
+# -- the candidate pool (TODO 33.8, D7), recurring hypotheses and the reopen limit (TODO 33.14, D11), names (33.13) --
+
+
+def pool_path() -> Path:
+    return STATE / "candidates_pool.json"
+
+
+def pool_load() -> list[dict]:
+    return jload(pool_path(), []) or []
+
+
+def pool_ok(r: dict | None) -> bool:
+    """A rejected full-pool tally the pool keeps: more wins than losses, falls and drops within the gate's limits."""
+    if not r or "b" not in r:
+        return False
+    falls_ok = r["candidate_fell"] <= r["incumbent_fell"] + 1
+    return r["b"] > r["c"] and falls_ok and r["candidate_dropped"] <= drop_limit(r)
+
+
+def iter_of(path: str) -> int | None:
+    """The iteration a candidate directory belongs to (loop/iter_NN/...)."""
+    for part in Path(path).parts:
+        if part.startswith("iter_") and part[5:].isdigit():
+            return int(part[5:])
+    return None
+
+
+GATE_KEYS = ("n", "candidate_ok", "incumbent_ok", "b", "c", "p_one_sided", "candidate_fell", "incumbent_fell",
+             "candidate_dropped", "incumbent_dropped")  # fmt: skip
+
+
+def pool_add(src: Path, verdict: dict, n: int | None) -> dict:
+    """`src` (skills + candidate.json, as the gate judged it) copied to STATE/pool/<hash>; its pool entry."""
+    h = verdict["hash"]
+    d = STATE / "pool" / h
+    if d.exists():
+        shutil.rmtree(d)
+    shutil.copytree(src, d, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    r = verdict["result"]
+    return dict(hash=h, iter=n, call=verdict.get("call"), rule=verdict.get("rule", 1), dir=str(d),
+                gate={k: r[k] for k in GATE_KEYS if k in r}, reason=verdict.get("reason"))  # fmt: skip
+
+
+def pool_rank(es: list[dict]) -> list[dict]:
+    """The best POOL_KEEP by b - c, the most recent gate call first on ties."""
+    return sorted(es, key=lambda e: (-(e["gate"]["b"] - e["gate"]["c"]), -(e.get("call") or 0)))[:POOL_KEEP]
+
+
+def pool_update(n: int, cand: Path, verdict: dict, accepted: bool) -> None:
+    """After a gate call: an accepted candidate clears the pool (the new incumbent's rejects start a new one; the old
+    entries stay in the ledger and under STATE/pool); a rejected one with b > c and no fall or drop excess joins it."""
+    if accepted:
+        old = pool_load()
+        jdump(pool_path(), [])
+        if old:
+            ledger(dict(step="pool", iter=n, cleared=[e["hash"] for e in old], reason="the incumbent changed"))
+        return
+    if verdict.get("void") or not pool_ok(verdict.get("result")):
+        return
+    kept = pool_rank([e for e in pool_load() if e["hash"] != verdict["hash"]] + [pool_add(cand, verdict, n)])
+    jdump(pool_path(), kept)
+    ledger(dict(step="pool", iter=n, added=verdict["hash"], kept=[e["hash"] for e in kept]))
+
+
+def rebuild_pool() -> list[dict]:
+    """The pool from the gate's ledger, for state from before the pool existed (a replay.py setup of an older run): the
+    rejected calls since the present incumbent was accepted (incumbent.json `since`), copied from the gate's own
+    snapshots."""
+    inc = jload(GATE_DIR / "incumbent.json") or {}
+    since = int(inc.get("since") or 0)
+    found = []
+    for line in gate_lines():
+        v = json.loads(line)
+        if v.get("dry_run") or v.get("void") or v.get("accepted") or int(v.get("call") or 0) <= since:
+            continue
+        src = GATE_DIR / f"{int(v['call']):02d}_{v['hash']}" / "cand"
+        if pool_ok(v.get("result")) and src.exists():
+            found.append(pool_add(src, v, iter_of(v.get("candidate", ""))))
+    kept = pool_rank(found)
+    jdump(pool_path(), kept)
+    if kept:
+        ledger(dict(step="pool", rebuilt=[e["hash"] for e in kept], since_gate_call=since))
+    return kept
+
+
+def pool_entry(h: str | None) -> dict | None:
+    return next((e for e in pool_load() if h and e["hash"] == h), None)
+
+
+def pool_view(inc: dict, diag_inc: Path | None) -> list[dict]:
+    """The pool as a role reads it: per entry the gate's tally, whether an older gate rule rejected it (`older_rule`:
+    it may be judged again as it stands), its directory and overrides, its diff against the incumbent, and its flips
+    against the incumbent's diagnostic rounds where it ran on them."""
+    out = []
+    for e in pool_load():
+        d = Path(e["dir"])
+        patch = STATE / "pool" / f"{e['hash']}.patch"
+        patch.write_text(subprocess.run(["diff", "-ruN", "-x", "__pycache__", "-x", "*.pyc",
+                                         str(Path(inc["dir"]) / "skills"), str(d / "skills")],
+                                        capture_output=True, text=True).stdout)  # fmt: skip
+        v = dict(e, older_rule=e.get("rule", 1) != GATE_RULE, set=overrides(d), patch=str(patch))
+        diag = LOOP / "diag" / f"candidate_{e['hash']}"
+        if diag_inc is not None and diag.exists():
+            v["diag"] = dict(flips(diag_inc, diag), rounds=str(diag))
+        out.append(v)
+    return out
+
+
+def hyp_key(n: int, hid: str) -> str:
+    return f"{int(n):02d}:{hid}"
+
+
+def norm_key(x: str) -> str | None:
+    """'1:H2', '01:H2', 'iter 1:H2', '1/H2' -> '01:H2'."""
+    m = re.match(r"^\s*(?:iter(?:ation)?[_ ]?)?(\d+)\s*[:/ ]\s*(\S+)\s*$", str(x))
+    return hyp_key(int(m.group(1)), m.group(2)) if m else None
+
+
+def recurring(es: list[dict]) -> list[dict]:
+    """TODO 33.14 (D11, user 2026-10-22): mechanisms Reviewers proposed in two or more iterations that no Engineer was
+    given. The Manager links a hypothesis to earlier iterations' (`repeats`); linked ids are one mechanism; one given
+    to an Engineer (a Manager `engineer` decision, an Engineer row) counts as built. 32.12 proposed the dish soap's
+    narrow side in all five iterations and built it in none."""
+    parent: dict[str, str] = {}
+
+    def find(x):
+        parent.setdefault(x, x)
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    built = set()
+    for e in es:
+        if not isinstance(e.get("iter"), int) or e.get("void"):
+            continue
+        n = e["iter"]
+        if e.get("step") == "manager":
+            for r in e.get("repeats") or []:
+                a = norm_key(f"{n}:{r.get('now', '')}") if isinstance(r, dict) else None
+                for b in (r.get("same_as") or []) if a else []:
+                    b = norm_key(b)
+                    if b:
+                        parent[find(a)] = find(b)
+            if e.get("decision") == "engineer":
+                built |= {hyp_key(n, h) for h in (e.get("hypotheses") or [e.get("hypothesis")]) if h}
+        elif e.get("step") == "engineer" and e.get("hypothesis"):
+            built.add(hyp_key(n, e["hypothesis"]))
+    groups = collections.defaultdict(set)
+    for x in list(parent):
+        groups[find(x)].add(x)
+    out = []
+    for members in groups.values():
+        iters = {m.split(":", 1)[0] for m in members}
+        if len(iters) < 2 or members & built:
+            continue
+        latest = max(members)
+        it, hid = latest.split(":", 1)
+        hs = (jload(STATE / f"iter_{it}" / "hypotheses.json", {}) or {}).get("hypotheses") or []
+        claim = next((h.get("claim") for h in hs if isinstance(h, dict) and h.get("id") == hid), "")
+        out.append(dict(proposed=len(iters), ids=sorted(members), latest=latest, claim=_cut(claim, 300)))
+    return sorted(out, key=lambda g: (-g["proposed"], g["latest"]))
+
+
+def reopen_allowed(es: list[dict]) -> bool:
+    """TODO 33.14 (D11): no more than MAX_REOPEN_RUN Manager `reopen` decisions in a row (the last valid decision per
+    iteration). 32.12's iterations 3-5 were all reopens of one park each."""
+    last = {}
+    for e in es:
+        if e.get("step") == "manager" and not e.get("void") and isinstance(e.get("iter"), int):
+            last[e["iter"]] = e.get("decision")
+    recent = [last[k] for k in sorted(last)][-MAX_REOPEN_RUN:]
+    return not (len(recent) == MAX_REOPEN_RUN and all(d == "reopen" for d in recent))
+
+
+def manager_schema(allow_reopen: bool) -> dict:
+    sch = json.loads(json.dumps(MANAGER_SCHEMA))
+    if not allow_reopen:
+        sch["properties"]["decision"]["enum"] = [d for d in sch["properties"]["decision"]["enum"] if d != "reopen"]
+    return sch
+
+
+_NAMES: dict = {}
+
+
+def object_names() -> set[str]:
+    """Names a skills package may not branch on (rules.md 30, TODO 33.13, D10): every scene object's key, body and ADT
+    instance name, and the key's stem (Mug_2 -> Mug) unless the stem is also a semantic name (prototype, category:
+    Orange_A -> Orange stays allowed). Semantic fields (category, prototype) are features a flow may use."""
+    scene = family_spec().get("scene")
+    if scene not in _NAMES:
+        objs = (jload(REPO / scene / "scene_meta.json", {}) or {}).get("objects") or {} if scene else {}
+        names, semantic = set(), set()
+        for k, o in objs.items():
+            sem = o.get("semantic") or {}
+            adt = sem.get("adt") or {}
+            semantic |= {str(x).lower() for x in (adt.get("prototype_name"), adt.get("category")) if x}
+            names |= {k, o.get("body") or "", adt.get("instance_name") or ""}
+        stems = {re.sub(r"_(\d+|[A-Z])$", "", k) for k in objs}
+        names |= {x for x in stems if len(x) >= 3 and x.lower() not in semantic}
+        _NAMES[scene] = {x for x in names if x}
+    return _NAMES[scene]
+
+
+def named_objects(skills: Path, names: set[str] | None = None) -> list[str]:
+    """String constants in the skills package (docstrings aside, f-string parts included) equal to an object name
+    (object_names): `file:line 'name'`. A hit voids the draft (rules.md 30): a flow chosen by name cannot be reused for
+    a similar object."""
+    import ast
+
+    names = object_names() if names is None else names
+    hits = []
+    for f in sorted(Path(skills).rglob("*.py")):
+        if "__pycache__" in f.parts:
+            continue
+        try:
+            tree = ast.parse(f.read_text())
+        except (SyntaxError, ValueError):
+            continue  # the gate's static step reports a package that does not load
+        docs = set()
+        for node in ast.walk(tree):
+            body = getattr(node, "body", None)
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and body:
+                first = body[0]
+                if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                    docs.add(id(first.value))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
+                if node.value in names:
+                    hits.append(f"{f.relative_to(skills).as_posix()}:{node.lineno} {node.value!r}")
+    return hits
+
+
+def named_void(n: int, named: list[str], what: str) -> None:
+    ledger(dict(step="gate", iter=n, accepted=False, void=True, named_objects=named,
+                reason=f"{what} branches on object names (rules.md 30): {', '.join(named[:6])}"))  # fmt: skip
+
+
 def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
     """TODO 32.9 (Harness2's contrastive compose step): CANDIDATES Engineers build the Manager's hypotheses in parallel,
     each in its own copy of the incumbent's skills package (`cand_k/skills`); every valid candidate runs on the
@@ -1433,24 +1743,24 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     ids = [h for h in (dec.get("hypotheses") or []) if h in known] or [dec.get("hypothesis")]
     ids = [h for h in ids if h in known] or [hyps["hypotheses"][0]["id"]]
     ids = (ids * CANDIDATES)[:CANDIDATES]
+    bentry = base_of(n, dec)  # TODO 33.8: every working copy starts from that pool candidate instead of the incumbent
+    src = Path(bentry["dir"]) if bentry else Path(inc["dir"])
     calls = []
     for k, hid in enumerate(ids, 1):
         w = it_dir / f"cand_{k}"
         if w.exists():
             shutil.rmtree(w)
-        shutil.copytree(
-            Path(inc["dir"]) / "skills", w / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc")
-        )
+        shutil.copytree(src / "skills", w / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         ctx = w / "engineer_context.json"
         jdump(ctx, context(inc, dict(hypothesis=known[hid], manager=dec, probe=[p for p in pr if p.get("id") == hid],
-                                     park=None, draft=dict(number=k, of=len(ids)))))  # fmt: skip
+                                     park=None, draft=dict(number=k, of=len(ids)), base=base_brief(bentry))))  # fmt: skip
         prompt = fill(
             (HERE / "prompts" / "engineer.md").read_text(),
             CONTEXT=ctx,
             ITER=w,
             **dict(common, SKILLS=w / "skills", TMP=role_dir(f"engineer_{k}")),
         )
-        stub_e = dict(mechanism=f"stub {k}", files_changed=[], set={**inc["set"]}, tests="none")
+        stub_e = dict(mechanism=f"stub {k}", files_changed=[], set={**overrides(src)}, tests="none")
         if stub:  # a stub draft must differ from the incumbent, or the plumbing after it never runs
             with (w / "skills" / "__init__.py").open("a") as fh:
                 fh.write(f"\n# stub draft {k}\n")
@@ -1489,10 +1799,12 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                                 str(cand / "skills")], capture_output=True, text=True).stdout  # fmt: skip
         (it_dir / f"code_{k}.patch").write_text(patch)
         h = candidate_hash(cand)
-        void = bool(leaks) or bool(stray) or h == inc["hash"]
+        named = named_objects(cand / "skills")  # TODO 33.13 (rules.md 30): a draft that branches on names is void
+        void = bool(leaks) or bool(stray) or h == inc["hash"] or bool(named)
         dup = first.get(h) if not void else None  # TODO 36 (review 2026-10-22, L5): the first of identical drafts stays
         ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, changed=sorted(set(PATCHED.findall(patch))),
                     stray=stray, mechanism=eng["mechanism"], set=eng["set"], void=void, leaks=leaks,
+                    **({"named_objects": named} if named else {}), **({"base": bentry["hash"]} if bentry else {}),
                     **({"duplicate_of": dup["number"]} if dup else {}), **acct))  # fmt: skip
         if leaks:
             leaked[k] = leaks
@@ -1523,10 +1835,11 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     wc = it_dir / "compose" / "skills"
     if wc.parent.exists():
         shutil.rmtree(wc.parent)
-    shutil.copytree(Path(inc["dir"]) / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     ctx = it_dir / "composer_context.json"
     jdump(ctx, context(inc, dict(hypotheses=[known[h] for h in dict.fromkeys(ids)], candidates=cands,
-                                 incumbent_diag=str(base), manager=dec)))  # fmt: skip
+                                 incumbent_diag=str(base), manager=dec, base=base_brief(bentry),
+                                 candidate_pool=pool_view(inc, base))))  # fmt: skip
     prompt = fill((HERE / "prompts" / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
     stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
     comp, acct = claude("composer", prompt, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_c if stub else None)
@@ -1544,7 +1857,14 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         return None
     if comp["decision"] == "keep":
         return None
-    if comp["decision"] == "adopt":
+    if comp["decision"] == "adopt" and comp.get("adopted_pool"):  # TODO 33.8: a pool candidate as it stands
+        pe = pool_entry(comp["adopted_pool"])
+        if pe is None:
+            ledger(dict(step="gate", iter=n, accepted=False, void=True,
+                        reason=f"adopted pool candidate {comp['adopted_pool']} is not in the pool"))  # fmt: skip
+            return None
+        cand = Path(pe["dir"])
+    elif comp["decision"] == "adopt":
         pick = next((c for c in cands if c["number"] == comp.get("adopted")), None)
         if pick is None:
             ledger(
@@ -1572,6 +1892,10 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                 dict(step="gate", iter=n, accepted=False, void=True, reason="the composed candidate is the incumbent")
             )
             return None
+    named = named_objects(cand / "skills")  # TODO 33.13 (rules.md 30)
+    if named:
+        named_void(n, named, "the composed candidate")
+        return None
     return gate_candidate(n, it_dir, cand, stub)
 
 
@@ -1748,6 +2072,8 @@ def _run(a, efforts: dict) -> int:
     jdump(STATE / "meta.json", meta)
     if not (LOOP / "pool_diag").exists() or not accept_pool().exists():
         raise SystemExit("draw the pools first (family.py draw ... diag / accept)")
+    if not pool_path().exists():  # TODO 33.8: state from before the candidate pool (a replay of an older run)
+        rebuild_pool()
     n = len(list(STATE.glob("iter_*")))
     iters = a.max_iters
     STOP_AFTER = getattr(a, "stop_after", None)

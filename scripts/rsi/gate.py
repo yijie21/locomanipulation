@@ -14,9 +14,14 @@ Steps, stopping at the first rejection:
    when the candidate's net wins (b - c) <= 0. (Until 2026-10-18 the first STAGE1 labels by name: about half of a
    multi-task family's tasks, so a candidate that changed only a later task was rejected without one round of it.)
 4. stage 2: the rest of the pool.
-5. verdict: accept iff b - c >= MIN_NET, one-sided exact McNemar p <= ALPHA, falls <= incumbent + 1,
+5. verdict (`verdict_fails`): accept iff b - c >= MIN_NET and c <= b / 3 (LOSS_SHARE), falls <= incumbent + 1,
    drops <= incumbent + 1 -- or, against an incumbent with no success on the pool, drops <= half the candidate's
    successes when that is more (`drop_limit`; user 2026-10-18: a family starting from zero has no drops to compare).
+   The one-sided exact McNemar p is still computed and reported, no longer required (TODO 33.8, gate rule 2, user
+   2026-10-22: early research; until then p <= 0.05 was required, which alone needs 5:0, so MIN_NET never bound and a
+   change that fixes one object of a 4-start-per-object pool could never pass). Every verdict line records the gate
+   rule it was judged under (`rule`, GATE_RULE); "rejected before" counts only rejections under the present rule, so a
+   candidate rejected under the old one may be judged again.
 Pairing must be complete (TODO 36, review 2026-10-22): when either arm lacks a round for a requested start (a worker
 died, the incumbent's own round is missing) the call ends with a void verdict (accepted false, "void": true, reason
 "pairing incomplete: ..."), never a verdict on fewer pairs. A crash still leaves no ledger line (the loop reads that from
@@ -49,7 +54,8 @@ from scene_round import load_skills, skills_hash  # noqa: E402
 STAGE1 = 30
 SENTINELS = 5
 MIN_NET = 3
-ALPHA = 0.05
+LOSS_SHARE = 3  # c <= b / LOSS_SHARE
+GATE_RULE = 2  # 1: b - c >= 3 and p <= 0.05 (to 2026-10-22); 2: b - c >= 3 and c <= b / 3 (TODO 33.8)
 SEED_SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 
 
@@ -123,6 +129,20 @@ def drop_limit(t: dict) -> int:
     return max(limit, t["candidate_ok"] // 2) if t["incumbent_ok"] == 0 else limit
 
 
+def verdict_fails(t: dict) -> list[str]:
+    """Why a full-pool tally `t` is rejected (verdict step 5); empty when it is accepted."""
+    fails = []
+    if t["b"] - t["c"] < MIN_NET:
+        fails.append(f"net wins {t['b'] - t['c']} < {MIN_NET}")
+    if t["c"] * LOSS_SHARE > t["b"]:
+        fails.append(f"losses {t['c']} > wins {t['b']} / {LOSS_SHARE}")
+    if t["candidate_fell"] > t["incumbent_fell"] + 1:
+        fails.append(f"falls {t['candidate_fell']} > {t['incumbent_fell']} + 1")
+    if t["candidate_dropped"] > drop_limit(t):
+        fails.append(f"drops {t['candidate_dropped']} > {drop_limit(t)}")
+    return fails
+
+
 def overrides(cand: Path) -> dict:
     return json.loads((cand / "candidate.json").read_text()).get("set") or {}
 
@@ -166,7 +186,8 @@ def main(argv=None) -> int:
     inc = json.loads(inc_state.read_text())
     labels = B.pool_labels(a.pool)
     h = candidate_hash(a.candidate)
-    verdict = dict(candidate=str(a.candidate), hash=h, started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+    verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE,
+                   started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))  # fmt: skip
     verdict["call"] = len([x for x in history if not x.get("dry_run")]) + 1
 
     def void(stage: str, miss: list[str], **extra) -> int:
@@ -189,7 +210,8 @@ def main(argv=None) -> int:
         pkg.apply_set(pkg, overrides(a.candidate))
     except Exception as e:
         return finish(False, f"the candidate does not load: {type(e).__name__}: {e}")
-    if any(x["hash"] == h and not x["accepted"] and not x.get("dry_run") for x in history):
+    if any(x["hash"] == h and not x["accepted"] and not x.get("dry_run") and not x.get("void")
+           and x.get("rule", 1) == GATE_RULE for x in history):  # fmt: skip
         return finish(False, "this exact candidate was rejected before")
     if h == candidate_hash(Path(inc["dir"])):
         return finish(False, "the candidate is the incumbent")
@@ -228,15 +250,7 @@ def main(argv=None) -> int:
     if miss:
         return void("final", miss, stage1=t1)
     t = tally(B.outcomes(work / "candidate"), inc_out)
-    fails = []
-    if t["b"] - t["c"] < MIN_NET:
-        fails.append(f"net wins {t['b'] - t['c']} < {MIN_NET}")
-    if t["p_one_sided"] > ALPHA:
-        fails.append(f"one-sided McNemar p {t['p_one_sided']} > {ALPHA}")
-    if t["candidate_fell"] > t["incumbent_fell"] + 1:
-        fails.append(f"falls {t['candidate_fell']} > {t['incumbent_fell']} + 1")
-    if t["candidate_dropped"] > drop_limit(t):
-        fails.append(f"drops {t['candidate_dropped']} > {drop_limit(t)}")
+    fails = verdict_fails(t)
     if fails:
         return finish(False, "; ".join(fails), stage1=t1, result=t)
     inc_state.write_text(

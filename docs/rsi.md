@@ -189,6 +189,7 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/visualize.py --sandb
 
 - `scene_lint.py` 报 error：不要开跑循环。先看 `lint.json` 里是哪一类（物体掉下去、目标开局就成立、竖直轴不对），多半是场景没按第 2 节的顺序建，或者少了面板、碰撞盒。
 - 内环一开始就停，`loop.log` 里说缺 `pool_diag`：沙盒没建完，重新跑 `sandbox.py`。
-- 账本里某次迭代或草稿标 `void`：角色读了验收池或沙盒外的文件，或者 Engineer 改了技能目录以外的文件。三个 Engineer 中一份草稿越界，只作废这一份，这一轮接着走；Reviewer、Manager、Composer 或唯一的 Engineer 越界，这一轮作废（账本记 `void_iter`），现任不变，进下一轮；连续两轮作废，内环停下，`loop.py` 退出码 3，查完用 `--reprobe N` 续跑（TODO 36.7）。验收门调用标 `void` 是有起点缺了局，这次不算数。
+- 账本里某次迭代或草稿标 `void`：角色读了验收池或沙盒外的文件，或者 Engineer 改了技能目录以外的文件。三个 Engineer 中一份草稿越界，只作废这一份，这一轮接着走；Reviewer、Manager、Composer 或唯一的 Engineer 越界，这一轮作废（账本记 `void_iter`），现任不变，进下一轮；连续两轮作废，内环停下，`loop.py` 退出码 3，查完用 `--reprobe N` 续跑（TODO 36.7）。验收门调用标 `void` 是有起点缺了局，这次不算数；草稿或候选标 `named_objects` 是技能代码里写了物体名字（规则第 30 条），作废。
+- 验收门从规则第 14 版起按“多赢 − 少赢 ≥ 3 且少赢 ≤ 多赢 / 3”判，不再要求 p ≤ 0.05（TODO 33.8）；被拒但多赢多于少赢的最好 2 个候选在 `loop/candidates_pool.json`，账本 `pool` 行记进出。Manager 决定里的 `base` 是从候补接着改，Composer 的 `adopted_pool` 是把候补原样再送；旧规则拒过的候选可以再判。
 - 回归打印 `worse at p <= 0.05`：有任务族变差，登记表不推进。先查最近改了什么，再决定是否接受。
 - 仿真很慢、结局和记录差很多：确认 `OMP_NUM_THREADS=2`，并且机器上没有别的仿真在跑（所有批次共用 12 个仿真槽）。

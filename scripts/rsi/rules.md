@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 13, 2026-10-22)
+# Rules for the scene RSI loop (TODO 27, version 14, 2026-10-22)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -86,7 +86,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 25. The gate's stage 1 takes its 30 starts from every task in proportion to the task's share of the acceptance pool,
     so a candidate that changes one task is judged on that task's starts too. Against an incumbent with no success
     on the pool, a candidate may drop up to half its successes (otherwise, as before, the incumbent's drops + 1). The
-    D13.4 stop counts only when the starts outside the parked tasks are at least half the acceptance pool.
+    D13.4 stop counts only when the starts outside the parked tasks are at least half the acceptance pool. The verdict
+    (version 14, TODO 33.8, user 2026-10-22: early research): accepted when b - c >= 3 and c <= b / 3 on the full
+    pool; the one-sided McNemar p is reported, not required (until then p <= 0.05 was, which alone needs 5:0, so a
+    change that fixes one object's 4 acceptance starts could never pass). A candidate rejected under the older rule
+    may be judged again; the sealed pool at the end still decides what the run reports.
 
 26. When task-wide parks cover more than half the acceptance pool, the gate judges on an acceptance pool of the same
     size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a
@@ -110,10 +114,25 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     gate call stays one paired test (code); the Composer ties every kept or dropped edit to the starts and the trace
     moment that decided it (prompt) (version 9, user 2026-10-21). A reopen uses one Engineer. Identical drafts run
     once. A file changed outside the skills copies voids every draft of the iteration: the Engineers share the sandbox,
-    so it cannot be told whose it is (code, version 12).
+    so it cannot be told whose it is (code, version 12). Version 14 (TODO 33.8, 33.14, user 2026-10-22):
+    - the gate's best 2 rejected candidates with more wins than losses since the incumbent wait in
+      `loop/candidates_pool.json` (cleared when the incumbent changes); the Manager may name one as `base`, so the
+      Engineers build on it (the gate still compares with the incumbent), and the Composer may merge its edits or adopt
+      it as it stands (code);
+    - a mechanism Reviewers proposed in two or more iterations and no Engineer was given is built first, unless the
+      Manager writes why not; the Manager links repeats to earlier ids (prompt; the driver counts them);
+    - at most two iterations in a row reopen a park; after two, `reopen` is not offered (code).
 
 29. The sandbox holds the experience library (scripts/rsi/experience, TODO 32.10): one entry per family that finished
     before, without this family's own or those its file's `library_exclude` names (code: sandbox.py), and the outer
     loop adds the family's entry when it ends
     (outer_run.py). Its numbers come from other objects and surfaces; this family's rounds decide (prompt) (version
     11, user 2026-10-22: three candidates, the Composer and the library are the default after TODO 32.12).
+
+30. A skills package may hold flows for one object or one kind of object (version 14, TODO 33.13, user 2026-10-22:
+    "允许给每个物体进化出它独有的抓取 pipeline……在之后抓类似物体的时候也需要复用"). A flow lives under `recipes/`,
+    carries a `SIGNATURE` of the features it is for (hull width at the grasp height, height, flat or tall, container,
+    wall, mass, friction, support height, a cover above) and `match(obj) -> score`, and the package's dispatcher picks
+    by features, the generic pick as the fallback, so a similar object reuses it. A flow is never chosen by an
+    object's name: a string constant equal to a scene object's key, body, ADT instance name or name stem (Mug_2,
+    Mug_2_object, Mug) outside a docstring voids the draft (code); semantic fields (category, prototype) are features.
