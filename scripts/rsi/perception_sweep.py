@@ -26,6 +26,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
 from gate import mcnemar_one_sided, wilson  # noqa: E402
 
+from locomani.tasks.scene.perceive import RenderConfig  # noqa: E402
 from locomani.tasks.scene.view import Perturbation  # noqa: E402
 
 # the design's step 1 grid, one error at a time: position offsets 0.5-4 cm (one direction per object and round, the
@@ -80,7 +81,12 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     conditions = json.loads(a.conditions.read_text()) if a.conditions else GRIDS[a.grid]
     for spec in conditions.values():
-        Perturbation.of(spec)  # an unknown key fails here, not in every worker
+        if "rendered" in spec:
+            RenderConfig.of(spec["rendered"])
+            if os.environ.get("MUJOCO_GL") != "egl":
+                raise SystemExit("a rendered condition needs MUJOCO_GL=egl in the environment (the workers render)")
+        else:
+            Perturbation.of(spec)  # an unknown key fails here, not in every worker
     overrides = json.loads(a.set)
     jobs = [B.Job(a.skills.resolve(), (a.out / name).resolve(), overrides, None, a.npz, perception=spec)
             for name, spec in conditions.items()]  # fmt: skip

@@ -12,6 +12,7 @@ import numpy as np
 from locomani.backends.scalebfm.motor import Outcome
 from locomani.pipeline.execution_record import RoundResult
 from locomani.scene_discovery.predicates import parse
+from locomani.tasks.scene.perceive import RenderConfig, RenderedView
 from locomani.tasks.scene.start import Start
 from locomani.tasks.scene.view import Perturbation, PerturbedView, TruthView
 from locomani.tasks.scene.world import SceneWorld, Task
@@ -62,9 +63,14 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
     """`plan(ctx) -> Outcome`. Returns (RoundResult, trace arrays). A plan still stepping at `limit_s` simulated seconds
     ends the round as a failure, why "episode time limit" (TODO 36, review 2026-10-22). `view`: the plan sees the world
     through scene.view.TruthView (the package set WORLD_VIEW) instead of the SceneWorld; the judge reads the SceneWorld.
-    `perception`: a scene.view.Perturbation spec; the plan then sees a PerturbedView (L1), which needs `view`."""
-    perturbation = Perturbation.of(perception)
-    if perturbation is not None and not view:
+    `perception`: a scene.view.Perturbation spec (the plan sees a PerturbedView, L1) or {"rendered": RenderConfig
+    spec} (a scene.perceive.RenderedView, L2); either needs `view`. The view's `stats()`, if it has them, go into the
+    execution record as `perception`."""
+    rendered = (perception or {}).get("rendered")
+    if rendered is not None and len(perception) > 1:
+        raise ValueError(f"a rendered view takes no L1 perturbation besides it: {sorted(perception)}")
+    perturbation = None if rendered is not None else Perturbation.of(perception)
+    if (perturbation is not None or rendered is not None) and not view:
         raise ValueError("a perception perturbation needs a WORLD_VIEW skills package")
     m, wall = world.motor, time.time()
     m.track = {world.meta["objects"][k]["body"]: world.free[k] for k in task.objects}
@@ -75,6 +81,8 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
     seated = {k: v for k, v in seated.items() if v > 0}
     if not view:
         seen = world
+    elif rendered is not None:
+        seen = RenderedView(world, RenderConfig.of(rendered), start.seed)
     elif perturbation is None:
         seen = TruthView(world)
     else:
@@ -121,6 +129,8 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         t_end=round(m.t, 2),
         wall_s=round(time.time() - wall, 1),
     )
+    if hasattr(seen, "stats"):
+        execution["perception"] = seen.stats()
     if timed_out:
         return RoundResult(False, "episode time limit", False, execution), m.arrays()
     return RoundResult(bool(ok and not fell), why if not ok else ("fell" if fell else ""), False, execution), m.arrays()

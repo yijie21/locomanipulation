@@ -130,6 +130,8 @@ def run_round(
         rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
                    plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
                    t_end=ex["t_end"], seated=ex["seated"])  # fmt: skip
+        if ex.get("perception"):  # vision RSI L2: per object, reads, refreshes, sightings, residual, error now
+            rec["perception_stats"] = ex["perception"]
         if npz:
             np.savez_compressed(out / f"{label}.npz", **arrays)
     try:  # TODO 33.15: the round's failure class and events (failure_class.py); a classifier bug never costs a round
