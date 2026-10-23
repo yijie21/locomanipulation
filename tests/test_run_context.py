@@ -176,7 +176,13 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
     names = yaml.safe_load(run_common.SCENES.read_text())
     boxes = {f"warehouse_box_45x{length}x{height}" for length in (20, 32) for height in (18, 33)}
     stock = {"bottle", "crate", "warehouse", "warehouse_textured", "walk", "box_platform", *boxes}
-    mars = {"bottle_mars", "warehouse_textured_mars", "box_platform_mars", *(f"{box}_mars" for box in boxes)}
+    mars = {
+        "bottle_mars",
+        "warehouse_textured_mars",
+        "box_platform_mars",
+        "walk_mars",
+        *(f"{box}_mars" for box in boxes),
+    }
     d435 = {"bottle_mars_d435", "warehouse_textured_mars_d435", "warehouse_box_45x32x33_mars_d435"}  # face camera
     scene_discovery = {"adt_apartment_mars"}  # ADT-derived: built under outputs/, nothing in git
     assert set(names) == stock | mars | d435 | scene_discovery
@@ -192,7 +198,7 @@ def test_every_named_scene_exists_and_a_dir_without_a_name_is_left_alone():
 def test_an_unknown_or_doubly_given_scene_is_refused():
     with pytest.raises(
         SystemExit,
-        match="bottle, bottle_mars, bottle_mars_d435, box_platform, box_platform_mars, crate, walk, warehouse",
+        match="bottle, bottle_mars, bottle_mars_d435, box_platform, box_platform_mars, crate, walk, walk_mars, warehouse",
     ):
         run_common.resolve_scene({"scene": {"name": "blue"}})
     with pytest.raises(SystemExit, match="give one"):

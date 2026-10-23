@@ -68,6 +68,11 @@ walk:  # the same blue floor with nothing but the G1 (crate-line robot), for SON
   build: $VENV_SIM_PY -m locomani.tasks.walk.scene outputs/scene/walk
   unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
 
+walk_mars:  # the same empty floor with the mars G1 (the scene RSI robot): the motor-layer probes (scripts/rsi/capability_probe.py, motor_check.py) and the controller-compare clips (TODO 25.4, 29.7)
+  dir: outputs/scene/walk_mars
+  build: $VENV_SIM_PY scripts/experiments/controller_compare_20261013/walk_mars_scene.py outputs/scene/walk_mars
+  unreal: {unsupported: "no Unreal level: MuJoCo's blue floor has no Blender room to bake; Unreal renders the warehouse scenes"}
+
 box_platform:  # a 10 cm solid platform on the blue floor with the warehouse carton's contacts (0.45 x 0.32 x 0.60 m, 1 cm walls, 1.2 kg), no room: the scene capability sweep's centre cell and the bimanual box grasp default since 2026-09-27 (docs/box_grasp_envelope.md)
   dir: outputs/scene/box_platform
   example: configs/experiments/box_platform_default_20260928.yaml

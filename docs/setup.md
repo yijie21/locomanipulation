@@ -12,7 +12,7 @@
 | 1 | 克隆上游仓库 GR00T-WholeBodyControl | 所有人 | 5 分钟 |
 | 2 | 两个 Python 环境、SONIC 权重、补丁 | 所有人（场景 RSI 只用其中的 `.venv_sim`） | 20 分钟 |
 | 3 | 编译 SONIC 的 C++ 控制器（deploy） | VLA 线 | 主要看网速，要下载 3.9 GB |
-| 4 | 场景源资产 | 所有人 | 5 秒 |
+| 4 | 场景源资产 | 所有人，每个克隆都要（`outputs/` 不在 git 里） | 5 秒 |
 | 5 | GR00T 训练环境 | 要训练或评测 VLA（三条主线都要） | 按上游 README |
 | 6 | conda 训练环境、EmbodiedGen | 只有训练 SONIC 本身或重新生成场景才要 | 1 小时以上 |
 | 7 | Isaac 渲染环境 | warehouse 选 Isaac 出图时，以及 Isaac 重渲 | 约 20 GB 下载 |
@@ -238,7 +238,7 @@ PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python src/locom
 SCENE_PRESET=bottle_only bash scripts/install_scene.sh
 ```
 
-做什么：第一条生成带平行夹爪（dex1）的机器人模型；第二条从仓库自带的场景包装出场景源资产，并建好 `outputs/scene/sim`。三条主线各自的场景在各自 runbook 的第 1 步用 `bash scripts/build_scene.sh <场景名>` 建。
+做什么：第一条生成带平行夹爪（dex1）的机器人模型；第二条从仓库自带的场景包装出场景源资产，并建好 `outputs/scene/sim`。每个新克隆都要做一次（`outputs/` 不在 git 里）；场景 RSI 的 `build_scene.sh walk` 要它建出的 `outputs/scene/layout/layout.json`。三条主线各自的场景在各自 runbook 的第 1 步用 `bash scripts/build_scene.sh <场景名>` 建。
 
 验证：`install_scene.sh` 结束时会打印它实际建出的内容，应为：
 
