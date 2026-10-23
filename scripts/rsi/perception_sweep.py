@@ -8,7 +8,7 @@ the summary goes to <out>/summary.json. The package must set WORLD_VIEW.
 Run it from the checkout, detached (nohup setsid), like sealed.py:
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/perception_sweep.py grasp_atomic <pool> scripts/rsi/seeds/grasp_c11_view <out> \\
-        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--conditions <json>] [--procs 6 --gpus 0,1]
+        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | --conditions <json>] [--procs 6 --gpus 0,1]
 """
 
 from __future__ import annotations
@@ -40,6 +40,18 @@ CONDITIONS = {
     "jitter_010": {"obj_jitter_m": 0.01},
     "yaw_10": {"obj_yaw_deg": 10.0},
 }
+# step 1's second half: the robot's own position off by 1-4 cm against the map, and the object unseen while a hand is
+# within 10 or 20 cm of it and not holding it
+GRIDS = {
+    "1a": CONDITIONS,
+    "1bc": {
+        "self_010": {"self_bias_m": 0.01},
+        "self_020": {"self_bias_m": 0.02},
+        "self_040": {"self_bias_m": 0.04},
+        "blind_010": {"blind_within_m": 0.10},
+        "blind_020": {"blind_within_m": 0.20},
+    },
+}
 
 
 def paired(base: dict, cond: dict) -> dict:
@@ -60,12 +72,13 @@ def main(argv=None) -> int:
     ap.add_argument("out", type=Path)
     ap.add_argument("--base", type=Path, required=True, help="the L0 rounds of the same package, pool and --set")
     ap.add_argument("--set", default="{}")
-    ap.add_argument("--conditions", type=Path, help="a JSON file {name: Perturbation spec}; default the step 1 grid")
+    ap.add_argument("--grid", choices=sorted(GRIDS), default="1a", help="a named set of conditions")
+    ap.add_argument("--conditions", type=Path, help="a JSON file {name: Perturbation spec}, in place of --grid")
     ap.add_argument("--procs", type=int, default=int(os.environ.get("RSI_PROCS", "6")))
     ap.add_argument("--gpus", default=os.environ.get("RSI_GPUS", "0,1"))
     ap.add_argument("--npz", action="store_true")
     a = ap.parse_args(argv)
-    conditions = json.loads(a.conditions.read_text()) if a.conditions else CONDITIONS
+    conditions = json.loads(a.conditions.read_text()) if a.conditions else GRIDS[a.grid]
     for spec in conditions.values():
         Perturbation.of(spec)  # an unknown key fails here, not in every worker
     overrides = json.loads(a.set)

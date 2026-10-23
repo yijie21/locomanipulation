@@ -5,6 +5,7 @@ the L1 PerturbedView errs on the free objects' poses as its Perturbation says, r
 
 import importlib.util
 import io
+import json
 import re
 import sys
 import tokenize
@@ -18,7 +19,9 @@ REPO = Path(__file__).resolve().parents[1]
 SEEDS = REPO / "scripts" / "rsi" / "seeds"
 sys.path.insert(0, str(REPO / "src"))
 
-from locomani.tasks.scene.view import Perturbation, PerturbedView, RobotView, TruthView  # noqa: E402
+from locomani.primitives.navigator import RESOLUTION  # noqa: E402
+from locomani.primitives.navigator import build as build_navigation  # noqa: E402
+from locomani.tasks.scene.view import Perturbation, PerturbedView, RobotView, TruthView, shifted_meta  # noqa: E402
 
 # what a view package's code may not name: the simulator handle, MuJoCo model/data arrays, the motor's contact readers,
 # MuJoCo itself beyond its math helpers (mju_*), private attributes of the views
@@ -222,6 +225,97 @@ class Perturbed(unittest.TestCase):
         self.assertEqual(a, B.with_perception("abc", {"obj_bias_m": 0.01}))
 
 
+def room_meta() -> dict:
+    """A 4 x 3 m room with an inner wall, a box obstacle, a table and a static stool."""
+    return {
+        "objects": {
+            "mug": {"body": "mug_b", "free": True, "init_pos": [1.0, 1.0, 0.8]},
+            "stool": {"init_pos": [3.0, 2.0, 0.2], "init_quat": [1.0, 0, 0, 0], "box": {"half_extent": [0.2, 0.2, 0.2]}},
+        },
+        "surfaces": {"table": {"xy": [1.0, 1.0], "half_extent": [0.4, 0.3], "top": 0.75, "yaw": 0.0}},
+        "room": {"bounds": {"x": [0.0, 4.0], "y": [0.0, 3.0]}, "walls": [[[2.0, 0.0], [2.0, 1.2]]],
+                 "obstacles": [[[3.2, 0.4], [3.6, 0.4], [3.6, 0.8], [3.2, 0.8]]], "doors": [],
+                 "rooms": {"r": {"polygon": [[0, 0], [4, 0], [4, 3], [0, 3]]}}, "spawn": {"r": [[[0.5, 2.0], [1.5, 2.0]]]}},
+        "robot_start": {"xy": [0.5, 2.5], "yaw_deg": 0.0},
+    }  # fmt: skip
+
+
+class MapShift(unittest.TestCase):
+    """1b: the robot's own position error is the map moved the other way."""
+
+    def test_every_map_coordinate_moves_and_nothing_else(self):
+        meta = room_meta()
+        before = json.dumps(meta, sort_keys=True)
+        m = shifted_meta(meta, [0.1, -0.2])
+        self.assertEqual(json.dumps(meta, sort_keys=True), before)  # the scene description itself is untouched
+        np.testing.assert_allclose(m["surfaces"]["table"]["xy"], [1.1, 0.8])
+        np.testing.assert_allclose(m["objects"]["stool"]["init_pos"], [3.1, 1.8, 0.2])
+        np.testing.assert_allclose(m["room"]["bounds"]["x"], [0.1, 4.1])
+        np.testing.assert_allclose(m["room"]["walls"][0], [[2.1, -0.2], [2.1, 1.0]])
+        np.testing.assert_allclose(m["room"]["obstacles"][0][2], [3.7, 0.6])
+        np.testing.assert_allclose(m["room"]["rooms"]["r"]["polygon"][2], [4.1, 2.8])
+        np.testing.assert_allclose(m["room"]["spawn"]["r"][0][1], [1.6, 1.8])
+        np.testing.assert_allclose(m["robot_start"]["xy"], [0.6, 2.3])
+        self.assertEqual(m["surfaces"]["table"]["half_extent"], [0.4, 0.3])
+        self.assertEqual(m["surfaces"]["table"]["top"], 0.75)
+        self.assertEqual(m["objects"]["stool"]["box"], meta["objects"]["stool"]["box"])
+
+    def test_the_rebuilt_occupancy_map_is_the_old_one_moved(self):
+        meta = room_meta()
+        d = np.array([3 * RESOLUTION, -2 * RESOLUTION])
+        occ0, _ = build_navigation(meta)
+        occ1, _ = build_navigation(shifted_meta(meta, d))
+        np.testing.assert_allclose(occ1.origin, occ0.origin + d)
+        np.testing.assert_array_equal(occ1.occupied, occ0.occupied)
+
+    def test_the_view_moves_the_map_and_static_objects_but_not_the_free_ones(self):
+        from unittest import mock
+
+        meta = room_meta()
+        poses = {"mug": (np.array([1.0, 1.0, 0.8]), np.array([1.0, 0, 0, 0])),
+                 "stool": (np.array([3.0, 2.0, 0.2]), np.array([1.0, 0, 0, 0]))}  # fmt: skip
+        occ, nav = build_navigation(meta)
+        motor = SimpleNamespace(trace=[], t=0.0, gripping=lambda b: set())
+        world = SimpleNamespace(motor=motor, meta=meta, free={"mug": 7}, occ=occ, nav=nav,
+                                object_pose=lambda k: tuple(np.copy(a) for a in poses[k]))  # fmt: skip
+        box = (np.array([2.0, 2.0, 0.5]), np.array([0.1, 0.1, 0.5]))
+        with mock.patch.object(TruthView, "static_colliders", return_value=[box]):
+            v = PerturbedView(world, Perturbation(self_bias_m=0.03), 610001)
+            shift = -v.self_offset()
+            self.assertAlmostEqual(float(np.linalg.norm(shift)), 0.03, places=12)
+            np.testing.assert_allclose(v.meta["surfaces"]["table"]["xy"], np.array([1.0, 1.0]) + shift)
+            self.assertIsNot(v.meta, meta)
+            self.assertIs(v.meta, v.meta)  # one description per round: skills key caches on it
+            np.testing.assert_allclose(v.occ.origin, occ.origin + shift)
+            np.testing.assert_allclose(v.object_pose("stool")[0], poses["stool"][0] + np.r_[shift, 0.0])
+            np.testing.assert_array_equal(v.object_pose("mug")[0], poses["mug"][0])
+            np.testing.assert_allclose(v.static_colliders()[0][0], box[0] + np.r_[shift, 0.0])
+            truth = PerturbedView(world, Perturbation(obj_bias_m=0.01), 610001)
+            self.assertIs(truth.meta, meta)  # no self error: the map is the scene's own
+
+
+class Blind(unittest.TestCase):
+    """1c: the pose freezes while a hand is too close to see the object, until a hand holds it."""
+
+    def test_the_pose_freezes_near_the_hand_and_follows_it_once_held(self):
+        obj = {"p": np.array([1.0, 0.0, 0.8])}
+        hand = {"p": np.array([0.5, 0.0, 0.8]), "held": False}
+        motor = SimpleNamespace(trace=[], t=0.0, gripping=lambda b: {"right"} if hand["held"] else set(),
+                                jaw_centre=lambda s: (hand["p"] if s == "right" else np.array([0.0, 1.0, 0.8]), np.eye(3)))  # fmt: skip
+        world = SimpleNamespace(motor=motor, meta={"objects": {"mug": {"body": "mug_b"}}}, free={"mug": 7}, occ=None,
+                                nav=None, object_pose=lambda k: (obj["p"].copy(), np.array([1.0, 0, 0, 0])))  # fmt: skip
+        v = PerturbedView(world, Perturbation(blind_within_m=0.15), 610001)
+        np.testing.assert_array_equal(v.object_pose("mug")[0], [1.0, 0.0, 0.8])  # far: seen
+        hand["p"] = np.array([0.9, 0.0, 0.8])
+        obj["p"] = np.array([1.03, 0.0, 0.8])  # nudged by the entering fingers
+        np.testing.assert_array_equal(v.object_pose("mug")[0], [1.0, 0.0, 0.8])  # near, not held: the last seen pose
+        hand["held"] = True
+        np.testing.assert_array_equal(v.object_pose("mug")[0], [1.03, 0.0, 0.8])  # held: follows the hand
+        hand["held"], hand["p"] = False, np.array([0.5, 0.0, 0.8])
+        obj["p"] = np.array([1.1, 0.0, 0.8])
+        np.testing.assert_array_equal(v.object_pose("mug")[0], [1.1, 0.0, 0.8])  # far again: seen
+
+
 class Sweep(unittest.TestCase):
     def test_conditions_pair_by_start_against_the_truth(self):
         names = ("gate", "batch", "family", "scene_round")
@@ -236,8 +330,9 @@ class Sweep(unittest.TestCase):
                 sys.modules.pop(k, None)
                 if v is not None:
                     sys.modules[k] = v
-        for spec in S.CONDITIONS.values():
-            Perturbation.of(spec)
+        for grid in S.GRIDS.values():
+            for spec in grid.values():
+                Perturbation.of(spec)
         r = lambda ok: dict(ok=ok, fell=False, dropped=False)  # noqa: E731
         base = {"a": r(True), "b": r(True), "c": r(False), "d": r(True)}
         cond = {"a": r(True), "b": r(False), "c": r(True), "d": r(False), "e": r(True)}  # e: no L0 round, not paired

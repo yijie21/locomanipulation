@@ -18,18 +18,23 @@ answers the same questions from sensors and models instead. What the world view 
 `touching`): contacts reach a skill only through the world view, which a perception view answers from the gripper's
 opening and effort. Everything else (commands, joint and jaw readings, the robot's own pose) passes through.
 
-`PerturbedView` is level L1 of the design (section 6): the TruthView with errors added to the free objects' poses
-(`Perturbation`: a fixed offset and heading error per object and round, fresh noise at every read, a delay), the
-truth underneath and every other answer unchanged."""
+`PerturbedView` is level L1 of the design (section 6): the TruthView with errors added to what a skill reads
+(`Perturbation`: per object and round a fixed offset and heading error, fresh noise at every read, a delay, a pose that
+freezes while the hand is too close to see it; per round an offset of the robot's own position against the map), the
+truth underneath unchanged."""
 
 from __future__ import annotations
 
 import bisect
+import copy
 import zlib
 from dataclasses import asdict, dataclass
 
 import mujoco
 import numpy as np
+
+from locomani.backends.scalebfm.motor import SIDES
+from locomani.primitives.navigator import build as build_navigation
 
 GEOM_TYPES = {int(v): k[len("mjGEOM_") :].lower() for k, v in vars(mujoco.mjtGeom).items() if k.startswith("mjGEOM_")}
 
@@ -167,12 +172,21 @@ class Perturbation:
     - obj_jitter_m: plus fresh Gaussian noise of this standard deviation per axis at every read;
     - obj_yaw_deg: the heading off by this angle about the vertical, random sign per object and round;
     - latency_s: a tracked object's (the task's objects: the motor trace) true pose this long ago;
+    - blind_within_m: while a jaw centre is nearer than this to an object no hand holds, its pose stays what it was
+      when the hand came that close (the head camera behind the hand, the wrist camera inside its minimum range); a
+      held object's pose follows the hand again;
+    - self_bias_m: the robot's own horizontal position off by this distance, one random direction per round. The robot
+      sees the objects with its own cameras, so robot-to-object geometry is untouched and the error is between the
+      robot and the map built beforehand: the view moves the map -- the scene description's coordinates, the occupancy
+      map and navigator rebuilt from them, the static objects and colliders -- by the opposite offset;
     - seed: mixed with the round's start seed, so a condition's errors repeat round by round."""
 
     obj_bias_m: float = 0.0
     obj_jitter_m: float = 0.0
     obj_yaw_deg: float = 0.0
     latency_s: float = 0.0
+    blind_within_m: float = 0.0
+    self_bias_m: float = 0.0
     seed: int = 0
 
     @classmethod
@@ -185,16 +199,44 @@ class Perturbation:
 
 
 class PerturbedView(TruthView):
-    """TruthView with `Perturbation`'s errors on the free objects' poses. Static objects, shapes in the object frame,
-    the scene description, maps, colliders and contacts are the truth."""
+    """TruthView with `Perturbation`'s errors: on the free objects' poses, and with `self_bias_m` on the map (the scene
+    description, occ / nav, static objects and colliders). Shapes in the object frame and contacts are the truth."""
 
-    __slots__ = ("_p", "_round", "_err", "_rng", "_trace", "_trace_t")
+    __slots__ = ("_p", "_round", "_err", "_rng", "_trace", "_trace_t", "_last", "_shift", "_meta", "_maps")
 
     def __init__(self, world, perturbation: Perturbation, round_seed: int):
         super().__init__(world)
-        self._p, self._round, self._err = perturbation, int(round_seed), {}
+        self._p, self._round, self._err, self._last = perturbation, int(round_seed), {}, {}
         self._rng = np.random.default_rng([self._round, int(perturbation.seed), 1])
         self._trace, self._trace_t = None, []  # the motor trace list and its rows' times, extended as it grows
+        self._shift, self._meta, self._maps = None, None, None
+        if perturbation.self_bias_m > 0:
+            a = np.random.default_rng([self._round, int(perturbation.seed), 2]).uniform(0.0, 2 * np.pi)
+            self._shift = -float(perturbation.self_bias_m) * np.array([np.cos(a), np.sin(a)])  # the map's apparent move
+            self._meta = shifted_meta(world.meta, self._shift)
+            self._maps = build_navigation(self._meta, body_radius=world.occ.body_radius)
+
+    @property
+    def meta(self) -> dict:
+        return self._world.meta if self._meta is None else self._meta
+
+    @property
+    def occ(self):
+        return self._world.occ if self._maps is None else self._maps[0]
+
+    @property
+    def nav(self):
+        return self._world.nav if self._maps is None else self._maps[1]
+
+    def self_offset(self) -> np.ndarray:
+        """The robot's position error this round (xy): what it believes minus where it is."""
+        return np.zeros(2) if self._shift is None else -self._shift
+
+    def static_colliders(self) -> list[tuple[np.ndarray, np.ndarray]]:
+        out = super().static_colliders()
+        if self._shift is None:
+            return out
+        return [(c + np.r_[self._shift, 0.0], e) for c, e in out]
 
     def errors(self, key: str) -> tuple[np.ndarray, float]:
         """(position offset, heading error in rad) of free object `key` this round, drawn on first use."""
@@ -208,7 +250,10 @@ class PerturbedView(TruthView):
 
     def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         if key not in self._world.free:
-            return self._world.object_pose(key)
+            pos, quat = self._world.object_pose(key)
+            return (pos, quat) if self._shift is None else (np.asarray(pos, float) + np.r_[self._shift, 0.0], quat)
+        if self._p.blind_within_m > 0 and key in self._last and self._unseen(key):
+            return tuple(np.copy(a) for a in self._last[key])
         pos, quat = self._delayed(key) if self._p.latency_s > 0 else self._world.object_pose(key)
         off, yaw = self.errors(key)
         pos = np.asarray(pos, float) + off
@@ -216,7 +261,17 @@ class PerturbedView(TruthView):
             pos = pos + self._rng.normal(scale=float(self._p.obj_jitter_m), size=3)
         if yaw:
             quat = _quat_mul(np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]), np.asarray(quat, float))
+        if self._p.blind_within_m > 0:
+            self._last[key] = (np.copy(pos), np.copy(quat))
         return pos, quat
+
+    def _unseen(self, key: str) -> bool:
+        """A jaw centre nearer than blind_within_m to free object `key` (true positions) while no hand holds it."""
+        motor, body = self._world.motor, self._world.free[key]
+        if motor.gripping(body):
+            return False
+        p = np.asarray(self._world.object_pose(key)[0], float)
+        return min(float(np.linalg.norm(motor.jaw_centre(s)[0] - p)) for s in SIDES) < float(self._p.blind_within_m)
 
     def _delayed(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         """The true pose `latency_s` ago from the motor trace (its rows carry the tracked objects), the oldest row when
@@ -241,3 +296,37 @@ def _quat_mul(a, b) -> np.ndarray:
     w2, x2, y2, z2 = b
     return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2, w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
                      w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])  # fmt: skip
+
+
+def shifted_meta(meta: dict, shift) -> dict:
+    """A copy of the scene description with every world xy coordinate moved by `shift`: objects' init_pos, surfaces'
+    xy, the room's bounds, walls, doors, obstacles, room and spawn polygons, the robot start. Box extents, heights,
+    yaws and the free objects' current poses (object_pose) are not coordinates of the map and stay."""
+    dx, dy = float(shift[0]), float(shift[1])
+    out = copy.deepcopy(meta)
+
+    def move(v):  # a point [x, y(, z)] or nested lists of points
+        if isinstance(v, list) and v and all(isinstance(x, (int, float)) for x in v):
+            return [v[0] + dx, v[1] + dy, *v[2:]]
+        return [move(x) for x in v] if isinstance(v, list) else v
+
+    for o in out.get("objects", {}).values():
+        if "init_pos" in o:
+            o["init_pos"] = move(o["init_pos"])
+    for sf in out.get("surfaces", {}).values():
+        if "xy" in sf:
+            sf["xy"] = move(sf["xy"])
+    room = out.get("room") or {}
+    if room.get("bounds"):
+        b = room["bounds"]
+        room["bounds"] = dict(b, x=[b["x"][0] + dx, b["x"][1] + dx], y=[b["y"][0] + dy, b["y"][1] + dy])
+    for k in ("walls", "doors", "obstacles"):
+        if room.get(k):
+            room[k] = move(room[k])
+    for r in (room.get("rooms") or {}).values():
+        r["polygon"] = move(r["polygon"])
+    for k, v in (room.get("spawn") or {}).items():
+        room["spawn"][k] = move(v)
+    if (out.get("robot_start") or {}).get("xy") is not None:
+        out["robot_start"]["xy"] = move(out["robot_start"]["xy"])
+    return out
