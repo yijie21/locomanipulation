@@ -507,6 +507,11 @@ class RoleSafety(unittest.TestCase):
     def test_a_role_commit_becomes_working_tree_changes(self):
         import subprocess
 
+        # TODO 29.8 (2026-10-23): a commit hook exports GIT_DIR / GIT_INDEX_FILE; inherited, this test's `git init` and
+        # the loop's git_head / undo_commits ran on the committing checkout -- the shared .git/config got bare = true
+        # and user t <t@t>, and a.txt was staged in a worktree's index. The test and the loop's helpers see none of them.
+        for k in [k for k in os.environ if k.startswith("GIT_")]:
+            self.addCleanup(os.environ.__setitem__, k, os.environ.pop(k))
         git = lambda *a: subprocess.run(["git", *a], cwd=self.root, capture_output=True, text=True, check=True)  # noqa: E731
         git("init", "-q")
         git("config", "user.email", "t@t")
