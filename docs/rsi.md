@@ -193,8 +193,8 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 ```bash
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family pick_single --out outputs/rsi_repro/visual
 ```
-做什么：读沙盒的账本，取种子和每一次被验收门接受的版本，再读它们在诊断池上的逐局记录和轨迹，出三样东西（`--only step,overview,task` 选其中几样，默认全出）。`step_NN.mp4`：第 NN 次被接受的改动，在它改前改后都跑过的起点里选一个被它从失败翻成成功、轨迹最短的，左改前右改后，3 倍速，字幕卡默认是 Manager 那一轮的中文总结（`--cards <JSON>` 按版本哈希换成自己写的，`"_names"` 给物体改名；种子没有技能时左边放起点第一帧）。`task_NN_<任务>.mp4`：任务族的每个任务一段，取最终版本做成的最短一局，没有成功就取最短的失败局（规划拒绝也是一局，机器人站着不动），左种子右最终版本，字幕卡列出每个版本在该任务诊断起点上的成功数。`overview.png`：每个任务一行、每个版本一列，每格是那一局决定成败的那一刻（成功取抬起后一秒，失败取结尾）。
-得到什么：`outputs/rsi_repro/visual/` 下的视频、同名海报 `.jpg`、`previews/`，索引 `versions.json`（版本、哈希、来自第几轮、验收门数字、Manager 总结）和 `tasks.json`（每段任务视频的起点和各版本成功数）。一段视频约 1 分钟；被接受两次、8 个任务的运行约 10 分钟。
+做什么：读沙盒的账本，取种子和每一次被验收门接受的版本，再读它们在诊断池上的逐局记录和轨迹，出三样东西（`--only step,overview,task` 选其中几样，默认全出）。`step_NN.mp4`：第 NN 次被接受的改动，在它改前改后都跑过的起点里选一个被它从失败翻成成功、轨迹最短的，左改前右改后，3 倍速，字幕卡默认是 Manager 那一轮的中文总结（`--cards <JSON>` 按版本哈希换成自己写的，`"_names"` 给物体改名；种子没有技能时左边放起点第一帧）。`task_NN_<任务>.mp4`：任务族的每个任务一段，取最终版本做成的最短一局，没有成功就取最短的失败局（规划拒绝也是一局，机器人站着不动），左种子右最终版本，字幕卡列出每个版本在该任务诊断起点上的成功数；只要最终技能、不要种子对照时加 `--versions final`，同样的起点和字幕卡，单画面，文件名 `final_NN_<任务>.mp4`，不覆盖双画面的那套。`overview.png`：每个任务一行、每个版本一列，每格是那一局决定成败的那一刻（成功取抬起后一秒，失败取结尾）。
+得到什么：`outputs/rsi_repro/visual/` 下的视频、同名海报 `.jpg`、`previews/`，索引 `versions.json`（版本、哈希、来自第几轮、验收门数字、Manager 总结）和 `tasks.json`（每段任务视频的起点和各版本成功数；`--versions final` 的写到 `tasks_final.json`）。一段视频约 1 分钟，单画面约 40 秒；被接受两次、8 个任务的运行约 10 分钟。
 
 **只用于 pick-a 那次运行：`visualize.py`**
 

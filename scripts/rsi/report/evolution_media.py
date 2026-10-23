@@ -10,12 +10,13 @@ their 50 Hz traces. Writes under --out:
   final version on one diagnostic start side by side -- the final version's shortest success, else its shortest
   failure -- with every version's successes on that task's diagnostic starts on the card; tasks.json indexes them.
   A step video exists only for an accepted change, so a family with two acceptances has two; this gives one per task.
+  `--versions final` renders the final version alone instead (one panel, final_NN_<task>.mp4, tasks_final.json).
 `--cards` (JSON, keyed by the accepted hash) gives a step's card lines {"title", "what"} and optionally its "label";
 without it the card is the Manager's summary of that iteration. Its "_names" entry maps object keys to row names.
 
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \\
         scripts/rsi/report/evolution_media.py --sandbox /workspace/code/rsi-scene/grasp-atomic-a --family grasp_atomic \\
-        --out outputs/scene_rsi_20261016/grasp_atomic_media [--cards cards.json] [--only step,overview,task]
+        --out outputs/scene_rsi_20261016/grasp_atomic_media [--cards cards.json] [--only step,overview,task] [--versions final]
 """
 
 from __future__ import annotations
@@ -184,11 +185,14 @@ def pick_start(final: Path, labels: list[str]) -> str:
     return min(pool, key=lambda x: len(np.load(final / f"{x}.npz")["t"]))
 
 
-def task_videos(sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None) -> list[dict]:
+def task_videos(sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None, final_only: bool = False) -> list[dict]:
     """One video per task of the family: the seed and the final version on the start `pick_start` chooses, side by
-    side after a card that lists every version's successes on the task's diagnostic starts. Returns tasks.json's rows."""
+    side after a card that lists every version's successes on the task's diagnostic starts. `final_only` (--versions
+    final, user 2026-10-23) shows the final version alone, one panel, as `final_NN_<task>.mp4`; the card is the same.
+    Returns tasks.json's rows."""
     seed, final = vs[0], vs[-1]
-    shown = [seed, final] if len(vs) > 1 else [final]
+    shown = [final] if final_only or len(vs) == 1 else [seed, final]
+    prefix = "final" if final_only else "task"
     labels = sorted(p.stem for p in final["diag"].glob("*.json") if not p.name.startswith("_"))
     index = []
     for k, t in enumerate(sorted({task_of(x) for x in labels}), 1):
@@ -197,15 +201,20 @@ def task_videos(sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None) 
         rounds = [RM.Rd(v["diag"] / label) for v in shown]
         counts = [(v["name"], sum(1 for x in mine if (rec(v["diag"], x) or {}).get("ok")), len(mine)) for v in vs]
         name = object_name(sc, rounds[-1], names)
-        lines = [f"{k}. {name}", "诊断池成功数：" + " → ".join(f"{n} {o}/{m}" for n, o, m in counts),
-                 f"{label} · " + " · ".join(f"{side}：{v['name']}" for side, v in zip(("左", "右"), shown))]  # fmt: skip
+        where = (f"{shown[0]['name']}" if len(shown) == 1
+                 else " · ".join(f"{side}：{v['name']}" for side, v in zip(("左", "右"), shown)))  # fmt: skip
+        lines = [
+            f"{k}. {name}",
+            "诊断池成功数：" + " → ".join(f"{n} {o}/{m}" for n, o, m in counts),
+            f"{label} · {where}",
+        ]
         ps = RM.plan(sc, rounds, None)
         panels = [RM.frames(sc, r, p, SPEED) for r, p in zip(rounds, ps)]
         caps = [[(v["name"], V.FG), outcome(r)] for v, r in zip(shown, rounds)]
-        out = RM.compose(sc, out_dir / f"task_{k:02d}_{t}.mp4", panels, caps, lines, SPEED)
+        out = RM.compose(sc, out_dir / f"{prefix}_{k:02d}_{t}.mp4", panels, caps, lines, SPEED)
         index.append(dict(task=t, object=name, label=label, video=str(out), final_ok=bool(rounds[-1].rec["ok"]),
                           versions=[dict(name=n, ok=o, n=m) for n, o, m in counts]))  # fmt: skip
-        print("task", k, t, label, out, flush=True)
+        print(prefix, k, t, label, out, flush=True)
     return index
 
 
@@ -216,6 +225,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--cards", type=Path)
     ap.add_argument("--only", default="step,overview,task")
+    ap.add_argument("--versions", default="seed,final", choices=["seed,final", "final"], metavar="seed,final|final",
+                    help="task videos: the seed beside the final version (default), or the final version alone")  # fmt: skip
     a = ap.parse_args(argv)
     loop = a.sandbox / "outputs" / "scene_rsi_20261016" / a.family
     vs = versions(loop)
@@ -231,8 +242,11 @@ def main(argv=None) -> int:
     if "overview" in only and len(vs) > 1:
         print("overview", overview(sc, vs, a.out / "overview.png", cards.get("_names")), flush=True)
     if "task" in only:
-        rows = task_videos(sc, vs, a.out, cards.get("_names"))
-        (a.out / "tasks.json").write_text(json.dumps(rows, indent=1, ensure_ascii=False))
+        final_only = a.versions == "final"
+        rows = task_videos(sc, vs, a.out, cards.get("_names"), final_only)
+        (a.out / ("tasks_final.json" if final_only else "tasks.json")).write_text(
+            json.dumps(rows, indent=1, ensure_ascii=False)
+        )
     (a.out / "versions.json").write_text(json.dumps([{k: str(v) if isinstance(v, Path) else v for k, v in x.items()}
                                                      for x in vs], indent=1, ensure_ascii=False))  # fmt: skip
     return 0
