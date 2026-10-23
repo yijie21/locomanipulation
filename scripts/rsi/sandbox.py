@@ -205,6 +205,11 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
         if r.returncode:
             raise SystemExit(r.stderr[-2000:])
         print(r.stdout.strip())
+    body = REPO / "outputs" / "scene_rsi_20261016" / "body"  # TODO 33.1.4: the body model's reach table (runtime data)
+    if body.exists():
+        (loop.parent / "body").mkdir(parents=True, exist_ok=True)
+        for p in sorted(body.glob("*.npz")):
+            shutil.copy(p, loop.parent / "body" / p.name)
     print(f"{dest}: sandbox for {family}")
 
 
