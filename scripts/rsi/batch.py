@@ -48,6 +48,7 @@ class Job:
     labels: tuple[str, ...] | None = None  # None = the whole pool
     npz: bool = False
     controller: str = "scalebfm"  # scene_round --controller (TODO 28: "amo")
+    perception: dict | None = None  # a scene.view.Perturbation spec (vision RSI L1); None: the truth
 
 
 def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | None = None,
@@ -76,6 +77,16 @@ def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | 
         controller=controller, motor=dataclasses.asdict(motor_cfg), sleep=bool(sleep), cuda_graph=bool(cuda_graph)
     )
     return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:10]
+
+
+def with_perception(motor: str, perception: dict | None) -> str:
+    """The round signature: the motor signature, plus a hash of the perception perturbation when there is one (a round
+    made under another perturbation is not done); unchanged without one, so earlier records stay current."""
+    import hashlib
+
+    if not perception:
+        return motor
+    return motor + "+p" + hashlib.sha256(json.dumps(perception, sort_keys=True).encode()).hexdigest()[:8]
 
 
 def stale(f: Path, motor: str | None = None) -> str | None:
@@ -143,7 +154,7 @@ def run_jobs(
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
     env.setdefault("TMPDIR", paths.TMP)
     every = pool_labels(pool)
-    motor = [motor_signature(job.controller) for job in jobs]
+    motor = [with_perception(motor_signature(job.controller), job.perception) for job in jobs]
     todo = {
         k: [x for x in (job.labels or every) if not done(job.out / f"{x}.json", motor[k])] for k, job in enumerate(jobs)
     }
@@ -200,8 +211,8 @@ def make_queue(jobs: list[Job], todo: dict, tmp: Path) -> Path:
     q = Path(tempfile.mkdtemp(prefix="rsi_queue_", dir=tmp))
     (q / "todo").mkdir()
     (q / "taken").mkdir()
-    spec = [dict(skills=str(j.skills), out=str(j.out), overrides=j.overrides or {}, npz=j.npz, controller=j.controller)
-            for j in jobs]  # fmt: skip
+    spec = [dict(skills=str(j.skills), out=str(j.out), overrides=j.overrides or {}, npz=j.npz, controller=j.controller,
+                 perception=j.perception or {}) for j in jobs]  # fmt: skip
     (q / "jobs.json").write_text(json.dumps(spec))
     n = 0
     for k in sorted(todo):
@@ -232,9 +243,9 @@ def outcomes(out: Path) -> dict:
 
 
 def main(argv=None) -> int:
-    """`batch.py <family> <pool> <skills> <out> [--set JSON] [--procs N] [--gpus 0,1] [--npz]`: one job's missing rounds,
-    then `<out>/_done.json` (missing labels). Long batches run detached (nohup setsid): a foreground tool call that
-    times out takes the running shards with it."""
+    """`batch.py <family> <pool> <skills> <out> [--set JSON] [--perception JSON] [--procs N] [--gpus 0,1] [--npz]`: one
+    job's missing rounds, then `<out>/_done.json` (missing labels). Long batches run detached (nohup setsid): a
+    foreground tool call that times out takes the running shards with it."""
     import argparse
 
     ap = argparse.ArgumentParser(description=main.__doc__)
@@ -243,13 +254,14 @@ def main(argv=None) -> int:
     ap.add_argument("skills", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--set", default="{}")
+    ap.add_argument("--perception", default="{}", help="a scene.view.Perturbation spec (vision RSI L1)")
     ap.add_argument("--procs", type=int, default=12)
     ap.add_argument("--gpus", default="0,1")
     ap.add_argument("--npz", action="store_true")
     a = ap.parse_args(argv)
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "_done.json").unlink(missing_ok=True)
-    job = Job(a.skills.resolve(), a.out.resolve(), json.loads(a.set), None, a.npz)
+    job = Job(a.skills.resolve(), a.out.resolve(), json.loads(a.set), None, a.npz, perception=json.loads(a.perception))
     missing = run_jobs([job], a.family, a.pool.resolve(), a.procs, a.out / "_batch.log", a.gpus)
     (a.out / "_done.json").write_text(json.dumps(dict(missing=missing[0])))
     return 0

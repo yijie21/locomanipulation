@@ -1,0 +1,91 @@
+"""Vision RSI step 1 (docs/handoff/vision-rsi-design-20261023.md section 9): one skills package on one pool under
+several scene.view perturbations (L1: object position offset, per-read noise, heading error, delay), each condition a
+batch job in one queue, then every condition against the unperturbed rounds (L0) paired by start -- wins and the 95%
+Wilson interval, falls and drops, the starts each side wins alone (b: L0 failed, the condition succeeded; c: the other
+way) and the one-sided McNemar p of losing. Rounds land in <out>/<condition>/ (a rerun skips rounds already written);
+the summary goes to <out>/summary.json. The package must set WORLD_VIEW.
+
+Run it from the checkout, detached (nohup setsid), like sealed.py:
+    PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
+    PYTHONPATH=src $PY scripts/rsi/perception_sweep.py grasp_atomic <pool> scripts/rsi/seeds/grasp_c11_view <out> \\
+        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--conditions <json>] [--procs 6 --gpus 0,1]
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[1]
+sys.path[:0] = [str(HERE), str(REPO / "src")]
+
+import batch as B  # noqa: E402
+from gate import mcnemar_one_sided, wilson  # noqa: E402
+
+from locomani.tasks.scene.view import Perturbation  # noqa: E402
+
+# the design's step 1 grid, one error at a time: position offsets 0.5-4 cm (one direction per object and round, the
+# same for every size), delays of 100 and 200 ms, 1 cm per-axis noise at every read, a 10 degree heading error
+CONDITIONS = {
+    "bias_005": {"obj_bias_m": 0.005},
+    "bias_010": {"obj_bias_m": 0.01},
+    "bias_020": {"obj_bias_m": 0.02},
+    "bias_040": {"obj_bias_m": 0.04},
+    "latency_100": {"latency_s": 0.1},
+    "latency_200": {"latency_s": 0.2},
+    "jitter_010": {"obj_jitter_m": 0.01},
+    "yaw_10": {"obj_yaw_deg": 10.0},
+}
+
+
+def paired(base: dict, cond: dict) -> dict:
+    keys = sorted(set(base) & set(cond))
+    k = sum(cond[x]["ok"] for x in keys)
+    b = [x for x in keys if cond[x]["ok"] and not base[x]["ok"]]
+    c = [x for x in keys if base[x]["ok"] and not cond[x]["ok"]]
+    return dict(n=len(keys), ok=k, ci=wilson(k, len(keys)), base_ok=sum(base[x]["ok"] for x in keys),
+                fell=sum(cond[x]["fell"] for x in keys), dropped=sum(cond[x]["dropped"] for x in keys),
+                b=len(b), c=len(c), p_worse=mcnemar_one_sided(len(c), len(b)), only_base=c, only_cond=b)  # fmt: skip
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("family")
+    ap.add_argument("pool", type=Path)
+    ap.add_argument("skills", type=Path)
+    ap.add_argument("out", type=Path)
+    ap.add_argument("--base", type=Path, required=True, help="the L0 rounds of the same package, pool and --set")
+    ap.add_argument("--set", default="{}")
+    ap.add_argument("--conditions", type=Path, help="a JSON file {name: Perturbation spec}; default the step 1 grid")
+    ap.add_argument("--procs", type=int, default=int(os.environ.get("RSI_PROCS", "6")))
+    ap.add_argument("--gpus", default=os.environ.get("RSI_GPUS", "0,1"))
+    ap.add_argument("--npz", action="store_true")
+    a = ap.parse_args(argv)
+    conditions = json.loads(a.conditions.read_text()) if a.conditions else CONDITIONS
+    for spec in conditions.values():
+        Perturbation.of(spec)  # an unknown key fails here, not in every worker
+    overrides = json.loads(a.set)
+    jobs = [B.Job(a.skills.resolve(), (a.out / name).resolve(), overrides, None, a.npz, perception=spec)
+            for name, spec in conditions.items()]  # fmt: skip
+    a.out.mkdir(parents=True, exist_ok=True)
+    missing = B.run_jobs(jobs, a.family, a.pool.resolve(), a.procs, a.out / "run.log", a.gpus)
+    base = B.outcomes(a.base)
+    summary = dict(pool=str(a.pool), skills=str(a.skills), set=overrides, base=str(a.base),
+                   base_ok=sum(r["ok"] for r in base.values()), base_n=len(base),
+                   conditions={name: dict(perception=spec, **paired(base, B.outcomes(a.out / name)))
+                               for name, spec in conditions.items()},
+                   missing={name: missing[k] for k, name in enumerate(conditions) if missing[k]})  # fmt: skip
+    (a.out / "summary.json").write_text(json.dumps(summary, indent=1))
+    for name, r in summary["conditions"].items():
+        print(
+            f"{name:14s} {r['ok']:3d}/{r['n']}  base {r['base_ok']}/{r['n']}  b {r['b']} c {r['c']}  p {r['p_worse']:.3f}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

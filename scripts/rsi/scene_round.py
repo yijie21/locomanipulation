@@ -11,6 +11,7 @@ failure_class and events (failure_class.py, TODO 33.15: computed from the trace,
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src $PY scripts/rsi/scene_round.py pick_single \\
         --pool <pool dir> --skills src/locomani/tasks/scene/skills --out <dir> [--labels a,b] [--set '{"k": v}'] [--npz]
+        [--perception '{"obj_bias_m": 0.01}']
 """
 
 from __future__ import annotations
@@ -95,10 +96,10 @@ def world_signature(world: SceneWorld, controller: str) -> str:
 
 def run_round(
     fam: dict, world: SceneWorld, skills, h: str, pool: Path, out: Path, label: str, overrides: dict, npz: bool,
-    controller: str,
+    controller: str, perception: dict | None = None,
 ) -> None:  # fmt: skip
     f = out / f"{label}.json"
-    motor = world_signature(world, controller)
+    motor = B.with_perception(world_signature(world, controller), perception)
     if B.done(f, motor):
         return
     B.retire(f)
@@ -118,7 +119,8 @@ def run_round(
     elif plan is None:
         rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
     else:
-        res, arrays = run_episode(world, task, start, plan, view=bool(getattr(skills, "WORLD_VIEW", False)))
+        res, arrays = run_episode(world, task, start, plan, view=bool(getattr(skills, "WORLD_VIEW", False)),
+                                  perception=perception)  # fmt: skip
         ex = res.execution
         # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start
         # (the clock onto the console table) counted as one (r1_on_single, human intervention 2, 2026-10-16)
@@ -142,6 +144,8 @@ def run_round(
         controller=controller,
         motor=motor,
     )
+    if perception:  # vision RSI L1: the scene.view.Perturbation the plan saw
+        rec["perception"] = perception
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(rec, indent=1, default=float))
     tmp.rename(f)  # a killed process never leaves a half-written round
@@ -156,6 +160,7 @@ def run(
     overrides: dict,
     npz: bool,
     controller: str = "scalebfm",
+    perception: dict | None = None,
 ) -> None:
     fam = F.load(fam_name)
     skills = load_skills(skills_dir)
@@ -164,7 +169,7 @@ def run(
     world = make_world(fam, controller)
     out.mkdir(parents=True, exist_ok=True)
     for label in labels:
-        run_round(fam, world, skills, h, pool, out, label, overrides, npz, controller)
+        run_round(fam, world, skills, h, pool, out, label, overrides, npz, controller, perception)
 
 
 def work(fam_name: str, pool: Path, q: Path) -> None:
@@ -184,7 +189,8 @@ def work(fam_name: str, pool: Path, q: Path) -> None:
             world = make_world(fam, job["controller"])
         out = Path(job["out"])
         out.mkdir(parents=True, exist_ok=True)
-        run_round(fam, world, skills, h, pool, out, t["label"], job["overrides"], job["npz"], job["controller"])
+        run_round(fam, world, skills, h, pool, out, t["label"], job["overrides"], job["npz"], job["controller"],
+                  job.get("perception") or None)  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -197,6 +203,7 @@ def main(argv=None) -> int:
     ap.add_argument("--labels", default="", help="comma-separated start labels (default: the whole pool)")
     ap.add_argument("--set", default="", help="parameter overrides: inline JSON or a JSON file")
     ap.add_argument("--npz", action="store_true", help="also save each round's motor trace")
+    ap.add_argument("--perception", default="", help="a scene.view.Perturbation spec, inline JSON (vision RSI L1)")
     ap.add_argument(
         "--controller",
         choices=("scalebfm", "amo", "gr00t_wbc", "gr00t_wbc_h066_p012"),
@@ -210,7 +217,8 @@ def main(argv=None) -> int:
     if a.skills is None or a.out is None:
         ap.error("--skills and --out are required without --queue")
     labels = [x for x in a.labels.split(",") if x] or F.labels(a.pool)
-    run(a.family, a.pool, a.skills, a.out, labels, parse_set(a.set), a.npz, a.controller)
+    perception = parse_set(a.perception) or None
+    run(a.family, a.pool, a.skills, a.out, labels, parse_set(a.set), a.npz, a.controller, perception)
     return 0
 
 

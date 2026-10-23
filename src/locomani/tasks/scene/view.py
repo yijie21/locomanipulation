@@ -16,9 +16,17 @@ answers the same questions from sensors and models instead. What the world view 
 
 `RobotView` is the motor without the simulator handle and without its contact readers (`between_fingers`, `gripping`,
 `touching`): contacts reach a skill only through the world view, which a perception view answers from the gripper's
-opening and effort. Everything else (commands, joint and jaw readings, the robot's own pose) passes through."""
+opening and effort. Everything else (commands, joint and jaw readings, the robot's own pose) passes through.
+
+`PerturbedView` is level L1 of the design (section 6): the TruthView with errors added to the free objects' poses
+(`Perturbation`: a fixed offset and heading error per object and round, fresh noise at every read, a delay), the
+truth underneath and every other answer unchanged."""
 
 from __future__ import annotations
+
+import bisect
+import zlib
+from dataclasses import asdict, dataclass
 
 import mujoco
 import numpy as np
@@ -150,3 +158,86 @@ def _quat_mat(q) -> np.ndarray:
     out = np.zeros(9)
     mujoco.mju_quat2Mat(out, np.asarray(q, float))
     return out.reshape(3, 3)
+
+
+@dataclass(frozen=True)
+class Perturbation:
+    """What `PerturbedView` adds to a free object's pose, all zero by default (= TruthView):
+    - obj_bias_m: the position off by this distance, in one random 3-D direction per object and round;
+    - obj_jitter_m: plus fresh Gaussian noise of this standard deviation per axis at every read;
+    - obj_yaw_deg: the heading off by this angle about the vertical, random sign per object and round;
+    - latency_s: a tracked object's (the task's objects: the motor trace) true pose this long ago;
+    - seed: mixed with the round's start seed, so a condition's errors repeat round by round."""
+
+    obj_bias_m: float = 0.0
+    obj_jitter_m: float = 0.0
+    obj_yaw_deg: float = 0.0
+    latency_s: float = 0.0
+    seed: int = 0
+
+    @classmethod
+    def of(cls, spec: dict | None) -> Perturbation | None:
+        """The perturbation a round record's `perception` spec names; None for none (unknown keys raise)."""
+        return cls(**spec) if spec else None
+
+    def spec(self) -> dict:
+        return {k: v for k, v in asdict(self).items() if v}
+
+
+class PerturbedView(TruthView):
+    """TruthView with `Perturbation`'s errors on the free objects' poses. Static objects, shapes in the object frame,
+    the scene description, maps, colliders and contacts are the truth."""
+
+    __slots__ = ("_p", "_round", "_err", "_rng", "_trace", "_trace_t")
+
+    def __init__(self, world, perturbation: Perturbation, round_seed: int):
+        super().__init__(world)
+        self._p, self._round, self._err = perturbation, int(round_seed), {}
+        self._rng = np.random.default_rng([self._round, int(perturbation.seed), 1])
+        self._trace, self._trace_t = None, []  # the motor trace list and its rows' times, extended as it grows
+
+    def errors(self, key: str) -> tuple[np.ndarray, float]:
+        """(position offset, heading error in rad) of free object `key` this round, drawn on first use."""
+        if key not in self._err:
+            rng = np.random.default_rng([self._round, int(self._p.seed), zlib.crc32(key.encode())])
+            d = rng.normal(size=3)
+            off = float(self._p.obj_bias_m) * d / max(float(np.linalg.norm(d)), 1e-12)
+            yaw = float(np.radians(self._p.obj_yaw_deg)) * (1.0 if rng.random() < 0.5 else -1.0)
+            self._err[key] = (off, yaw)
+        return self._err[key]
+
+    def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
+        if key not in self._world.free:
+            return self._world.object_pose(key)
+        pos, quat = self._delayed(key) if self._p.latency_s > 0 else self._world.object_pose(key)
+        off, yaw = self.errors(key)
+        pos = np.asarray(pos, float) + off
+        if self._p.obj_jitter_m > 0:
+            pos = pos + self._rng.normal(scale=float(self._p.obj_jitter_m), size=3)
+        if yaw:
+            quat = _quat_mul(np.array([np.cos(yaw / 2), 0.0, 0.0, np.sin(yaw / 2)]), np.asarray(quat, float))
+        return pos, quat
+
+    def _delayed(self, key: str) -> tuple[np.ndarray, np.ndarray]:
+        """The true pose `latency_s` ago from the motor trace (its rows carry the tracked objects), the oldest row when
+        the round is younger than that, and the pose now for an object the trace does not carry."""
+        motor = self._world.motor
+        body = self._world.meta["objects"][key].get("body")
+        trace = motor.trace
+        if not trace or body not in trace[-1]["objects"]:
+            return self._world.object_pose(key)
+        if trace is not self._trace:  # Motor.reset starts a new list
+            self._trace, self._trace_t = trace, []
+        ts = self._trace_t
+        ts.extend(float(r["t"]) for r in trace[len(ts) :])
+        i = max(bisect.bisect_right(ts, float(motor.t) - float(self._p.latency_s)) - 1, 0)
+        row = trace[i]["objects"][body]
+        return np.array(row[:3], float), np.array(row[3:7], float)
+
+
+def _quat_mul(a, b) -> np.ndarray:
+    """Hamilton product a * b of wxyz quaternions."""
+    w1, x1, y1, z1 = a
+    w2, x2, y2, z2 = b
+    return np.array([w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2, w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                     w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2])  # fmt: skip

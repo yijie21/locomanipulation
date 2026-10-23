@@ -13,7 +13,7 @@ from locomani.backends.scalebfm.motor import Outcome
 from locomani.pipeline.execution_record import RoundResult
 from locomani.scene_discovery.predicates import parse
 from locomani.tasks.scene.start import Start
-from locomani.tasks.scene.view import TruthView
+from locomani.tasks.scene.view import Perturbation, PerturbedView, TruthView
 from locomani.tasks.scene.world import SceneWorld, Task
 
 SETTLE_S = 1.0  # standing still after the objects are placed
@@ -58,10 +58,14 @@ def goal_keys(goal) -> list[str]:
 
 
 def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: float = HOLD_S,
-                limit_s: float = EPISODE_LIMIT_S, view: bool = False):  # fmt: skip
+                limit_s: float = EPISODE_LIMIT_S, view: bool = False, perception: dict | None = None):  # fmt: skip
     """`plan(ctx) -> Outcome`. Returns (RoundResult, trace arrays). A plan still stepping at `limit_s` simulated seconds
     ends the round as a failure, why "episode time limit" (TODO 36, review 2026-10-22). `view`: the plan sees the world
-    through scene.view.TruthView (the package set WORLD_VIEW) instead of the SceneWorld; the judge reads the SceneWorld."""
+    through scene.view.TruthView (the package set WORLD_VIEW) instead of the SceneWorld; the judge reads the SceneWorld.
+    `perception`: a scene.view.Perturbation spec; the plan then sees a PerturbedView (L1), which needs `view`."""
+    perturbation = Perturbation.of(perception)
+    if perturbation is not None and not view:
+        raise ValueError("a perception perturbation needs a WORLD_VIEW skills package")
     m, wall = world.motor, time.time()
     m.track = {world.meta["objects"][k]["body"]: world.free[k] for k in task.objects}
     m.reset(start.robot_xy, start.robot_yaw)
@@ -69,7 +73,13 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         m.place(world.meta["objects"][k]["body"], pos, quat)
     seated = {k: round(world.seat(k), 4) for k in start.placements}  # placements drawn on older surface heights
     seated = {k: v for k, v in seated.items() if v > 0}
-    ctx = SkillContext(TruthView(world) if view else world, task, np.random.default_rng(start.seed))
+    if not view:
+        seen = world
+    elif perturbation is None:
+        seen = TruthView(world)
+    else:
+        seen = PerturbedView(world, perturbation, start.seed)
+    ctx = SkillContext(seen, task, np.random.default_rng(start.seed))
     # the stepping layer's cap: every primitive ticks through m.tick (hand programs included)
     had_tick, tick = "tick" in vars(m), m.tick
 
