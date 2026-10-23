@@ -149,6 +149,9 @@ def main(argv=None) -> int:
     ap.add_argument("dest", type=Path)
     ap.add_argument("family")
     a = ap.parse_args(argv)
+    families = sorted(f.stem for f in (HERE / "families").glob("*.json"))
+    if a.family not in families:  # before anything is written: a typo used to leave a half-extracted tree behind
+        raise SystemExit(f"no family {a.family!r} in scripts/rsi/families; known: {', '.join(families)}")
     build(a.dest.resolve(), a.family)
     return 0
 

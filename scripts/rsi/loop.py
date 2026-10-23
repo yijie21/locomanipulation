@@ -529,6 +529,7 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
         "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
+        *(["--add-dir", *allowed_dirs()] if allowed_dirs() else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
     ]  # fmt: skip
     session = str(uuid.uuid4())
@@ -617,11 +618,36 @@ def structured_from_transcript(session: str | None) -> dict | None:
     return so
 
 
+def scene_links() -> list[Path]:
+    """Where the sandbox's scene links point in the origin (sandbox.py LINKS / scene_exclude): the whole
+    outputs/scene_discovery, or that scene's linked entries and its physics copy. Empty outside a sandbox."""
+    root = REPO / "outputs" / "scene_discovery"
+    if ORIGIN == REPO or not root.exists():
+        return []
+    if root.is_symlink():
+        return [root.resolve()]
+    return sorted(
+        {p.resolve() for d in root.iterdir() for p in ([d] if d.is_symlink() else d.iterdir()) if p.is_symlink()}
+    )
+
+
+def allowed_dirs() -> list[str]:
+    """`--add-dir` for a role's `claude -p`: the directories the scene links resolve to. Claude Code 2.1 refuses Read /
+    Grep through a symlink that leaves the session's working directories even under bypassPermissions ("The file is a
+    symlink into <origin>, which is outside the allowed working directories"; pick-repro iteration 0, 2026-10-23), so
+    without this a Reviewer cannot open scene_meta.json and, reporting why, names the origin path and voids its round."""
+    return sorted({str(p if p.is_dir() else p.parent) for p in scene_links()})
+
+
 def leak_patterns() -> dict[str, str]:
     pats = {"gate": re.escape(HIDDEN.parent.name)}
     pats["kit"] = r"rsi_kit|scene_rsi_20261016/kit/"  # kit.py: every family's pools and outcomes (2026-10-20)
     if ORIGIN != REPO:
-        pats["origin"] = re.escape(str(ORIGIN)) + r"(?!/third_party)"
+        # the origin checkout, except what the sandbox links into it: third_party and the scene (its linked entries)
+        linked = [
+            "/" + re.escape(str(p.relative_to(ORIGIN))) + r"(?:/|\b)" for p in scene_links() if p.is_relative_to(ORIGIN)
+        ]
+        pats["origin"] = re.escape(str(ORIGIN)) + rf"(?!/third_party{''.join('|' + x for x in linked)})"
         pats["climb"] = r"third_party/\.\."
         pats["claude_home"] = r"\.claude/|~/\.claude"
         pats["sibling"] = re.escape(str(REPO.parent)) + "/" + rf"(?!{re.escape(REPO.name)}(?:/|\b))"
