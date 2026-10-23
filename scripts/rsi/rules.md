@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 15, 2026-10-22)
+# Rules for the scene RSI loop (TODO 27, version 16, 2026-10-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -55,9 +55,16 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 
 ## Operations (code where marked)
 
-18. ScaleBFM rounds run through `batch.py` (12 processes, GPUs 0 and 1, OMP 2). For your own one-round checks use one
-    process: `CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src OMP_NUM_THREADS=2 <sim python> scripts/rsi/scene_round.py ...`.
-19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children.
+18. ScaleBFM rounds run through `batch.py` (12 processes, GPUs 0 and 1, OMP 2). A role's own closed-loop checks go
+    through `scripts/rsi/try.py` (version 16, TODO 37.1): the starts it names (`--labels`, `--task`, `--all`; at most
+    40 per call), one skills package with its `--set`, run in parallel through the same queue and machine-wide slots,
+    a table back (the outcome, the failure class, the first failing step, and against `--ref <the incumbent's
+    diagnostic rounds>` the starts that flip). 240 rounds per role per iteration (code: the driver's ledger file; a
+    call past it is refused). Do not run `scene_round.py` yourself, write loops around it, or wait on background
+    work with `until` / `sleep` polls: run C's roles spent 10-minute waits on one-process runs while the queue stood
+    idle. The Prober's probes and the gate remain the evidence (rules 3, 7); `try.py` is for looking.
+19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children. A `try.py`
+    call of 30 starts takes about 2-5 minutes and is run in the foreground.
 20. Stop and write an escalation instead of acting when a step needs the scene, the controller or its training, the
     motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget.
 

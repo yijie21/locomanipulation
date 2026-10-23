@@ -32,9 +32,16 @@ SKIP_LIMIT = 20  # seeds tried per start before the pool gives up on that task
 
 
 def hidden_seeds(name: str) -> dict:
-    """The seeds a sandbox keeps out of its family file (sandbox.py hide_seeds); {} when it holds none."""
+    """The seeds a sandbox keeps out of its family file (sandbox.py hide_seeds); {} when it holds none -- or when the
+    hidden tree cannot be read: while a role runs it has mode 000 (loop.py hidden_locked), and Path.exists raises
+    PermissionError there on Python 3.10, so every scene_round.py a role started in a sandbox crashed in load() and
+    the roles wrote their own wrappers that stub this function (run C's round1.py, TODO 37.1, 2026-10-23). The
+    diagnostic pool's seed is in the family file; only drawing a hidden pool needs these, and no role draws one."""
     p = REPO / "outputs" / "scene_rsi_20261016_hidden" / name / "seeds.json"
-    return json.loads(p.read_text()) if p.exists() else {}
+    try:
+        return json.loads(p.read_text()) if p.exists() else {}
+    except PermissionError:
+        return {}
 
 
 def load(name: str) -> dict:
