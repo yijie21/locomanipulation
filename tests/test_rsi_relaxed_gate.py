@@ -165,7 +165,7 @@ class PoolBase(_LoopCase):
         hyps = dict(hypotheses=[dict(id="H1", claim="c", delta={"set": {}})])
         sent = []
 
-        def fake_claude(role, prompt, schema, it_dir, tools, stub=None):
+        def fake_claude(role, prompt, schema, it_dir, tools, stub=None, stop=None):  # stop: TODO 37.3
             if role.startswith("engineer_"):
                 k = int(role.split("_")[1])
                 w = it_dir / f"cand_{k}" / "skills"
@@ -246,7 +246,7 @@ class ManagerRules(_LoopCase):
         it.mkdir()
         seen = {}
 
-        def fake_claude(role, prompt, schema, it_dir, tools, stub=None):
+        def fake_claude(role, prompt, schema, it_dir, tools, stub=None, stop=None):  # stop: TODO 37.3
             seen["schema"] = schema
             seen["ctx"] = json.loads((it_dir / "manager_context.json").read_text())
             return dict(decision="reopen", reopen_claim="C1", reason="r", summary_zh="z"), dict(

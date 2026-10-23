@@ -99,6 +99,10 @@ MAX_REOPEN_RUN = 2  # TODO 33.14 (D11): Manager `reopen` decisions in a row at m
 MAX_ATTEMPTS = 3  # closed-loop attempts per infeasibility claim
 STOP_RATE_DEFAULT = 0.70  # D8: the inner loop stops when the incumbent wins this share of the acceptance pool
 STOP_RATE = STOP_RATE_DEFAULT  # this run's (`run --stop-rate`, resolve_settings; TODO 33, user 2026-10-22)
+# TODO 37.3 (D, user 2026-10-23): minutes a straggler Engineer gets once ceil(K/2) drafts are in; 0 waits for ever.
+# Run C's slowest Engineer took 22-37 min against a median draft of about 14, waiting on its own one-process rounds.
+ENGINEER_LATE_MIN_DEFAULT = 10.0
+ENGINEER_LATE_MIN = ENGINEER_LATE_MIN_DEFAULT  # this run's (`run --engineer-late-min`, resolve_settings)
 SKIP_CHECKS = ("interface_kept", "safety_checks_kept", "changed_code_reached", "evidence_not_refuting")  # TODO 33.17
 STATUSES = ("hypothesis", "verified", "refuted", "mixed")  # TODO 33.17: a hypothesis after its probe
 # TODO 33.17 (plan section 3.4, from DexAgent's diagnose_stage3_failure): what a failure class's next step usually is,
@@ -683,6 +687,10 @@ class RoleFailed(RuntimeError):
     pass
 
 
+class RoleLate(RoleFailed):
+    """TODO 37.3: the driver stopped the role (an Engineer past --engineer-late-min after the other drafts were in)."""
+
+
 def role_tmp() -> Path:
     return SCRATCH_ROOT / f"rsi_scene_{REPO.name}"
 
@@ -764,7 +772,11 @@ def undo_commits(head0: str) -> dict | None:
     return dict(was=head0, moved_to=head1)
 
 
-def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None) -> tuple[dict, dict]:
+def claude(
+    role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None, stop: threading.Event | None = None
+) -> tuple[dict, dict]:
+    """One role call. `stop` (TODO 37.3): an event the driver sets to give the role up; run_role then kills the
+    session and raises RoleLate."""
     prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role))
     (it_dir / f"{role}_prompt.md").write_text(prompt)
     if stub is not None:
@@ -787,7 +799,7 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
     t0 = time.time()
     head0 = git_head()
     with hidden_locked():
-        stdout, stderr, rc, killed = run_role([*cmd, "--session-id", session], prompt, env, session)
+        stdout, stderr, rc, killed = run_role([*cmd, "--session-id", session], prompt, env, session, stop=stop)
     committed = undo_commits(head0)
     (it_dir / f"{role}_raw.json").write_text(stdout or stderr)
     try:
@@ -806,12 +818,14 @@ def claude(role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=
 
 
 def run_role(
-    cmd: list[str], prompt: str, env: dict, session: str, grace: float = ROLE_GRACE_S, poll: float = 10.0
-) -> tuple[str, str, int, list[str]]:
+    cmd: list[str], prompt: str, env: dict, session: str, grace: float = ROLE_GRACE_S, poll: float = 10.0,
+    stop: threading.Event | None = None,
+) -> tuple[str, str, int, list[str]]:  # fmt: skip
     """Run a role's `claude -p` to its end. claude -p does not exit while a background shell it started still runs,
     and a role once left `until ! pgrep -f "<dir>"; do sleep 10; done`, which matches itself and never ends (iteration
     2, 2026-10-16: the driver stalled until a human killed it). So once the transcript shows the structured answer,
-    the role's leftover processes get `grace` seconds, then the driver kills them (listed in the ledger)."""
+    the role's leftover processes get `grace` seconds, then the driver kills them (listed in the ledger). `stop` set
+    (TODO 37.3): the session and everything under it are killed and RoleLate is raised."""
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             cwd=REPO, env=env)  # fmt: skip
     t0, answered, killed, feed = time.time(), None, [], prompt
@@ -825,6 +839,15 @@ def run_role(
             proc.kill()
             stdout, stderr = proc.communicate()
             return stdout, stderr or "timed out after 4 h", proc.returncode, killed
+        if stop is not None and stop.is_set():
+            for pid in descendants(proc.pid):
+                try:
+                    os.kill(pid, 15)
+                except OSError:
+                    pass
+            proc.kill()
+            proc.communicate()
+            raise RoleLate(f"stopped by the driver {int(time.time() - t0)} s in (--engineer-late-min)")
         if answered is None:
             p = transcript(session)
             if p is not None and "Structured output provided successfully" in p.read_text(errors="replace"):
@@ -1112,7 +1135,8 @@ def iteration_line(n: int, rows: list[dict]) -> str:
                          f"{_cut(e.get('reason'), 200)}")  # fmt: skip
         elif st == "engineer":
             k = f" {e['candidate']}" if e.get("candidate") is not None else ""
-            how = "void" if e.get("void") else f"duplicate of {e['duplicate_of']}" if e.get("duplicate_of") else "ok"
+            how = ("late (stopped)" if e.get("late") else "void" if e.get("void")
+                   else f"duplicate of {e['duplicate_of']}" if e.get("duplicate_of") else "ok")  # fmt: skip
             how += f", error {_cut(e['error'], 80)}" if e.get("error") else ""
             how += f", stray {e['stray']}" if e.get("stray") else ""
             parts.append(f"engineer{k} {e.get('hypothesis') or ''}: {how} -- {_cut(e.get('mechanism'), 120)}")
@@ -2008,6 +2032,33 @@ def named_void(n: int, named: list[str], what: str) -> None:
                 reason=f"{what} branches on object names (rules.md 30): {', '.join(named[:6])}"))  # fmt: skip
 
 
+def wait_drafts(threads: dict, stops: dict, poll: float = 2.0) -> list:
+    """TODO 37.3 (D, user 2026-10-23): wait for the Engineers' threads; once ceil(K/2) drafts are in, the rest get
+    ENGINEER_LATE_MIN minutes, then their stop events are set (run_role kills the session, RoleLate) and the iteration
+    goes on with the drafts it has. The late hypothesis counts as not built, so rule 33 builds it first next time. The
+    straggler is stopped rather than left running: the Engineers share the sandbox, and a file it changed outside its
+    copy later could not be told from the Composer's (rule 28). Returns the drafts stopped."""
+    need = (len(threads) + 1) // 2
+    done_at: dict = {}
+    late: list = []
+    while True:
+        for k, t in threads.items():
+            if k not in done_at and not t.is_alive():
+                done_at[k] = time.time()
+        alive = [k for k, t in threads.items() if t.is_alive()]
+        if not alive:
+            break
+        if ENGINEER_LATE_MIN > 0 and need <= len(done_at) < len(threads) and not late:
+            if time.time() - sorted(done_at.values())[need - 1] > ENGINEER_LATE_MIN * 60:
+                for k in alive:
+                    stops[k].set()
+                late = alive
+        time.sleep(poll)
+    for t in threads.values():
+        t.join()
+    return late
+
+
 def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
     """TODO 32.9 (Harness2's contrastive compose step): CANDIDATES Engineers build the Manager's hypotheses in parallel,
     each in its own copy of the incumbent's skills package (`cand_k/skills`); every valid candidate runs on the
@@ -2041,26 +2092,27 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         calls.append((k, hid, w, prompt, stub_e))
     out: dict = {}
 
+    stops = {k: threading.Event() for k, *_ in calls}
+
     def one(k, w, prompt, stub_e):
         try:
-            out[k] = claude(
-                f"engineer_{k}", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_e if stub else None
-            )
+            out[k] = claude(f"engineer_{k}", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent",
+                            stub_e if stub else None, stop=stops[k])  # fmt: skip
         except RoleFailed as e:
             out[k] = e
 
-    threads = [threading.Thread(target=one, args=(k, w, pr_, se)) for k, _, w, pr_, se in calls]
-    for t in threads:
+    threads = {k: threading.Thread(target=one, args=(k, w, pr_, se)) for k, _, w, pr_, se in calls}
+    for t in threads.values():
         t.start()
-    for t in threads:
-        t.join()
+    wait_drafts(threads, stops)
     stray = revert_strays(base_changes)
     put_skills(Path(inc["dir"]) / "skills")
     cands, jobs, first, leaked = [], [], {}, {}  # first: candidate hash -> the draft kept (identical drafts run once)
     for k, hid, w, _, _ in calls:
         res = out.get(k)
         if isinstance(res, Exception) or res is None:
-            ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, void=True, error=str(res)[:300]))
+            ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, void=True, late=isinstance(res, RoleLate),
+                        error=str(res)[:300]))  # fmt: skip
             continue
         eng, acct = res
         leaks = transcript_leaks(acct["session"])
@@ -2290,6 +2342,9 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", WALL_DEFAULT_H)),
         stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", STOP_RATE_DEFAULT)),
+        engineer_late_min=float(
+            pick(getattr(a, "engineer_late_min", None), "engineer_late_min", ENGINEER_LATE_MIN_DEFAULT)
+        ),  # fmt: skip
     )
 
 
@@ -2344,14 +2399,14 @@ def cmd_run(a) -> int:
 
 
 def _run(a, efforts: dict) -> int:
-    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE
+    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
     meta = prior or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, family=FAMILY)
     resume(meta)
     cfg = resolve_settings(a, meta, resuming)
     CANDIDATES, SCOPED, MAX_WALL_H = cfg["candidates"], cfg["scoped_review"], cfg["max_wall_h"]
-    STOP_RATE = cfg["stop_rate"]
+    STOP_RATE, ENGINEER_LATE_MIN = cfg["stop_rate"], cfg["engineer_late_min"]
     if not cfg["stop_rate"] > 0:
         raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
     changed = settings_changes(cfg, meta, resuming)
@@ -2437,6 +2492,8 @@ def main(argv=None) -> int:
     r.add_argument("--scoped-review", action="store_true", default=None, help="two scoped Reviewers (TODO 32.11)")
     r.add_argument("--stop-rate", type=float, default=None, help="stop when the incumbent wins this share of the "
                    "acceptance pool (default 0.70; a resumed run keeps its recorded value unless given)")  # fmt: skip
+    r.add_argument("--engineer-late-min", type=float, default=None, help="minutes a straggler Engineer gets once half "
+                   "the drafts are in, then it is stopped (default 10; 0 waits; a resumed run keeps its value; TODO 37.3)")  # fmt: skip
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer, composer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip

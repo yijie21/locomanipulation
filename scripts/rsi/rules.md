@@ -123,7 +123,10 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     gate call stays one paired test (code); the Composer ties every kept or dropped edit to the starts and the trace
     moment that decided it (prompt) (version 9, user 2026-10-21). A reopen uses one Engineer. Identical drafts run
     once. A file changed outside the skills copies voids every draft of the iteration: the Engineers share the sandbox,
-    so it cannot be told whose it is (code, version 12). Version 14 (TODO 33.8, 33.14, user 2026-10-22):
+    so it cannot be told whose it is (code, version 12). Once half the drafts are in, the rest get
+    `--engineer-late-min` minutes (10 by default), then the driver stops them: a stopped draft is void and `late` in
+    the ledger, its hypothesis counts as not built, and rule 33 builds it first next time (code, version 16, TODO
+    37.3). Version 14 (TODO 33.8, 33.14, user 2026-10-22):
     - the gate's best 2 rejected candidates with more wins than losses since the incumbent wait in
       `loop/candidates_pool.json` (cleared when the incumbent changes); the Manager may name one as `base`, so the
       Engineers build on it (the gate still compares with the incumbent), and the Composer may merge its edits or adopt
