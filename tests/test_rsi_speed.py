@@ -422,6 +422,18 @@ class GateVerdict(unittest.TestCase):
     def test_budget_counts_this_runs_cost_and_the_stop_rate_uses_the_current_pool(self):
         es = [dict(t="2026-10-01T00:00:00Z", cost_usd=5.0), dict(t="2026-10-22T00:00:00Z", cost_usd=2.0)]
         self.assertEqual(self.lp.run_cost(es, dict(started="2026-10-20T00:00:00Z")), 2.0)
+        from unittest import mock
+
+        # TODO 33.18.2: gate calls a replay copied (older `t`) and void ones do not count against MAX_GATE_CALLS
+        g = [dict(step="gate", t=f"2026-10-0{i}T00:00:00Z") for i in range(1, 10)]
+        g += [dict(step="gate", t="2026-10-22T00:00:00Z"), dict(step="gate", t="2026-10-22T01:00:00Z", void=True)]
+        meta = dict(started="2026-10-20T00:00:00Z", started_s=time.time())
+        self.assertEqual(len(self.lp.run_gates(g, meta)), 1)
+        self.assertEqual(len(self.lp.run_gates(g, {})), 10)
+        with mock.patch.object(self.lp, "entries", lambda: g * 2), mock.patch.object(self.lp, "MAX_GATE_CALLS", 2):
+            self.assertEqual(self.lp.stop_reason(meta), "gate calls 2 >= 2")
+        with mock.patch.object(self.lp, "entries", lambda: g), mock.patch.object(self.lp, "MAX_GATE_CALLS", 2):
+            self.assertNotIn("gate calls", self.lp.stop_reason(meta) or "")
         pool = str(self.root)
         old = dict(step="gate", accepted=True, result=dict(candidate_ok=45, incumbent_ok=30, n=60), pool="/old")
         rej = dict(step="gate", accepted=False, result=dict(candidate_ok=20, incumbent_ok=30, n=60), pool=pool)

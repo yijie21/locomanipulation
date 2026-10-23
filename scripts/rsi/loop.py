@@ -15,8 +15,8 @@ Engineer's) voids the iteration, one Engineer's of K only its draft; two voided 
 The Engineer may change only the sandbox's skills package (src/locomani/tasks/scene/skills/); anything else it touches
 voids the call and is restored. On a rejection the package goes back to the incumbent's snapshot.
 
-Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, gate calls >= 12,
-wall clock >= MAX_WALL_H, a Manager `stop` (model cost has no cap since the user lifted it on 2026-10-19;
+Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, this run's gate
+calls >= 12, wall clock >= MAX_WALL_H, a Manager `stop` (model cost has no cap since the user lifted it on 2026-10-19;
 RSI_COST_CAP_USD sets one), MAX_VOID_STREAK iterations in a row voided by the audit (an abnormal stop); and
 (D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
 least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
@@ -408,6 +408,13 @@ def run_cost(es: list[dict], meta: dict | None) -> float:
     return sum(e.get("cost_usd", 0.0) for e in es if str(e.get("t", "")) >= t0)
 
 
+def run_gates(es: list[dict], meta: dict | None) -> list[dict]:
+    """TODO 33.18.2: the gate calls of THIS run, not void -- rows from meta['started'] on, like run_cost; a replay.py
+    setup copies the source run's gate rows (run C started with 9 of 12 spent and stopped after 3)."""
+    t0 = (meta or {}).get("started") or ""
+    return [e for e in es if e.get("step") == "gate" and not e.get("void") and str(e.get("t", "")) >= t0]
+
+
 def voided_in_a_row(es: list[dict]) -> list[int]:
     """The latest iterations, oldest first, that the audit voided (`void_iter` rows), counted back one by one from the
     newest iteration in the ledger until one that was not voided or has no rows. An iteration a re-probe (`void`) or
@@ -443,7 +450,7 @@ def stop_reason(meta: dict) -> str | None:
             return f"the incumbent wins {here}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
     elif accepted and accepted[-1]["result"]["candidate_ok"] >= STOP_RATE * n_accept:
         return f"the incumbent wins {accepted[-1]['result']['candidate_ok']}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
-    gates = [e for e in es if e.get("step") == "gate" and not e.get("void")]
+    gates = run_gates(es, meta)
     if len(gates) >= MAX_GATE_CALLS:
         return f"gate calls {len(gates)} >= {MAX_GATE_CALLS}"
     if wall_h(meta) >= MAX_WALL_H:
@@ -1166,14 +1173,14 @@ def context(inc: dict, extra: dict, compact: bool = False) -> dict:
     """The role's context file. `compact` (the Manager, TODO 36.7): older iterations one line each (compact_history)."""
     es = entries()
     meta = jload(STATE / "meta.json", {})
-    # TODO 36 (review 2026-10-22, L6): this run's cost only (not rows a replay copied), and the wall clock the
-    # Manager used to compute from meta.json by hand
+    # TODO 36 (review 2026-10-22, L6) and 33.18.2: this run's cost and gate calls only (not rows a replay copied), and
+    # the wall clock the Manager used to compute from meta.json by hand
     wall = dict(wall_h=round(wall_h(meta), 2), max_wall_h=MAX_WALL_H) if "started_s" in meta else {}
     return dict(
         family=FAMILY,
         incumbent=inc,
         budget=dict(
-            gate_calls=len([e for e in es if e.get("step") == "gate" and not e.get("void")]),
+            gate_calls=len(run_gates(es, meta)),
             gate_calls_max=MAX_GATE_CALLS,
             cost_usd=round(run_cost(es, meta), 2),
             cost_cap_usd=COST_CAP,
