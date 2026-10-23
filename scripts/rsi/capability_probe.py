@@ -34,6 +34,10 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path[:0] = [str(REPO / "src")]
+
+from locomani import paths  # noqa: E402
+
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 OUT = REPO / "outputs" / "scene_rsi_20261016" / "capability"
 WALK = REPO / "outputs" / "scene" / "walk_mars"
@@ -454,7 +458,7 @@ def worker(kind: str, ids: list[str]) -> None:
 def run(kinds: list[str], procs: int, gpus: str, shard: int) -> None:
     probe_scene()
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
-    env.setdefault("TMPDIR", "/workspace/tmp")
+    env.setdefault("TMPDIR", paths.TMP)
     queue = []
     for kind in kinds:
         todo = [c["id"] for c in cells(kind) if not (OUT / kind / f"{c['id']}.json").exists()]

@@ -16,11 +16,11 @@
 
 ```bash
 . scripts/paths.sh
-export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2
+export TMPDIR=$LOCOMANI_TMP NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2
 PY=$VENV_SIM_PY
 ```
 
-做什么：设置路径变量，把 `src/` 加进 `PYTHONPATH`；后两行固定临时目录和线程数（`OMP_NUM_THREADS` 改成 1 会改变仿真结局），`$PY` 是仿真用的 Python。下面的命令都在仓库根目录执行。
+做什么：设置路径变量，把 `src/` 加进 `PYTHONPATH`；后两行固定临时目录和线程数（`OMP_NUM_THREADS` 改成 1 会改变仿真结局），`$PY` 是仿真用的 Python。下面的命令都在仓库根目录执行。沙盒、仿真槽、角色的临时目录和 ScaleBFM 权重都在 `$LOCOMANI_WORKSPACE` 下（默认 `/workspace`）；没有 `/workspace` 写权限的机器在第一条之前 `export LOCOMANI_WORKSPACE=<可写目录>`（[安装](setup.md)第 1 节），后面的命令照抄。只有一张卡的机器再 `export RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`：内环、验收门、封存集和回归默认把 12 个仿真进程轮流放到 0、1 两张卡上，这三个变量改默认值，下面带 `CUDA_VISIBLE_DEVICES=1` 或 `MUJOCO_EGL_DEVICE_ID=1` 的命令也改成 0。
 前提：[安装](setup.md)里“场景 RSI”一列要求的步骤都已完成，包括 ADT 数据、ScaleBFM 权重和 Claude CLI。
 
 ## 1. 恢复复现材料（每台机器一次）
@@ -64,7 +64,7 @@ CUDA_VISIBLE_DEVICES=0 $PY scripts/rsi/scene_round.py pick_single --pool $P \
 ### 3.2 用假的角色走一遍内环
 
 ```bash
-S=/workspace/code/rsi-scene/smoke
+S=$LOCOMANI_WORKSPACE/code/rsi-scene/smoke
 python3 scripts/rsi/sandbox.py $S pick_single
 cd $S && $PY scripts/rsi/loop.py run pick_single --stub --max-iters 1; cd -
 ```
@@ -106,7 +106,7 @@ git commit -qam "scene RSI: seed skills catalog"
 ### 5.2 建沙盒、跑内环
 
 ```bash
-S=/workspace/code/rsi-scene/pick-repro
+S=$LOCOMANI_WORKSPACE/code/rsi-scene/pick-repro
 python3 scripts/rsi/sandbox.py $S pick_single
 cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 ```
@@ -145,7 +145,7 @@ $PY scripts/scene_discover_tasks.py --scene outputs/scene_discovery/adt_apartmen
 得到什么：`$R/discovery/tasks.jsonl`，约 60 个任务。约 20 分钟、5 USD。
 
 ```bash
-$PY scripts/rsi/outer.py select $R --loops /workspace/code/rsi-scene/pick-repro
+$PY scripts/rsi/outer.py select $R --loops $LOCOMANI_WORKSPACE/code/rsi-scene/pick-repro
 $PY scripts/rsi/outer.py family $R on_single
 ```
 

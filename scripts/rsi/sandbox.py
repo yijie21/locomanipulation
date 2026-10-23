@@ -44,12 +44,19 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path[:0] = [str(REPO / "src")]
+
+from locomani import paths  # noqa: E402
+
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 LINKS = ("third_party", "outputs/scene_discovery")
 HIDDEN = "outputs/scene_rsi_20261016_hidden"
 # TODO 36 (review 2026-10-22); scripts/rsi/report since TODO 36.8 (the human analysis and report scripts, the old
 # tools/ among them); tools/ and library/ stay listed for `build --ref` of a commit from before 36.8
 DEFAULT_STRIP = ("CLAUDE.md", "AGENTS.md", "scripts/rsi/report", "scripts/rsi/tools", "scripts/rsi/library")
+# What the sandbox's own python runs see: the workspace (so paths.py resolves the same tmp and models there) and
+# the usual tmp; nothing else of this shell.
+SUB_ENV = {"PYTHONPATH": "src", "TMPDIR": paths.TMP, "LOCOMANI_WORKSPACE": paths.WORKSPACE, "PATH": "/usr/bin:/bin"}
 
 
 def git(dest: Path, *args, **kw):
@@ -59,8 +66,9 @@ def git(dest: Path, *args, **kw):
 def closure(dest: Path, entries: list[str]) -> set[str]:
     """The locomani modules importing `entries` loads in the sandbox (scripts/rsi and src on the path)."""
     code = "import sys; sys.path[:0] = ['scripts/rsi', 'src']\n" + "".join(f"import {e}\n" for e in entries)
-    env = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "PATH": "/usr/bin:/bin"}
-    r = subprocess.run([str(SIM_PY), "-X", "importtime", "-c", code], cwd=dest, env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        [str(SIM_PY), "-X", "importtime", "-c", code], cwd=dest, env=SUB_ENV, capture_output=True, text=True
+    )
     if r.returncode:
         raise SystemExit(f"closure import failed:\n{r.stderr[-2000:]}")
     names = {line.rsplit("|", 1)[-1].strip() for line in r.stderr.splitlines() if "|" in line}
@@ -197,10 +205,13 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     loop = dest / "outputs" / "scene_rsi_20261016" / family
     hidden = dest / HIDDEN / family
     fam = dest / "scripts" / "rsi" / "family.py"
-    env = {"PYTHONPATH": "src", "TMPDIR": "/workspace/tmp", "PATH": "/usr/bin:/bin"}
     for pool, out in (("diag", loop / "pool_diag"), ("accept", hidden / "pool_accept")):
         r = subprocess.run(
-            [str(SIM_PY), str(fam), "draw", family, pool, str(out)], cwd=dest, env=env, capture_output=True, text=True
+            [str(SIM_PY), str(fam), "draw", family, pool, str(out)],
+            cwd=dest,
+            env=SUB_ENV,
+            capture_output=True,
+            text=True,
         )
         if r.returncode:
             raise SystemExit(r.stderr[-2000:])
@@ -218,6 +229,9 @@ def main(argv=None) -> int:
     ap.add_argument("dest", type=Path)
     ap.add_argument("family")
     a = ap.parse_args(argv)
+    families = sorted(f.stem for f in (HERE / "families").glob("*.json"))
+    if a.family not in families:  # before anything is written: a typo used to leave a half-extracted tree behind
+        raise SystemExit(f"no family {a.family!r} in scripts/rsi/families; known: {', '.join(families)}")
     build(a.dest.resolve(), a.family)
     return 0
 

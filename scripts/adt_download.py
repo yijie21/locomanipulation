@@ -7,7 +7,8 @@
 The full release is ~2.3 TB (depth alone 1.3 TB); a scene needs only each sequence's `main_groundtruth` (~20 MB:
 instances.json, scene_objects.csv, 3d_bounding_box.csv) and the Digital Twin Catalog models of the objects in it
 (~11 MB median .glb, CC BY-SA). The signed link files come from the Project Aria site (one per user, never in git)
-and live in `<root>/links/`; everything lands under `<root>` (default /workspace/datasets/adt), outside the repo:
+and live in `<root>/links/`; everything lands under `<root>` (default `$LOCOMANI_WORKSPACE/datasets/adt`,
+`locomani.paths.ADT_DATA`), outside the repo:
 the sequence data is licensed for non-commercial research and may not be redistributed
 (docs/handoff/scene-discovery-plan-20261002.md, decision 17; the user overrode it for the scene RSI kit `rsi_kit/`,
 DECISIONS 2026-10-20). Every file is checked against its sha1 and skipped
@@ -26,7 +27,12 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path("/workspace/datasets/adt")
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "src"))
+
+from locomani import paths  # noqa: E402
+
+ROOT = Path(paths.ADT_DATA)
 SEQUENCE_LINKS = "ADT_download_urls.json"
 OBJECT_LINKS = "DTC_objects_ADT_download_urls.json"
 OBJECT_FILES = {"3d-asset_glb": "3d-asset.glb", "metadata": "metadata.json", "license": "CC_BY-SA.txt"}
@@ -105,7 +111,12 @@ def objects(root: Path, names: list[str], workers: int) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--root", type=Path, default=ROOT, help="data root; the link files are read from <root>/links")
+    ap.add_argument(
+        "--root",
+        type=Path,
+        default=ROOT,
+        help="data root (default $LOCOMANI_WORKSPACE/datasets/adt); the link files are read from <root>/links",
+    )
     sub = ap.add_subparsers(dest="what", required=True)
     s = sub.add_parser("sequences", help="main_groundtruth of the named sequences")
     s.add_argument("names", nargs="+")

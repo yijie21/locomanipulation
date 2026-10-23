@@ -34,9 +34,10 @@ from mathutils import Matrix
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+from locomani import paths  # noqa: E402
 from locomani.scene_discovery import adt  # noqa: E402  (numpy-only module; Blender bundles numpy)
 
-DATA = Path("/workspace/datasets/adt")
+DATA = Path(paths.ADT_DATA)  # $LOCOMANI_WORKSPACE/datasets/adt
 TEXTURE_MAX = 1024  # px; 4.9 GB of 2-4K scans is more than the room level needs at the dataset cameras' 640
 # The Unreal room's lights and exposure start at the warehouse bake's (0.57 m panels at 65 W, exposure -0.25);
 # in_editor/warehouse_level.py turns them into Rect Lights and the manual exposure the same way.

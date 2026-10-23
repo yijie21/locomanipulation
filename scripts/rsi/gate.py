@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import sys
 import time
@@ -196,8 +197,8 @@ def main(argv=None) -> int:
     ap.add_argument("--gate", type=Path, required=True, help="the gate's directory (hidden from the loop's roles)")
     ap.add_argument("--pool", type=Path, required=True, help="the acceptance pool")
     ap.add_argument("--candidate", type=Path, required=True)
-    ap.add_argument("--procs", type=int, default=12)
-    ap.add_argument("--gpus", default="0,1")
+    ap.add_argument("--procs", type=int, default=int(os.environ.get("RSI_PROCS", "12")))
+    ap.add_argument("--gpus", default=os.environ.get("RSI_GPUS", "0,1"))
     ap.add_argument("--dry-run", action="store_true", help="static checks only")
     a = ap.parse_args(argv)
     gate = a.gate

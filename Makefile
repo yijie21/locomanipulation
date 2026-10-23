@@ -1,6 +1,8 @@
 # Developer checks; make check and pre-commit share scripts/check_changes.py.
 PY_SIM := third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
-RUFF   := /venv/main/bin/ruff
+# Scene scripts' environment (docs/setup.md step 9): $LOCOMANI_VENV, else the first of /venv/main, ~/venv/main.
+VENV   ?= $(or $(LOCOMANI_VENV),$(firstword $(wildcard /venv/main $(HOME)/venv/main)),/venv/main)
+RUFF   := $(VENV)/bin/ruff
 TESTS  ?= tests
 
 .PHONY: check check-all check-docs format lint test test-sim gate-bottle gate-crate config-doc run

@@ -19,6 +19,7 @@ import argparse
 import ast
 import filecmp
 import json
+import os
 import re
 import subprocess
 import sys
@@ -29,7 +30,19 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 CATALOG = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 SKIP = re.compile(r"(__pycache__|\.pyc$)")
-RUFF = Path("/venv/main/bin/ruff")
+
+
+def venv_dir() -> Path:
+    """The scene scripts' environment (docs/setup.md step 9): $LOCOMANI_VENV, else the first of /venv/main and
+    ~/venv/main that exists (/venv/main when neither does; RUFF.exists() then skips formatting)."""
+    env = os.environ.get("LOCOMANI_VENV")
+    if env:
+        return Path(env).expanduser()
+    candidates = [Path("/venv/main"), Path.home() / "venv" / "main"]
+    return next((p for p in candidates if p.is_dir()), candidates[0])
+
+
+RUFF = venv_dir() / "bin" / "ruff"
 
 
 def files(root: Path) -> set[str]:

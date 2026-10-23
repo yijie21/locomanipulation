@@ -137,6 +137,12 @@ UNREAL_ASSETS = os.environ.get("UNREAL_ASSETS", os.path.join(UNREAL_ROOT, "level
 # cached separately (scripts/build_isaac_assets.sh).
 ROBOT_MJCF = os.path.join(SONIC, "gear_sonic", "data", "robot_model", "model_data", "g1", "g1_29dof_with_dex1.xml")
 
+ADT_DATA = os.path.join(
+    WORKSPACE, "datasets", "adt"
+)  # Aria Digital Twin slice: links/, sequences/, objects/ (scripts/adt_*.py)
+SCALEBFM_CHECKPOINT = os.path.join(
+    WORKSPACE, "models", "scalebfm", "humanoid_transformer_m_22200.pt"
+)  # HF WeishuaiZeng/ScaleBFM step 22200, the only checkpoint ever used (setup.md step 11); ScaleBfmBackendConfig's ""
 TMP = os.environ.get("LOCOMANI_TMP", os.path.join(WORKSPACE, "tmp"))  # session logs, exporter sessions, instance locks
 
 

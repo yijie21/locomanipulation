@@ -39,10 +39,11 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+from locomani import paths  # noqa: E402
 from locomani.scene_discovery import adt, floorplan, mjcf, properties, scene_file, surfaces  # noqa: E402
 from locomani.sim import make_dex1_model  # noqa: E402
 
-DATA = Path("/workspace/datasets/adt")
+DATA = Path(paths.ADT_DATA)  # $LOCOMANI_WORKSPACE/datasets/adt
 SECTION_HEIGHTS = (0.3, 0.6, 0.9, 1.2, 1.5)  # below windows, above skirting; a wall at any of them blocks
 OBSTACLE_Z = (0.05, 1.8)  # furniture that occupies this height band blocks walking
 SUPPORT_SKIP = frozenset(

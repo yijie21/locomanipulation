@@ -351,12 +351,12 @@ blender --background assets/blender/logistics_room.blend --python scripts/unreal
 
 ```bash
 [ -x /venv/main/bin/python ] || uv venv /venv/main --python 3.12
-uv pip install --python /venv/main/bin/python trimesh==4.12.2 opencv-python-headless numpy scipy matplotlib pyyaml ruff==0.16.1 huggingface_hub
+uv pip install --python /venv/main/bin/python mujoco==3.11.0 trimesh==4.12.2 opencv-python-headless numpy scipy matplotlib pyyaml ruff==0.16.1 huggingface_hub
 ```
 
-做什么：建场景的脚本（`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 等）和写回时的代码格式化用这个环境，不用 `.venv_sim`。Vast 的基础镜像自带 `/venv/main`，第一条会跳过。
+做什么：建场景的脚本（`adt_to_scene.py`、`scene_add_panels.py`、`scene_add_colliders.py` 等）和写回时的代码格式化用这个环境，不用 `.venv_sim`。Vast 的基础镜像自带 `/venv/main`，第一条会跳过。没有 `/venv/main` 写权限的机器可以建在 `~/venv/main`（两条命令里的路径照换）：`make` 和 `scripts/rsi/writeback.py` 先读环境变量 `LOCOMANI_VENV`，没有就依次找 `/venv/main`、`~/venv/main`。
 
-验证：`/venv/main/bin/python -c "import trimesh, cv2; print(trimesh.__version__)"` 输出 `4.12.2`。
+验证：`/venv/main/bin/python -c "import mujoco, trimesh, cv2; print(mujoco.__version__, trimesh.__version__)"` 输出 `3.11.0 4.12.2`。`adt_to_scene.py` 经 `locomani.sim.make_dex1_model` 导入 mujoco，没有它第一步就停。
 
 ## 10. ADT 数据（场景 RSI）
 
@@ -365,21 +365,21 @@ python3 scripts/adt_download.py sequences Apartment_release_clean_seq131_M1292
 python3 scripts/adt_download.py objects
 ```
 
-做什么：先在 Project Aria 网站申请 Aria Digital Twin 的下载链接（每人一份，不进 git），把 `ADT_download_urls.json` 和 `DTC_objects_ADT_download_urls.json` 放进 `/workspace/datasets/adt/links/`。第一条下载公寓那段序列的真值（约 20 MB），第二条下载序列里出现的所有物体模型（约 4.6 GB）。每个文件都按 sha1 校验，中断后重跑会接着下载。数据只能用于非商业研究，不能再分发。
+做什么：先在 Project Aria 网站申请 Aria Digital Twin 的下载链接（每人一份，不进 git），把 `ADT_download_urls.json` 和 `DTC_objects_ADT_download_urls.json` 放进 `<workspace>/datasets/adt/links/`（`<workspace>` 是 `LOCOMANI_WORKSPACE`，默认 `/workspace`；三个 `adt_*.py` 脚本都从它读数据根目录）。第一条下载公寓那段序列的真值（约 20 MB），第二条下载序列里出现的所有物体模型（约 4.6 GB）。每个文件都按 sha1 校验，中断后重跑会接着下载。数据只能用于非商业研究，不能再分发。
 
-验证：`ls /workspace/datasets/adt/sequences/Apartment_release_clean_seq131_M1292` 里有 `instances.json`，`/workspace/datasets/adt/objects/` 下有几百个物体目录。
+验证：`ls <workspace>/datasets/adt/sequences/Apartment_release_clean_seq131_M1292` 里有 `instances.json`，`<workspace>/datasets/adt/objects/` 下有几百个物体目录。
 
 ## 11. ScaleBFM 权重（场景 RSI）
 
 ```bash
-/venv/main/bin/python -c "from huggingface_hub import hf_hub_download as d; d('WeishuaiZeng/ScaleBFM', 'checkpoint/humanoid_transformer_m/model_22200.pt', local_dir='/workspace/tmp/scalebfm')"
-mkdir -p /workspace/models/scalebfm
-mv /workspace/tmp/scalebfm/checkpoint/humanoid_transformer_m/model_22200.pt /workspace/models/scalebfm/humanoid_transformer_m_22200.pt
+/venv/main/bin/python -c "from huggingface_hub import hf_hub_download as d; d('WeishuaiZeng/ScaleBFM', 'checkpoint/humanoid_transformer_m/model_22200.pt', local_dir='$LOCOMANI_WORKSPACE/tmp/scalebfm')"
+mkdir -p $LOCOMANI_WORKSPACE/models/scalebfm
+mv $LOCOMANI_WORKSPACE/tmp/scalebfm/checkpoint/humanoid_transformer_m/model_22200.pt $LOCOMANI_WORKSPACE/models/scalebfm/humanoid_transformer_m_22200.pt
 ```
 
-做什么：下载场景 RSI 用的全身控制器 ScaleBFM（M 型号、第 22200 步，73 MB），放到代码默认读的位置（`ScaleBfmBackendConfig.checkpoint`）。它的模式表和元数据在仓库的 `assets/scalebfm/` 里，不用下载。
+做什么：下载场景 RSI 用的全身控制器 ScaleBFM（M 型号、第 22200 步，73 MB），放到代码默认读的位置 `<workspace>/models/scalebfm/`（`paths.SCALEBFM_CHECKPOINT`，`ScaleBfmBackendConfig.checkpoint` 为空串时用它；`<workspace>` 是 `LOCOMANI_WORKSPACE`，默认 `/workspace`）。它的模式表和元数据在仓库的 `assets/scalebfm/` 里，不用下载。
 
-验证：`sha256sum /workspace/models/scalebfm/humanoid_transformer_m_22200.pt` 以 `88d5a79946c03ed2` 开头。
+验证：`sha256sum $LOCOMANI_WORKSPACE/models/scalebfm/humanoid_transformer_m_22200.pt` 以 `88d5a79946c03ed2` 开头。
 
 ## 12. Claude CLI（场景 RSI 的 L1 以上）
 
