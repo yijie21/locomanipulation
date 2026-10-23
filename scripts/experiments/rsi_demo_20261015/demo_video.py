@@ -32,7 +32,19 @@ sys.path[:0] = [str(CC), str(REPO / "src")]
 
 import warehouse_video as wv  # noqa: E402
 
-FONT = "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"  # CJK captions
+# CJK captions: the first of these the machine has (the runbook's machine ships wqy-zenhei; SRA0889 has only Noto / Droid)
+FONT = next(
+    (
+        f
+        for f in (
+            "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+        )
+        if __import__("os").path.exists(f)
+    ),
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+)
 FPS, DT = 25, 0.02
 OFF = wv.OFF  # wrist frame -> jaw centre (dex1)
 GREEN, RED, GREY = (90, 220, 120), (255, 110, 100), (220, 220, 220)

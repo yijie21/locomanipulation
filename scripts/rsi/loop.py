@@ -941,7 +941,9 @@ def leak_patterns() -> dict[str, str]:
         ]
         pats["origin"] = re.escape(str(ORIGIN)) + rf"(?!/third_party{''.join('|' + x for x in linked)})"
         pats["climb"] = r"third_party/\.\."
-        pats["claude_home"] = r"\.claude/|~/\.claude"
+        # Claude Code's own home (other sessions' transcripts, settings), not a `.claude/` inside the checkout: the
+        # iteration-5 Engineer only looked for the sandbox's project settings and that voided its round (2026-10-23)
+        pats["claude_home"] = re.escape(str(Path.home() / ".claude")) + r"(?:/|\b)|~/\.claude"
         pats["sibling"] = re.escape(str(REPO.parent)) + "/" + rf"(?!{re.escape(REPO.name)}(?:/|\b))"
         pats["scratch"] = re.escape(str(SCRATCH_ROOT)) + "/" + rf"(?!{re.escape(role_tmp().name)}(?:/|\b))"
     return pats
