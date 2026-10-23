@@ -53,6 +53,8 @@
    "scripts/rsi/graspability.py",
    "scripts/rsi/body.py",
    "scripts/rsi/choose.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
    "scripts/rsi/experience",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",

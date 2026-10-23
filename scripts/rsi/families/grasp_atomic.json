@@ -60,6 +60,9 @@
    "scripts/rsi/graspability.py",
    "scripts/rsi/body.py",
    "scripts/rsi/choose.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/prep.py",
    "scripts/rsi/experience",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",
@@ -87,7 +90,8 @@
    "locomani.tasks.scene.graspability",
    "locomani.tasks.scene.body",
    "locomani.tasks.scene.choose",
-   "locomani.tasks.scene.stage"
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep"
   ],
   "strip": [
    "configs/experiments",
