@@ -78,6 +78,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
+import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
@@ -107,6 +108,12 @@ ENGINEER_LATE_MIN = ENGINEER_LATE_MIN_DEFAULT  # this run's (`run --engineer-lat
 # to the gate in the same iteration (one more gate call, 3-5 min, instead of another 60-80 min iteration)
 SECOND_SHOT_DEFAULT = True
 SECOND_SHOT = SECOND_SHOT_DEFAULT  # this run's (`run --second-shot / --no-second-shot`, resolve_settings)
+# TODO 33.23 (plan section 3.8, D21; user 2026-10-23): the diagnostic pool is re-drawn when the incumbent fails fewer
+# than DIAG_MIN_FAILS of its starts (run C's incumbent was 30/30 on it while 19 of 90 hidden-pool starts failed, so the
+# roles saw no failure at all): fresh starts from the family's diagnostic seed range, the incumbent runs on them, the
+# failing ones replace passing starts until DIAG_TARGET_FAILS fail; at most DIAG_DRAW_MAX fresh starts a redraw; 0 = off
+DIAG_MIN_FAILS_DEFAULT, DIAG_TARGET_FAILS_DEFAULT, DIAG_DRAW_MAX_DEFAULT = DP.MIN_FAILS_DEFAULT, DP.TARGET_FAILS_DEFAULT, DP.DRAW_MAX_DEFAULT  # fmt: skip
+DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX = DIAG_MIN_FAILS_DEFAULT, DIAG_TARGET_FAILS_DEFAULT, DIAG_DRAW_MAX_DEFAULT  # fmt: skip
 SKIP_CHECKS = ("interface_kept", "safety_checks_kept", "changed_code_reached", "evidence_not_refuting")  # TODO 33.17
 STATUSES = ("hypothesis", "verified", "refuted", "mixed")  # TODO 33.17: a hypothesis after its probe
 # TODO 33.17 (plan section 3.4, from DexAgent's diagnose_stage3_failure): what a failure class's next step usually is,
@@ -1057,6 +1064,37 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
     return d
 
 
+def refresh_diag_pool(inc: dict, base: Path, n: int | None) -> dict | None:
+    """TODO 33.23: after the incumbent has run on the diagnostic pool (`base`), re-draw the pool when it fails fewer than
+    DIAG_MIN_FAILS starts (diag_pool.refresh: fresh starts from the diagnostic seed range, the incumbent closed loop on
+    them, the failing ones swapped in for passing starts until DIAG_TARGET_FAILS fail). Parked starts and the tasks
+    parked as a whole stay. The candidate pool's entries then run on the starts they have not seen, so pool_view's
+    flips stay comparable. Returns the ledger row, or None when nothing changed."""
+    if DIAG_MIN_FAILS <= 0:
+        return None
+    parked = jload(STATE / "parked.json", {})
+    frozen = {x for p in parked.values() for x in p.get("starts") or []}
+    tasks = {p["task"] for p in parked.values() if p.get("scope") == "task"}
+    scratch = LOOP / "diag_redraw" / (f"iter_{n:02d}" if n is not None else now().replace(":", ""))
+
+    def run(pool_dir: Path, out: Path) -> None:
+        B.run_jobs([B.Job(Path(inc["dir"]) / "skills", out, inc["set"], None, True)], FAMILY, pool_dir, PROCS,
+                   scratch / "redraw.log", GPUS)  # fmt: skip
+
+    row = DP.refresh(F.load(FAMILY), LOOP / "pool_diag", base, run, scratch, tasks, frozen, DIAG_MIN_FAILS,
+                     DIAG_TARGET_FAILS, DIAG_DRAW_MAX, draw=F.draw)  # fmt: skip
+    if row is None:
+        return None
+    ledger(dict(row, iter=n, incumbent=inc["hash"]))
+    print(f"diag pool redrawn: {row['fails_before']} -> {row['fails_after']} failing of {row['n']} "
+          f"(+{len(row['added'])} -{len(row['retired'])}, {row['drawn']} fresh starts run)")  # fmt: skip
+    jobs = [B.Job(Path(e["dir"]) / "skills", LOOP / "diag" / f"candidate_{e['hash']}", overrides(Path(e["dir"])), None)
+            for e in pool_load() if (LOOP / "diag" / f"candidate_{e['hash']}").exists() and Path(e["dir"]).exists()]  # fmt: skip
+    if jobs and row["added"]:
+        B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, scratch / "redraw.log", GPUS)
+    return row
+
+
 def summarize(d: Path) -> dict:
     """Per task and per failure: what the Reviewer reads first (the round files hold the rest)."""
     out = B.outcomes(d)
@@ -1166,6 +1204,9 @@ def iteration_line(n: int, rows: list[dict]) -> str:
                 parts.append(f"pool cleared ({', '.join(e['cleared'])})")
             else:
                 parts.append(f"pool +{e.get('added')} kept {', '.join(e.get('kept') or [])}")
+        elif st == "diag_pool":
+            parts.append(f"diag pool redrawn: {e.get('fails_before')} -> {e.get('fails_after')} failing of {e.get('n')} "
+                         f"(+{len(e.get('added') or [])} -{len(e.get('retired') or [])}, {e.get('drawn')} fresh starts run)")  # fmt: skip
         elif st == "forced":
             parts.append(f"forced build {e.get('hypothesis')} (mechanism {', '.join(e.get('mechanism') or [])}, "
                          f"replaced {e.get('replaced')})")  # fmt: skip
@@ -1281,6 +1322,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
+    refresh_diag_pool(inc, base, n)
     unpark(base, n)
     digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
     digest.write_text(DG.build(base, FAMILY))
@@ -2354,6 +2396,7 @@ def reprobe(n: int, stub: bool) -> str | None:
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
+    refresh_diag_pool(inc, base, n)
     unpark(base, n)
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
@@ -2421,6 +2464,11 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
             pick(getattr(a, "engineer_late_min", None), "engineer_late_min", ENGINEER_LATE_MIN_DEFAULT)
         ),  # fmt: skip
         second_shot=bool(pick(getattr(a, "second_shot", None), "second_shot", SECOND_SHOT_DEFAULT)),
+        diag_min_fails=int(pick(getattr(a, "diag_min_fails", None), "diag_min_fails", DIAG_MIN_FAILS_DEFAULT)),
+        diag_target_fails=int(
+            pick(getattr(a, "diag_target_fails", None), "diag_target_fails", DIAG_TARGET_FAILS_DEFAULT)
+        ),  # fmt: skip
+        diag_draw_max=int(pick(getattr(a, "diag_draw_max", None), "diag_draw_max", DIAG_DRAW_MAX_DEFAULT)),
     )
 
 
@@ -2476,6 +2524,7 @@ def cmd_run(a) -> int:
 
 def _run(a, efforts: dict) -> int:
     global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT
+    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
     meta = prior or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, family=FAMILY)
@@ -2483,6 +2532,8 @@ def _run(a, efforts: dict) -> int:
     cfg = resolve_settings(a, meta, resuming)
     CANDIDATES, SCOPED, MAX_WALL_H = cfg["candidates"], cfg["scoped_review"], cfg["max_wall_h"]
     STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT = cfg["stop_rate"], cfg["engineer_late_min"], cfg["second_shot"]
+    DIAG_MIN_FAILS, DIAG_TARGET_FAILS = cfg["diag_min_fails"], cfg["diag_target_fails"]
+    DIAG_DRAW_MAX = cfg["diag_draw_max"]
     if not cfg["stop_rate"] > 0:
         raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
     changed = settings_changes(cfg, meta, resuming)
@@ -2531,6 +2582,26 @@ def _run(a, efforts: dict) -> int:
     return 0
 
 
+def cmd_redraw(a) -> int:
+    """TODO 33.23: re-draw the diagnostic pool for the present incumbent outside an iteration (first use: run C's
+    incumbent, 30/30 on its pool, before that run continues). The incumbent's rounds and the redraw's log go with the
+    last iteration's directory; the ledger row carries that iteration's number. Same --diag-* settings as `run`."""
+    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX
+    meta = jload(STATE / "meta.json", {})
+    cfg = resolve_settings(a, meta, bool(meta and "started" in meta))
+    DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX = cfg["diag_min_fails"], cfg["diag_target_fails"], cfg["diag_draw_max"]  # fmt: skip
+    unlock_hidden()
+    inc = incumbent()
+    n = max([e["iter"] for e in entries() if isinstance(e.get("iter"), int)] or [0])
+    it_dir = STATE / f"iter_{n:02d}"
+    it_dir.mkdir(parents=True, exist_ok=True)
+    base = diag_incumbent(inc, it_dir)
+    row = refresh_diag_pool(inc, base, n)
+    print(json.dumps(row or dict(step="diag_pool", incumbent=inc["hash"], skipped="the pool keeps enough failing starts"),
+                     ensure_ascii=False)[:1200])  # fmt: skip
+    return 0
+
+
 def cmd_status(_a) -> int:
     es = entries()
     meta = jload(STATE / "meta.json", {})
@@ -2572,6 +2643,11 @@ def main(argv=None) -> int:
                    "the drafts are in, then it is stopped (default 10; 0 waits; a resumed run keeps its value; TODO 37.3)")  # fmt: skip
     r.add_argument("--second-shot", action=argparse.BooleanOptionalAction, default=None, help="after the gate rejects "
                    "the composed candidate, gate the best unsent draft in the same iteration (default on; TODO 37.4)")  # fmt: skip
+    for flag, key, text in (("--diag-min-fails", "diag_min_fails", "re-draw the diagnostic pool when the incumbent fails "
+                             "fewer than this many of its starts (default 10; 0 never; TODO 33.23)"),
+                            ("--diag-target-fails", "diag_target_fails", "... until this many fail (default 15)"),
+                            ("--diag-draw-max", "diag_draw_max", "fresh starts a redraw may draw and run (default 90)")):  # fmt: skip
+        r.add_argument(flag, dest=key, type=int, default=None, help=text)
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer, composer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip
@@ -2579,9 +2655,14 @@ def main(argv=None) -> int:
                    "hypotheses, probes and Manager decision and runs only the Engineer and the gate (TODO 32.8)")  # fmt: skip
     s = sub.add_parser("status")
     s.add_argument("family")
+    d = sub.add_parser("redraw", help="re-draw the diagnostic pool for the present incumbent now (TODO 33.23)")
+    d.add_argument("family")
+    for flag, key in (("--diag-min-fails", "diag_min_fails"), ("--diag-target-fails", "diag_target_fails"),
+                      ("--diag-draw-max", "diag_draw_max")):  # fmt: skip
+        d.add_argument(flag, dest=key, type=int, default=None)
     a = ap.parse_args(argv)
     configure(a.family)
-    return cmd_run(a) if a.cmd == "run" else cmd_status(a)
+    return cmd_run(a) if a.cmd == "run" else cmd_redraw(a) if a.cmd == "redraw" else cmd_status(a)
 
 
 if __name__ == "__main__":

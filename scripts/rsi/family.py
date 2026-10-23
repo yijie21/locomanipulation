@@ -62,16 +62,20 @@ def task(fam: dict, task_id: str) -> Task:
     return Task.from_row(fam["rows"][task_id], fam["meta"])
 
 
-def draw(fam: dict, pool: str, out: Path) -> dict:
-    """Write the pool's starts into `out`; returns {"written": n, "skipped": [(task, seed, why)]}."""
+def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i: int = 0) -> dict:
+    """Write the pool's starts into `out`; returns {"written": n, "skipped": [(task, seed, why)], "next_seed": s}.
+    `seed`, `n` and `tasks` override the family's pool spec and `start_i` is where the task rotation starts (TODO
+    33.23: the diagnostic pool's redraw continues from the seed after the last one the pool used, over the unparked
+    tasks only, so it never touches the hidden pools' seed ranges)."""
     spec = fam["pools"][pool]
-    if spec.get("seed") is None:
+    if seed is None and spec.get("seed") is None:
         raise SystemExit(f"{fam['name']}: the {pool} pool's seed is blank and the hidden seeds.json has none")
     occ, nav = build(fam["meta"], body_radius=BODY_RADIUS_M)
     out.mkdir(parents=True, exist_ok=True)
-    tasks = list(fam["tasks"])
-    skipped, unavailable, written, seed, i = [], {}, 0, int(spec["seed"]), 0
-    while written < int(spec["n"]) and tasks:
+    tasks = list(fam["tasks"] if tasks is None else tasks)
+    n = int(spec["n"]) if n is None else int(n)
+    skipped, unavailable, written, seed, i = [], {}, 0, int(spec["seed"] if seed is None else seed), int(start_i)
+    while written < n and tasks:
         t = task(fam, tasks[i % len(tasks)])
         st = None
         for _ in range(SKIP_LIMIT):
@@ -101,7 +105,8 @@ def draw(fam: dict, pool: str, out: Path) -> dict:
         written += 1
         seed += 1
         i += 1
-    summary = dict(family=fam["name"], pool=pool, written=written, unavailable=unavailable, skipped=skipped)
+    summary = dict(family=fam["name"], pool=pool, written=written, unavailable=unavailable, skipped=skipped,
+                   next_seed=seed)  # fmt: skip
     (out / "_pool.json").write_text(json.dumps(summary, indent=1))
     return summary
 

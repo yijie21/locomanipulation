@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 16, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 17, 2026-10-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -10,7 +10,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 1. The scene, the controller (ScaleBFM M 22200), the motor layer, the simulator, the goal predicates and the success
    rule are frozen. Making a task easier is not an improvement. The Engineer may change only the skills package
    (`src/locomani/tasks/scene/skills/`); any other changed file voids the candidate (the driver checks and restores).
-2. A start is never removed from a pool (rule 26's redraw of the acceptance pool aside). A start a skill refuses ("no
+2. A start is never removed from a pool. Two exceptions, both the driver's and neither a role's: rule 26's redraw of
+   the acceptance pool, and the diagnostic pool's redraw when the incumbent fails fewer than 10 of its starts -- the
+   driver draws fresh starts from the diagnostic seed range, runs the incumbent on them and swaps the failing ones in
+   for passing starts until 15 fail; retired starts move to `pool_diag_retired/`, every task keeps two starts and one
+   passing start, parked starts stay (code, version 17, TODO 33.23). A start a skill refuses ("no
    side fits the jaw...") still counts as a failure. A round still running at 300 simulated seconds ends as a failure,
    "episode time limit" (code, version 12).
 3. A candidate is accepted only by `gate.py` on the hidden acceptance pool. Nothing else counts as evidence that a
@@ -30,7 +34,7 @@ file; it, or a change to a family plan's text, is committed and counted as one h
    Per-frame aggregates are weighted by dwell time; stalled rounds dominate them.
 7. Only closed-loop re-runs from a start are evidence (the Prober's). Replaying commands or re-solving IK offline is not.
 8. A diagnostic pool (a few starts per task) measures direction only; the same configuration has moved 6/10 to 2/10
-   on repeats.
+   on repeats. A pool the incumbent passes measures nothing, so the driver re-draws it (rule 2, version 17).
 9. Subsets picked because they succeeded fall back towards the mean. Do not tune on the rounds that succeed now.
 10. Before saying information is absent, look for it for a few minutes. Before calling a constant decisive, find every
     caller of it.

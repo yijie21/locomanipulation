@@ -268,6 +268,9 @@ class RunFlags(unittest.TestCase):
                 stop_rate=0.70,
                 engineer_late_min=10.0,
                 second_shot=True,
+                diag_min_fails=10,
+                diag_target_fails=15,
+                diag_draw_max=90,
             ),  # fmt: skip
         )
         old = dict(started="x", candidates=1, scoped_review=True, max_wall_h=5.0)
@@ -282,6 +285,9 @@ class RunFlags(unittest.TestCase):
                     stop_rate=0.70,
                     engineer_late_min=10.0,
                     second_shot=True,
+                    diag_min_fails=10,
+                    diag_target_fails=15,
+                    diag_draw_max=90,
                 ),  # fmt: skip
             )
             self.assertEqual(lp.resolve_settings(none, old, False)["candidates"], 3)  # fresh run ignores stale meta
