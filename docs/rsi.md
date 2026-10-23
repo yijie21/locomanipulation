@@ -111,7 +111,7 @@ python3 scripts/rsi/sandbox.py $S pick_single
 cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 ```
 
-做什么：建沙盒并抽池，然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数并给假设标状态，Manager 选至多 3 条（提过两轮以上、没做过、没被否定的机制会被驱动程序强制占一个名额），3 个 Engineer 并行写代码，Composer 合成一个候选，验收门判（`--candidates 1` 只用一个 Engineer、没有 Composer）。沙盒里带经验库，不含这个任务族自己的那条。每局记录带失败类型和关键事件，验收结论按类型给多赢少赢（规则第 15 版，TODO 33.15–33.17）。现任在验收池上已经超过 70% 时接着跑，要加 `--stop-rate`（比如 `--stop-rate 0.85`），否则一开跑就停；续跑沿用上次记下的值。角色自己要试几局时用 `scripts/rsi/try.py`（走 12 进程队列并行跑、返回逐局结果和翻转，每次至多 40 局、每个角色每轮至多 240 局，规则第 18 条，TODO 37.1）。三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）。
+做什么：建沙盒并抽池，然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数并给假设标状态，Manager 选至多 3 条（提过两轮以上、没做过、没被否定的机制会被驱动程序强制占一个名额），3 个 Engineer 并行写代码，Composer 合成一个候选，验收门判（`--candidates 1` 只用一个 Engineer、没有 Composer）。沙盒里带经验库，不含这个任务族自己的那条。每局记录带失败类型和关键事件，验收结论按类型给多赢少赢（规则第 15 版，TODO 33.15–33.17）。现任在验收池上已经超过 70% 时接着跑，要加 `--stop-rate`（比如 `--stop-rate 0.85`），否则一开跑就停；续跑沿用上次记下的值。角色自己要试几局时用 `scripts/rsi/try.py`（走 12 进程队列并行跑、返回逐局结果和翻转，每次至多 40 局、每个角色每轮至多 240 局，规则第 18 条，TODO 37.1）。三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）。合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）。
 得到什么：账本在 `$S/outputs/scene_rsi_20261016/pick_single/loop/`。原来这一族跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
 
 ```bash

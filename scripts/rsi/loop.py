@@ -103,6 +103,10 @@ STOP_RATE = STOP_RATE_DEFAULT  # this run's (`run --stop-rate`, resolve_settings
 # Run C's slowest Engineer took 22-37 min against a median draft of about 14, waiting on its own one-process rounds.
 ENGINEER_LATE_MIN_DEFAULT = 10.0
 ENGINEER_LATE_MIN = ENGINEER_LATE_MIN_DEFAULT  # this run's (`run --engineer-late-min`, resolve_settings)
+# TODO 37.4 (E, user 2026-10-23): after the gate rejects the composed candidate, the best draft it has not judged goes
+# to the gate in the same iteration (one more gate call, 3-5 min, instead of another 60-80 min iteration)
+SECOND_SHOT_DEFAULT = True
+SECOND_SHOT = SECOND_SHOT_DEFAULT  # this run's (`run --second-shot / --no-second-shot`, resolve_settings)
 SKIP_CHECKS = ("interface_kept", "safety_checks_kept", "changed_code_reached", "evidence_not_refuting")  # TODO 33.17
 STATUSES = ("hypothesis", "verified", "refuted", "mixed")  # TODO 33.17: a hypothesis after its probe
 # TODO 33.17 (plan section 3.4, from DexAgent's diagnose_stage3_failure): what a failure class's next step usually is,
@@ -1167,6 +1171,9 @@ def iteration_line(n: int, rows: list[dict]) -> str:
                          f"replaced {e.get('replaced')})")  # fmt: skip
         elif st == "forced_skip":
             parts.append(f"forced build of {e.get('hypothesis')} skipped: {e.get('check')}")
+        elif st == "second_shot":
+            parts.append(f"second shot: draft {e.get('draft')} {e.get('hypothesis') or ''} (fixed {e.get('fixed')} "
+                         f"broken {e.get('broken')}) after {e.get('after')}")  # fmt: skip
         elif st == "void_iter":
             parts.append(f"VOID: the {e.get('role')} named off-limits paths ({', '.join(e.get('leaks') or [])})")
         else:
@@ -1529,9 +1536,12 @@ def gate_lines() -> list[str]:
     return p.read_text().splitlines() if p.exists() else []
 
 
-def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple | None = None) -> str | None:
+def gate_candidate(
+    n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple | None = None, shot: int = 1
+) -> str | None:
     """`cand` to the gate on the acceptance pool, its diagnostic rounds beside it (the next incumbent's, if accepted).
-    `reopen` = (park id, starts won): the park lifts only if this gate call accepts (settle_reopen).
+    `reopen` = (park id, starts won): the park lifts only if this gate call accepts (settle_reopen). `shot` 2: the
+    iteration's second gate call (second_shot, TODO 37.4), marked on its ledger row.
     TODO 36 (review 2026-10-22): the verdict is the ledger line gate.py wrote for THIS candidate; no new line, a line
     for another hash, or an exit code other than 0 / 1 is a gate error and stops the run (the last line used to be
     taken as the verdict, so a crashed gate recorded the previous call's)."""
@@ -1574,7 +1584,8 @@ def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple |
     rounds = GATE_DIR / f"{verdict.get('call', 0):02d}_{verdict['hash']}" / "candidate"
     ledger(dict(step="gate", iter=n, accepted=accepted, reason=verdict["reason"], hash=verdict["hash"],
                 result=verdict.get("result"), stage1=verdict.get("stage1"), unparked=unparked_view(rounds),
-                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1)))  # fmt: skip
+                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1),
+                **({"shot": shot} if shot > 1 else {})))  # fmt: skip
     if not stub:
         pool_update(n, cand, verdict, accepted)
     if reopen:
@@ -1798,7 +1809,8 @@ def mechanism_table(es: list[dict]) -> list[dict]:
         single = man.get("hypothesis") if man and man.get("decision") == "engineer" else None
         eng = [e for e in rows if e.get("step") == "engineer"]
         comp = next((e for e in rows if e.get("step") == "compose"), None)
-        gate = next((e for e in reversed(rows) if e.get("step") == "gate" and not e.get("void")), None)
+        gates = [e for e in rows if e.get("step") == "gate" and not e.get("void")]
+        shot2 = next((e for e in rows if e.get("step") == "second_shot"), None)  # TODO 37.4
         repeats = {r.get("now"): r.get("same_as") for r in (man or {}).get("repeats") or [] if isinstance(r, dict)}
         skip = (man or {}).get("skip") or {}
         for h in hyps:
@@ -1843,10 +1855,14 @@ def mechanism_table(es: list[dict]) -> list[dict]:
                 row["composer"] = ("merge" if comp.get("decision") == "merge" else
                                    "adopted" if went_on else "kept the incumbent" if comp.get("decision") == "keep"
                                    else "not adopted")  # fmt: skip
-            if gate and went_on:
+            second = shot2 is not None and shot2.get("draft") in ks and len(gates) > 1  # TODO 37.4
+            gate = gates[-1] if second else (gates[0] if gates else None)
+            if gate and (went_on or second):
                 r = gate.get("result") or {}
-                row["gate"] = ("accepted" if gate.get("accepted") else "rejected") + (
-                    f" b {r['b']} c {r['c']}" if "b" in r and "c" in r else ""
+                row["gate"] = (
+                    ("accepted" if gate.get("accepted") else "rejected")
+                    + (f" b {r['b']} c {r['c']}" if "b" in r and "c" in r else "")
+                    + (" (second shot)" if second else "")
                 )
             members = groups.get(root.get(key, key), {key})
             row["open"] = not (members & built) and row["status"] != "refuted"
@@ -2032,6 +2048,59 @@ def named_void(n: int, named: list[str], what: str) -> None:
                 reason=f"{what} branches on object names (rules.md 30): {', '.join(named[:6])}"))  # fmt: skip
 
 
+def early_diag(k: int, w: Path, eng: dict, inc: dict, it_dir: Path) -> None:
+    """TODO 37.4 (E): a draft's diagnostic rounds start the moment its Engineer answers, in its own thread, instead of
+    after the slowest Engineer; the rounds go to the same hash-keyed directory the main step uses, so that later call
+    finds them done. A failure here only costs the head start (the main step runs what is missing)."""
+    try:
+        cand = it_dir / f"candidate_{k}"
+        if cand.exists():
+            shutil.rmtree(cand)
+        shutil.copytree(w / "skills", cand / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        (cand / "candidate.json").write_text(json.dumps({"set": eng.get("set") or {}}, indent=1))
+        h = candidate_hash(cand)
+        if h == inc["hash"] or named_objects(cand / "skills"):
+            return
+        B.run_jobs([B.Job(cand / "skills", LOOP / "diag" / f"candidate_{h}", overrides(cand), None, True)], FAMILY,
+                   LOOP / "pool_diag", PROCS, it_dir / f"diag_{k}.log", GPUS)  # fmt: skip
+    except Exception as e:  # noqa: BLE001 -- the main step repeats the run
+        print(f"early diag of draft {k}: {type(e).__name__}: {e}", flush=True)
+
+
+def second_shot_pick(cands: list[dict], gated_hash: str, rejected: set) -> dict | None:
+    """TODO 37.4 (E): the draft to send after a rejection -- one the gate has not judged (not the rejected hash, not
+    rejected before under the present rule) with more diagnostic starts fixed than broken; the largest net first,
+    fewer broken on ties, then the lower draft number."""
+    ok = [c for c in cands if c.get("hash") not in rejected and c.get("hash") != gated_hash and "fixed" in c
+          and len(c["fixed"]) > len(c.get("broken") or [])]  # fmt: skip
+    return min(ok, key=lambda c: (-(len(c["fixed"]) - len(c["broken"])), len(c["broken"]), c["number"])) if ok else None
+
+
+def second_shot(n: int, it_dir: Path, cands: list[dict], gated_hash: str, stub: bool) -> str | None:
+    """TODO 37.4 (E, user 2026-10-23): when the gate rejected the composed candidate (a real verdict, not a void call),
+    the best remaining draft goes to the gate in the same iteration: a second shot costs the gate's 3-5 minutes
+    instead of another 60-80 minute iteration (run C: iterations 10 and 12 ended in rejections with two unsent drafts
+    each). It is a gate call of the budget, so none is taken when the budget is spent. The first shot's verdict and
+    log stay as gate_shot1.json / gate_shot1.log."""
+    verdict = jload(it_dir / "gate.json")
+    if not verdict or verdict.get("void") or verdict.get("accepted"):
+        return None
+    es = entries()
+    if len(run_gates(es, jload(STATE / "meta.json", {}))) >= MAX_GATE_CALLS:
+        return None
+    rejected = {e["hash"] for e in es if e.get("step") == "gate" and not e.get("accepted") and not e.get("void")
+                and e.get("hash") and e.get("rule", 1) == GATE_RULE}  # fmt: skip
+    pick = second_shot_pick(cands, gated_hash, rejected)
+    if pick is None:
+        return None
+    for f in ("gate.json", "gate.log"):
+        if (it_dir / f).exists():
+            shutil.copy(it_dir / f, it_dir / f.replace(".", "_shot1."))
+    ledger(dict(step="second_shot", iter=n, draft=pick["number"], hypothesis=pick.get("hypothesis"), hash=pick["hash"],
+                fixed=len(pick["fixed"]), broken=len(pick["broken"]), after=gated_hash))  # fmt: skip
+    return gate_candidate(n, it_dir, Path(pick["dir"]), stub, shot=2)
+
+
 def wait_drafts(threads: dict, stops: dict, poll: float = 2.0) -> list:
     """TODO 37.3 (D, user 2026-10-23): wait for the Engineers' threads; once ceil(K/2) drafts are in, the rest get
     ENGINEER_LATE_MIN minutes, then their stop events are set (run_role kills the session, RoleLate) and the iteration
@@ -2100,6 +2169,9 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                             stub_e if stub else None, stop=stops[k])  # fmt: skip
         except RoleFailed as e:
             out[k] = e
+            return
+        if not stub:
+            early_diag(k, w, out[k][0], inc, it_dir)
 
     threads = {k: threading.Thread(target=one, args=(k, w, pr_, se)) for k, _, w, pr_, se in calls}
     for t in threads.values():
@@ -2222,7 +2294,10 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     if named:
         named_void(n, named, "the composed candidate")
         return None
-    return gate_candidate(n, it_dir, cand, stub)
+    why = gate_candidate(n, it_dir, cand, stub)
+    if why is not None or stub or not SECOND_SHOT:
+        return why
+    return second_shot(n, it_dir, cands, candidate_hash(cand), stub)  # TODO 37.4
 
 
 def engineer_again(n: int, src: Path, stub: bool) -> str | None:
@@ -2345,6 +2420,7 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
         engineer_late_min=float(
             pick(getattr(a, "engineer_late_min", None), "engineer_late_min", ENGINEER_LATE_MIN_DEFAULT)
         ),  # fmt: skip
+        second_shot=bool(pick(getattr(a, "second_shot", None), "second_shot", SECOND_SHOT_DEFAULT)),
     )
 
 
@@ -2399,14 +2475,14 @@ def cmd_run(a) -> int:
 
 
 def _run(a, efforts: dict) -> int:
-    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN
+    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
     meta = prior or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, family=FAMILY)
     resume(meta)
     cfg = resolve_settings(a, meta, resuming)
     CANDIDATES, SCOPED, MAX_WALL_H = cfg["candidates"], cfg["scoped_review"], cfg["max_wall_h"]
-    STOP_RATE, ENGINEER_LATE_MIN = cfg["stop_rate"], cfg["engineer_late_min"]
+    STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT = cfg["stop_rate"], cfg["engineer_late_min"], cfg["second_shot"]
     if not cfg["stop_rate"] > 0:
         raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
     changed = settings_changes(cfg, meta, resuming)
@@ -2494,6 +2570,8 @@ def main(argv=None) -> int:
                    "acceptance pool (default 0.70; a resumed run keeps its recorded value unless given)")  # fmt: skip
     r.add_argument("--engineer-late-min", type=float, default=None, help="minutes a straggler Engineer gets once half "
                    "the drafts are in, then it is stopped (default 10; 0 waits; a resumed run keeps its value; TODO 37.3)")  # fmt: skip
+    r.add_argument("--second-shot", action=argparse.BooleanOptionalAction, default=None, help="after the gate rejects "
+                   "the composed candidate, gate the best unsent draft in the same iteration (default on; TODO 37.4)")  # fmt: skip
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer, composer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip

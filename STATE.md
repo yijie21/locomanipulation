@@ -1,4 +1,4 @@
-# STATE — 2026-10-23（主线：场景 RSI。run C 跑完，封存集 36 → 38 / 50；正在做 TODO 37 内环提速 B–E（用户：先不开 usage credits，B 到 E 按顺序做，先不开始实验）：37.1 `try.py`、37.2 压缩 history + 机制表、37.3 Engineer 软截止做了（规则第 16 版），37.4 待做；一轮 79 min 的分解见 `outputs/scene_rsi_20261016/speedup_20261023/analysis.md`；36.10 未定）
+# STATE — 2026-10-23（主线：场景 RSI。run C 跑完，封存集 36 → 38 / 50；TODO 37 内环提速 B–E 做完、没跑实验（用户：先不开 usage credits，B 到 E 按顺序做，先不开始实验）：37.1 `try.py`、37.2 压缩 history + 机制表、37.3 Engineer 软截止、37.4 验收门第二枪 + 草稿诊断池提前跑（规则第 16 版）；下一次 RSI 运行就是它们的检验；一轮 79 min 的分解见 `outputs/scene_rsi_20261016/speedup_20261023/analysis.md`；36.10 未定）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
 已确认（10-20 13:10）：已推送到 origin/main = `f5fb27c`（用户“先把目前的改动 push 到远端”；远端没有新提交，不用合并）。
