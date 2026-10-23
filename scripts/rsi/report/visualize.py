@@ -792,6 +792,14 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="clue,step,infeasible,overview")
     a = ap.parse_args(argv)
     loop = a.sandbox / "outputs" / "scene_rsi_20261016" / FAMILY
+    # This script is the hand-written film of the pick-a run (VERSIONS, the start labels, the clue cards). Another
+    # sandbox lacks those rounds and used to die mid-way with FileNotFoundError (pick-repro, 2026-10-23).
+    missing = [h for h, _ in VERSIONS if not (loop / "diag" / f"incumbent_{h}").is_dir()]
+    if missing:
+        raise SystemExit(
+            f"{a.sandbox} is not the pick-a run this script was written for: no diag/incumbent_{{{', '.join(missing)}}}"
+            " under its loop. For any sandbox use scripts/rsi/report/evolution_media.py --sandbox ... --family ..."
+        )
     only = set(a.only.split(","))
     a.out.mkdir(parents=True, exist_ok=True)
     sc = Scene()
