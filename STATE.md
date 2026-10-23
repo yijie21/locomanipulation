@@ -6,7 +6,7 @@
 ## 提交与磁盘
 
 - 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`、`.playwright-mcp/`。按名字暂存，不用 `git add -A`。
-- 已确认（10-21 12:10）：`/workspace` 剩 86 GB（之前 98%、23 GB）。78 个 A/B 重放沙盒（`/workspace/code/rsi-scene/ab-*`、`replay-ga-*`）删了 `assets/`、`papers/`（都在各自沙盒的 git 里，`git checkout` 能恢复），记录和会话没动；29.9 的两个沙盒已删，材料在 `outputs/fresh_rsi_20261020/`。
+- 已确认（10-23 13:00）：`/workspace` 剩 138 GB。会话 locomanipulation-ea（视觉 RSI 新线，用户 10-23 开）清了缓存 31 GB，又在主线同意后省了 32.5 GB：76 个 A/B 重放（`rsi-scene/ab-*`）、`replay2-r2*`（6 个）、`rsi-phase4/arm-{a,a2,b,b2}` 的 `.git` 打成副本根目录的 `_sandbox_git.bundle`（另有 `.refs`、`.config`）后删掉，工作区、记录、`~/.claude/projects` 的会话记录都在；恢复步骤 `/workspace/code/rsi-scene/_SANDBOX_GIT_BUNDLES.md`（LFS 对象从主仓库 `.git/lfs` 拷），这些副本的 `assets/`、`papers/` 10-21 已删，要恢复先按它克隆；`replay-ga-i3-{mc,test}` 整个删了（32.5 的桩重放）。清单和日志 `outputs/cleanup_20261023/`。正在用和有用的沙盒（`ga-*`、`grasp-atomic-a`、`pick-a`、`r1-*-a`、`r2-*-a`）没动；`rsi-phase4/bottle-1` 不存在。
 - 10-23 推送到 origin/main = `d9e4a3f`；之后的本地提交（`2442257` resume 修复、33.11）按用户要求再推。
 
 ## 当前进度（全部已确认）
@@ -24,7 +24,7 @@
 
 ## 下一步（10-22 整理的待办，编号见 `TODO.md`）
 
-- 0. **正在跑（10-23 09:12 起，用户“开跑吧，跑 2 轮”）**：run C 沙盒续跑第 13、14 轮（`outputs/scene_rsi_20261016/grasp_atomic_c/launch2_20261023.sh`，日志同目录 `run2_20261023.log`，沙盒驱动 `f1343ba` = 仓库 10-23 状态），看提速 B–E、`try.py`、`body.py` / `choose.py` / `prep.py`、重抽的诊断池在真角色会话里用不用、一轮多久（之前 79 min）；第一次起跑因 `resume()` 没跳过重抽留下的账本行、一开跑就按墙钟停了，已修（`2442257`）。
+- 0. 10-23 run C 续跑两轮（第 13、14 轮，TODO 37.7）跑完：新机制都工作（角色用 `try.py` / `choose.py` / `body.py` / `prep.py`，第二枪两轮都触发），一轮 90 / 81 min（Reviewer 38–41 min 是瓶颈，诊断池重抽后有 15 个失败局要查），4 次验收门都在第一阶段被拒，现任仍是 `5cba2fa49d31`（封存 38 / 50）；沙盒停在第 14 轮之后，可续跑。
 - 1. 33（用户 10-23 定的顺序：33.23 → 33.1.4 预测器 + 33.12 → 33.21 → 33.5 → 37.5 / 37.6；33.23、33.1.4 预测器、33.12 挑选器、33.5 准备动作层做了；33.21 脆弱起点等 A800 能连上；下一步要么开 `grasp_prep` 的运行（`sandbox.py <沙盒> grasp_prep` 建沙盒再 `loop.py run grasp_prep --stop-rate 0.9`，约 8 小时），要么 37.5 / 37.6，用户定；33.8、33.13 结构、33.14 已做；选项 B 续跑完：沙盒 `ga-cont-b-20261022`，第 6、9 轮接受，封存集 31 → 36 / 50；再按 33.15–33.18 续跑 `ga-cont-c-20261022`，第 11 轮接受，封存集 38 / 50，见 TODO 33.18.1；33.18.2 预算 bug 10-23 修了，只数本次运行的验收门调用）：33.10 已做（`ab5403d`，6 / 10 次运行的第一个结论改判接受）；33.15–33.18 已做（10-22，规则第 15 版，D12–D14 按推荐，33.15.1 记录库没做）；接着从第 9 轮的现任接着跑一轮（`--stop-rate`），再 33.7 三人按范围分工、33.11，再 33.1 身体模型（含 10-22 A800 经验：33.19 设计探针、33.20 按层归因、33.21 脆弱起点、33.22 算力分工，D16–D20；A800 数据 `outputs/scene_rsi_20261016/a800_20261022/summary.md`）（含 33.1.2 动手前预测）、33.9 关键点约束原语、33.12 站位和抓法一起选、33.2、33.3、33.4、33.5、33.6。10-22 失败分析：32.12 第 1 轮那版 90 局失败 38（物体比爪口宽 9 + 5、侧抓够不到 13、木勺 5、没走到站位 7、摔倒 3）。
 - 2. 小项：29.8 查测试在提交钩子里跑 git（29.5.1–29.5.8 文档偏差、29.7 `walk_mars` 登记 10-23 做完）。
 - 3. 等用户：32.7 在账号里开 usage credits（角色用快速输出）；第 2 轮外环何时恢复（10-19 起暂停，27.5.3 / 27.5.4 / 27.8.5 / 27.10.8 跟着它）。
