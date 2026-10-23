@@ -881,6 +881,21 @@ class TranscriptAudit(unittest.TestCase):
         self.lp.resume(meta)  # the last entry is no longer a stop: nothing more is taken off
         self.assertAlmostEqual(self.lp.wall_h(meta), 3.5, places=2)
 
+    def test_bookkeeping_rows_after_the_stop_do_not_hide_the_pause(self):
+        """TODO 33.23 / 2026-10-23: run C's ledger gained a standalone redraw's diag_pool row after its stop; the resume
+        then saw no stop, counted 16 h and stopped on the wall clock at once."""
+        meta = dict(started_s=time.time() - 16 * 3600)
+        self.stopped(12)  # ran 4 h
+        with (self.state / "ledger.jsonl").open("a") as fh:
+            for hours_ago, step in ((3, "diag_pool"), (0.01, "settings"), (0.01, "stop")):
+                t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours_ago * 3600))
+                fh.write(json.dumps(dict(t=t, step=step)) + "\n")
+        self.lp.resume(meta)
+        self.assertAlmostEqual(self.lp.wall_h(meta), 4.0, places=2)
+        self.assertEqual(self.lp.entries()[-1]["step"], "resume")
+        self.lp.resume(meta)  # the resume row ends the walk back: nothing is taken off twice
+        self.assertAlmostEqual(self.lp.wall_h(meta), 4.0, places=2)
+
     def test_a_stop_from_before_the_run_started_is_not_a_pause(self):
         meta = dict(started_s=time.time() - 3600)
         self.stopped(2)  # a replay's ledger copied from its source run

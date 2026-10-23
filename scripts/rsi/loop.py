@@ -2439,13 +2439,25 @@ def wall_h(meta: dict) -> float:
     return (time.time() - meta["started_s"] - meta.get("paused_s", 0.0)) / 3600
 
 
+BOOKKEEPING_STEPS = ("stop", "settings", "diag_pool")  # rows a stopped run's ledger can gain without an iteration
+
+
 def resume(meta: dict) -> None:
     """A run started again after its own stop: the hours it stood stopped do not count against MAX_WALL_H (32.12
-    stood stopped for a day while the audit was fixed, TODO 32.13)."""
+    stood stopped for a day while the audit was fixed, TODO 32.13). The stop may be followed by bookkeeping rows --
+    a standalone `loop.py redraw` (33.23), a `settings` row, a wall-clock `stop` the resume itself wrote -- so the
+    pause runs from the first row of that trailing run (run C, 2026-10-23: a redraw row after the stop hid a 12 h
+    pause and the resumed run stopped at once on the wall clock); a `resume` row ends the walk back, its gap is
+    already counted."""
     es = entries()
-    if not es or es[-1].get("step") != "stop":
+    tail = []
+    for e in reversed(es):
+        if e.get("step") not in BOOKKEEPING_STEPS:
+            break
+        tail.append(e)
+    if not any(e.get("step") == "stop" for e in tail):
         return
-    t = calendar.timegm(time.strptime(es[-1]["t"], "%Y-%m-%dT%H:%M:%SZ"))
+    t = calendar.timegm(time.strptime(tail[-1]["t"], "%Y-%m-%dT%H:%M:%SZ"))
     if t < int(meta["started_s"]):  # a stop from before this run started (a replay's copied ledger); t is whole seconds
         return
     gap = time.time() - t
