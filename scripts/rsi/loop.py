@@ -78,6 +78,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
+import design as DS  # noqa: E402
 import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
@@ -255,6 +256,18 @@ HYPOTHESES_SCHEMA = {
                             "expect": {"enum": ["fails", "succeeds"]},
                             "tasks": {"type": "array", "items": {"type": "string"}},
                             "scope": {"enum": ["incumbent", "all"]},
+                        },
+                    },
+                    # TODO 33.19: a design probe -- one factor at a few levels, forced on the same diagnostic starts
+                    "design": {
+                        "type": "object",
+                        "required": ["factor", "levels"],
+                        "properties": {
+                            "factor": {"enum": list(DS.FACTORS)},
+                            "levels": {"type": "array", "items": {"type": "number"}},
+                            "starts": {"type": "integer"},
+                            "tasks": {"type": "array", "items": {"type": "string"}},
+                            "name": {"type": "string"},
                         },
                     },
                     "predicted_fixed": {"type": "array", "items": {"type": "string"}},
@@ -1451,6 +1464,9 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
     if attribution:
         extra["attribution"] = attribution
+    prev = STATE / f"iter_{n - 1:02d}" / "designs.json"  # TODO 33.19: last iteration's design probes
+    if prev.exists():
+        extra["designs_last"] = jload(prev)
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
@@ -1526,6 +1542,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     park(cr, claims, n)
     if STOP_AFTER == "probe":
         return "replay: stopped after the probe (--stop-after probe)"
+    designs = run_designs(hyps, inc, it_dir, n)  # TODO 33.19
     gaps = gap_candidates()
     jdump(STATE / "gap_candidates.json", gaps)
     ctx = it_dir / "manager_context.json"
@@ -1534,6 +1551,8 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     lead = dict(recurring=recurring(es))  # TODO 33.14: first in the context
     if extra.get("attribution"):  # TODO 33.20: which recurring failures are the motor layer's
         lead["attribution"] = extra["attribution"]
+    if designs:  # TODO 33.19: how the factors the Reviewer asked about change the outcome (not evidence)
+        lead["designs"] = designs
     notes = repair_notes(es, base, n)  # TODO 33.17: after a rejection
     if notes:
         lead["repair_notes"] = notes
@@ -2073,6 +2092,37 @@ def records_statuses(hyps: dict, pr: list[dict], base: Path) -> None:
         h["status"], h["records"] = q["verdict"], q
         if h["id"] in by:
             by[h["id"]].update(status=q["verdict"], records=q)
+
+
+def run_designs(hyps: dict, inc: dict, it_dir: Path, n: int) -> list[dict]:
+    """TODO 33.19 (plan section 1.3, D16): the hypotheses' design probes (design.py), at most DS.MAX_PROBES an
+    iteration and DS.MAX_ROUNDS rounds each, under the incumbent on the diagnostic pool's starts. Not evidence (rule 7):
+    the per-level outcome goes to this iteration's Manager (`lead`), the next Reviewer (`designs_last`), the ledger, and
+    the body model's measured curves (body/curves.jsonl)."""
+    specs = [(h["id"], h["design"]) for h in hyps.get("hypotheses") or []
+             if isinstance(h, dict) and isinstance(h.get("design"), dict)]  # fmt: skip
+    if not specs:
+        return []
+    tasks_all, params, out = list(F.load(FAMILY)["tasks"]), parameters_of(inc), []
+    for k, (hid, spec) in enumerate(specs):
+        why = (
+            "over the limit of design probes per iteration" if k >= DS.MAX_PROBES else DS.check(spec, tasks_all, params)
+        )
+        if why:
+            out.append(dict(hypothesis=hid, factor=spec.get("factor"), error=why))
+            continue
+        res = DS.run(spec, FAMILY, LOOP / "pool_diag", Path(inc["dir"]) / "skills", inc["set"], it_dir / f"design_{k}",
+                     PROCS, GPUS)  # fmt: skip
+        out.append(dict(hypothesis=hid, **res))
+    jdump(it_dir / "designs.json", out)
+    ledger(dict(step="design", iter=n, results=[{k: v for k, v in r.items() if k != "dir"} for r in out]))
+    curves = LOOP.parent / "body" / "curves.jsonl"
+    curves.parent.mkdir(parents=True, exist_ok=True)
+    with curves.open("a") as fh:
+        for r in out:
+            if "levels" in r:
+                fh.write(json.dumps(dict(t=now(), iter=n, incumbent=inc["hash"], family=FAMILY, **r)) + "\n")
+    return out
 
 
 def statuses(es: list[dict]) -> dict[str, str]:

@@ -207,3 +207,12 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     (`prep.wanted`). A task family may give its tasks a `placement` option (`depth_m`, `yaw_deg`, `blocker`) so its
     pools hold the situations that need these actions; it changes no other family's pools (code: start.sample_start,
     family.draw; prompt) (version 19).
+
+35. Design probes (TODO 33.19; D16): a hypothesis may ask for one, `design` {factor, levels, starts, tasks?, name?}:
+    one factor forced at a few levels on the same diagnostic starts, under the incumbent -- `param` (an overridable
+    parameter `name` set to each level), `spawn_bearing` (the object `level` degrees off the robot's heading at the
+    spawn), `spawn_distance` (the robot `level` metres from the object along the line to its spawn), `object_yaw` (the
+    object turned `level` degrees in place). At most 2 an iteration, at most 300 rounds each; a start the forcing
+    makes invalid is left out. The per-level outcome goes to the Manager, the next Reviewer and the body model's
+    curves; it says how the factor changes the outcome, never that a change should stay (rule 7) (code: design.py,
+    loop.py run_designs) (version 20).
