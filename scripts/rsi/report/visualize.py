@@ -131,6 +131,9 @@ def why_zh(why: str) -> str:
         (r"lost pad contact during the lift", "举起时滑脱"),
         (r"no hand touches it", "手没碰到物体"),
         (r"not between two fingers", "没夹在两指之间"),
+        # motor.grip and skills/pick.py's lift check; left in English on the grasp_atomic pages' videos (2026-10-23)
+        (r"nothing between the fingers", "合爪后两指之间是空的（没夹到）"),
+        (r"not between the fingers after the lift", "抬起后物体不在两指之间（没拿住）"),
     ]
     for pat, rep in rules:
         m = re.search(pat, why)

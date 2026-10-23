@@ -134,3 +134,17 @@ class FailureClass(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WhyZh(unittest.TestCase):
+    """The page videos' caption: the grip and lift checks' failure strings read in Chinese (they showed in English on
+    the grasp_atomic pages, 2026-10-23)."""
+
+    def test_the_grip_and_lift_strings_have_a_chinese_reading(self):
+        import re
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "rsi" / "report"))
+        import visualize as V
+
+        for why in ("nothing between the fingers", "not between the fingers after the lift"):
+            self.assertIsNone(re.search("[A-Za-z]{3}", V.why_zh(why)), why)
