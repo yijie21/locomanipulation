@@ -140,6 +140,9 @@ class Rendered(unittest.TestCase):
         s = v.stats()["obj"]
         self.assertEqual((s["reads"], s["refreshes"], s["seen"], s["ever_seen"]), (3, 2, 1, True))
         self.assertLess(s["err_cm"], 0.5)
+        self.assertEqual([r["src"] for r in s["log"]], ["prior", "prior", "seen"])
+        self.assertEqual(s["log"][0]["err_cm"], 5.0)  # the prior's 5 cm
+        self.assertIsNone(s["log"][1]["pts"])  # inside period_s: no new picture
 
     def test_a_hidden_object_keeps_its_last_estimate_and_a_moved_one_is_followed(self):
         v = self.view()
@@ -151,6 +154,22 @@ class Rendered(unittest.TestCase):
         self.visible = True
         self.motor.t, self.motor.k = 0.6, 30
         self.assertLess(float(np.linalg.norm(v.object_pose("obj")[0] - self.true["pos"])), 0.005)  # tracked from p1
+
+    def test_a_runaway_fit_is_rejected_and_the_last_estimate_stays(self):
+        v = self.view()
+        p1, _ = v.object_pose("obj")
+        self.motor.t, self.motor.k = 0.3, 15
+        with mock.patch.object(P, "fit_pose", return_value=(np.eye(3), np.array([90.0, 40.0, 1.0]), 0.001)):
+            np.testing.assert_allclose(v.object_pose("obj")[0], p1)
+        s = v.stats()["obj"]
+        self.assertEqual((s["rejected"], s["log"][-1]["src"]), (1, "rejected"))
+
+    def test_one_flat_patch_cannot_run_the_fit_off(self):
+        model = P.surface_points(SHAPE, 3000, np.random.default_rng(3))
+        g = np.random.default_rng(4).uniform(-0.03, 0.03, size=(300, 2))
+        patch = np.c_[g, np.full(300, 0.05)] + [1.0, 0.0, 0.8]  # part of the top face only: slides freely in-plane
+        R, t, _ = P.fit_pose(patch, model, cKDTree(model[0]), np.eye(3), np.array([1.0, 0.0, 0.8]), iters=40)
+        self.assertLess(float(np.linalg.norm(t - [1.0, 0.0, 0.8])), 40 * P.STEP_M + 1e-9)
 
     def test_the_config_reads_a_spec(self):
         cfg = P.RenderConfig.of({"cameras": ["head_camera"], "period_s": 0.5})

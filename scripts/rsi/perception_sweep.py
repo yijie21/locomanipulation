@@ -8,7 +8,7 @@ the summary goes to <out>/summary.json. The package must set WORLD_VIEW.
 Run it from the checkout, detached (nohup setsid), like sealed.py:
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/perception_sweep.py grasp_atomic <pool> scripts/rsi/seeds/grasp_c11_view <out> \\
-        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | --conditions <json>] [--procs 6 --gpus 0,1]
+        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | 2 | --conditions <json>] [--procs 6 --gpus 0,1]
 """
 
 from __future__ import annotations
@@ -51,6 +51,14 @@ GRIDS = {
         "self_040": {"self_bias_m": 0.04},
         "blind_010": {"blind_within_m": 0.10},
         "blind_020": {"blind_within_m": 0.20},
+    },
+    # step 2 (L2): poses from rendered depth and masks -- three cameras with the map's memory 5 cm off, the head camera
+    # alone, and the memory exact or 10 cm off (needs MUJOCO_GL=egl)
+    "2": {
+        "l2": {"rendered": {}},
+        "l2_head": {"rendered": {"cameras": ["head_camera"]}},
+        "l2_prior0": {"rendered": {"prior_bias_m": 0.0}},
+        "l2_prior10": {"rendered": {"prior_bias_m": 0.10}},
     },
 }
 

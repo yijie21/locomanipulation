@@ -9,7 +9,10 @@ than `period_s` (simulated time) at a read, kept when too few of its pixels are 
 the map last had it (`prior_bias_m` from its true start position, one horizontal direction per object and round; its
 orientation the true start orientation, which also breaks ties between headings the visible side cannot tell apart). The
 simulator stands still while the cameras render and the fit runs (design D5: lockstep). `stats()` is what the round
-record keeps: per object, reads, refreshes, sightings, the last fit's residual and the estimate's error against the truth.
+record keeps: per object, reads, refreshes, sightings, the last fit's residual, the estimate's error against the truth
+at the end, and every read (time, whether it came from a fresh sighting, the kept estimate or the prior, the visible
+pixels, and its error against the truth at that moment). A fit whose residual is over `reject_rms_m`, or whose centre
+lies farther from the seen points than the shape reaches, is rejected and the last estimate stays.
 
 `MuJoCoFrames` renders with MuJoCo's own renderer (EGL); an Unreal frame source returns the same `Frame`s."""
 
@@ -36,6 +39,7 @@ class RenderConfig:
     min_points: int = 40  # fewer visible pixels than this over all cameras: not seen
     max_range_m: float = 3.0  # depth beyond this is not used
     prior_bias_m: float = 0.05  # never seen yet: the start pose off by this distance (horizontal), the map's memory
+    reject_rms_m: float = 0.02  # a fit leaving more than this residual is not taken (the last estimate stays)
     model_points: int = 3000  # surface samples of an object's collision shape
     seed: int = 0
 
@@ -95,10 +99,13 @@ def surface_points(geoms: list[dict], n: int, rng: np.random.Generator) -> tuple
     return pts, cross[i] / (2 * area[i])[:, None]
 
 
+STEP_M, STEP_RAD = 0.02, 0.2  # the most one ICP iteration may move: an ill-posed solve (one flat patch) cannot run off
+
+
 def fit_pose(obs: np.ndarray, model, tree: cKDTree, R0: np.ndarray, t0: np.ndarray, iters: int = 40):
     """Point-to-plane ICP of the observed points onto the model (points, normals): each observed point to its nearest
-    model point's tangent plane, the worst 20% of pairs (by distance) trimmed. Returns (R, t, rms) with world =
-    R @ body + t; rms over the kept pairs' point-to-point distances."""
+    model point's tangent plane, the worst 20% of pairs (by distance) trimmed, each iteration's move capped at STEP_M /
+    STEP_RAD. Returns (R, t, rms) with world = R @ body + t; rms over the kept pairs' point-to-point distances."""
     pts, nrm = model
     R, t = np.asarray(R0, float), np.asarray(t0, float)
     for _ in range(iters):
@@ -109,6 +116,8 @@ def fit_pose(obs: np.ndarray, model, tree: cKDTree, R0: np.ndarray, t0: np.ndarr
         A = np.concatenate([np.cross(q, n), n], axis=1)  # moving q by (w x q + v) changes (q - m) . n by A @ [w, v]
         x = np.linalg.lstsq(A, -np.einsum("ij,ij->i", q - m, n), rcond=None)[0]
         w, v = x[:3], x[3:]
+        w = w * min(1.0, STEP_RAD / max(float(np.linalg.norm(w)), 1e-12))
+        v = v * min(1.0, STEP_M / max(float(np.linalg.norm(v)), 1e-12))
         Rd = _rotvec_mat(w)
         R, t = R @ Rd.T, t - R @ Rd.T @ v  # the body frame moved so that q -> Rd q + v
         if np.linalg.norm(w) < 1e-6 and np.linalg.norm(v) < 1e-6:
@@ -171,7 +180,7 @@ def mujoco_frames(model: mujoco.MjModel, cfg: RenderConfig) -> MuJoCoFrames:
 class RenderedView(TruthView):
     """TruthView with the free objects' poses from the cameras (module doc)."""
 
-    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n")
+    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n", "_log")
 
     def __init__(self, world, cfg: RenderConfig, round_seed: int, frames=None):
         super().__init__(world)
@@ -181,17 +190,26 @@ class RenderedView(TruthView):
         self._est: dict = {}  # key -> dict(pos, quat, t, seen, rms)
         self._model: dict = {}  # key -> ((body-frame surface points, normals), the points' tree)
         self._n: dict = {}  # key -> counts
+        self._log: dict = {}  # key -> one row per read
 
     def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         if key not in self._world.free:
             return self._world.object_pose(key)
-        n = self._n.setdefault(key, dict(reads=0, refreshes=0, seen=0))
+        n = self._n.setdefault(key, dict(reads=0, refreshes=0, seen=0, rejected=0))
         n["reads"] += 1
         est, now = self._est.get(key), float(self._world.motor.t)
         if est is None:
             est = self._est[key] = self._prior(key)
+        pts = None
         if est["t"] is None or now - est["t"] >= self._cfg.period_s:
-            self._refresh(key, est, now)
+            pts = self._refresh(key, est, now)
+        if pts is not None and pts < 0:
+            src, pts = "rejected", -pts
+        else:
+            src = "seen" if pts is not None and pts >= self._cfg.min_points else "kept" if est["seen"] else "prior"
+        true = np.asarray(self._world.object_pose(key)[0], float)
+        self._log.setdefault(key, []).append(dict(t=round(now, 2), src=src, pts=pts,
+                                                  err_cm=round(100 * float(np.linalg.norm(est["pos"] - true)), 2)))  # fmt: skip
         return est["pos"].copy(), est["quat"].copy()
 
     def _prior(self, key: str) -> dict:
@@ -201,22 +219,29 @@ class RenderedView(TruthView):
         off = float(self._cfg.prior_bias_m) * np.array([np.cos(a), np.sin(a), 0.0])
         return dict(pos=np.asarray(pos, float) + off, quat=np.asarray(quat, float), t=None, seen=False, rms=None)
 
-    def _refresh(self, key: str, est: dict, now: float) -> None:
+    def _refresh(self, key: str, est: dict, now: float) -> int:
+        """Fit the object anew from the cameras if enough of it is visible; returns its visible pixel count, negated
+        when the fit was rejected."""
         self._n[key]["refreshes"] += 1
         est["t"] = now
         body = self._world.free[key]
         obs = [back_project(f, f.body == body, self._cfg.max_range_m) for f in self._shoot()]
         obs = np.concatenate(obs) if obs else np.zeros((0, 3))
         if len(obs) < self._cfg.min_points:
-            return
+            return len(obs)
         model, tree = self._shape(key)
         R_prev = _quat_mat(est["quat"])
         R, t, rms = fit_pose(obs, model, tree, R_prev, est["pos"]) if est["seen"] else (None, None, np.inf)
         if rms > 0.01:  # first sighting, or the last estimate does not explain the points: try every heading
             alt = fit_from_headings(obs, model, tree, R_prev)
             R, t, rms = alt if alt[2] < rms else (R, t, rms)
+        reach = float(np.linalg.norm(model[0], axis=1).max())  # the shape's radius about its body origin
+        if rms > self._cfg.reject_rms_m or float(np.linalg.norm(t - obs.mean(0))) > reach + 0.02:
+            self._n[key]["rejected"] += 1
+            return -len(obs)  # seen, but the fit is not believable: the last estimate stays
         est.update(pos=t, quat=_mat_quat(R), seen=True, rms=rms)
         self._n[key]["seen"] += 1
+        return len(obs)
 
     def _shoot(self) -> list[Frame]:
         k = self._world.motor.k
@@ -238,7 +263,8 @@ class RenderedView(TruthView):
             pos, quat = self._world.object_pose(key)
             out[key] = dict(**self._n[key], ever_seen=bool(est["seen"]), rms_mm=None if est["rms"] is None
                             else round(1000 * float(est["rms"]), 2),
-                            err_cm=round(100 * float(np.linalg.norm(est["pos"] - np.asarray(pos, float))), 2))  # fmt: skip
+                            err_cm=round(100 * float(np.linalg.norm(est["pos"] - np.asarray(pos, float))), 2),
+                            log=self._log.get(key, []))  # fmt: skip
         return out
 
 

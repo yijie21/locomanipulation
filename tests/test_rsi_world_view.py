@@ -332,7 +332,10 @@ class Sweep(unittest.TestCase):
                     sys.modules[k] = v
         for grid in S.GRIDS.values():
             for spec in grid.values():
-                Perturbation.of(spec)
+                if "rendered" in spec:
+                    S.RenderConfig.of(spec["rendered"])
+                else:
+                    Perturbation.of(spec)
         r = lambda ok: dict(ok=ok, fell=False, dropped=False)  # noqa: E731
         base = {"a": r(True), "b": r(True), "c": r(False), "d": r(True)}
         cond = {"a": r(True), "b": r(False), "c": r(True), "d": r(False), "e": r(True)}  # e: no L0 round, not paired
