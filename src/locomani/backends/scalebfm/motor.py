@@ -222,6 +222,10 @@ class Motor:
         self.primitive = ""
         self.fell_at: float | None = None
         self.stand_pose: Pose | None = None
+        # TODO 33.1.2: called by `reach` before the arm moves, (side, jaw target, wrist rotation, pelvis position, pelvis
+        # quaternion wxyz, pelvis_z, jaw open) -> dict merged into the reach's Outcome info -- the scene's body-model
+        # prediction (locomani.tasks.scene.body.reach_note). None: nothing; it reads state only, never steps the sim.
+        self.reach_note = None
 
     @property
     def t(self) -> float:
@@ -682,6 +686,15 @@ class Motor:
             )
             legs = [{side: np.asarray(v, float)} for v in via]
         points = [{s: cur[s][0] for s in sides}] + legs + [goal_p]
+        pred = {}
+        if self.reach_note is not None and side != "both":
+            try:  # a prediction must never change or end a round
+                pelvis_p, pelvis_q = self.pelvis()
+                i = SIDES.index(side)
+                jaw_open = abs(float(self.jaw[i]) - JAW_OPEN) < 1e-3
+                pred = self.reach_note(side, goal_p[side], goal_R[side], pelvis_p, pelvis_q, pelvis_z, jaw_open) or {}
+            except Exception as e:  # noqa: BLE001
+                pred = {"pred_error": repr(e)[:160]}
         yaw = self.yaw()
         weights = tuple(1.0 if s in sides else 0.3 for s in SIDES)
         poses, durations, errs = [self.ref(self.t)], [], []
@@ -729,6 +742,7 @@ class Motor:
                         attitude_err_deg=round(att, 1),
                         ik_err_cm=round(100 * max(max(e) for e in errs), 2),
                         legs=len(points) - 1,
+                        **pred,
                     ),
                 )
             return None
