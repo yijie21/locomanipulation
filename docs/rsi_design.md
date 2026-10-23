@@ -70,7 +70,7 @@ RSI 是 recursive self-improvement 的缩写：系统自己提出任务，自己
 
 三个 Engineer 加 Composer 是默认（`loop.py run --candidates 3`；`--candidates 1` 是原来的一个 Engineer、没有 Composer）。依据是 TODO 32.12：同样 0.25 m/s，第 1 轮做出的版本封存集 31 / 50，只有一个 Engineer 的第 1 轮是 20 / 50（多赢 15、少赢 4，p 0.0096）；和老流程五轮后的 28 / 50 分不开（p 0.30）。两条流程各只跑过一次（TODO 32.15，用户 2026-10-22）。这个比较不干净：32.12 第 1 轮被 Composer 采用的那份草稿，它的 Engineer 读过经验库里 pick_single 的 `final.patch`（旧的抓取代码），违反第 27 条；从 TODO 36 起空种子任务族的经验库不再带代码。
 
-**经验库**（`scripts/rsi/experience/`，TODO 32.10）：每个跑完的任务族一条，由 `reflect.py` 读那次运行的账本写成——每个改动的判定（有用、有害、没看到效果、混在一起分不清）、至多一条可迁移的经验和它的触发线索、最后代码对种子的 diff。`sandbox.py` 建沙盒时带上它，但去掉这个任务族自己的那条和任务族文件 `library_exclude` 点名的条目，重建索引；从空种子开始的任务族（有 `sandbox` 块）只拿到经验，不拿代码 diff（第 27 条）；Reviewer 和 Engineer 的提示词指向它。`outer_run.py` 每个任务族跑完封存集后加一条（留在工作区，提交后下一轮的沙盒才看得到）。
+**经验库**（`scripts/rsi/experience/`，TODO 32.10）：每个跑完的任务族一条，由 `reflect.py` 读那次运行的账本写成——每个改动的判定（有用、有害、没看到效果、混在一起分不清）、至多一条可迁移的经验和它的触发线索、最后代码对种子的 diff。`sandbox.py` 建沙盒时带上它，但去掉这个任务族自己的那条和任务族文件 `library_exclude` 点名的条目，重建索引；从空种子开始的任务族（有 `sandbox` 块）只拿到经验，不拿代码 diff（第 27 条）；Reviewer 和 Engineer 的提示词指向它。`outer_run.py` 每个任务族跑完封存集后加一条（留在工作区，提交后下一轮的沙盒才看得到）。它会不会把搜索收窄由 `scripts/rsi/report/library_monitor.py` 盯着（TODO 33.11）：到 10-23 的三次有库运行里四成假设点名经验库，但用词不像原文、每轮假设数没变少，多数是拿身体和夹爪的事实当证据。
 
 Claude 由 `claude -p` 调用，模型由 `RSI_MODEL` 指定，默认 `claude-opus-5-5`。调用带 `--permission-mode bypassPermissions`：角色在沙盒里不经确认就能读写和运行命令，越界由上面的记录检查和文件还原兜底。
 
