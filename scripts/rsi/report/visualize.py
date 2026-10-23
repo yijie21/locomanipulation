@@ -134,6 +134,11 @@ def why_zh(why: str) -> str:
         # motor.grip and skills/pick.py's lift check; left in English on the grasp_atomic pages' videos (2026-10-23)
         (r"nothing between the fingers", "合爪后两指之间是空的（没夹到）"),
         (r"not between the fingers after the lift", "抬起后物体不在两指之间（没拿住）"),
+        # pick-repro iteration 6's refusal for the wallet (2026-10-23); shown in English on task_08 until this line
+        (
+            r"too thin for a level grasp over its support and too wide for a pinch from above",
+            "规划拒绝（太薄不能平抓，太宽不能从上捏）",
+        ),
     ]
     for pat, rep in rules:
         m = re.search(pat, why)
