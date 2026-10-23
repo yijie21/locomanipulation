@@ -81,6 +81,7 @@ import batch as B  # noqa: E402
 import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
+import records as RC  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
 
 from locomani import paths  # noqa: E402
@@ -241,6 +242,19 @@ HYPOTHESES_SCHEMA = {
                     "evidence": {"type": "string"},
                     "delta": {"type": "object", "properties": {"set": {"type": "object"}}, "required": ["set"]},
                     "needs_code": {"type": "string"},
+                    # TODO 33.15.1: a measurable claim the driver checks on the record library when the probe cannot
+                    "measure": {
+                        "type": "object",
+                        "required": ["feature", "op", "value", "expect"],
+                        "properties": {
+                            "feature": {"type": "string"},
+                            "op": {"enum": sorted(RC.OPS)},
+                            "value": {"type": ["number", "string"]},
+                            "expect": {"enum": ["fails", "succeeds"]},
+                            "tasks": {"type": "array", "items": {"type": "string"}},
+                            "scope": {"enum": ["incumbent", "all"]},
+                        },
+                    },
                     "predicted_fixed": {"type": "array", "items": {"type": "string"}},
                     "predicted_broken": {"type": "array", "items": {"type": "string"}},
                 },
@@ -1426,6 +1440,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`)."""
     pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
     set_statuses(hyps, pr)  # TODO 33.17
+    records_statuses(hyps, pr, base)  # TODO 33.15.1
     jdump(it_dir / "hypotheses.json", hyps)
     jdump(it_dir / "probe.json", pr)
     ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr]))
@@ -1962,6 +1977,24 @@ def set_statuses(hyps: dict, pr: list[dict]) -> None:
             h["status"] = probe_status(h, by.get(h["id"]))
             if h["id"] in by:
                 by[h["id"]]["status"] = h["status"]
+
+
+def records_statuses(hyps: dict, pr: list[dict], base: Path) -> None:
+    """TODO 33.15.1 (plan section 3.6): a hypothesis the probe left at `hypothesis` (its test needs code) that names a
+    `measure` gets its status from the record library (records.judge on the rounds the roles may see, this machine,
+    the incumbent's version by default): verified, refuted, or still a hypothesis when there are too few rounds. The
+    verdict and its counts go on the hypothesis and on its probe row (`records`), so statuses() and 33.17 read it."""
+    want = [h for h in hyps.get("hypotheses") or []
+            if isinstance(h, dict) and isinstance(h.get("measure"), dict) and h.get("status") == "hypothesis"]  # fmt: skip
+    if not want:
+        return
+    rows, version, host = RC.load(REPO, SCRATCH_ROOT), RC.version_of(base), RC.machine()
+    by = {r.get("id"): r for r in pr}
+    for h in want:
+        q = RC.judge(rows, h["measure"], version, host)
+        h["status"], h["records"] = q["verdict"], q
+        if h["id"] in by:
+            by[h["id"]].update(status=q["verdict"], records=q)
 
 
 def statuses(es: list[dict]) -> dict[str, str]:

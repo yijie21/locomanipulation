@@ -216,6 +216,10 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
         if r.returncode:
             raise SystemExit(r.stderr[-2000:])
         print(r.stdout.strip())
+    lib = REPO / "outputs" / "scene_rsi_20261016" / "records" / "library.jsonl"  # TODO 33.15.1: the record library
+    if lib.exists():
+        (loop.parent / "records").mkdir(parents=True, exist_ok=True)
+        shutil.copy(lib, loop.parent / "records" / lib.name)
     body = REPO / "outputs" / "scene_rsi_20261016" / "body"  # TODO 33.1.4: the body model's reach table (runtime data)
     if body.exists():
         (loop.parent / "body").mkdir(parents=True, exist_ok=True)

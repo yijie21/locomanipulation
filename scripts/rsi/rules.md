@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 19, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 20, 2026-10-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -183,7 +183,14 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     iterations, given to no Engineer and not refuted takes one Engineer slot, unless the Manager's `skip` names the
     check that fails: interface_kept, safety_checks_kept, changed_code_reached or evidence_not_refuting. After a
     rejection the Manager reads the failure classes, the gate's per-class tally and a standing suggestion per class
-    (code: loop.py force_build, repair_notes; TODO 33.17, D14) (version 15).
+    (code: loop.py force_build, repair_notes; TODO 33.17, D14) (version 15). A hypothesis whose test needs code may
+    name a `measure` -- {feature, op, value, expect: fails | succeeds, tasks?, scope: incumbent | all} over a column of
+    the record library (`scripts/rsi/records.py features` lists them: start, events, each step's numbers) -- and the
+    driver sets its status from the library instead: verified when the rounds on the measure's side of the split fail
+    (or succeed) more, at least 3 a side and Fisher's p <= 0.05; refuted when at least 10 a side show no difference or
+    the opposite one; else it stays a hypothesis. Only rounds the roles may see, on this machine, under the incumbent's
+    own version unless scope is all. A correlation chooses what to build; the gate still decides what stays (rule 7)
+    (code: loop.py records_statuses, records.judge; TODO 33.15.1) (version 20).
 
 34. Preparatory actions (TODO 33.5; D2, D5, D9): when the chooser (rule 32) marks an object `needs_prep`, the skill
     asks `locomani.tasks.scene.prep` which goal would give it a standing stance -- turn the object about the vertical,
