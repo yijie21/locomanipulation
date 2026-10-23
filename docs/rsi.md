@@ -117,7 +117,7 @@ cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 - `PYTHONPATH=src $PY scripts/rsi/body.py reach --x 0.45 --y-out 0.05 --z 0.9 --att level --hand right`：身体模型——这个伸手目标（骨盆朝向系：前伸、朝手外侧、离地高度，加手腕姿态）控制器送不送得到、差多少。表在 `outputs/scene_rsi_20261016/body/`，建沙盒时复制进去（TODO 33.1.4）。
 - `PYTHONPATH=src $PY scripts/rsi/choose.py outputs/scene_discovery/adt_apartment_mars Mug_2 --start <起点文件>`：站位和抓法一起选——每种抓法、左右手、站位、姿态的预计送达概率，最好的在前，并说明兜底顺序（站着 → 降骨盆 → 准备动作，TODO 33.12）。
 - `PYTHONPATH=src $PY scripts/rsi/prep.py outputs/scene_discovery/adt_apartment_mars DishSoap_1 --start <起点文件> --skills <技能目录>`：挑选器没有站位时，转、拉、挪邻居哪种目标能换来站位，技能包里有没有实现（TODO 33.5；任务族 `grasp_prep` 用起点的 `placement` 选项专抽这类局面）。
-驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`。
+驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`；角色的推理档位 `--effort 角色=档位`（默认 Reviewer high，其余 xhigh，TODO 37.5）。
 得到什么：账本在 `$S/outputs/scene_rsi_20261016/pick_single/loop/`。原来这一族跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
 
 ```bash

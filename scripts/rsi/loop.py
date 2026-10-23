@@ -153,8 +153,10 @@ FAMILY = ""
 LOOP = HIDDEN = STATE = GATE_DIR = Path()
 # role -> claude --effort level. Pinned: role calls used to inherit the operator's settings.json (effortLevel xhigh for
 # Opus 5.5 on this machine, so every recorded run is xhigh), and another operator's settings would change the loop.
-# run --effort engineer=medium overrides one role (TODO 32.8).
-EFFORT: dict = dict(reviewer="xhigh", manager="xhigh", engineer="xhigh", composer="xhigh")
+# run --effort engineer=medium overrides one role (TODO 32.8). Reviewer high since TODO 37.5 (2026-10-23: 16 replays on
+# 4 states, model time 15.6 vs 24.7 min, wall 33 vs 57, the same mechanisms found, coverage and probe gains not lower;
+# `--effort reviewer=xhigh` restores it); the Engineers stay xhigh (32.8).
+EFFORT: dict = dict(reviewer="high", manager="xhigh", engineer="xhigh", composer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
 SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
 CANDIDATES = 3  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step); 3 by
