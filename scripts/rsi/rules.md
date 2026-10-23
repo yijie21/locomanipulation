@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 18, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 19, 2026-10-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -184,3 +184,13 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     check that fails: interface_kept, safety_checks_kept, changed_code_reached or evidence_not_refuting. After a
     rejection the Manager reads the failure classes, the gate's per-class tally and a standing suggestion per class
     (code: loop.py force_build, repair_notes; TODO 33.17, D14) (version 15).
+
+34. Preparatory actions (TODO 33.5; D2, D5, D9): when the chooser (rule 32) marks an object `needs_prep`, the skill
+    asks `locomani.tasks.scene.prep` which goal would give it a standing stance -- turn the object about the vertical,
+    pull or push it toward an edge of its support, move a neighbour out of the hand's corridor, in the user's order
+    (turn before pull before clear) -- and runs the action registered for that kind (`prep.register`), then chooses
+    again on the measured state. The goals, the selector and the registry are infrastructure (the loop does not change
+    them); the actions are skills the loop writes. A kind no action implements is a gap the Reviewer reports
+    (`prep.wanted`). A task family may give its tasks a `placement` option (`depth_m`, `yaw_deg`, `blocker`) so its
+    pools hold the situations that need these actions; it changes no other family's pools (code: start.sample_start,
+    family.draw; prompt) (version 19).

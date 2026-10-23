@@ -95,7 +95,9 @@ def body_parts(world, key: str) -> list[_Part]:
     """The object's collision geoms as convex point sets in its body frame (cached per model and body)."""
     m = _model(world)
     bid = m.body(world.meta["objects"][key]["body"]).id
-    ck = (id(m), bid)
+    # id(m) alone is not a key: a model freed by one test and another built in its place share it (test suites
+    # build many tiny models), so the model's size and geometry sums go in too (TODO 33.5, 2026-10-23)
+    ck = (id(m), int(m.ngeom), int(m.nbody), float(np.sum(m.geom_size)), float(np.sum(m.geom_pos)), bid)
     if ck in _CACHE:
         return _CACHE[ck]
     parts = []

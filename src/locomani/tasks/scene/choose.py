@@ -128,9 +128,67 @@ def navigation(world):
     return world.occ, world.nav
 
 
-def clearance(occ, xy) -> float:
+FLOOR_BOTTOM_M, FLOOR_TOP_M, FLOOR_MAPPED_FRAC = (
+    0.10,
+    0.60,
+    0.60,
+)  # floor_statics (the skills' floor_blocked, TODO 33.16)
+
+
+def floor_statics(world) -> list:
+    """(centre xy, half extent xy) of the low fixed objects the navigation map leaves out -- chairs, stools, low
+    cabinets: fixed scene objects with a box whose bottom is at most FLOOR_BOTTOM_M and top at most FLOOR_TOP_M, of
+    the inner half of whose footprint the map covers less than FLOOR_MAPPED_FRAC. The robot fell twice in run C
+    starting 4 cm from a step stool the map did not have. Built once per world."""
+    got = getattr(world, "_choose_floor_statics", None)
+    if got is not None:
+        return got
+    occ = navigation(world)[0]
+    out = []
+    for key, o in world.meta["objects"].items():
+        if o.get("free") or "box" not in o:
+            continue
+        p, q = world.object_pose(key)
+        R = G._quat_mat(q)
+        c3 = np.asarray(p, float) + R @ np.asarray(o["box"].get("centre", (0.0, 0.0, 0.0)), float)
+        e = np.abs(R) @ np.asarray(o["box"]["half_extent"], float)
+        if c3[2] - e[2] > FLOOR_BOTTOM_M or c3[2] + e[2] > FLOOR_TOP_M:
+            continue
+        lo, hi = occ.clip_cell(occ.cell_of(c3[:2] - e[:2] / 2)), occ.clip_cell(occ.cell_of(c3[:2] + e[:2] / 2))
+        if float(occ.occupied[lo[0] : hi[0] + 1, lo[1] : hi[1] + 1].mean()) < FLOOR_MAPPED_FRAC:
+            out.append((c3[:2].copy(), e[:2].copy()))
+    try:
+        world._choose_floor_statics = out
+    except AttributeError:
+        pass
+    return out
+
+
+def clearance(world, xy) -> float:
+    """The pelvis's clearance at `xy`: the map's, and the gap to every low fixed object the map leaves out."""
+    occ = navigation(world)[0]
     c = occ.cell_of(xy)
-    return float(occ.clearance[c[0], c[1]]) if occ.in_bounds(c) else 0.0
+    d = float(occ.clearance[c[0], c[1]]) if occ.in_bounds(c) else 0.0
+    xy = np.asarray(xy, float)[:2]
+    for centre, e in floor_statics(world):
+        d = min(d, float(np.linalg.norm(np.maximum(np.abs(xy - centre) - e, 0.0))))
+    return d
+
+
+def approachable(surf: dict, pel_xy) -> bool:
+    """Whether a pelvis at `pel_xy` stands off one of the surface's listed approach edges (the scene file's judgement
+    of where the robot can stand: a display unit's back is free on the map but reaching through its panel is not a
+    grasp, TODO 27.13); every side when the scene lists none or the object has no surface."""
+    edges = surf.get("approach_edges") if surf else None
+    if not edges:
+        return True
+    hx, hy = np.asarray(surf.get("flat_half_extent") or surf["half_extent"], float)[:2]
+    yaw = float(surf.get("yaw", 0.0))
+    c, s = math.cos(-yaw), math.sin(-yaw)
+    d = np.asarray(pel_xy, float)[:2] - np.asarray(surf["xy"], float)
+    lx, ly = c * d[0] - s * d[1], s * d[0] + c * d[1]
+    name = ("+x" if lx > 0 else "-x") if abs(lx) / hx >= abs(ly) / hy else ("+y" if ly > 0 else "-y")
+    return name in edges
 
 
 def object_top(world, key: str) -> float:
@@ -211,6 +269,7 @@ def options(world, key: str, start_xy=None, hands=("right", "left"), postures=PO
     d_max = D_MAX_RELAXED if relax else D_MAX
     p, _ = world.object_pose(key)
     p = np.asarray(p, float)
+    surf = world.meta["surfaces"].get(world.meta["objects"][key].get("surface")) or {}
     out: list[Option] = []
     for g in grasps(world, key):
         u = _unit(g["approach_deg"])
@@ -221,7 +280,9 @@ def options(world, key: str, start_xy=None, hands=("right", "left"), postures=PO
                 cands = []
                 for d in np.arange(D_MIN, d_max + 1e-9, D_STEP):
                     pel = p[:2] - d * u + sign * SHOULDER_Y_M * _left(u)
-                    cl = clearance(occ, pel)
+                    if not approachable(surf, pel):
+                        continue
+                    cl = clearance(world, pel)
                     if cl < clear_min:
                         continue
                     r = B.reach(float(d), SHOULDER_Y_M, float(g["z"]), g["att"], pel_z, hand, path=table)
@@ -272,19 +333,16 @@ def choose(world, key: str, start_xy=None, **kw) -> Option | None:
         return None
     if not relaxed:
         for lowered in (False, True):
-            tier = [o for o in opts if (o.pelvis_z is not None) == lowered and o.p_miss <= P_MISS_OK]
+            tier = [o for o in opts if (o.pelvis_z is not None) == lowered and o.p_miss <= P_MISS_OK
+                    and o.corridor is None]  # fmt: skip
             if tier:
                 return tier[0]
     best = opts[0]
     best.needs_prep = True
-    best.why = (
-        best.why
-        + [
-            "no clear stance within reach" if relaxed else "no stance predicts a delivered reach",
-            "a preparatory action first",
-        ]
-        + (G.assess(world, key).get("recommend") or [])
-    )
+    reason = ("no clear stance within reach" if relaxed
+              else f"{best.corridor} stands in the hand's corridor from every stance that delivers" if best.corridor
+              else "no stance predicts a delivered reach")  # fmt: skip
+    best.why = best.why + [reason, "a preparatory action first"] + (G.assess(world, key).get("recommend") or [])
     return best
 
 

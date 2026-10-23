@@ -89,6 +89,7 @@ def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i
                     seed=seed,
                     room=t.room,
                     spawn=fam.get("spawn"),
+                    placement={**(fam.get("placement") or {}), **(fam["rows"][t.id].get("placement") or {})} or None,
                 )
                 if goal_holds(fam["rows"][t.id]["goal"], fam["meta"], st.to_dict()):
                     raise RuntimeError("the goal holds at the start")
