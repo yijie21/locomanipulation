@@ -70,7 +70,13 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children. A `try.py`
     call of 30 starts takes about 2-5 minutes and is run in the foreground.
 20. Stop and write an escalation instead of acting when a step needs the scene, the controller or its training, the
-    motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget.
+    motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget. When
+    the incumbent fails two or more diagnostic rounds of a recurring class (now: falls on the walk), the driver runs
+    each round's failing command alone from its start (`scripts/rsi/isolate.py`, the motor's call log) and gives the
+    verdict in the context (`attribution`): motor -- the command alone fails the same way, the motor layer's or the
+    controller's limit, written as an escalation and a body-model constraint; route around it (another first move,
+    another stance), never patch the layer below; skill -- alone it does not fail (code: loop.py attribute; TODO
+    33.20, D20) (version 20).
 
 ## Infeasibility (code; plan section 8, D13; version 3)
 

@@ -62,6 +62,7 @@
    "scripts/rsi/choose.py",
    "scripts/rsi/diag_pool.py",
    "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
    "scripts/rsi/try.py",
    "scripts/rsi/prep.py",
    "scripts/rsi/experience",

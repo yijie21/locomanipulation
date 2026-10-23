@@ -103,6 +103,7 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         plan_why=out.why,
         error=error,
         steps=ctx.log,
+        calls=list(getattr(m, "calls", [])),  # TODO 33.20: the primitive calls, for scripts/rsi/isolate.py
         fell=fell,
         seated=seated,
         t_end=round(m.t, 2),

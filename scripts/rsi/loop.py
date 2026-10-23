@@ -132,6 +132,8 @@ CLASS_SUGGEST = {
     "slip": "gripped, then lost: grip_check / lift_check and a re-grip through stage()",
     "fell": "the robot fell: a controller or motor-layer limit, an escalation (rules.md 20), not a skill fix",
 }
+ATTRIBUTE_CLASSES = ("fell_walk",)  # TODO 33.20: failure classes the driver attributes to a layer (isolate.CLASSES)
+ATTRIBUTE_MIN = 2  # ... once the incumbent fails at least this many diagnostic rounds of the class
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
 REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
 # (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
@@ -1108,6 +1110,77 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
     return d
 
 
+def attribute(inc: dict, base: Path, n: int, it_dir: Path, stub: bool) -> dict | None:
+    """TODO 33.20 (plan section 1.4, D20): whose failure is it. When the incumbent fails ATTRIBUTE_MIN or more
+    diagnostic rounds of a class in ATTRIBUTE_CLASSES, each one's failing command is run again alone from its start
+    (scripts/rsi/isolate.py; cached per incumbent in diag/attribution_<hash>, which the roles may read). `motor` -- the
+    command alone fails the same way -- is the motor layer's or the controller's limit: an escalation row
+    (loop/escalations.jsonl, rules.md 20) and a body-model constraint (body/constraints.jsonl); a skill may route around
+    it, not fix it. `skill` -- alone it does not fail -- is the skill's. The summary goes to the Reviewer and the
+    Manager."""
+    if stub:
+        return None
+    fails = [r for r in B.outcomes(base).values() if not r.get("ok")]
+    count = collections.Counter(r.get("failure_class") for r in fails)
+    classes = [c for c in ATTRIBUTE_CLASSES if count[c] >= ATTRIBUTE_MIN]
+    if not classes:
+        return None
+    out = LOOP / "diag" / f"attribution_{inc['hash']}"
+    cmd = [str(SIM_PY), str(HERE / "isolate.py"), FAMILY, "--pool", str(LOOP / "pool_diag"), "--rounds", str(base),
+           "--out", str(out), *[x for c in classes for x in ("--class", c)]]  # fmt: skip
+    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0",
+               CUDA_VISIBLE_DEVICES=GPUS.split(",")[0])  # fmt: skip
+    with (it_dir / "isolate.log").open("w") as fh:
+        rc = subprocess.run(cmd, cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT).returncode
+    if rc:
+        ledger(dict(step="attribution", iter=n, error=f"isolate.py exit {rc}"))
+        return None
+    rows = [jload(p) for p in sorted(out.glob("*.json")) if p.name != "summary.json"]
+    motor = [r for r in rows if r.get("verdict") == "motor"]
+    record_escalations(inc, n, motor)
+    summary = dict(
+        classes=classes,
+        rounds=[
+            dict(
+                label=r["label"],
+                failure_class=r.get("original", {}).get("failure_class"),
+                verdict=r.get("verdict"),
+                command=(r.get("call") or {}).get("name"),
+                alone=r.get("isolated", {}).get("call_why"),
+            )
+            for r in rows
+        ],  # fmt: skip
+        note="motor: the command alone, from the round's start, fails the same way -- the motor layer's or the "
+        "controller's limit (rules.md 20): route around it (another first move, another stance), do not try to fix the "
+        "layer below; skill: alone it does not fail, the skill's earlier steps cause it",
+        dir=str(out),
+    )
+    ledger(dict(step="attribution", iter=n, classes=classes, motor=[r["label"] for r in motor],
+                skill=[r["label"] for r in rows if r.get("verdict") == "skill"]))  # fmt: skip
+    return summary
+
+
+def record_escalations(inc: dict, n: int, motor: list[dict]) -> None:
+    """TODO 33.20: each `motor` attribution once per incumbent, as an escalation row (loop/escalations.jsonl, for the
+    people, rules.md 20) and a body-model constraint (body/constraints.jsonl, for the roles)."""
+    esc_f, con_f = STATE / "escalations.jsonl", LOOP.parent / "body" / "constraints.jsonl"
+    old = [json.loads(x) for x in esc_f.read_text().splitlines() if x.strip()] if esc_f.exists() else []
+    known = {(e.get("incumbent"), e.get("label")) for e in old}
+    for r in motor:
+        if (inc["hash"], r["label"]) in known:
+            continue
+        call = r.get("call") or {}
+        what = f"{call.get('name')}({', '.join(json.dumps(a) for a in call.get('args', []))})"
+        row = dict(t=now(), iter=n, incumbent=inc["hash"], label=r["label"], task=r.get("task"),
+                   failure_class=r["original"]["failure_class"], command=what, alone=r["isolated"]["call_why"],
+                   rule=20, layer="motor layer / controller")  # fmt: skip
+        with esc_f.open("a") as fh:
+            fh.write(json.dumps(row) + "\n")
+        con_f.parent.mkdir(parents=True, exist_ok=True)
+        with con_f.open("a") as fh:
+            fh.write(json.dumps(dict(row, kind="isolated_failure")) + "\n")
+
+
 def refresh_diag_pool(inc: dict, base: Path, n: int | None) -> dict | None:
     """TODO 33.23: after the incumbent has run on the diagnostic pool (`base`), re-draw the pool when it fails fewer than
     DIAG_MIN_FAILS starts (diag_pool.refresh: fresh starts from the diagnostic seed range, the incumbent closed loop on
@@ -1368,6 +1441,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     base = diag_incumbent(inc, it_dir)
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
+    attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
     digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
     digest.write_text(DG.build(base, FAMILY))
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
@@ -1375,6 +1449,8 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
                   TMP=role_tmp(), DIGEST=digest)  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
+    if attribution:
+        extra["attribution"] = attribution
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
@@ -1456,6 +1532,8 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     es = entries()
     may_reopen = reopen_allowed(es)
     lead = dict(recurring=recurring(es))  # TODO 33.14: first in the context
+    if extra.get("attribution"):  # TODO 33.20: which recurring failures are the motor layer's
+        lead["attribution"] = extra["attribution"]
     notes = repair_notes(es, base, n)  # TODO 33.17: after a rejection
     if notes:
         lead["repair_notes"] = notes
@@ -2461,11 +2539,14 @@ def reprobe(n: int, stub: bool) -> str | None:
     base = diag_incumbent(inc, it_dir)
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
+    attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp())  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
+    if attribution:
+        extra["attribution"] = attribution
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
