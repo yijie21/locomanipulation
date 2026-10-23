@@ -192,6 +192,7 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 
 ```bash
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family pick_single --out outputs/rsi_repro/visual
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family pick_single --out outputs/scene_rsi_20261016/pick_repro_media --only task --versions final
 ```
 做什么：读沙盒的账本，取种子和每一次被验收门接受的版本，再读它们在诊断池上的逐局记录和轨迹，出三样东西（`--only step,overview,task` 选其中几样，默认全出）。`step_NN.mp4`：第 NN 次被接受的改动，在它改前改后都跑过的起点里选一个被它从失败翻成成功、轨迹最短的，左改前右改后，3 倍速，字幕卡默认是 Manager 那一轮的中文总结（`--cards <JSON>` 按版本哈希换成自己写的，`"_names"` 给物体改名；种子没有技能时左边放起点第一帧）。`task_NN_<任务>.mp4`：任务族的每个任务一段，取最终版本做成的最短一局，没有成功就取最短的失败局（规划拒绝也是一局，机器人站着不动），左种子右最终版本，字幕卡列出每个版本在该任务诊断起点上的成功数；只要最终技能、不要种子对照时加 `--versions final`，同样的起点和字幕卡，单画面，文件名 `final_NN_<任务>.mp4`，不覆盖双画面的那套。`overview.png`：每个任务一行、每个版本一列，每格是那一局决定成败的那一刻（成功取抬起后一秒，失败取结尾）。
 得到什么：`outputs/rsi_repro/visual/` 下的视频、同名海报 `.jpg`、`previews/`，索引 `versions.json`（版本、哈希、来自第几轮、验收门数字、Manager 总结）和 `tasks.json`（每段任务视频的起点和各版本成功数；`--versions final` 的写到 `tasks_final.json`）。一段视频约 1 分钟，单画面约 40 秒；被接受两次、8 个任务的运行约 10 分钟。
@@ -202,10 +203,37 @@ MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/evolution_media.py -
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/visualize.py --sandbox /workspace/code/rsi-scene/pick-a --out outputs/scene_rsi_20261016/visual
 ```
 
-做什么：2026-10-16 为 pick_single 的第一次运行（原机器的 `pick-a` 沙盒）手写的纪录片，讲"Reviewer 每一轮看到了什么"：那次的 5 个版本哈希、起点编号、每轮的线索和字幕都写在代码里（`VERSIONS`、`clue_0`–`clue_3`、`main` 的 `cards`）。`--only clue,step,infeasible,overview` 选：`clue_NN.png` 第 NN 轮的线索图，画在那一局 Reviewer 引用的那一刻上（罐子被手掌推开、导航图上没有地上的凳子、遥控器侧着抓进不去、右手站位全被吧台凳挡住）；`step_NN.mp4` 同一起点改前改后并排，2 倍速，前面一张线索卡；`infeasible_book.png`、`infeasible_wallet.png` Reviewer 论证现有夹爪抓不了的两个任务；`overview.png` 5 个指定起点 × 5 个版本。
-得到什么：只对 `pick-a` 沙盒有效，换一个沙盒它在开头查到缺那几个版本目录就退出并提示改用上面那条；pick-a 的诊断局不在复现材料里，别的机器上跑不了。它同时是其他报告脚本共用的底层（`Scene` 回放和渲染、`Round` 读一局、`why_zh` 失败判词的中文对照）；要给自己的运行出线索图，照 `clue_N` 另写。Unreal 版视频用 `scripts/rsi/report/report_unreal.py`，它读原来那几个沙盒和写死的清单，只能在原来的机器上跑；给别的运行渲染要先按 `configs/scenes.yaml` 的 `adt_apartment_mars.unreal.room_build` 建公寓关卡，再改它的清单。
+做什么：pick_single 第一次运行（原机器的 `pick-a` 沙盒）的手写纪录片，讲 Reviewer 每一轮看到了什么：那次的 5 个版本哈希、起点编号、每轮的线索和字幕都在代码里（`VERSIONS`、`clue_0`–`clue_3`、`main` 的 `cards`）。`--only clue,step,infeasible,overview` 选：`clue_NN.png` 第 NN 轮的线索图，画在那一局 Reviewer 引用的那一刻上；`step_NN.mp4` 同一起点改前改后并排，2 倍速，前面一张线索卡；`infeasible_book.png`、`infeasible_wallet.png` Reviewer 论证现有夹爪抓不了的两个任务；`overview.png` 5 个指定起点 × 5 个版本。
+得到什么：只对 `pick-a` 沙盒有效，换一个沙盒它在开头查到缺那几个版本目录就退出并提示改用上面那条；pick-a 的诊断局不在复现材料里，别的机器上跑不了。它同时是其他报告脚本共用的底层（`Scene` 回放和渲染、`Round` 读一局、`why_zh` 失败判词的中文对照）；要给自己的运行出线索图，照 `clue_N` 另写。
 
-## 9. 常见错误
+## 9. Unreal 渲染
+
+前提是[安装](setup.md)第 8 步（引擎、URLab 插件、`$BRIDGE_PY`）和 PATH 上的 Blender 5.x；`$SC` 是第 2 节的场景目录。编辑器一台机器只能开一个，它渲染的卡要和仿真的卡分开，一张卡的机器写 `--gpu 0` 并且不和内环同时跑；首次启动编译着色器要几分钟，之后约 15 秒。
+
+### 9.1 生成 Unreal 资产：每台机器一次
+
+```bash
+bash scripts/start_unreal.sh --gpu 1
+blender --background --python scripts/adt_to_usd.py -- --unreal $SC/scene_meta.json $SC/unreal_room
+"$BRIDGE_PY" -m locomani.sim.unreal.build_level --room $SC/unreal_room --room-level AdtApartment
+bash scripts/build_scene.sh adt_apartment_mars --unreal
+```
+
+做什么：第 1 条起编辑器并等它接受命令（关卡是在运行中的编辑器里建的）。第 2 条 Blender 把公寓里除可动物体外的所有东西连同吊顶灯烘成 `$SC/unreal_room/room.glb` 和 `room_scene.json`。第 3 条把它建成房间关卡 `/Game/Levels/AdtApartment`。第 4 条建场景关卡 `adt_apartment_mars`（`configs/scenes.yaml` 的 `unreal.build`）：复制房间关卡，导入机器人、可动物体、第三人称机位和 ghost 夹爪，把场景 XML 的哈希记在 `$UNREAL_ASSETS/adt_apartment_mars/source.json`。
+得到什么：`$UNREAL_ASSETS/adt_apartment_mars/` 和宿主工程里的两个关卡，以后每次渲染直接用；第 3 条成功时 `$SC/unreal_room/unreal_level_report.json` 里 `"ok": true`。只有第 2 节的场景改过（`scene_locomani.xml` 变了）才重做第 4 条，否则渲染会因哈希不符拒绝；房间烘焙和房间关卡不用重做。烘焙约 3 分钟，房间关卡约 20 分钟（`room.glb` 1.1 GB、400 个网格；命令最多等一小时）。
+
+### 9.2 渲染视频：每次
+
+```bash
+bash scripts/start_unreal.sh --gpu 1
+PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" scripts/rsi/report/report_unreal.py all --media outputs/rsi_repro/visual --out outputs/rsi_repro/visual_unreal
+bash scripts/stop_unreal.sh
+```
+
+做什么：第 1 条在编辑器没开着时才需要。第 2 条读第 8 节 `evolution_media.py` 输出目录里的索引（`steps.json`、`tasks.json`、`tasks_final.json`），把每段视频的那几局通过 URLab 回放进关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍摄，再用同样的起点、版本和字幕卡合成；`all` 或点名（`step_01`、`task_07_tv_remote_pickup`、`final_03_jam_pickup`）。不带 `--media` 时它渲染的是进展报告自己的清单（`ps_00`、`on_02` 等，`--help` 列全），那些局只在原机器上。第 3 条关编辑器。
+得到什么：`--out` 下每段 `<名字>.mp4`、`previews/`、海报，`<名字>/<面板>/NNNNN.jpg` 逐帧，和 `compare_*.jpg`（同一时刻 Unreal 与 MuJoCo 上下对照）；一段几分钟。渲染期间不要跑别的重任务，编辑器的守护脚本在 CPU 饱和时会把它杀掉，日志在 `$UNREAL_ROOT/logs/`。
+
+## 10. 常见错误
 
 - `scene_lint.py` 报 error：不要开跑循环。先看 `lint.json` 里是哪一类（物体掉下去、目标开局就成立、竖直轴不对），多半是场景没按第 2 节的顺序建，或者少了面板、碰撞盒。
 - 内环一开始就停，`loop.log` 里说缺 `pool_diag`：沙盒没建完，重新跑 `sandbox.py`。

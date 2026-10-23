@@ -79,10 +79,12 @@ def uecmd(code: str, timeout: float = 600.0) -> str:
     return out.decode()
 
 
-def run_file(path: Path, **globals_) -> str:
-    """Run an in-editor script with module-level names set first (the command server passes no environment)."""
+def run_file(path: Path, timeout: float = 600.0, **globals_) -> str:
+    """Run an in-editor script with module-level names set first (the command server passes no environment).
+    `timeout` is the wait for the editor's answer: a room level from the ADT apartment's 1.1 GB bake took 19 minutes
+    to import and the default 600 s client gave up while the editor finished (SRA0889, 2026-10-23)."""
     prelude = "".join(f"{k} = {v!r}\n" for k, v in globals_.items())
-    return uecmd(prelude + Path(path).read_text())
+    return uecmd(prelude + Path(path).read_text(), timeout=timeout)
 
 
 def checked(output: str) -> str:

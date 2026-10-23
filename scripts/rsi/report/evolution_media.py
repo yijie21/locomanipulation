@@ -83,7 +83,9 @@ def task_of(label: str) -> str:
     return label.rsplit("_s", 1)[0]
 
 
-def step_video(sc: V.Scene, k: int, prev: dict, cur: dict, card: dict, used: set, out_dir: Path) -> Path | None:
+def step_video(sc: V.Scene, k: int, prev: dict, cur: dict, card: dict, used: set, out_dir: Path) -> dict | None:
+    """Accepted change k on one start it flipped (module docstring); returns steps.json's row -- the video, the start,
+    the card and the two panels' versions and round directories (report_unreal.py --media films the same)."""
     labels = flipped(prev["diag"], cur["diag"])
     if card.get("label"):
         labels = [card["label"]]
@@ -112,7 +114,12 @@ def step_video(sc: V.Scene, k: int, prev: dict, cur: dict, card: dict, used: set
                 [("旧版本", V.FG), ("失败", (255, 110, 100))])  # fmt: skip
     else:
         left = (RM.frames(sc, b, ps[0], SPEED), [("旧版本", V.FG), outcome(b)])
-    return RM.compose(sc, out_dir / f"step_{k:02d}.mp4", [left[0], right[0]], [left[1], right[1]], lines, SPEED)
+    out = RM.compose(sc, out_dir / f"step_{k:02d}.mp4", [left[0], right[0]], [left[1], right[1]], lines, SPEED)
+    panels = [
+        dict(name=prev["name"], diag=str(prev["diag"]), held=b is None),
+        dict(name=cur["name"], diag=str(cur["diag"])),
+    ]
+    return dict(video=str(out), label=label, lines=lines, hash=cur["hash"], iter=cur["iter"], panels=panels)
 
 
 def outcome(r: RM.Rd) -> tuple[str, tuple]:
@@ -213,7 +220,8 @@ def task_videos(sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None, 
         caps = [[(v["name"], V.FG), outcome(r)] for v, r in zip(shown, rounds)]
         out = RM.compose(sc, out_dir / f"{prefix}_{k:02d}_{t}.mp4", panels, caps, lines, SPEED)
         index.append(dict(task=t, object=name, label=label, video=str(out), final_ok=bool(rounds[-1].rec["ok"]),
-                          versions=[dict(name=n, ok=o, n=m) for n, o, m in counts]))  # fmt: skip
+                          versions=[dict(name=n, ok=o, n=m) for n, o, m in counts], lines=lines,
+                          panels=[dict(name=v["name"], diag=str(v["diag"])) for v in shown]))  # fmt: skip
         print(prefix, k, t, label, out, flush=True)
     return index
 
@@ -236,9 +244,13 @@ def main(argv=None) -> int:
     only = set(a.only.split(","))
     if "step" in only:
         used: set = set()
+        steps: list = []
         for k in range(1, len(vs)):
-            p = step_video(sc, k, vs[k - 1], vs[k], cards.get(vs[k]["hash"], {}), used, a.out)
-            print("step", k, vs[k]["hash"], p, flush=True)
+            row = step_video(sc, k, vs[k - 1], vs[k], cards.get(vs[k]["hash"], {}), used, a.out)
+            print("step", k, vs[k]["hash"], row and row["video"], flush=True)
+            if row:
+                steps.append(row)
+        (a.out / "steps.json").write_text(json.dumps(steps, indent=1, ensure_ascii=False))
     if "overview" in only and len(vs) > 1:
         print("overview", overview(sc, vs, a.out / "overview.png", cards.get("_names")), flush=True)
     if "task" in only:

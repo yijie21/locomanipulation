@@ -39,7 +39,7 @@ GUIDES = {
     "docs/object_grasp_design.md": 95,
     # 2026-10-20 (user): the scene RSI line is the main line; its runbook (four levels, the check of recorded results)
     # and its design page. The VLA pages above are archived in place.
-    "docs/rsi.md": 215,
+    "docs/rsi.md": 245,  # 2026-10-23: + section 8 (both video scripts) and section 9 (Unreal assets once, then renders)
     "docs/rsi_design.md": 150,
     "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,
