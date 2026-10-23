@@ -2,7 +2,8 @@
 
 状态：设计稿，没有实现，没有跑过。分支 `design/vision-rsi-20261023`（worktree
 `/workspace/code/locomanipulation-vision-rsi`），不改 `main` 上的文件、不碰主线的沙盒和 GPU。第 10 节的 D1–D8
-用户 2026-10-23 定了：D4 模拟 LiDAR，其余七条按推荐（“D4 模拟激光雷达 别的都按照推荐的答案来”）。下一步是第 9 节第 0 步。
+用户 2026-10-23 定了：D4 模拟 LiDAR，其余七条按推荐（“D4 模拟激光雷达 别的都按照推荐的答案来”）。第 9 节第 0 步
+2026-10-23 做完（第 12 节：封存集 50 局逐局相同，38 / 50）；下一步是第 1 步。
 上游：[场景 RSI 方案](scene-rsi-plan-20261016.md)、[RSI 设计](../rsi_design.md)、
 [grasp_atomic 线的记录与复现](grasp-atomic-line-20261023.md)（现任：封存集 38 / 50）、
 [仿真数据零样本上真机](real-robot-sim2real-plan-20261006.md)（真机三相机）、
@@ -234,6 +235,46 @@ unreal，这样的话，需要哪些模型或者信息才能实现。”
 - `adt_apartment_mars` 里自由物体的 Unreal 视觉网格和 MuJoCo 碰撞网格差多少。
 - Unreal 编辑器在公寓关卡上占多少显存；感知模型和它能不能分在两张卡上同时跑。
 - 在公寓关卡里，每次只渲 1 帧（stream 模式）时图像质量够不够模型用。
+
+## 12. 第 0 步的结果（2026-10-23）
+
+用户：“开始第 0 步”。
+
+**改了什么：**
+
+| 部分 | 位置 | 做什么 |
+|---|---|---|
+| 两个视图 | `src/locomani/tasks/scene/view.py` | `TruthView`：技能能问的世界问题（场景描述 `meta`、`occ / nav`、`free`、`object_pose`、`object_geoms`、`static_colliders`、`held`、`finger_contacts`、`state / check`），全部从仿真真值回答；`RobotView`：电机去掉 `sim`、`pol`、`between_fingers / gripping / touching`、`place / reset`，其余照传 |
+| 接线 | `episode.run_episode(view=...)`，`scripts/rsi/scene_round.py` | 技能包里写了 `WORLD_VIEW = True`，`ctx.world` 和 `ctx.motor` 就换成两个视图；没写的包照旧拿 `SceneWorld` 和 `Motor`；判成功一直读 `SceneWorld` |
+| 电机 | `backends/scalebfm/motor.py` | 加 `wrist(side)`、`finger_positions(side)`（机器人自己身体的位置）；接触读取那三个方法注明只给评测和 `TruthView` |
+| 走路 | `tasks/scene/navigate.py` `walk_path` | 起点从 `motor.sim.d.qpos[:2]` 改成 `motor.pelvis()[0][:2]`，数值相同 |
+| 移植的现任 | `scripts/rsi/seeds/grasp_c11_view/` | run C 第 11 轮的现任（`grasp_c11`）逐处改成读视图：约 60 处，分布在 `pick / rim / clutter / doorway / recipes` 五个文件和 `recipes/tall_narrow.py`；`grasp_c11` 原样保留当对照 |
+| 检查 | `tests/test_rsi_world_view.py` | 写了 `WORLD_VIEW` 的包，源码里（去掉注释和字符串后）不许出现 `.sim`、MuJoCo 的 model / data 数组、接触读取、`mujoco.` 里 `mju_` 以外的东西、视图的私有属性；`RobotView` 运行时拒绝这些名字；移植前后可调参数及其值完全相同 |
+
+**等价性：** 同一个封存池（`grasp_atomic.json` 的种子 610000，50 个起点，每个任务 5 个），两次运行，都带
+`pick.VIA_BACK_M = 0.2`（v11 的覆盖项）、`--npz`、6 个进程：
+
+| 运行 | 代码 | 技能包 | 成功 | 跌倒 | 掉落 |
+|---|---|---|---|---|---|
+| A | `e563083`（改动前，单独的 worktree） | `grasp_c11` | 38 / 50 | 3 | 1 |
+| B | 本分支 | `grasp_c11_view` | 38 / 50 | 3 | 1 |
+| run C 封存集（10-22 记录） | run C 沙盒 | v11 现任 | 38 / 50 | 3 | 1 |
+
+- A 和 B 50 局逐局相同：判定字段、`steps` 记录，以及每局 npz 的 12 个数组（机器人位姿、关节、参考、手腕、夹爪、手指、物体轨迹）逐字节一样。
+- A 的每个任务成功数和 run C 记录的 `per_task` 全部一致。
+- 这 50 局走到了改过的分支：`rim` 4 局，`tall_narrow`（每个控制周期读手指接触）4 局，`clutter` 2 局，`held` 43 局，
+  地图、站位、走路每局都走。
+- 没走到的一处：`doorway.walk` 的跨房间分支（`doorway.py` 第 172 行），这 50 局没有一局需要它。它和每局都走的第 141 行是同一个替换。
+
+**还是真值的地方（下一步要换的）：** `TruthView` 本来就是真值，这是第 0 步的设计。另外两处要留意：
+- `RobotView` 给出的机器人自身世界坐标（`pelvis`、`jaw_centre`、`wrist`、`finger_positions`）还是仿真真值。
+- 电机内部的闭环（`walk_to`、`reach` 把世界坐标目标换到骨盆坐标）也读真值骨盆。
+
+在电机里加一个“骨盆位姿从哪来”的接口，是 L1 给自身定位加噪声、L3 换 FAST-LIO2 的前提。LLM 角色的 CLI 工具（`graspability / body / choose / prep`）没有动。
+
+**数据和复现：** `outputs/vision_rsi_20261023/`（本 worktree，不进 git）：`pool_sealed/`、`l0/base/`、`l0/view/`、
+`l0/compare.json`（逐局对比）、`l0_queue.sh`（两次运行的命令）。两次运行用的是机器共享的 `RSI_SIM_SLOTS`；
+当时主线 run C 已经停了（主线 session 12:02 UTC 告知）。
 
 ## 参考
 

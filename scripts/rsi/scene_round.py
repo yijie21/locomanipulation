@@ -118,7 +118,7 @@ def run_round(
     elif plan is None:
         rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
     else:
-        res, arrays = run_episode(world, task, start, plan)
+        res, arrays = run_episode(world, task, start, plan, view=bool(getattr(skills, "WORLD_VIEW", False)))
         ex = res.execution
         # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start
         # (the clock onto the console table) counted as one (r1_on_single, human intervention 2, 2026-10-16)

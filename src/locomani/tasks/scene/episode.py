@@ -13,6 +13,7 @@ from locomani.backends.scalebfm.motor import Outcome
 from locomani.pipeline.execution_record import RoundResult
 from locomani.scene_discovery.predicates import parse
 from locomani.tasks.scene.start import Start
+from locomani.tasks.scene.view import TruthView
 from locomani.tasks.scene.world import SceneWorld, Task
 
 SETTLE_S = 1.0  # standing still after the objects are placed
@@ -28,10 +29,11 @@ class EpisodeTimeLimit(BaseException):
 
 @dataclass
 class SkillContext:
-    """What a skill sees: the world (privileged scene state), the motor, the task, a random generator, and the log of
-    every step's outcome (the round record keeps it)."""
+    """What a skill sees: the world (privileged scene state, or a scene.view world view for a package that sets
+    WORLD_VIEW), the motor (through that view's RobotView), the task, a random generator, and the log of every step's
+    outcome (the round record keeps it)."""
 
-    world: SceneWorld
+    world: SceneWorld | TruthView
     task: Task
     rng: np.random.Generator
     log: list = field(default_factory=list)
@@ -56,9 +58,10 @@ def goal_keys(goal) -> list[str]:
 
 
 def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: float = HOLD_S,
-                limit_s: float = EPISODE_LIMIT_S):  # fmt: skip
+                limit_s: float = EPISODE_LIMIT_S, view: bool = False):  # fmt: skip
     """`plan(ctx) -> Outcome`. Returns (RoundResult, trace arrays). A plan still stepping at `limit_s` simulated seconds
-    ends the round as a failure, why "episode time limit" (TODO 36, review 2026-10-22)."""
+    ends the round as a failure, why "episode time limit" (TODO 36, review 2026-10-22). `view`: the plan sees the world
+    through scene.view.TruthView (the package set WORLD_VIEW) instead of the SceneWorld; the judge reads the SceneWorld."""
     m, wall = world.motor, time.time()
     m.track = {world.meta["objects"][k]["body"]: world.free[k] for k in task.objects}
     m.reset(start.robot_xy, start.robot_yaw)
@@ -66,7 +69,7 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         m.place(world.meta["objects"][k]["body"], pos, quat)
     seated = {k: round(world.seat(k), 4) for k in start.placements}  # placements drawn on older surface heights
     seated = {k: v for k, v in seated.items() if v > 0}
-    ctx = SkillContext(world, task, np.random.default_rng(start.seed))
+    ctx = SkillContext(TruthView(world) if view else world, task, np.random.default_rng(start.seed))
     # the stepping layer's cap: every primitive ticks through m.tick (hand programs included)
     had_tick, tick = "tick" in vars(m), m.tick
 

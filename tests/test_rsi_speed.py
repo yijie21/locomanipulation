@@ -506,7 +506,15 @@ class RoleSafety(unittest.TestCase):
 
     def test_a_role_commit_becomes_working_tree_changes(self):
         import subprocess
+        from unittest import mock
 
+        # Run from a commit hook, git exports GIT_INDEX_FILE and friends (absolute paths in a worktree): the scratch
+        # repository's commands, and the loop's own, would act on the outer checkout (as test_scalebfm_rsi_phase4)
+        clean = mock.patch.dict(
+            os.environ, {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, clear=True
+        )
+        clean.start()
+        self.addCleanup(clean.stop)
         git = lambda *a: subprocess.run(["git", *a], cwd=self.root, capture_output=True, text=True, check=True)  # noqa: E731
         git("init", "-q")
         git("config", "user.email", "t@t")

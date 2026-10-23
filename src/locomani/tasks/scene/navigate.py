@@ -55,7 +55,7 @@ def path(occ, nav, start, goal) -> list[np.ndarray] | None:
 
 def walk_path(motor, occ, nav, goal_xy, goal_yaw: float):
     """Walk to (goal_xy, goal_yaw) around obstacles. Returns the last walk's Outcome (or the failing one)."""
-    corners = path(occ, nav, motor.sim.d.qpos[:2].copy(), goal_xy)
+    corners = path(occ, nav, motor.pelvis()[0][:2], goal_xy)
     if corners is None:
         return Outcome(False, "no path on the occupancy map", motor.t, motor.t)
     out = None

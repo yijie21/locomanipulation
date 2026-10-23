@@ -247,6 +247,15 @@ class Motor:
         i = SIDES.index(side)
         return float(2 * (np.mean(self.sim.d.qpos[self.sim.gq[2 * i : 2 * i + 2]]) + 0.023))
 
+    def wrist(self, side: str):
+        """(position, quat) of `side`'s wrist body, measured."""
+        return self.sim.body(WRIST[side])
+
+    def finger_positions(self, side: str) -> list[np.ndarray]:
+        """World positions of `side`'s two finger bodies (finger 1 on the wrist's -y side first)."""
+        return [self.sim.d.xpos[f].copy() for f in self.fingers[side]]
+
+    # -- contacts: the simulator's ground truth; the episode judge and scene.view.TruthView read them, a skill does not
     def between_fingers(self, side: str) -> set[int]:
         """Bodies (ids) touched by both fingers of `side` -- the grasped object, if any."""
         m, d = self.sim.m, self.sim.d
