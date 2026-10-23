@@ -1171,8 +1171,10 @@ def compact_history(es: list[dict], full: int = HISTORY_FULL) -> list:
     return [iteration_line(x, seen[x]) if isinstance(x, int) else x for x in out] + rows[cut:]
 
 
-def context(inc: dict, extra: dict, compact: bool = False) -> dict:
-    """The role's context file. `compact` (the Manager, TODO 36.7): older iterations one line each (compact_history)."""
+def context(inc: dict, extra: dict, compact: bool = True) -> dict:
+    """The role's context file. `compact` (TODO 36.7 for the Manager, 37.2 for every role): the last HISTORY_FULL
+    iterations' ledger rows in full, older iterations one line each (compact_history); `mechanisms` is the index of
+    every hypothesis so far (mechanism_table)."""
     es = entries()
     meta = jload(STATE / "meta.json", {})
     # TODO 36 (review 2026-10-22, L6) and 33.18.2: this run's cost and gate calls only (not rows a replay copied), and
@@ -1190,6 +1192,7 @@ def context(inc: dict, extra: dict, compact: bool = False) -> dict:
             **wall,
         ),  # fmt: skip
         history=compact_history(es) if compact else [{k: v for k, v in e.items() if k != "usage"} for e in es],
+        mechanisms=mechanism_table(es),
         # TODO 33.8: rejections under the present gate rule; one an older rule rejected may be judged again
         rejected_hashes=sorted(
             {
@@ -1696,11 +1699,9 @@ def norm_key(x: str) -> str | None:
     return hyp_key(int(m.group(1)), m.group(2)) if m else None
 
 
-def recurring(es: list[dict]) -> list[dict]:
-    """TODO 33.14 (D11, user 2026-10-22): mechanisms Reviewers proposed in two or more iterations that no Engineer was
-    given. The Manager links a hypothesis to earlier iterations' (`repeats`); linked ids are one mechanism; one given
-    to an Engineer (a Manager `engineer` decision, an Engineer row) counts as built. 32.12 proposed the dish soap's
-    narrow side in all five iterations and built it in none."""
+def mechanism_links(es: list[dict]) -> tuple[dict[str, set[str]], set[str], dict[str, str]]:
+    """The Manager's `repeats` links as groups of hypothesis keys (`NN:id`), the keys an Engineer built, and each
+    key's group root (keys never linked are their own group). Shared by recurring() and mechanism_table()."""
     parent: dict[str, str] = {}
 
     def find(x):
@@ -1729,6 +1730,15 @@ def recurring(es: list[dict]) -> list[dict]:
     groups = collections.defaultdict(set)
     for x in list(parent):
         groups[find(x)].add(x)
+    return dict(groups), built, {x: find(x) for x in list(parent)}
+
+
+def recurring(es: list[dict]) -> list[dict]:
+    """TODO 33.14 (D11, user 2026-10-22): mechanisms Reviewers proposed in two or more iterations that no Engineer was
+    given. The Manager links a hypothesis to earlier iterations' (`repeats`); linked ids are one mechanism; one given
+    to an Engineer (a Manager `engineer` decision, an Engineer row) counts as built. 32.12 proposed the dish soap's
+    narrow side in all five iterations and built it in none."""
+    groups, built, _ = mechanism_links(es)
     out = []
     for members in groups.values():
         iters = {m.split(":", 1)[0] for m in members}
@@ -1740,6 +1750,84 @@ def recurring(es: list[dict]) -> list[dict]:
         claim = next((h.get("claim") for h in hs if isinstance(h, dict) and h.get("id") == hid), "")
         out.append(dict(proposed=len(iters), ids=sorted(members), latest=latest, claim=_cut(claim, 300)))
     return sorted(out, key=lambda g: (-g["proposed"], g["latest"]))
+
+
+def mechanism_table(es: list[dict]) -> list[dict]:
+    """TODO 37.2 (user 2026-10-23): one row per hypothesis so far -- the index of what was tried, for every role. Run
+    C's Reviewer read the whole ledger (203-255 KB of `history`, 170-210k tokens of context per turn) and paged
+    through it with scripts; the Manager alone had the compacted history (36.7). Per row: the iteration and id, the
+    claim and `instead`, the probe's status and counts, the Manager's `repeats` link (`same_as`) or `skip`, what was
+    built from it (each draft's diagnostic flips, void, duplicate, late), the Composer's and the gate's verdicts when
+    its draft went on, and `open`: nothing of its mechanism (its linked group) was ever built and the probe did not
+    refute it. Hypotheses only; parks and reopens stay in `history`."""
+    groups, built, root = mechanism_links(es)
+    iters = sorted({e["iter"] for e in es if isinstance(e.get("iter"), int)})
+    out = []
+    for n in iters:
+        rows = [e for e in es if e.get("iter") == n]
+        hyps = (jload(STATE / f"iter_{n:02d}" / "hypotheses.json", {}) or {}).get("hypotheses") or []
+        cands = {c.get("number"): c for c in (jload(STATE / f"iter_{n:02d}" / "candidates.json", []) or [])
+                 if isinstance(c, dict)}  # fmt: skip
+        probe = {r.get("id"): r for e in rows if e.get("step") == "probe"
+                 for r in e.get("results") or [] if isinstance(r, dict)}  # fmt: skip
+        man = next((e for e in reversed(rows) if e.get("step") == "manager" and not e.get("void")), None)
+        single = man.get("hypothesis") if man and man.get("decision") == "engineer" else None
+        eng = [e for e in rows if e.get("step") == "engineer"]
+        comp = next((e for e in rows if e.get("step") == "compose"), None)
+        gate = next((e for e in reversed(rows) if e.get("step") == "gate" and not e.get("void")), None)
+        repeats = {r.get("now"): r.get("same_as") for r in (man or {}).get("repeats") or [] if isinstance(r, dict)}
+        skip = (man or {}).get("skip") or {}
+        for h in hyps:
+            if not isinstance(h, dict) or "id" not in h:
+                continue
+            hid = h["id"]
+            key = hyp_key(n, hid)
+            row = dict(iter=n, id=hid, claim=_cut(h.get("claim"), 160), instead=_cut(h.get("instead"), 100),
+                       status=h.get("status") or probe_status(h, probe.get(hid)))  # fmt: skip
+            p = probe.get(hid)
+            if p and "fixed" in p:
+                row["probe"] = (f"{p.get('ok_before')}->{p.get('ok_after')}/{p.get('n')}, fixed {len(p['fixed'])} "
+                                f"broken {len(p.get('broken') or [])}")  # fmt: skip
+            elif p and p.get("error"):
+                row["probe"] = "error: " + _cut(p["error"], 80)
+            if repeats.get(hid):
+                row["same_as"] = repeats[hid]
+            if skip.get(hid):
+                row["skip"] = skip[hid]
+            mine = [e for e in eng if e.get("hypothesis") == hid or (e.get("hypothesis") is None and hid == single)]
+            drafts = []
+            for e in mine:
+                k = e.get("candidate")
+                c = cands.get(k) if k is not None else None
+                if e.get("late"):
+                    d = "late: stopped before it answered"
+                elif e.get("void"):
+                    d = "void" + (f" ({_cut(e.get('error'), 60)})" if e.get("error") else "")
+                elif e.get("duplicate_of"):
+                    d = f"duplicate of draft {e['duplicate_of']}"
+                elif c and "fixed" in c:
+                    d = f"fixed {len(c['fixed'])} broken {len(c['broken'])}"
+                else:
+                    d = "built"
+                drafts.append((f"draft {k}: " if k is not None else "") + d)
+            if drafts:
+                row["built"] = "; ".join(drafts)
+            ks = {e.get("candidate") for e in mine}
+            went_on = bool(mine) and (comp is None or comp.get("decision") == "merge"
+                                      or (comp.get("decision") == "adopt" and comp.get("adopted") in ks))  # fmt: skip
+            if comp and mine:
+                row["composer"] = ("merge" if comp.get("decision") == "merge" else
+                                   "adopted" if went_on else "kept the incumbent" if comp.get("decision") == "keep"
+                                   else "not adopted")  # fmt: skip
+            if gate and went_on:
+                r = gate.get("result") or {}
+                row["gate"] = ("accepted" if gate.get("accepted") else "rejected") + (
+                    f" b {r['b']} c {r['c']}" if "b" in r and "c" in r else ""
+                )
+            members = groups.get(root.get(key, key), {key})
+            row["open"] = not (members & built) and row["status"] != "refuted"
+            out.append(row)
+    return out
 
 
 def probe_status(h: dict, r: dict | None) -> str:

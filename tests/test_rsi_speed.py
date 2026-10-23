@@ -730,7 +730,8 @@ class ManagerHistory(unittest.TestCase):
         self.assertEqual([e["iter"] for e in h[3:]], [2] * 7 + [3] * 7)
         self.assertNotIn("usage", h[3])
         self.assertEqual(lp.compact_history(es, full=10)[0]["step"], "review")  # nothing older: all rows
-        self.assertIn("compact=True", inspect.getsource(lp.after_review))  # only the Manager reads it compact
+        # TODO 37.2 (user 2026-10-23): every role reads it compact (run C's Reviewer read 203-255 KB of history)
+        self.assertIs(inspect.signature(lp.context).parameters["compact"].default, True)
 
 
 class ExperienceLibrary(unittest.TestCase):
