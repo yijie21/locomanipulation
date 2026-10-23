@@ -58,6 +58,8 @@
    "scripts/rsi/claim_check.py",
    "scripts/rsi/failure_class.py",
    "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
    "scripts/rsi/experience",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",
@@ -83,6 +85,8 @@
    "locomani.backends.scalebfm.runtime",
    "locomani.backends.scalebfm.motor",
    "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
    "locomani.tasks.scene.stage"
   ],
   "strip": [

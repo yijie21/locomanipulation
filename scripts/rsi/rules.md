@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 17, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 18, 2026-10-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -169,8 +169,14 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     (scripts/rsi/failure_class.py, TODO 33.15); the gate reports its tally per class and the digest leads with the
     classes. `src/locomani/tasks/scene/graspability.py` (and scripts/rsi/graspability.py) says, without simulating,
     whether an object fits the open jaw on each side, how far to turn so a side that fits faces the jaw, and which
-    preparatory action would make it fit (TODO 33.18, D13). Neither is evidence that a change helps; only the gate is
-    (code: the driver writes them; prompt) (version 15).
+    preparatory action would make it fit (TODO 33.18, D13). `src/locomani/tasks/scene/body.py` (scripts/rsi/body.py)
+    says, from a table of 15,120 measured reaches, how likely the controller is to land a hand 3 cm or more off a
+    target, and `src/locomani/tasks/scene/choose.py` (scripts/rsi/choose.py) lists for an object at a start every
+    grasp, hand, stance and posture that stands clear of the furniture, scored by that table, best first, with the
+    fallback order standing, lowered pelvis, preparatory action (TODO 33.1.4, 33.12; D1, D2, D9, D22). All three are
+    infrastructure: skills call them, the loop does not change them, the driver rebuilds the table. None is evidence
+    that a change helps; only the gate is (code: the driver writes them; prompt) (version 15; version 18 for the body
+    model and the chooser).
 
 33. Each hypothesis gets a `status` from its probe: verified (it fixed a diagnostic start and broke none), refuted (it
     fixed none), mixed, or hypothesis (not probed: its test needs code). A mechanism Reviewers proposed in two or more
