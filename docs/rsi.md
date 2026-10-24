@@ -1,6 +1,6 @@
 # 场景 RSI：让机器人自己学会新任务
 
-机器人在一套公寓场景里，由 Claude 提任务、写技能代码，再由验收测试决定留不留下改动，能做成的任务一轮比一轮多。整套机制和为什么这样设计见 [场景 RSI 详解](rsi_design.md)，现在做到哪一步见[进展报告](handoff/scene-rsi-report-20261019.md)，名词见[术语表](reference/glossary.md)。10-20 起从空技能目录长出抓取的那条线（任务族 `grasp_atomic`，四次运行到封存集 38 / 50）单独记在[记录与复现](handoff/grasp-atomic-line-20261023.md)。
+机器人在一套公寓场景里，由 Claude 提任务、写技能代码，再由验收测试决定留不留下改动，能做成的任务一轮比一轮多。整套机制和为什么这样设计见 [场景 RSI 详解](rsi_design.md)，现在做到哪一步见[进展报告](handoff/scene-rsi-report-20261019.md)，名词见[术语表](reference/glossary.md)。10-20 起从空技能目录长出抓取的那条线（任务族 `grasp_atomic`，四次运行到封存集 38 / 50）单独记在[记录与复现](handoff/grasp-atomic-line-20261023.md)。换一个场景跑同一套流程（物流间的双手抱箱，任务族 `box_bimanual`，TODO 38）的建场景、探针和开循环命令在[方案页第 6 节](handoff/box-bimanual-rsi-plan-20261023.md#6-命令)，其余步骤同本页。
 
 按规模分四级，每级都能单独跑，跑通上一级再跑下一级。耗时是 2026-10 在这台机器上（2 张卡、约 15 个 CPU 核）的实测；模型费按 Claude Opus 计。
 

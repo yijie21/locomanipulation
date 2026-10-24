@@ -1279,7 +1279,7 @@
 - [x] 38.10 `scripts/rsi/loop.py` 越界审计（`scene_links`、`own_link_targets`、origin 泄漏模式）改读任务族的 `scene`，不再写死 `outputs/scene_discovery` 之外的假设；五个角色提示词里的“公寓”改成任务族给的场景描述字段。（10-23 做了：审计的 `scene_links` / `own_link_targets` 本来就枚举 `outputs/scene_discovery/` 下所有链接，新场景放在那里就不用改；提示词开头改成 `{SCENE_NOTE}`，`loop.prompt_vars` 读家族文件的 `scene_note`，没有的沿用“in a simulated apartment”）
 - [x] 38.11 `scripts/rsi/failure_class.py` 双手类型：没走到站位、一手没到位、夹住没抬起、抬起后滑脱、摔倒、其他；进验收门结论的 `per_class` 和 Manager 的 `repair_notes`。（10-23 做了：`failure_class.bimanual()` 按物体的 `bimanual` / `semantic.graspable` 判；公共类（ok、no_plan、time_limit、fell、walk_off）之后走 `_classify_bimanual`：两手离箱面都 > 4 cm 是 side_reach、一手是 one_hand_short、夹持前箱子被推 > 2 cm 或倾 > 15° 是 knocked、两手都到位没抬 3 cm 是 no_lift、抬过又没拿住是 slip；夹持时刻取第一次 `squeeze`，没有就第一次合爪，再没有就最后一次 reach 结束；`CLASS_SUGGEST` 加 one_hand_short、no_lift；`tests/test_rsi_failure_class.py` 的 `Bimanual`）
 - [x] 38.12 测试：v2 合成夹具上的新场景起点抽样（四边、深度、两档朝向）、家族文件加载、双手失败分类、提示词参数化、审计路径。（10-23：`test_scan_room.py`、`test_scalebfm_motor.py` 的 `BothHandsAndSqueeze`、`test_rsi_stage.py`、`test_rsi_failure_class.py` 的 `Bimanual`、`test_box_bimanual_family.py`（家族文件、两档 `placement` 和箱子尺寸自洽、新场景存在时抽起点）；审计路径不用改所以没加）
-- [ ] 38.13 L0 冒烟：`scene_round.py box_bimanual` 一局；沙盒里 `loop.py run box_bimanual --stub --max-iters 1`。
+- [x] 38.13 L0 冒烟：`scene_round.py box_bimanual` 一局；沙盒里 `loop.py run box_bimanual --stub --max-iters 1`。（10-23 做了：沙盒 `$LOCOMANI_WORKSPACE/code/rsi-scene/box-smoke`，诊断池 30、验收池 40 都抽满、0 跳过；假角色一轮 6 秒走完 review → probe → manager → 三个 engineer → compose → gate（静态检查通过）。沙盒的 `keep` 要带 `scripts/rsi/diag_pool.py` 和 `try.py`（loop.py 10-23 起 import 它们；`grasp_atomic.json`、`grasp_prep.json` 的 keep 还没加，下次建那两族的沙盒会缺），`closure` 里不能写 `try`）
 
 阶段 5 运行（配置沿用 grasp_atomic：三 Engineer + Composer、墙钟 6 h、验收门 12 次、停止线 70%）
 - [ ] 38.14 建沙盒，先 `loop.py run box_bimanual --max-iters 2` 看角色读不读得懂新场景和新动作，再放开到停止条件。本机只有一张仿真卡：`RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`。
@@ -1290,4 +1290,4 @@
 - [ ] 38.17 确认后：`scenes.yaml` 给 `logistics_room_mars` 配 Unreal 关卡（复用 `warehouse_textured` 房间关卡，建场景关卡），`report_unreal.py --media` 出 Unreal 版。
 
 文档
-- [ ] 38.18 `docs/rsi.md` 加“换一个场景跑”一节（建场景、任务族文件、探针、运行）；方案页记决策和结果；README 和 docs/README 各一行。
+- [~] 38.18 `docs/rsi.md` 加“换一个场景跑”一节（建场景、任务族文件、探针、运行）；方案页记决策和结果；README 和 docs/README 各一行。（10-23：runbook 顶着 245 行上限，只在开头加一句指到方案页第 6 节，命令写在那里；README 两行 10-23 已加；运行结果（38.15）和 Unreal（38.17）之后再补）
