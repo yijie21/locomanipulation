@@ -143,6 +143,8 @@ class Rendered(unittest.TestCase):
         self.assertLess(s["err_cm"], 0.5)
         self.assertEqual([r["src"] for r in s["log"]], ["prior", "prior", "seen"])
         self.assertEqual(s["log"][0]["err_cm"], 5.0)  # the prior's 5 cm
+        self.assertEqual(s["log"][0]["rot_deg"], 0.0)  # the prior's orientation is the start's
+        self.assertLess(s["log"][-1]["rot_deg"], 3.0)
         self.assertIsNone(s["log"][1]["pts"])  # inside period_s: no new picture
 
     def test_a_hidden_object_keeps_its_last_estimate_and_a_moved_one_is_followed(self):

@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import threading
 import traceback
+from multiprocessing import AuthenticationError
 from multiprocessing.connection import Client as _Connect
 from multiprocessing.connection import Listener
 
@@ -25,7 +26,8 @@ AUTHKEY = b"locomani-vision-rsi"
 
 
 def serve(address, handle, log=print) -> None:
-    """Answer requests until killed: each connection in its own thread, `handle` under one lock."""
+    """Answer requests until killed: each connection in its own thread, `handle` under one lock. A connection that fails
+    the handshake (a bare port probe, a wrong key) is logged and dropped; the server keeps listening."""
     lock = threading.Lock()
 
     def session(conn) -> None:
@@ -45,7 +47,12 @@ def serve(address, handle, log=print) -> None:
     with Listener(tuple(address), authkey=AUTHKEY) as listener:
         log(f"serving on {address[0]}:{address[1]}")
         while True:
-            threading.Thread(target=session, args=(listener.accept(),), daemon=True).start()
+            try:
+                conn = listener.accept()
+            except (AuthenticationError, EOFError, OSError) as e:
+                log(f"dropped a connection that failed the handshake: {type(e).__name__}: {e}")
+                continue
+            threading.Thread(target=session, args=(conn,), daemon=True).start()
 
 
 class Client:
@@ -69,6 +76,21 @@ class Client:
         if "error" in reply:
             raise RuntimeError(f"service {self.address}: {reply['error']}")
         return reply
+
+
+def ready(address, timeout_s: float = 0.0) -> bool:
+    """Whether a service answers the handshake at `address` (polling up to `timeout_s`)."""
+    import time
+
+    end = time.time() + timeout_s
+    while True:
+        try:
+            _Connect(tuple(address), authkey=AUTHKEY).close()
+            return True
+        except (OSError, EOFError, AuthenticationError):
+            if time.time() >= end:
+                return False
+            time.sleep(1.0)
 
 
 def pack_mask(mask: np.ndarray) -> dict:

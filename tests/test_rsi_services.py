@@ -41,6 +41,16 @@ class Protocol(unittest.TestCase):
             c.call(dict(fail=True))
         self.assertEqual(c.call(dict(x=np.ones(1), mask=mask))["echo"][0], 2)  # still serving after the error
 
+    def test_a_bare_port_probe_does_not_stop_the_server(self):
+        import socket
+
+        with socket.create_connection(("127.0.0.1", PORT)):
+            pass  # connects and closes without the handshake, as a /dev/tcp probe does
+        time.sleep(0.2)
+        self.assertTrue(S.ready(("127.0.0.1", PORT)))
+        self.assertEqual(S.Client(("127.0.0.1", PORT)).call(dict(x=3, mask=np.zeros((1, 1), bool)))["echo"], 6)
+        self.assertFalse(S.ready(("127.0.0.1", PORT + 41)))  # nothing listens there
+
     def test_two_clients_are_served(self):
         a, b = S.Client(("127.0.0.1", PORT)), S.Client(("127.0.0.1", PORT))
         m = np.zeros((2, 2), bool)

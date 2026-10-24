@@ -4,8 +4,8 @@
 `/workspace/code/locomanipulation-vision-rsi`），不改 `main` 上的文件、不碰主线的沙盒和 GPU。第 10 节的 D1–D8
 用户 2026-10-23 定了：D4 模拟 LiDAR，其余七条按推荐（“D4 模拟激光雷达 别的都按照推荐的答案来”）。第 9 节第 0 步
 2026-10-23 做完（第 12 节：封存集 50 局逐局相同，38 / 50）；第 1 步（L1）2026-10-23 做完：物体位姿误差（第 13 节），
-自身定位偏差和最后一段看不见（第 14 节）。第 2 步（L2）2026-10-23 用 MuJoCo 渲染跑完封存集（第 15 节）；
-Unreal 帧来源和巡房建图还没做。
+自身定位偏差和最后一段看不见（第 14 节）。第 2 步（L2）2026-10-23 用 MuJoCo 渲染跑完封存集（第 15 节）。
+第 3 步（L3，SAM 3 掩码加 Unreal 的 RGB）2026-10-24 跑了 24 / 100 局，主线的 run D 要用机器，暂停（第 16 节）。
 上游：[场景 RSI 方案](scene-rsi-plan-20261016.md)、[RSI 设计](../rsi_design.md)、
 [grasp_atomic 线的记录与复现](grasp-atomic-line-20261023.md)（现任：封存集 38 / 50）、
 [仿真数据零样本上真机](real-robot-sim2real-plan-20261006.md)（真机三相机）、
@@ -486,6 +486,60 @@ L2 里还是真值的部分：分割掩码是精确的（等于 stencil）、物
 1. Unreal 帧来源：现在的 `UnrealView` 只经 URLab 拿 RGB（BGRA），没有深度和 stencil。要么给 URLab 插件加深度和
    stencil 的抓取（C++ 改动、重新编译），要么直接进 L3：Unreal 的 RGB 给 SAM 3 出掩码，深度先用 MuJoCo 的。
 2. 巡房建图（D2）：激光雷达加深度沿一条路线建占据图和台面，替换场景描述里的地图。
+
+## 16. 第 3 步（L3）：SAM 3 在 Unreal 画面上出掩码（2026-10-24，跑了 24 / 100 局）
+
+用户 2026-10-23：L2 之后先做“Unreal RGB 加 SAM 3”。
+
+**怎么接的：**
+- Unreal 的 RGB 由 `locomani.sim.unreal.rgb_server`（URLab 的 bridge venv）出，SAM 3 由 `scripts/rsi/sam3_server.py`
+  （`sam3d` conda 环境；`sam3` 环境里的 torch 缺 CUDA 库）出，都在 GPU 1。回合 worker 经 `locomani.tasks.scene.services`
+  （本机 `multiprocessing.connection`，端口 18821 / 18822）请求。
+- 深度仍是 MuJoCo 的深度缓冲。把 MuJoCo 的掩码描边叠到 Unreal 的画面上逐像素对得上（`outputs/vision_rsi_20261023/l3_align/overlay.png`）：
+  两边相机的内参和位姿一致。
+- 物体按场景描述的 `phrase` 提示（去掉冠词、序数词和带数字的词，`services.prompt_of`）。每个相机取 SAM 3 得分不低于
+  0.3、反投影后离当前估计最近（0.25 m 以内）的实例。电视遥控器那张桌上 SAM 3 给 DVD 遥控器的分数（0.89）比电视遥控器（0.84）高，
+  必须按位置选。SAM 3 在这几支蜡烛（画面上像圆罐）上认不出 “candle”、“candle jar”、“jar”，“tin” 只有 0.52 分的碎块。
+- 起服务的几个坑：
+  - 用 `/dev/tcp` 探端口时，连接不握手就断开，服务端的 accept 会抛异常退出；
+  - autocast 和 inference mode 只对当前线程生效，每个请求要在处理它的线程里重新进入；
+  - 停队列要逐个杀 PID：`setsid` 包了一层，按进程组杀不干净。
+  这三个都改了。
+
+**已跑的 24 局**（同样的起点；L2 是第 15 节精确掩码 320×240 那组）：
+
+| 任务 | L3 | L2 | L0 | 从没看到目标 | 掩码 IoU（中位数） | 认错实例 |
+|---|---|---|---|---|---|---|
+| CandlePattern02_1 | 2 / 5 | 4 / 5 | 3 / 5 | 5 / 5 | — | 0 |
+| DishSoap_1 | 5 / 5 | 4 / 5 | 3 / 5 | 0 / 5 | 0.92 | 0 |
+| DisplayWolf | 1 / 5 | 4 / 5 | 5 / 5 | 1 / 5 | 0.71 | 0 |
+| Mug_2 | 2 / 5 | 3 / 5 | 4 / 5 | 1 / 5 | 0.55 | 0 |
+| NIT_CoffeeCan_Anon | 3 / 4 | 4 / 4 | 3 / 4 | 0 / 4 | 0.985 | 0 |
+| 合计 | 13 / 24 | 19 / 24 | 18 / 24 | | | |
+
+**已经看得出的：**
+- 简单外形的物体 SAM 3 分得很好：洗洁精 IoU 0.92、咖啡罐 0.985，看到后估计误差 0.01–0.06 cm。
+- 认不出就全靠记忆：蜡烛 5 局都没认出来，只能按偏 5 cm 的记忆去抓。
+- 杯子：看到后估计偏 1.9–4.0 cm（L2 精确掩码时不到 1 cm）。SAM 3 按 Unreal 的视觉外形分割（带把手），深度却是 MuJoCo 按碰撞体
+  （5 个盒子，没有把手）渲的：掩码落在把手上的像素取到的是后面的深度，点云被拉偏。这是“视觉掩码配碰撞深度”这个组合自己造出来的，
+  真实相机的深度和掩码都来自视觉表面；但那时拟合用的形状也得换成视觉网格。
+- 狼摆件：看到后位置误差只有 0.02–0.14 cm，5 局里 3 局还是在抓取时打滑。掩码只盖住 60–70%，可能是朝向拟错了。
+  读取记录 10-24 起加了朝向误差（`rot_deg`），续跑的局可以查。
+
+**还没做的：** 续跑剩下 76 局（`l3` 26 局、对照 `l2_640` 50 局；已写的 24 局会跳过），主线 run D 和它的封存集 10-24 09:18 UTC 跑完，接着续跑。
+
+**深度和掩码来自同一个表面（用户 2026-10-24 选“给 URLab 加深度输出”）：** 读过插件
+（`/workspace/ue_57/projects/URLabSmoke/Plugins/UnrealRoboticsLab`，分支在 `923b689` 上）：
+- `UMjCamera` 本来就有深度模式（`SCS_SceneDepth` 渲到 `RTF_R32f`，厘米，沿视轴）；非 fresh 的请求已经能以 float32 回传
+  （`RpcDispatcher.cpp:1773`）。缺的是 fresh：`RenderNow` 和 fresh 的分发都把深度相机排除了（`MjCamera.cpp:785`，
+  `RpcDispatcher.cpp:1633`），`ReadNow` 也没有深度的同步读回。
+- 补丁：`RenderNow` 放行深度相机，只抓一次、不开 TAA（抖动的采样会让深度跟着抖）；`ReadNow` 加深度的同步读回；
+  fresh 的回复里深度按 float32 回传。只动深度这一种模式，RGB 和分割的行为不变。补丁和说明照 `urlab_fresh_capture` 的做法记在仓库的 `patches/` 下。
+- 关卡：复制一份 `adt_apartment_mars` 关卡，在副本里给机器人的三个相机各加一个同父节点、同位姿、同视场的深度相机
+  （编辑器 Python 设 `CaptureMode`），640×480；主线用的原关卡不动。
+- 客户端：`rgb_server` 同时回深度；`RenderedView` 加深度来源选项（MuJoCo 的碰撞体深度，或 Unreal 的视觉表面深度）；
+  拟合的形状换成物体的视觉网格（ADT 资产），再往后换成 SAM 3D 重建的网格。
+- 编译插件要占几分钟到十几分钟的 CPU，插件和编辑器也是主线渲染要用的：等 run D 和它的封存集跑完、编辑器关着时做，做之前先告诉主线。
 
 ## 参考
 

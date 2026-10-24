@@ -11,8 +11,9 @@ orientation the true start orientation, which also breaks ties between headings 
 simulator stands still while the cameras render and the fit runs (design D5: lockstep). `stats()` is what the round
 record keeps: per object, reads, refreshes, sightings, the last fit's residual, the estimate's error against the truth
 at the end, and every read (time, whether it came from a fresh sighting, the kept estimate or the prior, the visible
-pixels, and its error against the truth at that moment). A fit whose residual is over `reject_rms_m`, or whose centre
-lies farther from the seen points than the shape reaches, is rejected and the last estimate stays.
+pixels, and its position and orientation error against the truth at that moment). A fit whose residual is over
+`reject_rms_m`, or whose centre lies farther from the seen points than the shape reaches, is rejected and the last
+estimate stays.
 
 `MuJoCoFrames` renders with MuJoCo's own renderer (EGL). With `masks="sam3"` (level L3) the masks come from SAM 3 on
 Unreal's RGB of the same moment instead (`ServiceFrames`; locomani.tasks.scene.services): the object is prompted by its
@@ -249,8 +250,9 @@ class RenderedView(TruthView):
             src, pts = "rejected", -pts
         else:
             src = "seen" if pts is not None and pts >= self._cfg.min_points else "kept" if est["seen"] else "prior"
-        true = np.asarray(self._world.object_pose(key)[0], float)
-        row = dict(t=round(now, 2), src=src, pts=pts, err_cm=round(100 * float(np.linalg.norm(est["pos"] - true)), 2))
+        true, true_q = (np.asarray(a, float) for a in self._world.object_pose(key))
+        row = dict(t=round(now, 2), src=src, pts=pts, err_cm=round(100 * float(np.linalg.norm(est["pos"] - true)), 2),
+                   rot_deg=round(float(np.degrees(_angle(_quat_mat(est["quat"]), _quat_mat(true_q)))), 1))  # fmt: skip
         if pts is not None and self._sam3 is not None:
             row.update(self._diag.pop(key, {}))
         self._log.setdefault(key, []).append(row)
