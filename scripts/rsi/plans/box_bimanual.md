@@ -22,10 +22,9 @@ anywhere in the room it can walk from, facing a random way, 0.5 m or more from t
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.
-- **The seed**: not empty. It is the first run's incumbent (42ff17cb110f, 2026-10-23): the two-hand hug pick in
-  `bimanual.py`, written by the loop. Under the old goal (off the platform by 2 cm, judged once) it held on 49 of 50
-  sealed starts; it lifts the box only 3-7 cm, so under this goal it mostly fails with low_lift. Its dispatch was
-  widened by hand to accept the `lifted` goal; nothing else in it was touched.
+- **The seed**: not empty. It is a two-hand hug pick in `bimanual.py` (stand square to the platform edge nearest the
+  box, crouch, open jaws beside the two side walls, squeeze, lift by arms and legs). It lifts the box only 3-16 cm, so
+  under this goal it fails on every start (low_lift, a few tilted).
 - **Done by the loop**: diagnosing and changing the pick -- the lift height, standing up, keeping the box level and
   steady through the window -- accepting a change only through the gate.
 - **Not done by people**: no parameters tuned, no skill code written beyond that dispatch line. Every human
@@ -97,7 +96,7 @@ Measured ScaleBFM facts (controller comparison, 2026-10-13; the box line, TODO 2
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random box placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
 | D8 | The loop stops when the incumbent wins 70 % of the acceptance pool, or at a hard stop: 12 gate calls, the wall-clock cap (6 h), or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
-| D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 30)` at every 0.1 s check over the round's last 5 s. Until 2026-10-23 it was `held` alone, judged once after a 2 s hold. |
+| D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 30)` at every 0.1 s check over the round's last 5 s. |
 | D13 | Infeasibility is handled as in section 8. |
 | D14 | Graspability, the chooser, the body table and the preparatory layer describe one jaw; on this family they say nothing about the two-hand hold (rules.md 35). The failure classes are the two-hand set: walk_off, side_reach, one_hand_short, knocked, no_lift, low_lift, tilted, dropped_hold, slip, fell, other. |
 | 2026-10-23 | User for the first run: the seed is the motor layer only; grasps are computed from the scene's geometry by code the loop writes; earlier skill catalogs, loop records and grasp programs are not in the sandbox; the experience library holds the single-hand lines' lessons, not their code. |
@@ -115,16 +114,15 @@ grasp_atomic's plan hold here unchanged):
 | squat to 0.62 m | 0.638 m; delivered lean 25 deg (mode 4 does not track the torso) |
 | stand up (back to the reset stance) | 0.786 m, lean 4-5 deg |
 
-The two-hand probe on this scene (`scripts/rsi/probe_box.py`, 2026-10-23; the default start, 10 random box placements,
-5 per task; a hand-written sequence the loop does not see): **10 / 10 held**, the box 2.8-6.9 cm off the platform at the
-end. What it measured, for the skills to build on or depart from:
+What the layers below deliver on this scene (hand-written probes, `scripts/rsi/probe_box.py`, 2026-10-23 and 24;
+the default start, 10 random box placements, 5 per task; sequences the loop does not see):
 
 | Step | What worked | What did not |
 |---|---|---|
 | stance | `walk_path` to 0.38 m outside the platform edge nearest the box, facing it; stops within 1.5-2 cm | -- |
-| hands | `posture(pelvis_z=0.72)`, then `reach("both")` with the wrists pointing forward (x = the approach, z up) and the jaws open: each hand's outer finger flank 6.35 cm from the jaw axis is what touches a wall; targets at the wall plane + 6.35 cm + 0.5 cm, a pre-grasp 6 cm further out and 12 cm short, entry through a via point beside the walls; delivered 1-2 cm, attitude 2-6 deg (10 cm on one deep placement) | a pinch on each wall's top edge with the wrist pointing down: the attitude came out 50-75 deg off and the hands knocked the box (0 / 4) |
-| squeeze | `squeeze(0.06, 1 s)`: both hands' fingers on the box in 9 / 10 at the end of the second | 0.04 lifted 1 / 4 (the fingers slid up the walls); before the servo cap below, the lead wound to 12 cm and the box flew out of the hands |
-| lift | `reach("both", 10 cm up, keep_squeeze=True, pelvis_z=0.78)`: the legs lift, the arms keep pressing; the hands end 3.5-7 cm short of the 10 cm, the box rises 3-7 cm | `posture()` (stand up) keeps the arms in joint space: from the forward lean it swung the hands over the head and let go |
+| hands | `posture(pelvis_z=0.72)`, then `reach("both")` with the wrists pointing forward (x = the approach, z up) and the jaws open: each hand's outer finger flank, 6.35 cm from the jaw axis, is what touches a wall; delivered 1-2 cm, attitude 2-6 deg | a pinch on each wall's top edge with the wrist pointing down: the attitude came out 50-75 deg off and the hands knocked the box; closed jaws touch the wall with the gripper base, which `held` does not count |
+| squeeze | `squeeze(0.06, 1 s)`: both hands' fingers on the box | 0.04: the fingers slid up the walls |
+| lift to the goal | `reach("both", +0.25 m, keep_squeeze=True, pelvis_z=0.79)` raises the box 15-29 cm: the height is deliverable | 0 / 10 on this goal in five settings: hands at 55 % of the box height -- the line between them passes almost through the box's centre of mass -- the box tipped 30-59 deg; at 75-85 % it slid down out of the finger flanks; an 8 cm squeeze at 75 % still tipped. `posture()` (stand up) keeps the arms in joint space and swings them over the head |
 
 While a squeeze is on, each hand's servo lead is capped at the offset along the push and at the offset's size across it
 (motor.py `_servo`): the command sits at most 2 x inward_m inside the wall. The gripper base (2.9 cm half width) is wider

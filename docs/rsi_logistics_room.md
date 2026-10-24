@@ -18,7 +18,7 @@
 | 封存集 50 局 | 约 2 分钟 | 无 |
 | 视频：MuJoCo / Unreal | 几秒 / 约 1 分钟一段 | 无 |
 
-现状（2026-10-24）：旧判据（离台 2 cm、只在局末判一次）下第一次内环一轮就到了停止线，封存集 49 / 50。换成上面的严格判据后，现有技能 0 / 60，人写的探针 5 种设置都是 0 / 10：箱子举得到 20 cm，但会倾斜 30–59° 或从两手间滑落。按规则探针不到 5 / 10 不开循环，所以严格判据下的循环还没跑，下一步要先解决抱持方式（见第 9 节）。
+现状（2026-10-24）：起步技能在这个判据下 0 / 60，人写的探针 5 种设置都是 0 / 10：箱子举得到 20 cm，但会倾斜 30–59° 或从两手间滑落（第 9 节）。严格判据下的内环还没有跑过。
 
 ## 0. 每个新终端先执行
 
@@ -73,7 +73,7 @@ cd $S && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run box_bim
 cd -
 ```
 
-做什么：第二条把仓库**已提交**的代码导出成沙盒（没提交的改动沙盒看不到），技能目录换成任务族文件 `sandbox.seed` 指的起步版本（现在是 `scripts/rsi/seeds/box_strict_start`：第一次运行学会的抱箱技能，只把分派放宽到认得新目标），并抽诊断池 30 局、验收池 40 局。第三条在后台跑内环：Reviewer 读诊断池的记录和轨迹写假设，Prober 试参数，Manager 选，三个 Engineer 并行改技能，Composer 合成一个候选，验收门在角色看不到的验收池上和现任逐局比。`--max-iters 1` 只跑一轮，用来确认代码没有问题；去掉它就跑到停止条件（验收池 70% 以上、12 次验收门、6 小时或 Manager 停）。
+做什么：第二条把仓库**已提交**的代码导出成沙盒（没提交的改动沙盒看不到），技能目录换成任务族文件 `sandbox.seed` 指的起步版本（现在是 `scripts/rsi/seeds/box_strict_start`：循环之前写出的双手抱箱技能，箱子只抬 3–16 cm），并抽诊断池 30 局、验收池 40 局。第三条在后台跑内环：Reviewer 读诊断池的记录和轨迹写假设，Prober 试参数，Manager 选，三个 Engineer 并行改技能，Composer 合成一个候选，验收门在角色看不到的验收池上和现任逐局比。`--max-iters 1` 只跑一轮，用来确认代码没有问题；去掉它就跑到停止条件（验收池 70% 以上、12 次验收门、6 小时或 Manager 停）。
 得到什么：账本在 `$S/outputs/scene_rsi_20261016/box_bimanual/loop/ledger.jsonl`，每行一步；每轮的提示词、角色回答、草稿、候选和验收结论在 `loop/iter_NN/`。一轮约 30–40 分钟、约 17 USD。
 
 ```bash
@@ -91,7 +91,7 @@ cat $S/outputs/scene_rsi_20261016_hidden/box_bimanual/sealed/summary.json
 ```
 
 做什么：在 50 局封存集上跑起步版本和每一版被接受的现任。封存集连验收门都没见过，是报告用的成绩。
-得到什么：`summary.json` 的 `versions` 里每个版本的成功数、按任务的成功数、摔倒和掉落数；约 2 分钟。被接受的技能目录在 `$S/outputs/scene_rsi_20261016/box_bimanual/loop/iter_NN/candidate/skills/`；要留下来，复制到 `scripts/rsi/seeds/` 下以版本哈希命名的目录再提交（第一次运行的是 `scripts/rsi/seeds/box_42ff17cb110f`）。这条线不写回 `src/locomani/tasks/scene/skills/`。
+得到什么：`summary.json` 的 `versions` 里每个版本的成功数、按任务的成功数、摔倒和掉落数；约 2 分钟。被接受的技能目录在 `$S/outputs/scene_rsi_20261016/box_bimanual/loop/iter_NN/candidate/skills/`；要留下来，复制到 `scripts/rsi/seeds/` 下以版本哈希命名的目录再提交。这条线不写回 `src/locomani/tasks/scene/skills/`。
 
 ## 6. 看过程：MuJoCo 视频
 
@@ -133,7 +133,7 @@ bash scripts/stop_unreal.sh
 
 判据写在两个文件里，改了要提交、重建沙盒，旧沙盒的验收和封存数字就不能和新的比了：
 - `scripts/rsi/families/box_bimanual_tasks.jsonl` 每个任务的 `goal`：现在是 `held(nor_cal_box)` 加 `lifted(nor_cal_box, 0.20, 30)`；`lifted` 的两个数是最低角高出平台多少米、底面倾斜上限多少度。
-- `scripts/rsi/families/box_bimanual.json` 的 `judge_s`（最后几秒要一直成立，5）和 `hold_s`（技能结束后原地保持几秒，2）。去掉 `judge_s` 就回到只在局末判一次。
+- `scripts/rsi/families/box_bimanual.json` 的 `judge_s`（最后几秒要一直成立，5）和 `hold_s`（技能结束后原地保持几秒，2）。
 
 角色读的规则在 `scripts/rsi/rules.md` 第 35、36 条，读的方案在 `scripts/rsi/plans/box_bimanual.md`；判据改了这两处也要改，改一次算一次人工干预。
 
