@@ -14,7 +14,13 @@ at the end, and every read (time, whether it came from a fresh sighting, the kep
 pixels, and its error against the truth at that moment). A fit whose residual is over `reject_rms_m`, or whose centre
 lies farther from the seen points than the shape reaches, is rejected and the last estimate stays.
 
-`MuJoCoFrames` renders with MuJoCo's own renderer (EGL); an Unreal frame source returns the same `Frame`s."""
+`MuJoCoFrames` renders with MuJoCo's own renderer (EGL). With `masks="sam3"` (level L3) the masks come from SAM 3 on
+Unreal's RGB of the same moment instead (`ServiceFrames`; locomani.tasks.scene.services): the object is prompted by its
+category phrase (services.prompt_of), and in each camera the instance taken is the one at least `sam3_min_score` whose
+points land nearest the current estimate, within `assoc_gate_m` (a second TV remote on the same table is not it). Depth
+stays MuJoCo's, registered to Unreal's pixels (same camera, 640 x 480; checked 2026-10-23 by overlaying MuJoCo's masks on
+Unreal's frames). The read log then also keeps the chosen masks' IoU with the exact one and whether one was another
+object."""
 
 from __future__ import annotations
 
@@ -25,6 +31,7 @@ import mujoco
 import numpy as np
 from scipy.spatial import cKDTree
 
+from locomani.tasks.scene.services import SAM3_ADDRESS, UNREAL_ADDRESS, Client, prompt_of, unpack_mask
 from locomani.tasks.scene.view import TruthView
 
 GEOM_MESH, GEOM_BOX = int(mujoco.mjtGeom.mjGEOM_MESH), int(mujoco.mjtGeom.mjGEOM_BOX)
@@ -41,11 +48,19 @@ class RenderConfig:
     prior_bias_m: float = 0.05  # never seen yet: the start pose off by this distance (horizontal), the map's memory
     reject_rms_m: float = 0.02  # a fit leaving more than this residual is not taken (the last estimate stays)
     model_points: int = 3000  # surface samples of an object's collision shape
+    masks: str = "exact"  # "exact": the renderer's body ids (L2); "sam3": SAM 3 on Unreal's RGB (L3)
+    sam3_min_score: float = 0.3  # an instance below this score is not taken
+    assoc_gate_m: float = 0.25  # an instance whose points centre farther than this from the estimate is another object
+    unreal_port: int = UNREAL_ADDRESS[1]
+    sam3_port: int = SAM3_ADDRESS[1]
     seed: int = 0
 
     @classmethod
     def of(cls, spec: dict) -> RenderConfig:
-        return cls(**{k: tuple(v) if k == "cameras" else v for k, v in spec.items()})
+        cfg = cls(**{k: tuple(v) if k == "cameras" else v for k, v in spec.items()})
+        if cfg.masks not in ("exact", "sam3"):
+            raise ValueError(f"masks {cfg.masks!r}: exact or sam3")
+        return cfg
 
 
 @dataclass
@@ -56,6 +71,7 @@ class Frame:
     K: tuple[float, float, float, float]  # fx, fy, cx, cy (pixels)
     pos: np.ndarray  # camera position (world)
     mat: np.ndarray  # camera orientation (world, columns: x right, y up, z backwards -- MuJoCo's convention)
+    rgb: np.ndarray | None = None  # (h, w, 3) uint8, when the source renders colour (Unreal)
 
 
 def intrinsics(fovy_deg: float, width: int, height: int) -> tuple[float, float, float, float]:
@@ -167,20 +183,43 @@ class MuJoCoFrames:
         return out
 
 
-_FRAMES: dict = {}  # (id(model), RenderConfig) -> MuJoCoFrames: one renderer per worker and configuration
+STREAMS = {"head_camera": "ego_view", "left_wrist": "left_wrist", "right_wrist": "right_wrist"}  # Unreal's names
 
 
-def mujoco_frames(model: mujoco.MjModel, cfg: RenderConfig) -> MuJoCoFrames:
+class ServiceFrames:
+    """MuJoCoFrames plus Unreal's RGB of the same state (locomani.sim.unreal.rgb_server), pixel for pixel."""
+
+    def __init__(self, model: mujoco.MjModel, cfg: RenderConfig):
+        self.m, self.depth = model, MuJoCoFrames(model, cfg)
+        self.unreal = Client((UNREAL_ADDRESS[0], int(cfg.unreal_port)))
+
+    def __call__(self, data: mujoco.MjData) -> list[Frame]:
+        frames = self.depth(data)
+        images = self.unreal.call(dict(qpos=data.qpos.copy()))["images"]
+        for f in frames:
+            rgb = images[STREAMS[f.camera]]
+            if rgb.shape[:2] != f.depth.shape:
+                raise RuntimeError(
+                    f"{f.camera}: Unreal {rgb.shape[:2]} vs depth {f.depth.shape}: set width 640, height 480"
+                )
+            f.rgb = rgb
+        return frames
+
+
+_FRAMES: dict = {}  # (id(model), RenderConfig) -> frame source: one renderer (and Unreal client) per worker and config
+
+
+def mujoco_frames(model: mujoco.MjModel, cfg: RenderConfig):
     k = (id(model), cfg)
     if k not in _FRAMES or _FRAMES[k].m is not model:
-        _FRAMES[k] = MuJoCoFrames(model, cfg)
+        _FRAMES[k] = ServiceFrames(model, cfg) if cfg.masks == "sam3" else MuJoCoFrames(model, cfg)
     return _FRAMES[k]
 
 
 class RenderedView(TruthView):
     """TruthView with the free objects' poses from the cameras (module doc)."""
 
-    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n", "_log")
+    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n", "_log", "_sam3", "_seg", "_diag")
 
     def __init__(self, world, cfg: RenderConfig, round_seed: int, frames=None):
         super().__init__(world)
@@ -191,6 +230,9 @@ class RenderedView(TruthView):
         self._model: dict = {}  # key -> ((body-frame surface points, normals), the points' tree)
         self._n: dict = {}  # key -> counts
         self._log: dict = {}  # key -> one row per read
+        self._sam3 = Client((SAM3_ADDRESS[0], int(cfg.sam3_port))) if cfg.masks == "sam3" else None
+        self._seg: dict = {}  # (shot tick, camera, prompt) -> SAM 3 instances [(score, mask)]
+        self._diag: dict = {}  # key -> what the last refresh's masks were against the exact ones
 
     def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         if key not in self._world.free:
@@ -208,8 +250,10 @@ class RenderedView(TruthView):
         else:
             src = "seen" if pts is not None and pts >= self._cfg.min_points else "kept" if est["seen"] else "prior"
         true = np.asarray(self._world.object_pose(key)[0], float)
-        self._log.setdefault(key, []).append(dict(t=round(now, 2), src=src, pts=pts,
-                                                  err_cm=round(100 * float(np.linalg.norm(est["pos"] - true)), 2)))  # fmt: skip
+        row = dict(t=round(now, 2), src=src, pts=pts, err_cm=round(100 * float(np.linalg.norm(est["pos"] - true)), 2))
+        if pts is not None and self._sam3 is not None:
+            row.update(self._diag.pop(key, {}))
+        self._log.setdefault(key, []).append(row)
         return est["pos"].copy(), est["quat"].copy()
 
     def _prior(self, key: str) -> dict:
@@ -225,7 +269,10 @@ class RenderedView(TruthView):
         self._n[key]["refreshes"] += 1
         est["t"] = now
         body = self._world.free[key]
-        obs = [back_project(f, f.body == body, self._cfg.max_range_m) for f in self._shoot()]
+        if self._sam3 is None:
+            obs = [back_project(f, f.body == body, self._cfg.max_range_m) for f in self._shoot()]
+        else:
+            obs = self._sam3_points(key, body, est["pos"])
         obs = np.concatenate(obs) if obs else np.zeros((0, 3))
         if len(obs) < self._cfg.min_points:
             return len(obs)
@@ -243,10 +290,37 @@ class RenderedView(TruthView):
         self._n[key]["seen"] += 1
         return len(obs)
 
+    def _sam3_points(self, key: str, body: int, near: np.ndarray) -> list[np.ndarray]:
+        """Per camera, the points of the SAM 3 instance of the object's phrase nearest `near` within the gate."""
+        cfg, prompt = self._cfg, prompt_of(self._world.meta["objects"][key], key)
+        out, ious, wrong, found = [], [], 0, 0
+        for f in self._shoot():
+            k = (self._shot[0], f.camera, prompt)
+            if k not in self._seg:
+                res = self._sam3.call(dict(image=f.rgb, prompts=[prompt]))["results"][prompt]
+                self._seg[k] = [(score, unpack_mask(m)) for score, m in res]
+            found += len(self._seg[k])
+            best = None
+            for score, mask in self._seg[k]:
+                if score < cfg.sam3_min_score:
+                    continue
+                p = back_project(f, mask, cfg.max_range_m)
+                d = float(np.linalg.norm(p.mean(0) - near)) if len(p) >= 10 else np.inf
+                if d <= cfg.assoc_gate_m and (best is None or d < best[0]):
+                    best = (d, p, mask)
+            if best is not None:
+                out.append(best[1])
+                exact = f.body == body
+                ious.append(float((best[2] & exact).sum() / max((best[2] | exact).sum(), 1)))
+                wrong += float((best[2] & exact).sum()) < 0.5 * float(best[2].sum())
+        self._diag[key] = dict(instances=found, iou=round(float(np.mean(ious)), 3) if ious else None, wrong=wrong)
+        return out
+
     def _shoot(self) -> list[Frame]:
         k = self._world.motor.k
         if self._shot[0] != k:
             self._shot = (k, self._frames(self._world.sim.d))
+            self._seg = {}
         return self._shot[1]
 
     def _shape(self, key: str):

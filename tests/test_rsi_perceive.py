@@ -15,6 +15,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from locomani.tasks.scene import perceive as P  # noqa: E402
+from locomani.tasks.scene.services import pack_mask  # noqa: E402
 
 # an L of two boxes (asymmetric, so its heading is identifiable): 8 x 6 x 10 cm with a 4 x 4 x 4 cm block on one side
 SHAPE = [
@@ -171,11 +172,50 @@ class Rendered(unittest.TestCase):
         R, t, _ = P.fit_pose(patch, model, cKDTree(model[0]), np.eye(3), np.array([1.0, 0.0, 0.8]), iters=40)
         self.assertLess(float(np.linalg.norm(t - [1.0, 0.0, 0.8])), 40 * P.STEP_M + 1e-9)
 
+    def test_sam3_takes_the_instance_near_the_estimate(self):
+        self.cfg = P.RenderConfig(masks="sam3", sam3_min_score=0.3, assoc_gate_m=0.25)
+
+        def frames(data):
+            (f,) = self.frames(data)
+            f.rgb = np.zeros(f.depth.shape + (3,), np.uint8)
+            f.depth[10:30, 10:40] = 2.5  # a second object of the same kind, far off
+            return [f]
+
+        class Sam3:
+            def __init__(self, instances):
+                self.instances, self.calls = instances, 0
+
+            def call(self, req):
+                self.calls += 1
+                return dict(results={req["prompts"][0]: [(s, pack_mask(m)) for s, m in self.instances()]})
+
+        with mock.patch.object(P.TruthView, "object_geoms", return_value=SHAPE):
+            v = P.RenderedView(self.world, self.cfg, 610001, frames=frames)
+            v._shape("obj")
+        f0 = frames(None)[0]
+        truth = f0.body == 7
+        other = np.zeros_like(truth)
+        other[10:30, 10:40] = True
+        sam = Sam3(lambda: [(0.89, other), (0.84, truth)])  # the far one scores higher, as with the DVD remote
+        v._sam3 = sam
+        p, _ = v.object_pose("obj")
+        self.assertLess(float(np.linalg.norm(p - self.true["pos"])), 0.005)
+        row = v.stats()["obj"]["log"][-1]
+        self.assertEqual((row["src"], row["instances"], row["wrong"], row["iou"]), ("seen", 2, 0, 1.0))
+        v2 = P.RenderedView(self.world, self.cfg, 610002, frames=frames)
+        v2._model = v._model
+        v2._sam3 = Sam3(lambda: [(0.89, other)])  # only the other one is found: not seen
+        p2, _ = v2.object_pose("obj")
+        self.assertEqual(v2.stats()["obj"]["log"][-1]["src"], "prior")
+        self.assertAlmostEqual(float(np.linalg.norm(p2 - self.true["pos"])), 0.05, places=9)
+
     def test_the_config_reads_a_spec(self):
         cfg = P.RenderConfig.of({"cameras": ["head_camera"], "period_s": 0.5})
         self.assertEqual((cfg.cameras, cfg.period_s), (("head_camera",), 0.5))
         with self.assertRaises(TypeError):
             P.RenderConfig.of({"fps": 5})
+        with self.assertRaises(ValueError):
+            P.RenderConfig.of({"masks": "grounding-dino"})
 
 
 BOX_SCENE = """

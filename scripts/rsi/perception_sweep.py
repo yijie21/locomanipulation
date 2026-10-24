@@ -8,7 +8,7 @@ the summary goes to <out>/summary.json. The package must set WORLD_VIEW.
 Run it from the checkout, detached (nohup setsid), like sealed.py:
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/perception_sweep.py grasp_atomic <pool> scripts/rsi/seeds/grasp_c11_view <out> \\
-        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | 2 | --conditions <json>] [--procs 6 --gpus 0,1]
+        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | 2 | 3 | --conditions <json>] [--procs 6 --gpus 0,1]
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import sys
+from multiprocessing.connection import Client as Connect
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -27,6 +28,7 @@ import batch as B  # noqa: E402
 from gate import mcnemar_one_sided, wilson  # noqa: E402
 
 from locomani.tasks.scene.perceive import RenderConfig  # noqa: E402
+from locomani.tasks.scene.services import AUTHKEY  # noqa: E402
 from locomani.tasks.scene.view import Perturbation  # noqa: E402
 
 # the design's step 1 grid, one error at a time: position offsets 0.5-4 cm (one direction per object and round, the
@@ -60,6 +62,12 @@ GRIDS = {
         "l2_prior0": {"rendered": {"prior_bias_m": 0.0}},
         "l2_prior10": {"rendered": {"prior_bias_m": 0.10}},
     },
+    # step 3 (L3): SAM 3 masks on Unreal's RGB, depth still MuJoCo's, at Unreal's 640 x 480; the exact masks at the same
+    # size as the control (needs the Unreal editor, locomani.sim.unreal.rgb_server and scripts/rsi/sam3_server.py up)
+    "3": {
+        "l3": {"rendered": {"masks": "sam3", "width": 640, "height": 480}},
+        "l2_640": {"rendered": {"width": 640, "height": 480}},
+    },
 }
 
 
@@ -90,9 +98,16 @@ def main(argv=None) -> int:
     conditions = json.loads(a.conditions.read_text()) if a.conditions else GRIDS[a.grid]
     for spec in conditions.values():
         if "rendered" in spec:
-            RenderConfig.of(spec["rendered"])
+            cfg = RenderConfig.of(spec["rendered"])
             if os.environ.get("MUJOCO_GL") != "egl":
                 raise SystemExit("a rendered condition needs MUJOCO_GL=egl in the environment (the workers render)")
+            if cfg.masks == "sam3":
+                for name, port in (("Unreal RGB (locomani.sim.unreal.rgb_server)", cfg.unreal_port),
+                                   ("SAM 3 (scripts/rsi/sam3_server.py)", cfg.sam3_port)):  # fmt: skip
+                    try:
+                        Connect(("127.0.0.1", port), authkey=AUTHKEY).close()
+                    except OSError as e:
+                        raise SystemExit(f"a sam3 condition needs the {name} service on port {port}: {e}") from e
         else:
             Perturbation.of(spec)  # an unknown key fails here, not in every worker
     overrides = json.loads(a.set)
