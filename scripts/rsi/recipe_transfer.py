@@ -15,8 +15,8 @@ names its object. This check, run by a person (or the driver) over a skills pack
 3. Two arms on that pool: the package as it is, and a copy whose `recipes.RECIPES` leaves this recipe out. Reported:
    birth objects x/n and similar objects y/m with the recipe; on the similar objects the pairs it wins (b) and loses
    (c) against the arm without it; how many rounds used it (their "recipe" note). It is promotable when c = 0 on at
-   least PROMOTE_MIN similar objects that it matches (the plan's "at least two similar objects, not one round
-   worse"); else it stays local -- its SIGNATURE should stay as tight as its birth objects.
+   least PROMOTE_MIN similar objects that it matches and that used it in a round (the plan's "at least two similar
+   objects, not one round worse"); else it stays local -- its SIGNATURE should stay as tight as its birth objects.
 The transfer pool is never a gate pool and no role reads it during a run; the verdict goes to the report and, for a
 sandbox, a `recipe_transfer` row in its ledger (D15: "推广记进账本").
 
@@ -153,14 +153,15 @@ def _used(r: dict, name: str) -> bool:
 
 def verdict(per_similar: list[dict]) -> tuple[bool, str]:
     """Promotable when no similar object lost a round with the recipe (c = 0) and at least PROMOTE_MIN similar objects
-    it matches had rounds; else local, and why."""
+    it matches actually used it in a round (a static match the rounds never reach tests nothing: run D's tall_narrow
+    matched the jam statically and no jam round took it, 2026-10-24); else local, and why."""
     lost = sum(int(p.get("c") or 0) for p in per_similar)
-    clean = sum(bool(p.get("score", 0) > 0 and p.get("n") and not p.get("c")) for p in per_similar)
+    clean = sum(bool(p.get("score", 0) > 0 and p.get("used") and not p.get("c")) for p in per_similar)
     if lost:
         return False, f"local: {lost} round(s) lost with it on similar objects"
     if clean < PROMOTE_MIN:
-        return False, f"local: it matches only {clean} similar object(s) with rounds (needs {PROMOTE_MIN})"
-    return True, "promotable: no similar object lost a round with it"
+        return False, f"local: used on only {clean} similar object(s) without a loss (needs {PROMOTE_MIN})"
+    return True, "promotable: used on similar objects and none lost a round with it"
 
 
 def run(skills: Path, family: str, out: Path, starts: int = STARTS, n_similar: int = SIMILAR, procs: int = 12,

@@ -87,9 +87,15 @@ def test_the_arm_without_the_recipe_drops_it_from_recipes(tmp_path):
 @pytest.mark.parametrize(
     "rows,promotable,word",
     [
-        ([dict(score=1, n=2, c=0), dict(score=1, n=2, c=0), dict(score=0, n=2, c=0)], True, "promotable"),
-        ([dict(score=1, n=2, c=0), dict(score=1, n=2, c=1)], False, "lost"),
-        ([dict(score=1, n=2, c=0), dict(score=0, n=2, c=0), dict(score=1, n=0, c=0)], False, "matches only 1"),
+        (
+            [dict(score=1, n=2, c=0, used=2), dict(score=1, n=2, c=0, used=1), dict(score=0, n=2, c=0)],
+            True,
+            "promotable",
+        ),
+        ([dict(score=1, n=2, c=0, used=2), dict(score=1, n=2, c=1, used=2)], False, "lost"),
+        ([dict(score=1, n=2, c=0, used=2), dict(score=0, n=2, c=0), dict(score=1, n=0, c=0)], False, "only 1"),
+        # run D's tall_narrow: the jam matched statically but no jam round used it
+        ([dict(score=1, n=2, c=0, used=2), dict(score=1, n=2, c=0, used=0), dict(score=0, n=2, c=0)], False, "only 1"),
     ],
 )
 def test_the_promotion_verdict(rows, promotable, word):
