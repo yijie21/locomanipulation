@@ -84,9 +84,15 @@ def test_the_strict_seed_dispatches_the_strict_goal_and_nothing_else():
 
 def test_the_family_walks_at_half_a_metre_per_second_and_the_others_keep_the_default():
     # TODO 38.21 (user 2026-10-24): box_bimanual's motor block; the batch expects the same signature the worlds carry
-    import batch as B
+    import importlib.util
 
     from locomani.backends.scalebfm.motor import MotorConfig
+
+    # by path: other tests put another `batch` module (an older RSI line's) on sys.path first
+    spec = importlib.util.spec_from_file_location("rsi_batch_for_motor_test", ROOT / "scripts" / "rsi" / "batch.py")
+    B = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = B  # its dataclasses look their module up there
+    spec.loader.exec_module(B)
 
     cfg = B.family_motor("box_bimanual")
     assert cfg.walk_speed == 0.5 and MotorConfig().walk_speed == 0.25
