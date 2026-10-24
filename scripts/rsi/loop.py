@@ -2661,8 +2661,12 @@ def cmd_status(_a) -> int:
     parked = jload(STATE / "parked.json", {})
     for cid, p in parked.items():
         print(f"parked {cid}: {p['task']} ({p['scope']}, {len(p['starts'])} diag starts, {p['kind']})")
-    inc = jload(GATE_DIR / "incumbent.json")
-    v = unparked_view(Path(inc["rounds"])) if inc else None
+    try:  # while a role runs the hidden directory has mode 000 (hidden_locked): no acceptance line, not a crash
+        inc = jload(GATE_DIR / "incumbent.json")
+        v = unparked_view(Path(inc["rounds"])) if inc else None
+    except PermissionError:
+        print("acceptance: not readable now (a role is running and the hidden directory is locked); ask again later")
+        return 0
     if v:
         print(f"acceptance: {v['all_ok']}/{v['all_n']} of all starts, {v['ok']}/{v['n']} outside {v['parked_tasks']}")
     return 0
