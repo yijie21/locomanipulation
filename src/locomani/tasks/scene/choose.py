@@ -96,6 +96,7 @@ class Option:
     score: float
     needs_prep: bool = False
     why: list = field(default_factory=list)
+    rot: list | None = None  # a keypoint grasp's wrist rotation (3x3, world; TODO 33.9); None: the skill decides
 
     def as_dict(self) -> dict:
         d = asdict(self)
@@ -261,9 +262,11 @@ def _score(hand: str, p_miss: float, d: float, margin: float, blocker, pel_z, wa
 
 
 def options(world, key: str, start_xy=None, hands=("right", "left"), postures=POSTURES, table: str | None = None,
-            limit: int = MAX_OPTIONS, relax: bool = False) -> list[Option]:  # fmt: skip
+            limit: int = MAX_OPTIONS, relax: bool = False, grasp_list: list[dict] | None = None) -> list[Option]:  # fmt: skip
     """Every (grasp, hand, posture) combination at its best stance distance, standing clear and reachable, best first
-    (score ascending). `relax` lowers the clearance and lengthens the reach for the diagnosis of a hopeless spot."""
+    (score ascending). `relax` lowers the clearance and lengthens the reach for the diagnosis of a hopeless spot.
+    `grasp_list` replaces `grasps(world, key)` -- the keypoint primitive's solved grasps (TODO 33.9), each with an
+    `xy` (the jaw centre, when not the object's) and a `rot` (the wrist rotation) besides the usual fields."""
     occ, nav = navigation(world)
     clear_min = STANCE_CLEAR_RELAXED_M if relax else STANCE_CLEAR_M
     d_max = D_MAX_RELAXED if relax else D_MAX
@@ -271,15 +274,16 @@ def options(world, key: str, start_xy=None, hands=("right", "left"), postures=PO
     p = np.asarray(p, float)
     surf = world.meta["surfaces"].get(world.meta["objects"][key].get("surface")) or {}
     out: list[Option] = []
-    for g in grasps(world, key):
+    for g in grasps(world, key) if grasp_list is None else grasp_list:
         u = _unit(g["approach_deg"])
+        c = np.asarray(g.get("xy", p[:2]), float)[:2]  # the jaw centre's xy: the object's, or a keypoint grasp's
         blocker = corridor_blocker(world, key, u, g["z"])
         for hand in hands:
             sign = 1.0 if hand == "right" else -1.0
             for pel_z in postures:
                 cands = []
                 for d in np.arange(D_MIN, d_max + 1e-9, D_STEP):
-                    pel = p[:2] - d * u + sign * SHOULDER_Y_M * _left(u)
+                    pel = c - d * u + sign * SHOULDER_Y_M * _left(u)
                     if not approachable(surf, pel):
                         continue
                     cl = clearance(world, pel)
@@ -312,9 +316,10 @@ def options(world, key: str, start_xy=None, hands=("right", "left"), postures=PO
                     if relax:
                         why.append(f"clearance relaxed to {clear_min:.2f} m, reach to {d_max:.2f} m: a guess")
                     out.append(Option(g["kind"], hand, g["att"], g["approach_deg"], (float(pel[0]), float(pel[1])),
-                                      math.radians(g["approach_deg"]), d, (float(p[0]), float(p[1]), float(g["z"])),
+                                      math.radians(g["approach_deg"]), d, (float(c[0]), float(c[1]), float(g["z"])),
                                       pel_z, g["margin_m"], cl, walk, blocker, r["p_miss"], r["err_cm"], r["inside"],
-                                      _score(hand, r["p_miss"], d, g["margin_m"], blocker, pel_z, walk, cl), why=why))  # fmt: skip
+                                      _score(hand, r["p_miss"], d, g["margin_m"], blocker, pel_z, walk, cl), why=why,
+                                      rot=g.get("rot")))  # fmt: skip
                     break
     out.sort(key=lambda o: (o.score, o.distance_m))
     return out[:limit]
@@ -344,6 +349,78 @@ def choose(world, key: str, start_xy=None, **kw) -> Option | None:
               else "no stance predicts a delivered reach")  # fmt: skip
     best.why = best.why + [reason, "a preparatory action first"] + (G.assess(world, key).get("recommend") or [])
     return best
+
+
+TWO_HAND_PAD_M = 0.02  # a two-hand clamp's jaw centres stand this far out of the section's sides
+
+
+def two_hand(world, key: str, start_xy=None, postures=POSTURES, table: str | None = None,
+             limit: int = MAX_OPTIONS) -> list[dict]:  # fmt: skip
+    """TODO 33.1.5 (plan section 1, `two_hand(object)`): a two-hand clamp's options, best first. For each approach the
+    pelvis stands on the approach line through the object (no shoulder offset), and each hand is sent TWO_HAND_PAD_M
+    outside its side of the hull section across the approach at the grasp height; the body model gives each hand's
+    odds of landing >= 3 cm off, and `p_both` is the odds that either does (taken as independent). The grid measured a
+    jaw pointing forward, not a palm turned inward: the odds say whether the hand gets there, not how the clamp holds.
+    `span_m` is the section's width across; `inside` is false when either hand's query leaves the grid (y_out beyond
+    0.35 m: wider than the arms were measured). Stances keep STANCE_CLEAR_M and a path from `start_xy`, as `options`.
+    Each entry: approach_deg, stance_xy, stance_yaw, distance_m, pelvis_z, z, span_m, targets {left, right}, p_left,
+    p_right, p_both, err_cm {left, right}, inside, clear_m, walk_m, bimanual (the scene file's flag), score. Empty for
+    a flat object (no section at the jaw height). The ADT apartment has no free object flagged bimanual (2026-10-24: the
+    step stool is the one flagged, and it is fixed), so this is for the families and rooms to come."""
+    occ, nav = navigation(world)
+    p, _ = world.object_pose(key)
+    p = np.asarray(p, float)
+    meta = world.meta["objects"][key]
+    surf = world.meta["surfaces"].get(meta.get("surface")) or {}
+    z = G.grasp_height(world, key)
+    pts = G.section(world, key, z)
+    if len(pts) == 0:  # a flat object: nothing at the jaw height to clamp
+        return []
+    out = []
+    for deg in np.arange(-180.0, 180.0, APPROACH_STEP_DEG):
+        u, lft = _unit(float(deg)), _left(_unit(float(deg)))
+        lat = pts @ lft - p[:2] @ lft
+        lo, hi = float(lat.min()), float(lat.max())
+        centre = p[:2] + 0.5 * (lo + hi) * lft  # the section's middle across the approach
+        targets = {"left": centre + (0.5 * (hi - lo) + TWO_HAND_PAD_M) * lft,
+                   "right": centre - (0.5 * (hi - lo) + TWO_HAND_PAD_M) * lft}  # fmt: skip
+        for pel_z in postures:
+            best = None
+            for d in np.arange(D_MIN, D_MAX + 1e-9, D_STEP):
+                pel = centre - d * u
+                if not approachable(surf, pel):
+                    continue
+                cl = clearance(world, pel)
+                if cl < STANCE_CLEAR_M:
+                    continue
+                r = {h: B.reach(float(d), float((t - centre) @ (lft if h == "left" else -lft)), float(z), "level",
+                                pel_z, h, path=table) for h, t in targets.items()}  # fmt: skip
+                p_both = 1.0 - (1.0 - r["left"]["p_miss"]) * (1.0 - r["right"]["p_miss"])
+                s = p_both + DIST_W * max(0.0, float(d) - D_SWEET_M) + TIGHT_W * max(0.0, STANCE_CLEAR_GOOD_M - cl)
+                s += POSTURE_PENALTY if pel_z is not None else 0.0
+                if best is None or s < best[0]:
+                    best = (s, float(d), pel, cl, r, p_both)
+            if best is None:
+                continue
+            s, d, pel, cl, r, p_both = best
+            walk = None
+            if start_xy is not None:
+                path = nav_path(occ, nav, start_xy, pel)
+                if path is None:
+                    continue
+                walk = float(sum(np.linalg.norm(b - a) for a, b in zip(path[:-1], path[1:])))
+                s += WALK_W * walk
+            out.append(dict(approach_deg=float(deg), stance_xy=[round(float(v), 3) for v in pel],
+                            stance_yaw=round(math.radians(float(deg)), 4), distance_m=round(d, 3), pelvis_z=pel_z,
+                            z=round(float(z), 3), span_m=round(hi - lo, 3),
+                            targets={h: [round(float(t[0]), 3), round(float(t[1]), 3), round(float(z), 3)]
+                                     for h, t in targets.items()},
+                            p_left=r["left"]["p_miss"], p_right=r["right"]["p_miss"], p_both=round(p_both, 3),
+                            err_cm={h: r[h]["err_cm"] for h in r}, inside=r["left"]["inside"] and r["right"]["inside"],
+                            clear_m=round(cl, 3), walk_m=None if walk is None else round(walk, 2),
+                            bimanual=bool(meta.get("bimanual")), score=round(s, 3)))  # fmt: skip
+    out.sort(key=lambda o: (o["score"], o["distance_m"]))
+    return out[:limit]
 
 
 def explain(opts: list[Option]) -> str:

@@ -53,6 +53,7 @@
    "scripts/rsi/graspability.py",
    "scripts/rsi/body.py",
    "scripts/rsi/choose.py",
+   "scripts/rsi/keypoints.py",
    "scripts/rsi/diag_pool.py",
    "scripts/rsi/records.py",
    "scripts/rsi/isolate.py",
@@ -86,6 +87,7 @@
    "locomani.tasks.scene.graspability",
    "locomani.tasks.scene.body",
    "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.keypoints",
    "locomani.tasks.scene.stage",
    "locomani.tasks.scene.prep"
   ],

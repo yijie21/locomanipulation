@@ -20,8 +20,11 @@ closed-loop round is evidence (rules.md 7), and the driver, not a role, rebuilds
     body.reach(x=0.45, y_out=0.05, z=0.90, att="level", pelvis=0.78, hand="right")
     -> {"p_miss": 0.08, "err_cm": 1.1, "n": 15, "far": 0.4, "inside": True}
     body.reach_world(grasp_xyz, pelvis_xyz, pelvis_quat_wxyz, hand="right", pinch=False)
+    body.best_level("pick.STANCE_MIN_D_M", task="pick_DishSoap_1")   # a measured best level, or None (TODO 33.1.7)
+    body.curves(factor="spawn_bearing")                              # the design probes' curves, tagged
 
     PYTHONPATH=src python -m locomani.tasks.scene.body reach --x 0.45 --y-out 0.05 --z 0.9 --att level --hand right
+    PYTHONPATH=src python -m locomani.tasks.scene.body best --name pick.STANCE_MIN_D_M
 """
 
 from __future__ import annotations
@@ -134,6 +137,66 @@ def reach_note(path: str | None = None):
     return note
 
 
+CURVES = TABLE.parent / "curves.jsonl"
+BEST_MIN_N = 6  # rounds a level needs, pooled over the curves, before best_level names it
+BEST_MARGIN = 0.15  # ... and the success rate it must have over every other measured level
+
+
+def curves(name: str | None = None, factor: str | None = None, task: str | None = None, machine: str | None = None,
+           controller: str | None = None, path: str | None = None) -> list[dict]:  # fmt: skip
+    """TODO 33.1.7 (plan section 1.2, D17): the measured curves -- a design probe's per-level outcome (rules.md 35),
+    tagged with where it was measured (machine, controller, the incumbent's skills, scope: `skill` for a parameter,
+    `start` for a start factor) -- filtered by parameter `name`, `factor`, a `task` among the probe's, `machine` and
+    `controller`. Read from body/curves.jsonl, the snapshot the sandbox was built with: fixed for a whole run, so a
+    skill that asks behaves the same in every round of it (a run's own probes reach the roles, not the skills, until
+    scripts/rsi/body_curves.py gathers them). Empty when there is no file."""
+    p = Path(path) if path else CURVES
+    if not p.exists():
+        return []
+    out = []
+    for line in p.read_text().splitlines():
+        try:
+            c = json.loads(line)
+        except ValueError:
+            continue
+        if name is not None and c.get("name") != name:
+            continue
+        if factor is not None and c.get("factor") != factor:
+            continue
+        if task is not None and task not in (c.get("tasks") or []):
+            continue
+        if machine is not None and c.get("machine") not in (None, machine):
+            continue
+        if controller is not None and c.get("controller") not in (None, controller):
+            continue
+        out.append(c)
+    return out
+
+
+def best_level(name: str, task: str | None = None, path: str | None = None, **kw) -> dict | None:
+    """TODO 33.1.7: the level of parameter `name` the measured curves say works best, pooled over every matching curve
+    (`curves`, factor param): its level, rate and rounds, the other levels, and how many curves and incumbents went in.
+    None unless it has BEST_MIN_N rounds and beats every other measured level by BEST_MARGIN -- a skill then keeps its
+    own default. A skill asks this instead of writing the number down (D17); the gate still decides what stays."""
+    pool: dict[float, list[int]] = {}
+    cs = curves(name=name, factor="param", task=task, path=path, **kw)
+    for c in cs:
+        for lv in c.get("levels") or []:
+            if lv.get("n"):
+                n_ok = pool.setdefault(float(lv["level"]), [0, 0])
+                n_ok[0] += int(lv["n"])
+                n_ok[1] += int(lv.get("ok") or 0)
+    if len(pool) < 2:
+        return None
+    rates = {lv: ok / n for lv, (n, ok) in pool.items()}
+    best = max(rates, key=lambda lv: (rates[lv], pool[lv][0]))
+    if pool[best][0] < BEST_MIN_N or any(rates[best] - r < BEST_MARGIN for lv, r in rates.items() if lv != best):
+        return None
+    return dict(level=best, rate=round(rates[best], 3), n=pool[best][0],
+                levels={lv: dict(rate=round(rates[lv], 3), n=pool[lv][0]) for lv in sorted(pool)}, curves=len(cs),
+                incumbents=sorted({c.get("incumbent") for c in cs if c.get("incumbent")}))  # fmt: skip
+
+
 MISS_CM = 3.0  # a reach that ends this far off counts as missed (the grid's label)
 RISKY = 0.5  # a reach predicted this likely to miss is one the skill could have known about
 
@@ -190,8 +253,16 @@ def main(argv=None) -> int:
     w.add_argument("--pelvis", type=float, nargs=7, required=True, metavar=("X", "Y", "Z", "QW", "QX", "QY", "QZ"))
     w.add_argument("--hand", choices=sorted(HANDS), default="right")
     w.add_argument("--pinch", action="store_true")
+    b = sub.add_parser("best", help="the measured best level of a parameter, from the design probes' curves")
+    b.add_argument("--name", required=True, help="the parameter, e.g. pick.STANCE_MIN_D_M")
+    b.add_argument("--task", default=None)
+    b.add_argument("--curves", default=None, help=f"the curves file (default {CURVES})")
     a = ap.parse_args(argv)
-    if a.cmd == "reach":
+    if a.cmd == "best":
+        out = dict(best=best_level(a.name, a.task, path=a.curves),
+                   curves=[{k: c.get(k) for k in ("family", "incumbent", "machine", "controller", "tasks", "levels")}
+                           for c in curves(name=a.name, factor="param", task=a.task, path=a.curves)])  # fmt: skip
+    elif a.cmd == "reach":
         out = reach(a.x, a.y_out, a.z, a.att, a.pelvis, a.hand, path=a.table)
     else:
         out = reach_world(a.point, a.pelvis[:3], a.pelvis[3:], a.hand, a.pinch, path=a.table)

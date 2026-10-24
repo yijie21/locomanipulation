@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 21, 2026-10-24)
+# Rules for the scene RSI loop (TODO 27, version 23, 2026-10-24)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -179,10 +179,13 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     says, from a table of 15,120 measured reaches, how likely the controller is to land a hand 3 cm or more off a
     target, and `src/locomani/tasks/scene/choose.py` (scripts/rsi/choose.py) lists for an object at a start every
     grasp, hand, stance and posture that stands clear of the furniture, scored by that table, best first, with the
-    fallback order standing, lowered pelvis, preparatory action (TODO 33.1.4, 33.12; D1, D2, D9, D22). All three are
-    infrastructure: skills call them, the loop does not change them, the driver rebuilds the table. None is evidence
-    that a change helps; only the gate is (code: the driver writes them; prompt) (version 15; version 18 for the body
-    model and the chooser).
+    fallback order standing, lowered pelvis, preparatory action (TODO 33.1.4, 33.12; D1, D2, D9, D22); `two_hand`
+    lists a two-hand clamp's stances and each hand's odds the same way, and `body.curves` / `body.best_level` read
+    the design probes' measured curves (rule 35), so a skill asks for a measured level instead of writing the number
+    down; `best_level` is None unless one level clearly beats the others, and the skill then keeps its default
+    (TODO 33.1.5, 33.1.7; D17). All of these are infrastructure: skills call them, the loop does not change them,
+    the driver rebuilds the table. None is evidence that a change helps; only the gate is (code: the driver writes
+    them; prompt) (version 15; version 18 for the body model and the chooser; version 22 for two_hand and curves).
 
 33. Each hypothesis gets a `status` from its probe: verified (it fixed a diagnostic start and broke none), refuted (it
     fixed none), mixed, or hypothesis (not probed: its test needs code). A mechanism Reviewers proposed in two or more
@@ -215,6 +218,22 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     object turned `level` degrees, slid up to 0.15 m on its top when it no longer fits there). At most 2 an iteration,
     at most 300 rounds each; a start the forcing makes invalid is left out, and each level says how many and why
     (`skipped_why`); a level that lost more than half its starts is named in the result's `note` and says little. The
-    per-level outcome goes to the Manager, the next Reviewer and the body model's curves; it says how the factor
-    changes the outcome, never that a change should stay (rule 7) (code: design.py, loop.py run_designs) (version 20;
-    the slide and the reasons version 21, TODO 37.9.1).
+    per-level outcome goes to the Manager, the next Reviewer and this run's curves (body/curves_run.jsonl, tagged
+    with the machine, the controller and the scope); the curves a skill reads (body/curves.jsonl) are the snapshot
+    the sandbox was built with, fixed for the whole run, and a person gathers finished runs' curves into the origin
+    (body_curves.py, run at the origin only) for the next. A curve says how the factor changes the outcome, never that a change
+    should stay (rule 7) (code: design.py, loop.py run_designs) (version 20; the slide and the reasons version 21,
+    TODO 37.9.1; the run's own curves and the snapshot version 22, TODO 33.1.7).
+
+36. Keypoint grasps (TODO 33.9; D8; RoboHarness arXiv 2610.14018): `src/locomani/tasks/scene/keypoints.py` (and
+    scripts/rsi/keypoints.py) turns a set of constraints on an object's points into ranked, executable grasps. The
+    points come from the scene file's box and the collision hull (`centre`, `top`, `face:+x` ..., `hull:+x` ...: where
+    the hull section ends along the box's axes) or are given as coordinates; the constraints are a pinch (the
+    fingertips on two points), a jaw centre, an approach (down, level, into a face, within a face's plane, a
+    direction), a closing axis, a depth and a twist. The solver samples the free angles, keeps the fingertips and the
+    housing above the support, drops a pose with nothing between the fingers, and hands the rest to the chooser
+    (rule 32) for the stance, the hand, the posture and the body model's odds; `pick` executes the best through
+    stage() (rule 31). The constraint kinds, the solver and the scoring are infrastructure, written by people; a skill
+    writes which points and which constraints, by the object's geometry (a recipe's SIGNATURE, rule 30), never by its
+    name. A plan is a prediction for choosing what to try; only the gate is evidence (rule 7) (code; prompt)
+    (version 23).

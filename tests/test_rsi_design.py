@@ -178,5 +178,8 @@ def test_the_driver_runs_at_most_two_and_records_where_results_go(tmp_path, monk
     assert ran == ["spawn_bearing", "param"]
     assert [r.get("error") for r in out][2:] == ["over the limit of design probes per iteration"] * 2
     assert rows[-1]["step"] == "design" and json.loads((it / "designs.json").read_text())[0]["hypothesis"] == "H1"
-    curves = [json.loads(x) for x in (tmp_path / "body" / "curves.jsonl").read_text().splitlines()]
+    # the run's own curves (TODO 33.1.7): not body/curves.jsonl, the snapshot skills read for the whole run
+    assert not (tmp_path / "body" / "curves.jsonl").exists()
+    curves = [json.loads(x) for x in (tmp_path / "body" / "curves_run.jsonl").read_text().splitlines()]
     assert [c["hypothesis"] for c in curves] == ["H1", "H2"] and curves[0]["incumbent"] == "h"
+    assert [c["scope"] for c in curves] == ["start", "skill"] and all(c["machine"] for c in curves)

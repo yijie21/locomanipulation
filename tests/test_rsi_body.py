@@ -160,3 +160,75 @@ class Prediction(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Curves(unittest.TestCase):
+    """TODO 33.1.7: the design probes' curves, read at run time, and the measured best level of a parameter."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "curves.jsonl"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, *rows):
+        self.path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+    @staticmethod
+    def curve(levels, name="pick.X", factor="param", tasks=("t1",), machine="m1", controller="scalebfm", inc="h1"):
+        return dict(family="f", incumbent=inc, factor=factor, name=name, tasks=list(tasks), machine=machine,
+                    controller=controller, scope="skill" if factor == "param" else "start",
+                    levels=[dict(level=lv, n=n, ok=ok) for lv, n, ok in levels])  # fmt: skip
+
+    def test_curves_filter_by_name_factor_task_machine_and_controller(self):
+        self.write(self.curve([(0.3, 4, 1)]), self.curve([(0.3, 4, 2)], tasks=("t2",), machine="m2"),
+                   self.curve([(0, 4, 3)], name=None, factor="spawn_bearing", controller="amo"))  # fmt: skip
+        p = str(self.path)
+        self.assertEqual(len(body.curves(path=p)), 3)
+        self.assertEqual(len(body.curves(name="pick.X", path=p)), 2)
+        self.assertEqual(len(body.curves(factor="spawn_bearing", path=p)), 1)
+        self.assertEqual(len(body.curves(task="t2", path=p)), 1)
+        self.assertEqual(len(body.curves(machine="m1", path=p)), 2)
+        self.assertEqual(len(body.curves(controller="scalebfm", path=p)), 2)
+        self.assertEqual(body.curves(path=str(Path(self.tmp.name) / "none.jsonl")), [])
+
+    def test_best_level_needs_rounds_and_a_margin_pooled_over_curves(self):
+        # 0.38 m: 5/6 and 4/5 over two curves (9/11), 0.30 m: 2/6 and 1/5 (3/11) -- a clear winner
+        self.write(self.curve([(0.30, 6, 2), (0.38, 6, 5)]), self.curve([(0.30, 5, 1), (0.38, 5, 4)], inc="h2"))
+        b = body.best_level("pick.X", path=str(self.path))
+        self.assertEqual(b["level"], 0.38)
+        self.assertEqual((b["n"], b["curves"], b["incumbents"]), (11, 2, ["h1", "h2"]))
+        self.assertAlmostEqual(b["levels"][0.30]["rate"], 3 / 11, places=3)
+        # run D's iteration 18: 5/9, 6/9, 6/9, 6/9 -- no level measurably better, the skill keeps its default
+        self.write(self.curve([(0.30, 9, 5), (0.38, 9, 6), (0.42, 9, 6), (0.46, 9, 6)]))
+        self.assertIsNone(body.best_level("pick.X", path=str(self.path)))
+        # too few rounds, or one level only
+        self.write(self.curve([(0.30, 2, 0), (0.38, 3, 3)]))
+        self.assertIsNone(body.best_level("pick.X", path=str(self.path)))
+        self.write(self.curve([(0.38, 9, 9)]))
+        self.assertIsNone(body.best_level("pick.X", path=str(self.path)))
+
+    def test_gathering_sandboxes_tags_and_dedupes(self):
+        import body_curves as BC
+
+        root = Path(self.tmp.name)
+        out = root / "origin_body"
+        sbs = []
+        for name, rows in (("sb1", [self.curve([(0.3, 4, 1)])]), ("sb2", [self.curve([(0.3, 4, 1)]),
+                                                                        self.curve([(0.4, 4, 3)], inc="h9")])):  # fmt: skip
+            d = root / name / BC.SUB
+            d.mkdir(parents=True)
+            run = [dict(r, iter=i) for i, r in enumerate(rows)]
+            for r in run:
+                r.pop("scope")
+                r.pop("machine")
+            (d / "curves_run.jsonl").write_text("".join(json.dumps(r) + "\n" for r in run))
+            (d / "constraints.jsonl").write_text(json.dumps(dict(family="f", incumbent="h1", iter=0, label="s1",
+                                                                 kind="isolated_failure")) + "\n")  # fmt: skip
+            sbs.append(root / name)
+        self.assertEqual(BC.build(sbs, out), {"curves.jsonl": 2, "constraints.jsonl": 1})  # sb2's first = sb1's
+        got = [json.loads(x) for x in (out / "curves.jsonl").read_text().splitlines()]
+        self.assertEqual([c["source"] for c in got], ["sb1", "sb2"])
+        self.assertTrue(all(c["machine"] and c["scope"] == "skill" for c in got))
+        self.assertEqual(BC.build(sbs, out), {"curves.jsonl": 0, "constraints.jsonl": 0})  # nothing new the second time

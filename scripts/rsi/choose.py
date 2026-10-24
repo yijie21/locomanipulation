@@ -32,6 +32,7 @@ def main(argv=None) -> int:
     ap.add_argument("--start", type=Path, default=None, help="a pool start file (placements, robot_xy)")
     ap.add_argument("--top", type=int, default=8)
     ap.add_argument("--json", action="store_true", help="print the options as JSON instead of text")
+    ap.add_argument("--two-hand", action="store_true", help="a two-hand clamp's options instead (TODO 33.1.5)")
     a = ap.parse_args(argv)
     scene = G.StaticScene(a.scene)
     start_xy = None
@@ -40,6 +41,19 @@ def main(argv=None) -> int:
         st = ast.literal_eval(st) if isinstance(st, str) else st
         scene.place(st.get("placements") or {})
         start_xy = st.get("robot_xy")
+    if a.two_hand:
+        two = C.two_hand(scene, a.object, start_xy)[: a.top]
+        if a.json:
+            print(json.dumps(dict(object=a.object, two_hand=two), ensure_ascii=False))
+            return 0
+        print(f"{a.object}: two-hand clamp, {len(two)} options shown")
+        for i, o in enumerate(two):
+            pz = "standing" if o["pelvis_z"] is None else f"pelvis {o['pelvis_z']:.2f} m"
+            print(f"{i + 1}. approach {o['approach_deg']:+.0f} deg, {o['distance_m']:.2f} m ahead, {pz}, span "
+                  f"{100 * o['span_m']:.1f} cm: miss odds left {o['p_left']:.0%} right {o['p_right']:.0%} either "
+                  f"{o['p_both']:.0%}{'' if o['inside'] else ' (outside the measured grid)'}, clear {o['clear_m']:.2f} m, "
+                  f"score {o['score']:.2f}")  # fmt: skip
+        return 0
     opts = C.options(scene, a.object, start_xy)
     best = C.choose(scene, a.object, start_xy)
     if a.json:

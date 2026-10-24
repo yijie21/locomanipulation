@@ -199,6 +199,9 @@ def run(spec: dict, family: str, pool: Path, skills: Path, overrides: dict, out:
                         classes=dict(collections.Counter(r.get("failure_class") for r in rounds if not r["ok"])),
                         **({"shift_cm_max": round(100 * max(shifts[i]), 1)} if shifts[i] else {})))  # fmt: skip
     res = dict(factor=factor, name=spec.get("name"), tasks=tasks, starts=len(starts), levels=per, dir=str(out))
+    ran = [r for job in jobs if job.out.exists() for r in B.outcomes(job.out).values()]
+    for k in ("controller", "motor"):  # what the curve was measured under (TODO 33.1.7)
+        res[k] = next((r.get(k) for r in ran if r.get(k)), None)
     thin = [p for p in per if 2 * p["skipped"] > len(starts)]
     if thin:
         why = "; ".join(f"{p['level']:g}: " + ", ".join(f"{k} {v}" for k, v in p["skipped_why"].items()) for p in thin)

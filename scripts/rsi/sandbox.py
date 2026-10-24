@@ -225,6 +225,9 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
         (loop.parent / "body").mkdir(parents=True, exist_ok=True)
         for p in sorted(body.glob("*.npz")):
             shutil.copy(p, loop.parent / "body" / p.name)
+        for name in ("curves.jsonl", "constraints.jsonl"):  # TODO 33.1.7: the measured curves, fixed for the run
+            if (body / name).exists():
+                shutil.copy(body / name, loop.parent / "body" / name)
     print(f"{dest}: sandbox for {family}")
 
 

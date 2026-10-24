@@ -2128,7 +2128,11 @@ def run_designs(hyps: dict, inc: dict, it_dir: Path, n: int) -> list[dict]:
     """TODO 33.19 (plan section 1.3, D16): the hypotheses' design probes (design.py), at most DS.MAX_PROBES an
     iteration and DS.MAX_ROUNDS rounds each, under the incumbent on the diagnostic pool's starts. Not evidence (rule 7):
     the per-level outcome goes to this iteration's Manager (`lead`), the next Reviewer (`designs_last`), the ledger, and
-    the body model's measured curves (body/curves.jsonl)."""
+    this run's measured curves (body/curves_run.jsonl), each tagged with the machine, the controller and its scope --
+    `skill` for a parameter of the incumbent, `start` for a start factor (TODO 33.1.7). Not body/curves.jsonl: that is
+    the snapshot the sandbox was built with, the one skills read at run time (body.curves, body.best_level), fixed for
+    the whole run so a skill behaves the same in every round of it; scripts/rsi/body_curves.py gathers a finished
+    run's curves into the origin's."""
     specs = [(h["id"], h["design"]) for h in hyps.get("hypotheses") or []
              if isinstance(h, dict) and isinstance(h.get("design"), dict)]  # fmt: skip
     if not specs:
@@ -2146,12 +2150,13 @@ def run_designs(hyps: dict, inc: dict, it_dir: Path, n: int) -> list[dict]:
         out.append(dict(hypothesis=hid, **res))
     jdump(it_dir / "designs.json", out)
     ledger(dict(step="design", iter=n, results=[{k: v for k, v in r.items() if k != "dir"} for r in out]))
-    curves = LOOP.parent / "body" / "curves.jsonl"
+    curves = LOOP.parent / "body" / "curves_run.jsonl"
     curves.parent.mkdir(parents=True, exist_ok=True)
     with curves.open("a") as fh:
         for r in out:
             if "levels" in r:
-                fh.write(json.dumps(dict(t=now(), iter=n, incumbent=inc["hash"], family=FAMILY, **r)) + "\n")
+                tag = dict(machine=RC.machine(), scope="skill" if r.get("factor") == "param" else "start")
+                fh.write(json.dumps(dict(t=now(), iter=n, incumbent=inc["hash"], family=FAMILY, **tag, **r)) + "\n")
     return out
 
 

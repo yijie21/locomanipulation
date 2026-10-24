@@ -121,6 +121,32 @@ class Chooser(unittest.TestCase):
         best = C.choose(sc, "cup", start_xy=(0.0, -2.5), table=self.table)
         self.assertIsNone(best)  # even relaxed (0.80 m, 0.12 m clear) the hand does not get there
 
+    def test_two_hand_sends_each_hand_outside_its_side_of_the_section(self):
+        """TODO 33.1.5: a two-hand clamp -- the pelvis on the approach line, each hand TWO_HAND_PAD_M outside its side."""
+        half = (0.05, 0.10, 0.05)  # 20 cm across y
+        sc = scene(box_body("tray", half, TOP + 0.05), {"tray": obj("tray", half, TOP + 0.05, bimanual=True)})
+        opts = C.two_hand(sc, "tray", start_xy=(-2.0, 0.0), table=self.table)
+        self.assertTrue(opts)
+        self.assertTrue(opts[0]["bimanual"])
+        self.assertTrue(all(o["distance_m"] <= 0.65 for o in opts if o["p_both"] < 0.5))  # the grid misses beyond
+        for o in opts:
+            self.assertAlmostEqual(o["p_both"], 1 - (1 - o["p_left"]) * (1 - o["p_right"]), places=3)
+        o = next(o for o in opts if abs(C._wrap(o["approach_deg"])) < 1)  # along +x: the clamp spans y
+        self.assertAlmostEqual(o["span_m"], 0.20, places=3)
+        self.assertAlmostEqual(o["targets"]["left"][1], 0.10 + C.TWO_HAND_PAD_M, places=3)
+        self.assertAlmostEqual(o["targets"]["right"][1], -0.10 - C.TWO_HAND_PAD_M, places=3)
+        self.assertTrue(o["inside"])
+        self.assertLess(o["stance_xy"][0], -TABLE_HALF)  # standing off the -x edge
+        # wider than the arms were measured: outside the grid
+        wide = (0.05, 0.40, 0.05)
+        sc = scene(box_body("plank", wide, TOP + 0.05), {"plank": obj("plank", wide, TOP + 0.05)})
+        o = next(o for o in C.two_hand(sc, "plank", table=self.table) if abs(C._wrap(o["approach_deg"])) < 1)
+        self.assertFalse(o["inside"])
+        # a flat card has nothing at the jaw height to clamp
+        card = (0.05, 0.02, 0.008)
+        sc = scene(box_body("card", card, TOP + 0.008), {"card": obj("card", card, TOP + 0.008)})
+        self.assertEqual(C.two_hand(sc, "card", table=self.table), [])
+
     def test_explain_and_as_dict(self):
         sc = scene(box_body("bar", (0.07, 0.03, 0.05), TOP + 0.05), {"bar": obj("bar", (0.07, 0.03, 0.05), TOP + 0.05)})
         opts = C.options(sc, "bar", table=self.table)[:2]
