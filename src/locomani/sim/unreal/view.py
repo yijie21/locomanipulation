@@ -144,16 +144,30 @@ class UnrealView:
 
     def grab(self, cameras: dict | None = None) -> dict:
         """`{stream: HxWx3 uint8}` captured fresh from the pose last pushed. Raises rather than return a partial set."""
+        return self._grab(cameras, depth=False)[0]
+
+    def grab_depth(self, cameras: dict | None = None) -> tuple[dict, dict]:
+        """`grab`'s images and, from the same pose, each camera's depth `{stream: HxW float32}`: metres along the view
+        axis to the visible surface, drawn by a second capture with the colour one's view and no temporal AA (the
+        plugin's "fresh_depth" mode, patches/urlab_fresh_depth.md)."""
+        return self._grab(cameras, depth=True)
+
+    def _grab(self, cameras: dict | None, depth: bool) -> tuple[dict, dict]:
         cameras = cameras or self.cameras
-        reply = self._push({n: "fresh" for n in cameras.values()})
-        out = {}
+        reply = self._push({n: "fresh_depth" if depth else "fresh" for n in cameras.values()})
+        out, deep = {}, {}
         for k, name in cameras.items():
             blk = (reply.get("cameras") or {}).get(name)
             if blk is None:
                 raise RuntimeError(f"URLab returned no frame for {name}")
-            px = np.frombuffer(blk["data"], np.uint8).reshape(int(blk["height"]), int(blk["width"]), 4)
+            h, w = int(blk["height"]), int(blk["width"])
+            px = np.frombuffer(blk["data"], np.uint8).reshape(h, w, 4)
             out[k] = np.ascontiguousarray(px[..., [2, 1, 0]])  # BGRA -> RGB
-        return out
+            if depth:
+                if "depth" not in blk:
+                    raise RuntimeError(f"URLab returned no depth for {name}: the plugin lacks urlab_fresh_depth.patch")
+                deep[k] = np.frombuffer(blk["depth"], np.float32).reshape(h, w) / np.float32(100.0)  # cm -> m
+        return out, deep
 
     def render(self, qpos) -> dict:
         """The images of this state."""

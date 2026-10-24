@@ -1,7 +1,9 @@
 """Unreal's RGB of a MuJoCo state for vision RSI L3 (locomani.tasks.scene.services): the open editor's level of the
 scene, read through the robot's three cameras (`UnrealView`), served to round workers on services.UNREAL_ADDRESS.
 A request {"qpos": the scene's full qpos} gets {"images": {stream: HxWx3 uint8}} for ego_view (head_camera), left_wrist
-and right_wrist, 640 x 480, captured fresh (`repeats` captures for Lumen and TSR to settle). Runs in the bridge venv,
+and right_wrist, 640 x 480, captured fresh (`repeats` captures for Lumen and TSR to settle); with "depth": True also
+{"depth": {stream: HxW float32 metres}} of the visible surfaces (UnrealView.grab_depth; needs the plugin's
+patches/urlab_fresh_depth.patch). Runs in the bridge venv,
 with the editor up (scripts/start_unreal.sh --gpu 1):
 
     PYTHONPATH=src "$BRIDGE_PY" -m locomani.sim.unreal.rgb_server \\
@@ -27,8 +29,16 @@ def main(argv=None) -> int:
     ap.add_argument("--port", type=int, default=UNREAL_ADDRESS[1])
     a = ap.parse_args(argv)
     view = UnrealView(a.scene, a.level, a.repeats)
+
+    def handle(req: dict) -> dict:
+        if not req.get("depth"):
+            return dict(images=view.render(np.asarray(req["qpos"], float)))
+        view.push(np.asarray(req["qpos"], float))
+        images, depth = view.grab_depth()
+        return dict(images=images, depth=depth)
+
     try:
-        serve((UNREAL_ADDRESS[0], a.port), lambda req: dict(images=view.render(np.asarray(req["qpos"], float))))
+        serve((UNREAL_ADDRESS[0], a.port), handle)
     finally:
         view.close()
     return 0

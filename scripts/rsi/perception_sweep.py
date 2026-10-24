@@ -8,7 +8,7 @@ the summary goes to <out>/summary.json. The package must set WORLD_VIEW.
 Run it from the checkout, detached (nohup setsid), like sealed.py:
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/perception_sweep.py grasp_atomic <pool> scripts/rsi/seeds/grasp_c11_view <out> \\
-        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | 2 | 3 | --conditions <json>] [--procs 6 --gpus 0,1]
+        --base <L0 rounds> --set '{"pick.VIA_BACK_M": 0.2}' [--grid 1a | 1bc | 2 | 3 | 3d | --conditions <json>] [--procs 6 --gpus 0,1]
 """
 
 from __future__ import annotations
@@ -67,6 +67,21 @@ GRIDS = {
     "3": {
         "l3": {"rendered": {"masks": "sam3", "width": 640, "height": 480}},
         "l2_640": {"rendered": {"width": 640, "height": 480}},
+    },
+    # step 3 with the mask and its depth from one surface: Unreal's depth (the plugin's "fresh_depth",
+    # patches/urlab_fresh_depth.md, so the editor must run the patched copy of the host project) and the objects'
+    # visual meshes as the fitted shape, from the full scene model the level was built from (path from the checkout)
+    "3d": {
+        "l3d": {
+            "rendered": {
+                "masks": "sam3",
+                "width": 640,
+                "height": 480,
+                "depth": "unreal",
+                "shape": "visual",
+                "visual_scene": "outputs/scene_discovery/adt_apartment_mars/scene_locomani.xml",
+            }
+        },
     },
 }
 

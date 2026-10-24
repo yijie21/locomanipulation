@@ -75,20 +75,7 @@ class TruthView:
         """The collision geoms (contype or conaffinity set) of free object `key`, in model order: id, type ("box",
         "mesh", ...), size, pos and quat in the body frame, and for a mesh its vertices and faces (the model's arrays,
         unconverted). Read-only."""
-        m, b = self._world.sim.m, self._world.free[key]
-        out = []
-        for g in range(m.ngeom):
-            if m.geom_bodyid[g] != b or not (m.geom_contype[g] or m.geom_conaffinity[g]):
-                continue
-            row = dict(id=g, type=GEOM_TYPES[int(m.geom_type[g])], size=m.geom_size[g], pos=m.geom_pos[g],
-                       quat=m.geom_quat[g])  # fmt: skip
-            if row["type"] == "mesh":
-                mid = int(m.geom_dataid[g])
-                a, k = int(m.mesh_vertadr[mid]), int(m.mesh_vertnum[mid])
-                fa, fn = int(m.mesh_faceadr[mid]), int(m.mesh_facenum[mid])
-                row.update(vert=m.mesh_vert[a : a + k], face=m.mesh_face[fa : fa + fn])
-            out.append(row)
-        return out
+        return geom_rows(self._world.sim.m, self._world.free[key], collision=True)
 
     def static_colliders(self) -> list[tuple[np.ndarray, np.ndarray]]:
         """(centre, half extent) world AABBs of the fixed scene's box colliders that the robot's arms collide with
@@ -157,6 +144,24 @@ class RobotView:
         if name in RobotView.DENIED:
             raise AttributeError(f"RobotView: {name!r} is not available to a skill (locomani.tasks.scene.view)")
         setattr(self._motor, name, value)
+
+
+def geom_rows(m: mujoco.MjModel, body: int, collision: bool) -> list[dict]:
+    """TruthView.object_geoms' rows for body id `body` of model `m`: its collision geoms (contype or conaffinity set),
+    or with collision=False its visual ones (neither set)."""
+    out = []
+    for g in range(m.ngeom):
+        if m.geom_bodyid[g] != body or bool(m.geom_contype[g] or m.geom_conaffinity[g]) != collision:
+            continue
+        row = dict(id=g, type=GEOM_TYPES[int(m.geom_type[g])], size=m.geom_size[g], pos=m.geom_pos[g],
+                   quat=m.geom_quat[g])  # fmt: skip
+        if row["type"] == "mesh":
+            mid = int(m.geom_dataid[g])
+            a, k = int(m.mesh_vertadr[mid]), int(m.mesh_vertnum[mid])
+            fa, fn = int(m.mesh_faceadr[mid]), int(m.mesh_facenum[mid])
+            row.update(vert=m.mesh_vert[a : a + k], face=m.mesh_face[fa : fa + fn])
+        out.append(row)
+    return out
 
 
 def _quat_mat(q) -> np.ndarray:

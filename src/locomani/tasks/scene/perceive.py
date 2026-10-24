@@ -20,11 +20,17 @@ Unreal's RGB of the same moment instead (`ServiceFrames`; locomani.tasks.scene.s
 category phrase (services.prompt_of), and in each camera the instance taken is the one at least `sam3_min_score` whose
 points land nearest the current estimate, within `assoc_gate_m` (a second TV remote on the same table is not it). Depth
 stays MuJoCo's, registered to Unreal's pixels (same camera, 640 x 480; checked 2026-10-23 by overlaying MuJoCo's masks on
-Unreal's frames). The read log then also keeps the chosen masks' IoU with the exact one and whether one was another
-object."""
+Unreal's frames), unless `depth="unreal"`: then Unreal's depth of the visible surfaces, from the same capture as the RGB
+(the plugin's "fresh_depth", patches/urlab_fresh_depth.md), so a mask and its depth come from one surface. MuJoCo's depth
+shows the physics model's collision shapes (the mug's five boxes have no handle). `shape="visual"` fits the object's
+visual meshes, from `visual_scene` (the full scene model the Unreal level was built from; the object bodies' frames are
+the physics model's, checked 2026-10-24 on all 64), in place of its collision shape. The read log then also keeps the
+chosen masks' IoU with the exact one, whether one was another object, and the best IoU any instance had (`best_iou`:
+whether SAM 3 found the object at all)."""
 
 from __future__ import annotations
 
+import functools
 import zlib
 from dataclasses import dataclass
 
@@ -33,7 +39,7 @@ import numpy as np
 from scipy.spatial import cKDTree
 
 from locomani.tasks.scene.services import SAM3_ADDRESS, UNREAL_ADDRESS, Client, prompt_of, unpack_mask
-from locomani.tasks.scene.view import TruthView
+from locomani.tasks.scene.view import TruthView, geom_rows
 
 GEOM_MESH, GEOM_BOX = int(mujoco.mjtGeom.mjGEOM_MESH), int(mujoco.mjtGeom.mjGEOM_BOX)
 
@@ -48,8 +54,15 @@ class RenderConfig:
     max_range_m: float = 3.0  # depth beyond this is not used
     prior_bias_m: float = 0.05  # never seen yet: the start pose off by this distance (horizontal), the map's memory
     reject_rms_m: float = 0.02  # a fit leaving more than this residual is not taken (the last estimate stays)
-    model_points: int = 3000  # surface samples of an object's collision shape
+    model_points: int = 3000  # surface samples of an object's shape
     masks: str = "exact"  # "exact": the renderer's body ids (L2); "sam3": SAM 3 on Unreal's RGB (L3)
+    depth: str = (
+        "mujoco"  # "mujoco": MuJoCo's depth (collision shapes); "unreal": Unreal's (visible surfaces), sam3 only
+    )
+    shape: str = (
+        "collision"  # the shape fitted: the physics model's collision geoms, or "visual": visual_scene's meshes
+    )
+    visual_scene: str = ""  # the scene XML with the objects' visual meshes (shape "visual")
     sam3_min_score: float = 0.3  # an instance below this score is not taken
     assoc_gate_m: float = 0.25  # an instance whose points centre farther than this from the estimate is another object
     unreal_port: int = UNREAL_ADDRESS[1]
@@ -61,6 +74,10 @@ class RenderConfig:
         cfg = cls(**{k: tuple(v) if k == "cameras" else v for k, v in spec.items()})
         if cfg.masks not in ("exact", "sam3"):
             raise ValueError(f"masks {cfg.masks!r}: exact or sam3")
+        if cfg.depth not in ("mujoco", "unreal") or (cfg.depth == "unreal" and cfg.masks != "sam3"):
+            raise ValueError(f"depth {cfg.depth!r}: mujoco, or unreal with masks sam3 (Unreal's frames)")
+        if cfg.shape not in ("collision", "visual") or (cfg.shape == "visual" and not cfg.visual_scene):
+            raise ValueError(f"shape {cfg.shape!r}: collision, or visual with a visual_scene")
         return cfg
 
 
@@ -188,23 +205,39 @@ STREAMS = {"head_camera": "ego_view", "left_wrist": "left_wrist", "right_wrist":
 
 
 class ServiceFrames:
-    """MuJoCoFrames plus Unreal's RGB of the same state (locomani.sim.unreal.rgb_server), pixel for pixel."""
+    """MuJoCoFrames plus Unreal's RGB of the same state (locomani.sim.unreal.rgb_server), pixel for pixel; with
+    cfg.depth "unreal", Unreal's depth too (MuJoCo's body ids stay, for the exact-mask diagnostics only)."""
 
-    def __init__(self, model: mujoco.MjModel, cfg: RenderConfig):
-        self.m, self.depth = model, MuJoCoFrames(model, cfg)
-        self.unreal = Client((UNREAL_ADDRESS[0], int(cfg.unreal_port)))
+    def __init__(self, model: mujoco.MjModel, cfg: RenderConfig, frames=None, unreal=None):
+        self.m, self.cfg = model, cfg
+        self.depth = frames if frames is not None else MuJoCoFrames(model, cfg)
+        self.unreal = unreal if unreal is not None else Client((UNREAL_ADDRESS[0], int(cfg.unreal_port)))
 
     def __call__(self, data: mujoco.MjData) -> list[Frame]:
         frames = self.depth(data)
-        images = self.unreal.call(dict(qpos=data.qpos.copy()))["images"]
+        want = self.cfg.depth == "unreal"
+        reply = self.unreal.call(dict(qpos=data.qpos.copy(), depth=want))
         for f in frames:
-            rgb = images[STREAMS[f.camera]]
+            rgb = reply["images"][STREAMS[f.camera]]
             if rgb.shape[:2] != f.depth.shape:
                 raise RuntimeError(
                     f"{f.camera}: Unreal {rgb.shape[:2]} vs depth {f.depth.shape}: set width 640, height 480"
                 )
             f.rgb = rgb
+            if want:
+                f.depth = np.asarray(reply["depth"][STREAMS[f.camera]], np.float32)
         return frames
+
+
+@functools.lru_cache(maxsize=2)
+def _scene_model(path: str) -> mujoco.MjModel:
+    return mujoco.MjModel.from_xml_path(path)  # the full apartment model: about 9 s, once per worker
+
+
+def visual_geoms(scene_xml: str, body_name: str) -> list[dict]:
+    """The visual geoms of body `body_name` in the scene `scene_xml`, as TruthView.object_geoms rows."""
+    m = _scene_model(str(scene_xml))
+    return geom_rows(m, m.body(body_name).id, collision=False)
 
 
 _FRAMES: dict = {}  # (id(model), RenderConfig) -> frame source: one renderer (and Unreal client) per worker and config
@@ -295,15 +328,18 @@ class RenderedView(TruthView):
     def _sam3_points(self, key: str, body: int, near: np.ndarray) -> list[np.ndarray]:
         """Per camera, the points of the SAM 3 instance of the object's phrase nearest `near` within the gate."""
         cfg, prompt = self._cfg, prompt_of(self._world.meta["objects"][key], key)
-        out, ious, wrong, found = [], [], 0, 0
+        out, ious, wrong, found, oracle = [], [], 0, 0, []
         for f in self._shoot():
             k = (self._shot[0], f.camera, prompt)
             if k not in self._seg:
                 res = self._sam3.call(dict(image=f.rgb, prompts=[prompt]))["results"][prompt]
                 self._seg[k] = [(score, unpack_mask(m)) for score, m in res]
             found += len(self._seg[k])
+            exact = f.body == body
             best = None
             for score, mask in self._seg[k]:
+                if exact.any():
+                    oracle.append(float((mask & exact).sum() / max((mask | exact).sum(), 1)))
                 if score < cfg.sam3_min_score:
                     continue
                 p = back_project(f, mask, cfg.max_range_m)
@@ -312,10 +348,10 @@ class RenderedView(TruthView):
                     best = (d, p, mask)
             if best is not None:
                 out.append(best[1])
-                exact = f.body == body
                 ious.append(float((best[2] & exact).sum() / max((best[2] | exact).sum(), 1)))
                 wrong += float((best[2] & exact).sum()) < 0.5 * float(best[2].sum())
-        self._diag[key] = dict(instances=found, iou=round(float(np.mean(ious)), 3) if ious else None, wrong=wrong)
+        self._diag[key] = dict(instances=found, iou=round(float(np.mean(ious)), 3) if ious else None, wrong=wrong,
+                               best_iou=round(max(oracle), 3) if oracle else None)  # fmt: skip
         return out
 
     def _shoot(self) -> list[Frame]:
@@ -328,7 +364,12 @@ class RenderedView(TruthView):
     def _shape(self, key: str):
         if key not in self._model:
             rng = np.random.default_rng([int(self._cfg.seed), zlib.crc32(key.encode())])
-            pts, nrm = surface_points(self.object_geoms(key), int(self._cfg.model_points), rng)
+            if self._cfg.shape == "visual":
+                name = self._world.sim.m.body(self._world.free[key]).name
+                geoms = visual_geoms(self._cfg.visual_scene, name)
+            else:
+                geoms = self.object_geoms(key)
+            pts, nrm = surface_points(geoms, int(self._cfg.model_points), rng)
             self._model[key] = ((pts, nrm), cKDTree(pts))
         return self._model[key]
 

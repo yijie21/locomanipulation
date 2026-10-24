@@ -1,0 +1,235 @@
+diff --git a/Source/URLab/Private/Bridge/RpcDispatcher.cpp b/Source/URLab/Private/Bridge/RpcDispatcher.cpp
+index bfa16f7..60a6f3e 100644
+--- a/Source/URLab/Private/Bridge/RpcDispatcher.cpp
++++ b/Source/URLab/Private/Bridge/RpcDispatcher.cpp
+@@ -1050,7 +1050,7 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::HandleStep(const TSharedPtr<FJsonOb
+ 	}
+ 
+ 	// Parse include_cameras: accepts either
+-	//   - object: { "<cam_name>": "sync"|"latest"|"fresh"|"stream" } -- per-camera mode
++	//   - object: { "<cam_name>": "sync"|"latest"|"fresh"|"stream"|"fresh_depth" } -- per-camera mode
+ 	//   - bool true: all registered cameras at "latest" mode (legacy form)
+ 	//   - false/absent: no cameras
+ 	TMap<FString, ECameraInclude> CameraSpec;
+@@ -1070,6 +1070,8 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::HandleStep(const TSharedPtr<FJsonOb
+ 						E = ECameraInclude::Fresh;
+ 					else if (Mode.Equals(TEXT("stream"), ESearchCase::IgnoreCase))
+ 						E = ECameraInclude::Stream;
++					else if (Mode.Equals(TEXT("fresh_depth"), ESearchCase::IgnoreCase))
++						E = ECameraInclude::FreshDepth;
+ 					CameraSpec.Add(Kv.Key, E);
+ 				}
+ 			}
+@@ -1616,24 +1618,30 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 	// request just wrote (a puppet push shows the previous pose ~half the time).
+ 	// "stream" is the same, for a pose that continues the previous request's (a trace
+ 	// played at its own rate): one capture that keeps TSR / Lumen history, as a game frame.
++	// "fresh_depth" is "fresh" plus the depth of the same view, rendered in the same task (UMjCamera::RenderDepthNow).
+ 	struct FFreshCapture
+ 	{
+ 		TMap<UMjCamera*, TArray<FColor>> Pixels;
++		TMap<UMjCamera*, TArray<float>> Depth;
+ 		FEvent* Done = FPlatformProcess::GetSynchEventFromPool(/*bIsManualReset=*/false);
+ 		~FFreshCapture() { FPlatformProcess::ReturnSynchEventToPool(Done); }
+ 	};
+ 	TSharedPtr<FFreshCapture, ESPMode::ThreadSafe> Fresh;
+ 	{
+ 		TArray<TWeakObjectPtr<UMjCamera>> FreshCams;
++		TArray<TWeakObjectPtr<UMjCamera>> DepthCams;
+ 		bool bStream = true;
+ 		for (const TPair<FString, ECameraInclude>& Spec : CameraSpec)
+ 		{
+ 			UMjCamera** Found = ByName.Find(Spec.Key);
+-			const bool bWant = Spec.Value == ECameraInclude::Fresh || Spec.Value == ECameraInclude::Stream;
++			const bool bWant = Spec.Value == ECameraInclude::Fresh || Spec.Value == ECameraInclude::Stream ||
++				Spec.Value == ECameraInclude::FreshDepth;
+ 			if (bWant && Found && *Found && (*Found)->CaptureMode != EMjCameraMode::Depth)
+ 			{
+ 				FreshCams.AddUnique(*Found);
+ 				bStream &= Spec.Value == ECameraInclude::Stream;
++				if (Spec.Value == ECameraInclude::FreshDepth)
++					DepthCams.AddUnique(*Found);
+ 			}
+ 		}
+ 		if (FreshCams.Num() > 0 && Manager->PhysicsEngine)
+@@ -1644,7 +1652,7 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 			}
+ 			Fresh = MakeShared<FFreshCapture, ESPMode::ThreadSafe>();
+ 			TWeakObjectPtr<AAMjManager> WeakMgr(Manager);
+-			auto Capture = [WeakMgr, FreshCams, bStream, State = Fresh]()
++			auto Capture = [WeakMgr, FreshCams, DepthCams, bStream, State = Fresh]()
+ 			{
+ 				if (AAMjManager* M = WeakMgr.Get())
+ 					M->ApplyRenderStateNow();
+@@ -1656,12 +1664,24 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 					if (UMjCamera* C = W.Get(); C && C->RenderNow(bStream))
+ 						Rendered.Add(C);
+ 				}
++				TArray<UMjCamera*> DepthRendered;
++				for (const TWeakObjectPtr<UMjCamera>& W : DepthCams)
++				{
++					if (UMjCamera* C = W.Get(); C && C->RenderDepthNow())
++						DepthRendered.Add(C);
++				}
+ 				for (UMjCamera* C : Rendered)
+ 				{
+ 					TArray<FColor> Px;
+ 					if (C->ReadNow(Px))
+ 						State->Pixels.Add(C, MoveTemp(Px));
+ 				}
++				for (UMjCamera* C : DepthRendered)
++				{
++					TArray<float> D;
++					if (C->ReadDepthNow(D))
++						State->Depth.Add(C, MoveTemp(D));
++				}
+ 				State->Done->Trigger();
+ 			};
+ 			if (IsInGameThread())
+@@ -1757,7 +1777,8 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 		CamObj->SetNumberField(TEXT("width"), Cam->resolution.Num() > 0 ? Cam->resolution[0] : 0);
+ 		CamObj->SetNumberField(TEXT("height"), Cam->resolution.Num() > 1 ? Cam->resolution[1] : 0);
+ 
+-		if (Spec.Value == ECameraInclude::Fresh || Spec.Value == ECameraInclude::Stream)
++		if (Spec.Value == ECameraInclude::Fresh || Spec.Value == ECameraInclude::Stream ||
++			Spec.Value == ECameraInclude::FreshDepth)
+ 		{
+ 			TArray<FColor>* Px = Fresh ? Fresh->Pixels.Find(Cam) : nullptr;
+ 			if (!Px || Px->Num() == 0)
+@@ -1766,6 +1787,11 @@ TSharedPtr<FJsonObject> FURLabRpcDispatcher::BuildCamerasBlock(AAMjManager* Mana
+ 			CamObj->SetBoolField(TEXT("fresh"), true);
+ 			FURLabMsgpackUtil::SetBinaryField(CamObj, TEXT("data"),
+ 				reinterpret_cast<const uint8*>(Px->GetData()), Px->Num() * sizeof(FColor));
++			// float32, centimetres along the view axis, same width x height; absent if the depth readback failed.
++			TArray<float>* D = Fresh ? Fresh->Depth.Find(Cam) : nullptr;
++			if (Spec.Value == ECameraInclude::FreshDepth && D && D->Num() == Px->Num())
++				FURLabMsgpackUtil::SetBinaryField(CamObj, TEXT("depth"),
++					reinterpret_cast<const uint8*>(D->GetData()), D->Num() * sizeof(float));
+ 			Cams->SetObjectField(Spec.Key, CamObj);
+ 			continue;
+ 		}
+diff --git a/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp b/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
+index 09e3323..c18a5c6 100644
+--- a/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
++++ b/Source/URLab/Private/MuJoCo/Components/Sensors/MjCamera.cpp
+@@ -826,6 +826,69 @@ bool UMjCamera::ReadNow(TArray<FColor>& OutPixels)
+ 	return Resource->ReadPixels(OutPixels, FReadSurfaceDataFlags(RCM_UNorm, CubeFace_MAX));
+ }
+ 
++bool UMjCamera::RenderDepthNow()
++{
++	check(IsInGameThread());
++	if (!CaptureComponent || !RenderTarget || CaptureMode != EMjCameraMode::Real || resolution.Num() < 2)
++		return false;
++	if (!DepthCapture)
++	{
++		DepthCapture = NewObject<USceneCaptureComponent2D>(GetOwner(), NAME_None, RF_Transient);
++		DepthCapture->bCaptureEveryFrame = false;
++		DepthCapture->bCaptureOnMovement = false;
++		DepthCapture->bAlwaysPersistRenderingState = false;
++		DepthCapture->bUseRayTracingIfEnabled = false;
++		// Not hidden: CaptureScene() skips a component whose IsVisible() is false, and bHiddenInGame makes it so
++		// (USceneComponent::IsVisible); the colour capture is unhidden the same way in SetStreamingEnabled.
++		DepthCapture->bHiddenInGame = false;
++		DepthCapture->SetVisibility(true);
++		DepthCapture->CaptureSource = ESceneCaptureSource::SCS_SceneDepth;
++		DepthCapture->SetupAttachment(CaptureComponent); // zero relative transform: the colour capture's pose
++		DepthCapture->RegisterComponent();
++		// RGBA32f, depth in R: Vulkan's float readback converts R32G32B32A32_SFLOAT but not R32_SFLOAT (an assert,
++		// then SIGSEGV; ConvertRawDataToFLinearColor in VulkanRenderTarget.cpp).
++		DepthTarget = NewObject<UTextureRenderTarget2D>(this, NAME_None, RF_Transient);
++		DepthTarget->RenderTargetFormat = ETextureRenderTargetFormat::RTF_RGBA32f;
++		DepthTarget->InitCustomFormat(resolution[0], resolution[1], PF_A32B32G32R32F, /*bForceLinearGamma=*/true);
++		DepthCapture->TextureTarget = DepthTarget;
++		UE_LOG(LogURLabImport, Log, TEXT("[MjCamera] '%s' depth capture created (%dx%d)"), *MjName, resolution[0],
++			resolution[1]);
++	}
++	// The colour capture's view as it stands now (its FOV follows fovy; its hidden list is refreshed per tick).
++	DepthCapture->FOVAngle = CaptureComponent->FOVAngle;
++	DepthCapture->ProjectionType = CaptureComponent->ProjectionType;
++	DepthCapture->OrthoWidth = CaptureComponent->OrthoWidth;
++	DepthCapture->bOverride_CustomNearClippingPlane = CaptureComponent->bOverride_CustomNearClippingPlane;
++	DepthCapture->CustomNearClippingPlane = CaptureComponent->CustomNearClippingPlane;
++	DepthCapture->MaxViewDistanceOverride = CaptureComponent->MaxViewDistanceOverride;
++	DepthCapture->PrimitiveRenderMode = CaptureComponent->PrimitiveRenderMode;
++	DepthCapture->HiddenComponents = CaptureComponent->HiddenComponents;
++	DepthCapture->HiddenActors = CaptureComponent->HiddenActors;
++	DepthCapture->ShowOnlyComponents = CaptureComponent->ShowOnlyComponents;
++	DepthCapture->ShowOnlyActors = CaptureComponent->ShowOnlyActors;
++	DepthCapture->ShowFlags = CaptureComponent->ShowFlags;
++	DepthCapture->ShowFlags.SetTemporalAA(false);
++	DepthCapture->ShowFlags.SetAntiAliasing(false);
++	DepthCapture->CaptureScene();
++	return true;
++}
++
++bool UMjCamera::ReadDepthNow(TArray<float>& OutDepth)
++{
++	check(IsInGameThread());
++	FTextureRenderTargetResource* Resource = DepthTarget ? DepthTarget->GameThread_GetRenderTargetResource() : nullptr;
++	if (!Resource)
++		return false;
++	// Flushes the rendering commands, so the capture queued by RenderDepthNow is included. MinMax: the raw floats.
++	TArray<FLinearColor> Px;
++	if (!Resource->ReadLinearColorPixels(Px, FReadSurfaceDataFlags(RCM_MinMax, CubeFace_MAX)))
++		return false;
++	OutDepth.SetNumUninitialized(Px.Num());
++	for (int32 i = 0; i < Px.Num(); ++i)
++		OutDepth[i] = Px[i].R;
++	return true;
++}
++
+ bool UMjCamera::IsReadbackReady() const
+ {
+ 	return bReadbackComplete;
+diff --git a/Source/URLab/Public/Bridge/RpcDispatcher.h b/Source/URLab/Public/Bridge/RpcDispatcher.h
+index 14e16ce..50279bb 100644
+--- a/Source/URLab/Public/Bridge/RpcDispatcher.h
++++ b/Source/URLab/Public/Bridge/RpcDispatcher.h
+@@ -59,7 +59,9 @@ public:
+ 		/** Rendered after this request's pose reached the scene (see BuildCamerasBlock). */
+ 		Fresh,
+ 		/** Like Fresh, but the next frame of a continuous sequence: one capture that keeps the temporal history. */
+-		Stream
++		Stream,
++		/** Fresh, plus the depth of the same view in the block's "depth" field (UMjCamera::RenderDepthNow). */
++		FreshDepth
+ 	};
+ 
+ 	FURLabRpcDispatcher();
+diff --git a/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h b/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h
+index 6c30d96..b942eee 100644
+--- a/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h
++++ b/Source/URLab/Public/MuJoCo/Components/Sensors/MjCamera.h
+@@ -280,11 +280,31 @@ public:
+ 	/** @brief Game thread: reads back the last RenderNow synchronously (BGRA, row-major); flushes rendering. */
+ 	bool ReadNow(TArray<FColor>& OutPixels);
+ 
++	/**
++	 * @brief Game thread: renders the depth of this camera's view now (queued; ReadDepthNow collects it). A second
++	 *        capture component attached to the colour one, made on first use, takes the colour capture's
++	 *        field of view, clip planes, show flags and hidden / show-only lists at each call, so depth and colour
++	 *        are one view; it captures once, without temporal AA (its jitter would move the depth), and keeps no
++	 *        view state, so the colour capture's TSR and Lumen history are untouched. Real cameras only.
++	 */
++	bool RenderDepthNow();
++
++	/** @brief Game thread: reads back the last RenderDepthNow synchronously (scene depth: centimetres along the view
++	 *  axis, row-major); flushes rendering. */
++	bool ReadDepthNow(TArray<float>& OutDepth);
++
+ private:
+ 	/** Set by the first RenderNow: the camera stops its per-frame capture and readback and renders only on
+ 	 *  request. A per-frame capture plus an explicit one in the same frame hung the GPU in a heavy level. */
+ 	bool bOnDemand = false;
+ 
++	/** RenderDepthNow's capture and its R32f target; null until the first call. */
++	UPROPERTY(Transient)
++	USceneCaptureComponent2D* DepthCapture = nullptr;
++
++	UPROPERTY(Transient)
++	UTextureRenderTarget2D* DepthTarget = nullptr;
++
+ public:
+ 
+ 	/**

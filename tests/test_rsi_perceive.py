@@ -218,6 +218,64 @@ class Rendered(unittest.TestCase):
             P.RenderConfig.of({"fps": 5})
         with self.assertRaises(ValueError):
             P.RenderConfig.of({"masks": "grounding-dino"})
+        with self.assertRaises(ValueError):
+            P.RenderConfig.of({"depth": "unreal"})  # Unreal's depth goes with SAM 3's masks on Unreal's frames
+        with self.assertRaises(ValueError):
+            P.RenderConfig.of({"shape": "visual"})  # needs the scene that carries the visual meshes
+        cfg = P.RenderConfig.of({"masks": "sam3", "depth": "unreal", "shape": "visual", "visual_scene": "s.xml"})
+        self.assertEqual((cfg.depth, cfg.shape), ("unreal", "visual"))
+
+    def test_unreal_depth_replaces_mujocos_and_keeps_its_masks(self):
+        cfg = P.RenderConfig(masks="sam3", depth="unreal", width=4, height=3)
+        body = np.zeros((3, 4), int)
+
+        def mujoco_frames(data):
+            return [P.Frame("head_camera", np.ones((3, 4)), body, (2.0, 2.0, 2.0, 1.5), np.zeros(3), np.eye(3))]
+
+        class Unreal:
+            def call(self, req):
+                self.req = req
+                return dict(images={"ego_view": np.zeros((3, 4, 3), np.uint8)},
+                            depth={"ego_view": np.full((3, 4), 2.5, np.float32)})  # fmt: skip
+
+        unreal = Unreal()
+        (f,) = P.ServiceFrames(None, cfg, frames=mujoco_frames, unreal=unreal)(SimpleNamespace(qpos=np.zeros(2)))
+        self.assertTrue(unreal.req["depth"])
+        np.testing.assert_array_equal(f.depth, np.full((3, 4), 2.5))
+        self.assertIs(f.body, body)  # the exact masks stay MuJoCo's: the IoU diagnostic only
+        self.assertEqual(f.rgb.shape, (3, 4, 3))
+        (g,) = P.ServiceFrames(None, P.RenderConfig(masks="sam3", width=4, height=3), frames=mujoco_frames,
+                               unreal=unreal)(SimpleNamespace(qpos=np.zeros(2)))  # fmt: skip
+        self.assertFalse(unreal.req["depth"])
+        np.testing.assert_array_equal(g.depth, np.ones((3, 4)))
+
+    def test_the_visual_shape_comes_from_the_visual_scene(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "visual.xml"
+            path.write_text(VISUAL_SCENE)
+            rows = P.visual_geoms(str(path), "obj")
+            self.assertEqual([r["type"] for r in rows], ["box"])
+            np.testing.assert_allclose(rows[0]["size"], [0.05, 0.03, 0.04])  # not the collision box
+            self.cfg = P.RenderConfig(shape="visual", visual_scene=str(path))
+            self.world.sim = SimpleNamespace(m=SimpleNamespace(body=lambda b: SimpleNamespace(name="obj")), d=None)
+            v = P.RenderedView(self.world, self.cfg, 610001, frames=self.frames)
+            pts = v._shape("obj")[0][0]
+        self.assertAlmostEqual(float(np.abs(pts[:, 0]).max()), 0.05, places=6)  # samples of the 5 cm visual box
+
+
+VISUAL_SCENE = """
+<mujoco>
+  <worldbody>
+    <body name="obj" pos="1.0 0.2 0.05">
+      <freejoint/>
+      <geom name="vis" type="box" size="0.05 0.03 0.04" contype="0" conaffinity="0" group="1"/>
+      <geom name="col" type="box" size="0.02 0.02 0.02" group="3"/>
+    </body>
+  </worldbody>
+</mujoco>
+"""
 
 
 BOX_SCENE = """
