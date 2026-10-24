@@ -962,15 +962,25 @@ def allowed_dirs() -> list[str]:
     return sorted({str(p if p.is_dir() else p.parent) for p in scene_links()})
 
 
+BARE_END = (
+    r"""(?:[\s"'`):;,|&>\\]|$)"""  # what may follow a path named bare: a space, quote, separator, an escape, the end
+)
+
+
 def leak_patterns() -> dict[str, str]:
     pats = {"gate": re.escape(HIDDEN.parent.name)}
     pats["kit"] = r"rsi_kit|scene_rsi_20261016/kit/"  # kit.py: every family's pools and outcomes (2026-10-20)
     if ORIGIN != REPO:
-        # the origin checkout, except what the sandbox links into it: third_party and the scene (its linked entries)
-        linked = [
-            "/" + re.escape(str(p.relative_to(ORIGIN))) + r"(?:/|\b)" for p in scene_links() if p.is_relative_to(ORIGIN)
-        ]
-        pats["origin"] = re.escape(str(ORIGIN)) + rf"(?!/third_party{''.join('|' + x for x in linked)})"
+        # the origin checkout, except what the sandbox links into it: third_party, the scene's linked entries, and the
+        # scene directories themselves named bare -- a role that resolves a link reaches the origin's scene directory,
+        # and three drafts were voided for naming it (user 2026-10-24: 越界检查要放行原仓库场景目录本身); an entry
+        # the sandbox does not link (scene_exclude), or a glob over the directory, is still flagged
+        links = [p for p in scene_links() if p.is_relative_to(ORIGIN)]
+        linked = ["/" + re.escape(str(p.relative_to(ORIGIN))) + r"(?:/|\b)" for p in links]
+        scene_root = ORIGIN / "outputs" / "scene_discovery"
+        dirs = sorted({p.parent for p in links if p.parent != scene_root and p.parent.is_relative_to(scene_root)})
+        bare = ["/" + re.escape(str(d.relative_to(ORIGIN))) + rf"/?(?={BARE_END})" for d in dirs]
+        pats["origin"] = re.escape(str(ORIGIN)) + rf"(?!/third_party{''.join('|' + x for x in linked + bare)})"
         pats["climb"] = r"third_party/\.\."
         pats["claude_home"] = r"\.claude/|~/\.claude"
         pats["sibling"] = re.escape(str(REPO.parent)) + "/" + rf"(?!{re.escape(REPO.name)}(?:/|\b))"

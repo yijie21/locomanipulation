@@ -547,6 +547,30 @@ class RoleSafety(unittest.TestCase):
         self.assertFalse(self.lp.climbs_out("ls outputs/scene_discovery/scn/mesh/../ third_party/x/../y", targets))
         self.assertFalse(self.lp.climbs_out("ls ./src/../outputs", targets))
 
+    def test_the_origins_scene_directory_named_bare_is_no_leak_but_its_unlinked_entries_are(self):
+        """2026-10-24 (user: 越界检查要放行原仓库场景目录本身): three drafts were voided for naming the origin's scene
+        directory, reached by resolving a link; its unlinked entries (scene_exclude) and a glob over it stay flagged."""
+        import re
+
+        sandbox, origin = self.root / "sb", self.root / "origin"
+        scn = origin / "outputs" / "scene_discovery" / "scn"
+        (scn / "discovery").mkdir(parents=True)
+        (scn / "meta.json").write_text("{}")
+        (origin / "third_party").mkdir()
+        (sandbox / "outputs" / "scene_discovery" / "scn").mkdir(parents=True)
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        os.symlink(scn / "meta.json", sandbox / "outputs" / "scene_discovery" / "scn" / "meta.json")
+        self.patch(REPO=sandbox, ORIGIN=origin.resolve())
+        pat = self.lp.leak_patterns()["origin"]
+        o = origin.resolve()
+        for ok in (f"ls {o}/outputs/scene_discovery/scn", f'ls "{o}/outputs/scene_discovery/scn/"',
+                   f"cat {o}/outputs/scene_discovery/scn/meta.json", f"cd {o}/outputs/scene_discovery/scn && ls",
+                   f"ls {o}/third_party/x"):  # fmt: skip
+            self.assertIsNone(re.search(pat, ok), ok)
+        for bad in (f"cat {o}/outputs/scene_discovery/scn/discovery/tasks.jsonl", f"ls {o}/outputs/scene_discovery/scn/*",
+                    f"ls {o}/outputs/scene_discovery", f"ls {o}/outputs/secret", f"ls {o}/outputs/scene_discovery/scn2"):  # fmt: skip
+            self.assertIsNotNone(re.search(pat, bad), bad)
+
     def test_a_cd_sets_where_dotdot_resolves(self):
         """2026-10-22: `cd <loop>/pool && diff a ../../../../../src/...` stays inside the sandbox; it was resolved from
         the root and voided a review."""
