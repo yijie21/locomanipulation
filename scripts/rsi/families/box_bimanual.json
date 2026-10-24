@@ -1,0 +1,102 @@
+{
+ "name": "box_bimanual",
+ "about": "TODO 38 (user 2026-10-23): held(nor_cal_box), the logistics room's 0.45 x 0.32 x 0.33 m, 1.2 kg open carton on the 0.371 m pallet platform, lifted with both hands; two tasks by the carton's yaw on the platform (long side or short side towards the nearest edge), its centre 0.18-0.31 / 0.25-0.375 m from that edge (the near face within 0.15 m of it), the robot anywhere in the room it can walk from; the skills package starts empty (the motor layer: 8 actions plus grip/release 'both' and squeeze); new skills: bimanual pick",
+ "scene": "outputs/scene_discovery/logistics_room_mars",
+ "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box on it)",
+ "tasks_file": "scripts/rsi/families/box_bimanual_tasks.jsonl",
+ "tasks": [
+  "box_long_side",
+  "box_short_side"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "pools": {
+  "diag": {
+   "seed": 430000,
+   "n": 30
+  },
+  "accept": {
+   "seed": 530000,
+   "n": 40
+  },
+  "sealed": {
+   "seed": 630000,
+   "n": 50
+  }
+ },
+ "plan": "scripts/rsi/plans/box_bimanual.md",
+ "skills_note": "the incumbent's skills; the seed was empty (`__init__.py`: plan_for covers no goal), everything else in it the loop wrote",
+ "sandbox": {
+  "seed": "scripts/rsi/seeds/atomic",
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "scripts/rsi/plans/box_bimanual.md",
+   "scripts/rsi/families/box_bimanual.json",
+   "scripts/rsi/families/box_bimanual_tasks.jsonl",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.stage"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "lint.json",
+   "settle.json",
+   "upright.json"
+  ]
+ }
+}

@@ -1,0 +1,2 @@
+{"id": "box_long_side", "goal": ["held(nor_cal_box)"], "prompts": ["pick up the cardboard box with both hands", "lift the open box off the platform"], "room": "logistics_room", "placement": {"depth_m": [0.18, 0.31], "yaw_deg": [85, 90]}}
+{"id": "box_short_side", "goal": ["held(nor_cal_box)"], "prompts": ["pick up the cardboard box with both hands", "lift the open box off the platform"], "room": "logistics_room", "placement": {"depth_m": [0.25, 0.375], "yaw_deg": [0, 5]}}

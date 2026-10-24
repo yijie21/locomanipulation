@@ -15,7 +15,7 @@ class FakeMotor:
         self.t, self.fell_at, self.trace = 0.0, None, []
         self.jaw = np.zeros(3)
         self.pel, self.yaw_v = np.zeros(3), 0.0
-        self.opening, self.between = 0.0, set()
+        self.opening, self.between, self.touch = 0.0, set(), {}
 
     def pelvis(self):
         return self.pel.copy(), np.array([1.0, 0, 0, 0])
@@ -31,6 +31,9 @@ class FakeMotor:
 
     def between_fingers(self, side):
         return self.between
+
+    def touching(self, body):
+        return self.touch.get(body, set())
 
 
 class FakeCtx:
@@ -132,6 +135,28 @@ class Stage(unittest.TestCase):
 
         self.assertTrue(S.lift_check(World(), "x", 0.85)[0])
         self.assertFalse(S.lift_check(World(), "x", 0.92)[0])
+
+    def test_bimanual_grip_and_lift_checks(self):
+        # TODO 38.5: both hands' fingers on the body; the lift holds only while both stay on
+        self.m.opening, self.m.touch = 0.05, {7: {"left"}}
+        ok, v = S.bimanual_grip_check(self.m, 7)
+        self.assertFalse(ok)
+        self.assertEqual((v["touching"], v["opening_cm"]), (["left"], [5.0, 5.0]))
+        self.m.touch = {7: {"right", "left"}}
+        self.assertTrue(S.bimanual_grip_check(self.m, 7)[0])
+
+        class World:
+            free = {"x": 7}
+
+            def object_pose(self, key):
+                return np.array([0.0, 0.0, 0.93]), np.array([1.0, 0, 0, 0])
+
+        ok, v = S.bimanual_lift_check(World(), self.m, "x", 0.85)
+        self.assertTrue(ok)
+        self.assertEqual((v["rise_cm"], v["touching"]), (8.0, ["left", "right"]))
+        self.m.touch = {7: {"right"}}
+        self.assertFalse(S.bimanual_lift_check(World(), self.m, "x", 0.85)[0])
+        self.assertFalse(S.bimanual_lift_check(World(), self.m, "x", 0.92)[0])
 
 
 if __name__ == "__main__":

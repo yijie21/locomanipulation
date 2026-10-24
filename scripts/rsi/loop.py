@@ -130,6 +130,11 @@ CLASS_SUGGEST = {
     "knocked": "the object moved before the grip: a raised-hand approach, a path clear of it",
     "slip": "gripped, then lost: grip_check / lift_check and a re-grip through stage()",
     "fell": "the robot fell: a controller or motor-layer limit, an escalation (rules.md 20), not a skill fix",
+    # the two-hand classes (TODO 38.11, rules.md 35): side_reach, knocked, slip and fell read as above
+    "one_hand_short": "one hand did not get to the box: the stance is off-centre or too far for that arm, or the two "
+    "targets are not symmetric about the body; a re-approach of that hand through stage() (bimanual_grip_check)",
+    "no_lift": "both hands on the box, it never rose: not enough squeeze (motor.squeeze inward_m), the lift too small "
+    "or too fast, or the hands too low on the walls; bimanual_lift_check and a re-squeeze through stage()",
 }
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
 REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
@@ -328,14 +333,21 @@ def family_spec() -> dict:
     return json.loads(p.read_text()) if p.exists() else {}
 
 
+SCENE_NOTE = (
+    "in a simulated apartment"  # the prompts' opening line; a family on another scene sets `scene_note` (TODO 38.10)
+)
+
+
 def prompt_vars() -> dict:
-    """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, and the
-    pool sizes. A family without them gets the text the prompts had before."""
+    """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, the scene
+    the prompts' first line names (`scene_note`, TODO 38.10), and the pool sizes. A family without them gets the text
+    the prompts had before."""
     spec = family_spec()
     pools = spec.get("pools") or {}
     return dict(
         PLAN=PLAN,
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
+        SCENE_NOTE=spec.get("scene_note") or SCENE_NOTE,
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",

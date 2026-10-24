@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 19, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 20, 2026-10-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -194,3 +194,15 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     (`prep.wanted`). A task family may give its tasks a `placement` option (`depth_m`, `yaw_deg`, `blocker`) so its
     pools hold the situations that need these actions; it changes no other family's pools (code: start.sample_start,
     family.draw; prompt) (version 19).
+
+35. Two-hand actions (TODO 38.4, D4; version 20): the motor layer has nine actions. `reach("both", (left, right), ...)`
+    moves the two jaw centres together; `grip("both")` / `release("both")` close and open the two jaws together;
+    `squeeze(inward_m, seconds)` pushes the two jaw centres towards each other along the line between them and keeps
+    pushing -- the offsets ride on each hand's servo reference in the pelvis frame through posture, hold and walk_to
+    until `release` or a `reach` of that hand drops them. Nothing in them decides the stance, the hand placement or
+    the lift; a family whose object is wider than a jaw (`semantic.graspable` bimanual; `box_bimanual`, TODO 38) builds
+    those from these actions. `held(X)` then needs the fingers of both hands on X and X off every surface (rule 23's
+    second branch). The step checks for a two-hand hold are `stage.bimanual_grip_check` and `stage.bimanual_lift_check`
+    (rule 31). The failure classes are the two-hand set when the family's object is bimanual (rule 32; TODO 38.11).
+    Graspability, the chooser, the body table and the preparatory layer (rules 32, 34) describe one jaw: on a bimanual
+    family they say nothing about the two-hand hold, and a hypothesis may not cite them for it (prompt).

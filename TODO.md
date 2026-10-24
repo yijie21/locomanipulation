@@ -1261,23 +1261,23 @@
 只跑 L1，不跑外环；一套 `scripts/rsi/` 按任务族文件的 `scene` 跑两个场景。场景是 `warehouse_textured_mars` 那间扫描的物流间，只用房间自带的纸箱（0.45 × 0.32 × 0.33 m，1.2 kg，HP 平台顶面 0.371 m）。阶段按顺序做，38.8 不过就不开循环。
 
 阶段 1 场景
-- [ ] 38.1 `scripts/prepare_logistics_scene.py --rsi`：在 v1 的 scene_meta 上补 v2 字段——`schema_version`、`room.bounds` / `walls` / `rooms` / `spawn`（从 `room_parts.json` 量房间；出生区扣掉平台占地加机器人半径 0.35 m）、台面 A 的 `yaw: 0` 和四条 `approach_edges`；输出到 `outputs/scene_discovery/logistics_room_mars/`（放在 `outputs/scene_discovery/` 下是为了沙盒链接和越界审计不用改）。墙只写进导航器的 `walls`，不加碰撞盒（用户 10-23：不加第二个台面）。
-- [ ] 38.2 `configs/scenes.yaml` 加 `logistics_room_mars`（Unreal 先标 `unsupported`）；`tests/test_run_context.py`、`test_image_source.py`、`test_unreal_paths.py` 里钉死的场景名集合同步。
-- [ ] 38.3 新场景过 `scene_settle.py --write` 和 `scene_lint.py`（0 error）；`physics_scene()` 能出 `_physics` 副本；`scene_round.py` 用空种子跑一局（规划拒绝、机器人站着不动也算跑通）。
+- [x] 38.1 `scripts/prepare_logistics_scene.py --rsi`：在 v1 的 scene_meta 上补 v2 字段——`schema_version`、`room.bounds` / `walls` / `rooms` / `spawn`（从 `room_parts.json` 量房间；出生区扣掉平台占地加机器人半径 0.35 m）、台面 A 的 `yaw: 0` 和四条 `approach_edges`；输出到 `outputs/scene_discovery/logistics_room_mars/`（放在 `outputs/scene_discovery/` 下是为了沙盒链接和越界审计不用改）。墙只写进导航器的 `walls`，不加碰撞盒（用户 10-23：不加第二个台面）。（10-23 做了：`src/locomani/scene_discovery/scan_room.py` 沿三角形边采样 0.10–1.50 m 高度带，5 cm 格；墙和货架都进 `obstacles`（81 个矩形），`walls` 空，出生区是离障碍 ≥ 0.45 m、和出生点连通的格子（55 个矩形），房间 `logistics_room`；箱子刚体补 `quat` 属性，不然 settle 的正则匹配不上；`tests/test_scan_room.py`）
+- [x] 38.2 `configs/scenes.yaml` 加 `logistics_room_mars`（Unreal 先标 `unsupported`）；`tests/test_run_context.py`、`test_image_source.py`、`test_unreal_paths.py` 里钉死的场景名集合同步。（10-23 做了；只有 `test_run_context` 的两处名字集合要改）
+- [x] 38.3 新场景过 `scene_settle.py --write` 和 `scene_lint.py`（0 error）；`physics_scene()` 能出 `_physics` 副本；`scene_round.py` 用空种子跑一局（规划拒绝、机器人站着不动也算跑通）。（10-23 做了：settle 箱子 0 mm 不动，lint 0 错 0 警；空种子一局是 `no_plan`，不加载世界，另用一个只走到箱前 0.9 m 的临时技能跑了一局：走 0.21 m 停差 1.5 cm，`held` 判“没有手碰到”，轨迹 npz 正常；临时技能不进仓库）
 
 阶段 2 动作层（第 9 个原子动作）
-- [ ] 38.4 `src/locomani/backends/scalebfm/motor.py`：`grip` / `release` 接受 `"both"`（两手同时合、同时松）；新增 `squeeze(inward_m, seconds)`——两手在当前夹爪中心各向内偏置并保持，偏置在之后的 `posture` / `hold` / `walk_to` 中持续到 `release`；只在被调用时生效（规则第 1 条：动作层只加默认关闭的开关）。单元测试进 `tests/test_scalebfm_motor.py`。
-- [ ] 38.5 `src/locomani/tasks/scene/stage.py`：`grip_check` / `lift_check` 的双手版（两手手指都接触同一物体；抬起时物体随两手走）。
-- [ ] 38.6 `scripts/rsi/rules.md` 第 20 版：9 个动作、双手任务族的说明、单手工具（可抓性、挑选器、身体表、准备动作层）只对单手有效；`motor.py` 文档串“8 个动作”改成 9 个。
+- [x] 38.4 `src/locomani/backends/scalebfm/motor.py`：`grip` / `release` 接受 `"both"`（两手同时合、同时松）；新增 `squeeze(inward_m, seconds)`——两手在当前夹爪中心各向内偏置并保持，偏置在之后的 `posture` / `hold` / `walk_to` 中持续到 `release`；只在被调用时生效（规则第 1 条：动作层只加默认关闭的开关）。单元测试进 `tests/test_scalebfm_motor.py`。（10-23 做了：`squeeze_offset` 按骨盆偏航系存、`_servo` 把它加到该手的参考夹爪中心上；`grip("both")` 的 `held` / `opening_cm` 按左右两项；`release` 清掉该手的偏置，`reset` 全清；探针 38.7 定默认 `inward_m` 够不够）
+- [x] 38.5 `src/locomani/tasks/scene/stage.py`：`grip_check` / `lift_check` 的双手版（两手手指都接触同一物体；抬起时物体随两手走）。（10-23 做了：`bimanual_grip_check(m, body)` 看 `touching == {left, right}`，`bimanual_lift_check(world, m, key, z0)` 抬高加两手仍接触；`tests/test_rsi_stage.py`）
+- [x] 38.6 `scripts/rsi/rules.md` 第 20 版：9 个动作、双手任务族的说明、单手工具（可抓性、挑选器、身体表、准备动作层）只对单手有效；`motor.py` 文档串“8 个动作”改成 9 个。（10-23 做了：第 20 版第 35 条；`rsi_design.md` 的分层表和版本清单同步）
 
 阶段 3 可行性探针（用户 10-23：先做探针，≥ 5 / 10 开循环）
 - [ ] 38.7 `scripts/rsi/probe_box.py`：默认出生点（平台 ym 边前），10 个随机箱位（两档朝向各半、近侧面离台沿 0–0.15 m），手写 `reach("both")` 到箱子两端 → `squeeze` → `posture()` 站直抬起 → `hold(2)`；输出逐局 `held(nor_cal_box)`、失败步和轨迹视频（预览 ≤ 500 KB）。
 - [ ] 38.8 判定：≥ 5 / 10 进阶段 4；1–4 / 10 调 `squeeze` 的偏置和抓高重跑一次；0 / 10 停下回控制器层查，不开循环。结果写进方案 §5。
 
 阶段 4 任务族与参数化
-- [ ] 38.9 `scripts/rsi/families/box_bimanual.json` + `box_bimanual_tasks.jsonl`：两个任务 `box_long_side`（`placement.yaw_deg [0, 5]`）、`box_short_side`（`[85, 90]`），都带 `depth_m [0, 0.15]`，目标 `held(nor_cal_box)`（不加 `upright`，用户 10-23）；`spawn {"rooms": "all", "distance_m": [0.5, null]}`；池 30 / 40 / 50，新种子段；种子 `scripts/rsi/seeds/atomic`；`sandbox` 块（`keep` / `closure` / `strip` / `scene_exclude` 按新场景）；`plan: scripts/rsi/plans/box_bimanual.md`。经验库默认带 ADT 的单手条目、不带代码。
-- [ ] 38.10 `scripts/rsi/loop.py` 越界审计（`scene_links`、`own_link_targets`、origin 泄漏模式）改读任务族的 `scene`，不再写死 `outputs/scene_discovery` 之外的假设；五个角色提示词里的“公寓”改成任务族给的场景描述字段。
-- [ ] 38.11 `scripts/rsi/failure_class.py` 双手类型：没走到站位、一手没到位、夹住没抬起、抬起后滑脱、摔倒、其他；进验收门结论的 `per_class` 和 Manager 的 `repair_notes`。
+- [~] 38.9 `scripts/rsi/families/box_bimanual.json` + `box_bimanual_tasks.jsonl`：两个任务 `box_long_side`（`placement.yaw_deg [0, 5]`）、`box_short_side`（`[85, 90]`），都带 `depth_m [0, 0.15]`，目标 `held(nor_cal_box)`（不加 `upright`，用户 10-23）；`spawn {"rooms": "all", "distance_m": [0.5, null]}`；池 30 / 40 / 50，新种子段；种子 `scripts/rsi/seeds/atomic`；`sandbox` 块（`keep` / `closure` / `strip` / `scene_exclude` 按新场景）；`plan: scripts/rsi/plans/box_bimanual.md`。经验库默认带 ADT 的单手条目、不带代码。（10-23 做了家族文件、任务文件、方案页和 `scene_note`；`placement.depth_m` 量的是物体中心到台沿的距离，所以长边朝外写 [0.18, 0.31]、短边朝外 [0.25, 0.375]；诊断池抽 30 个起点 0 跳过；沙盒块还没在 `sandbox.py` 里验证，38.13 做）
+- [x] 38.10 `scripts/rsi/loop.py` 越界审计（`scene_links`、`own_link_targets`、origin 泄漏模式）改读任务族的 `scene`，不再写死 `outputs/scene_discovery` 之外的假设；五个角色提示词里的“公寓”改成任务族给的场景描述字段。（10-23 做了：审计的 `scene_links` / `own_link_targets` 本来就枚举 `outputs/scene_discovery/` 下所有链接，新场景放在那里就不用改；提示词开头改成 `{SCENE_NOTE}`，`loop.prompt_vars` 读家族文件的 `scene_note`，没有的沿用“in a simulated apartment”）
+- [x] 38.11 `scripts/rsi/failure_class.py` 双手类型：没走到站位、一手没到位、夹住没抬起、抬起后滑脱、摔倒、其他；进验收门结论的 `per_class` 和 Manager 的 `repair_notes`。（10-23 做了：`failure_class.bimanual()` 按物体的 `bimanual` / `semantic.graspable` 判；公共类（ok、no_plan、time_limit、fell、walk_off）之后走 `_classify_bimanual`：两手离箱面都 > 4 cm 是 side_reach、一手是 one_hand_short、夹持前箱子被推 > 2 cm 或倾 > 15° 是 knocked、两手都到位没抬 3 cm 是 no_lift、抬过又没拿住是 slip；夹持时刻取第一次 `squeeze`，没有就第一次合爪，再没有就最后一次 reach 结束；`CLASS_SUGGEST` 加 one_hand_short、no_lift；`tests/test_rsi_failure_class.py` 的 `Bimanual`）
 - [ ] 38.12 测试：v2 合成夹具上的新场景起点抽样（四边、深度、两档朝向）、家族文件加载、双手失败分类、提示词参数化、审计路径。
 - [ ] 38.13 L0 冒烟：`scene_round.py box_bimanual` 一局；沙盒里 `loop.py run box_bimanual --stub --max-iters 1`。
 
