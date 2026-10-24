@@ -62,6 +62,10 @@
 
 这些是人为探针写的，循环的种子里没有；它们进了方案页第 7 节，角色会读到。
 
+### 5.2 第一次内环（2026-10-23，TODO 38.14）
+
+沙盒 `box-a`，`--max-iters 2`：第 0 轮 32 分钟、17.23 USD，Reviewer 3 条假设、三个 Engineer 的草稿诊断池 10 / 25 / 15 / 30、Composer 合并、验收门 39 / 40 对 0 / 40 接受（哈希 `42ff17cb110f`），现任超过 70% 停止线，循环自己停了。逐步数字、代码无 bug 的判据和这台机器上 `bypassPermissions` 不生效的问题在 [readme 页第 10 节](logistics-room-rsi-readme-20261023.md)。封存集 50 局：接受的版本 49 / 50（长边 25 / 25、短边 24 / 25），种子 0 / 50；快照 `scripts/rsi/seeds/box_42ff17cb110f/`。视频（38.16）和 Unreal（38.17）没做。
+
 ## 6. 命令
 
 前提同 [runbook](../rsi.md) 第 0 节（环境变量、`$PY`）。同一套 `scripts/rsi/`，任务族文件的 `scene` 指向这个场景；角色读的方案是 `scripts/rsi/plans/box_bimanual.md`。

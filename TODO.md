@@ -1282,8 +1282,8 @@
 - [x] 38.13 L0 冒烟：`scene_round.py box_bimanual` 一局；沙盒里 `loop.py run box_bimanual --stub --max-iters 1`。（10-23 做了：沙盒 `$LOCOMANI_WORKSPACE/code/rsi-scene/box-smoke`，诊断池 30、验收池 40 都抽满、0 跳过；假角色一轮 6 秒走完 review → probe → manager → 三个 engineer → compose → gate（静态检查通过）。沙盒的 `keep` 要带 `scripts/rsi/diag_pool.py` 和 `try.py`（loop.py 10-23 起 import 它们；`grasp_atomic.json`、`grasp_prep.json` 的 keep 还没加，下次建那两族的沙盒会缺），`closure` 里不能写 `try`）
 
 阶段 5 运行（配置沿用 grasp_atomic：三 Engineer + Composer、墙钟 6 h、验收门 12 次、停止线 70%）
-- [ ] 38.14 建沙盒，先 `loop.py run box_bimanual --max-iters 2` 看角色读不读得懂新场景和新动作，再放开到停止条件。本机只有一张仿真卡：`RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`。
-- [ ] 38.15 `sealed.py box_bimanual`；最终版快照到 `scripts/rsi/seeds/box_<哈希>`（空种子任务族不写回技能目录）；结果写进方案 §5，同场景的调参 RSI（封存 48 / 80，TODO 25.9.1）只作参照数字，不做对照（用户 10-23）。
+- [x] 38.14 建沙盒，先 `loop.py run box_bimanual --max-iters 2` 看角色读不读得懂新场景和新动作，再放开到停止条件。本机只有一张仿真卡：`RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`。（10-23 跑了：用户改为“只跑两轮、确认没有 bug”；沙盒 `box-a`，一轮 32 分钟、17.23 USD，验收门 39 / 40 接受（多赢 39 少赢 0），循环因 ≥ 70% 自己停了，第二轮没开；九步全走完、无 void、无 Traceback。**环境问题**：这台机器上 `claude -p --permission-mode bypassPermissions` 不生效，角色的 `python3 -c`、临时脚本、`try.py` 被拒（“This command requires approval”），Composer 没能验证合成候选；实测加 `--allowedTools "Bash(*),Read,Write,Edit"` 可放行，`--dangerously-skip-permissions` 不行；改 `loop.py` 第 819 行被本会话的权限分类器挡住，待用户加。细节见 readme 页第 10 节）
+- [x] 38.15 `sealed.py box_bimanual`；最终版快照到 `scripts/rsi/seeds/box_<哈希>`（空种子任务族不写回技能目录）；结果写进方案 §5，同场景的调参 RSI（封存 48 / 80，TODO 25.9.1）只作参照数字，不做对照（用户 10-23）。（10-23 做了：封存集 49 / 50（25 / 25、24 / 25），种子 0 / 50；快照 `scripts/rsi/seeds/box_42ff17cb110f/`；参照：同场景调参 RSI 封存 48 / 80，池不同不可比）
 
 阶段 6 视频（用户 10-23：先 MuJoCo，确认后再 Unreal）
 - [ ] 38.16 `evolution_media.py --sandbox … --family box_bimanual`，预览 ≤ 500 KB。
