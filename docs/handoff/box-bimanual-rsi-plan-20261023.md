@@ -53,7 +53,7 @@
 
 用户要求“抬高 20 cm、倾斜小于 30°、保持 5 秒不掉”。逐条问答定下：新谓词 `lifted(X, 0.20, 30)`（最低角高出平台顶面 20 cm，底面和水平面夹角小于 30°）加 `held(X)`；任务族的 `judge_s` 5：一局最后 5 秒每 0.1 秒判一次，都要成立，技能的最后 3 秒可以还在站起来，之后原地保持 2 秒；直接改 `box_bimanual`；起步版本是循环之前写出的双手抱箱技能（`seeds/box_strict_start`）；失败分类加 `low_lift`、`tilted`、`dropped_hold`；规则第 21 版第 36 条；开循环前先重判、再探针，0 / 10 不开循环。
 
-结果：起步技能在这个判据下 0 / 60（10 个探针起点加 50 局封存集，`outputs/scene_rsi_20261016/box_strict_rescore_20261024/`），箱子只抬了 3–16 cm。人写探针 5 种设置全是 0 / 10：手能把箱子举到 15–29 cm，但抓点在箱高 55% 时两手连线几乎穿过重心，箱子倾斜 30–59°；抓点抬到 75–85% 后箱子从手指侧面滑落。按规则没有开循环。逐条设置见 [物流间 runbook 第 9 节](../rsi_logistics_room.md)。
+结果：起步技能在这个判据下 0 / 60（10 个探针起点加 50 局封存集，`outputs/scene_rsi_20261016/box_strict_rescore_20261024/`），箱子只抬了 3–16 cm。人写探针 5 种设置全是 0 / 10：手能把箱子举到 15–29 cm，但抓点在箱高 55% 时两手连线几乎穿过重心，箱子倾斜 30–59°；抓点抬到 75–85% 后箱子从手指侧面滑落。按规则没有开循环。逐条设置见 [物流间 runbook 第 9 节](../rsi_logistics_room.md)。之后用户把这个任务族的走路速度改成 0.5 m/s（任务族文件的 `motor` 块，`batch.family_motor`，TODO 38.21），探针仍 0 / 10：停位误差 0.9–1.5 cm，失败的仍是举起后的倾斜（9 局 30–59°），走路速度不是原因（`outputs/scene_rsi_20261016/box_probe_strict_05ms_20261024/`，有视频）。
 
 同日：`evolution_media.py` 和 `report_unreal.py` 原来写死 ADT 公寓，改成跟着任务族的场景走（`media.json`、`--scene`）；`logistics_room_mars` 的 Unreal 场景关卡建好（复用 Warehouse 房间关卡）；`--rsi` 建场景时去掉场景包的固定机位 `video_camera`（73.74°，和回放的 45° 机位冲突）。这台机器上角色的 `claude -p` 不放开 Bash，`loop.py` 的调用加了 `--allowedTools "Bash"`。
 

@@ -80,3 +80,15 @@ def test_the_strict_seed_dispatches_the_strict_goal_and_nothing_else():
     assert pkg.plan_for(T(ROWS["box_long_side"]["goal"])) is not None
     assert pkg.plan_for(T(["held(nor_cal_box)"])) is not None
     assert pkg.plan_for(T(["held(nor_cal_box)", "near(nor_cal_box, A, 0.5)"])) is None
+
+
+def test_the_family_walks_at_half_a_metre_per_second_and_the_others_keep_the_default():
+    # TODO 38.21 (user 2026-10-24): box_bimanual's motor block; the batch expects the same signature the worlds carry
+    import batch as B
+
+    from locomani.backends.scalebfm.motor import MotorConfig
+
+    cfg = B.family_motor("box_bimanual")
+    assert cfg.walk_speed == 0.5 and MotorConfig().walk_speed == 0.25
+    assert B.family_motor("grasp_atomic") is None
+    assert B.motor_signature(motor_cfg=cfg) != B.motor_signature()

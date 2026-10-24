@@ -50,7 +50,7 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 14. Open loop, ScaleBFM's hands land 2-9 cm and 10-30 deg off at grasp poses; the motor layer's reach servo (jaw centre
     + wrist attitude integral) brings them to about 1 cm. During a fast entry the hand lags the command by up to 10 cm.
 15. Standing in mode 2 the feet slide apart (27.7 -> 36.1 cm in 15 s); mode 4 pins them.
-16. Walks run at 0.25 m/s (version 10; versions 7-9 ran at 0.5 m/s). At this speed ScaleBFM shuffles, its feet
+16. Walks run at 0.25 m/s (version 10; versions 7-9 ran at 0.5 m/s; a family file's `motor` block may change it: box_bimanual walks at 0.5 m/s, TODO 38.21, user 2026-10-24). At this speed ScaleBFM shuffles, its feet
     sliding on the floor. Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks
     straight lines only;
     `navigate.walk_path` plans around furniture on the occupancy map (body radius 0.35 m: at 0.26 m an arm caught the

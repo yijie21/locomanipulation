@@ -129,7 +129,7 @@ While a squeeze is on, each hand's servo lead is capped at the offset along the 
 than the closed fingers (1.9 cm), so a hug with closed jaws touches the box with the base, which `held()` does not count.
 
 - Modes: walking is mode 2 (pelvis + wrists; the policy places its own steps); standing still is mode 4 (pelvis +
-  wrists + ankles pinned). Walks run at 0.25 m/s, where mode 2 shuffles; straight walks stop within 1.5-2 cm.
+  wrists + ankles pinned). This family walks at 0.5 m/s (its file's `motor` block, user 2026-10-24), where mode 2 steps; the probe's walks still stopped within 1-1.5 cm. On the ADT line 0.5 m/s left the body swaying when the reach started (pre-grasp jaw error 2.27 against 1.28 cm at 0.25).
 - The platform collides with the robot and the box; the box rests on it directly (no slab). Racks and walls do not
   collide: a hand through a rack is a navigation error the map should have prevented, not a physics event.
 - `walk_to` walks straight lines only; `navigate.walk_path` plans around the platform and the racks on the occupancy

@@ -17,6 +17,9 @@
  },
  "hold_s": 2.0,
  "judge_s": 5.0,
+ "motor": {
+  "walk_speed": 0.5
+ },
  "pools": {
   "diag": {
    "seed": 430000,

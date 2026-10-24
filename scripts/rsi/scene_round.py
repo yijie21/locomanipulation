@@ -83,7 +83,7 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
         policy = Gr00tPolicy()
     else:
         policy = R.Policy("cuda", ScaleBfmBackendConfig())
-    return SceneWorld(fam["scene_dir"], policy, controller=controller)
+    return SceneWorld(fam["scene_dir"], policy, controller=controller, motor_config=B.family_motor(fam["name"]))
 
 
 def world_signature(world: SceneWorld, controller: str) -> str:

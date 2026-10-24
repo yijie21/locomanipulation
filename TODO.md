@@ -1295,3 +1295,4 @@
 - [x] 38.18 补记（10-24，用户“仿照 rsi.md 的格式，命名为 rsi_logistics_room.md；主 README 分成两行”）：执行文档 `docs/rsi_logistics_room.md`，README 两行（ADT 公寓 / 物流间），旧的一步一步页并入后删除。
 - [x] 38.19 严格判据（用户 10-24：“抬高 20 cm、倾斜小于 30°、保持 5 秒不掉”，Q1–Q15 问答）：`lifted(X, clearance, tilt)` 谓词（最低角、底面倾角）、任务族 `judge_s` 5 / `hold_s` 2（最后 5 秒每 0.1 秒判，`episode.judge_window`）、失败类 `low_lift` / `tilted` / `dropped_hold`、起步版本 `seeds/box_strict_start`、规则第 21 版第 36 条；`tests/test_strict_box_goal.py`。重判 0 / 60，探针 5 种设置 0 / 10（倾斜或滑落），按规则没开循环。
 - [ ] 38.20 下一步：找到能举高 20 cm 并稳住的抱法（手指压进箱口、一只手托底、两手更高并内扣），探针 ≥ 5 / 10 后跑 `loop.py run box_bimanual --max-iters 1` 确认代码，再定是否放开跑。
+- [x] 38.21 走路速度（用户 10-24：“把机器人移动速度修改成 0.5m/s”）：任务族文件加 `motor` 块（`batch.family_motor`，`scene_round.make_world`、批处理和 `try.py` 的签名都读它），`box_bimanual` 设 `walk_speed` 0.5，别的任务族不变；规则第 16 条注明。严格探针重跑仍 0 / 10（9 局倾斜、1 局一只手没贴上），停位 0.9–1.5 cm，速度不是原因。
