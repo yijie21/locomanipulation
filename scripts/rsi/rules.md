@@ -199,8 +199,9 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     moves the two jaw centres together; `grip("both")` / `release("both")` close and open the two jaws together;
     `squeeze(inward_m, seconds)` pushes the two jaw centres towards each other along the line between them and keeps
     pushing -- the offsets ride on each hand's servo reference in the pelvis frame through posture, hold and walk_to
-    until `release` or a `reach` of that hand drops them. Nothing in them decides the stance, the hand placement or
-    the lift; a family whose object is wider than a jaw (`semantic.graspable` bimanual; `box_bimanual`, TODO 38) builds
+    until `release` or a `reach` of that hand drops them (`reach(..., keep_squeeze=True)` keeps them: a two-hand lift
+    by the arms); while a squeeze is on, the servo's lead is capped at the offset, so the push is at most twice
+    `inward_m`. Nothing in them decides the stance, the hand placement or the lift; a family whose object is wider than a jaw (`semantic.graspable` bimanual; `box_bimanual`, TODO 38) builds
     those from these actions. `held(X)` then needs the fingers of both hands on X and X off every surface (rule 23's
     second branch). The step checks for a two-hand hold are `stage.bimanual_grip_check` and `stage.bimanual_lift_check`
     (rule 31). The failure classes are the two-hand set when the family's object is bimanual (rule 32; TODO 38.11).

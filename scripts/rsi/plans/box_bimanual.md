@@ -108,9 +108,20 @@ grasp_atomic's plan hold here unchanged):
 | squat to 0.62 m | 0.638 m; delivered lean 25 deg (mode 4 does not track the torso) |
 | stand up (back to the reset stance) | 0.786 m, lean 4-5 deg |
 
-The two-hand probe on this scene (`scripts/rsi/probe_box.py`, TODO 38.7: the default start, 10 random box placements,
-`reach("both")` to the box's two walls, `squeeze`, `posture()` to stand up, `hold(2)`): its numbers go here when it has
-run (section 5 of docs/handoff/box-bimanual-rsi-plan-20261023.md keeps them too).
+The two-hand probe on this scene (`scripts/rsi/probe_box.py`, 2026-10-23; the default start, 10 random box placements,
+5 per task; a hand-written sequence the loop does not see): **10 / 10 held**, the box 2.8-6.9 cm off the platform at the
+end. What it measured, for the skills to build on or depart from:
+
+| Step | What worked | What did not |
+|---|---|---|
+| stance | `walk_path` to 0.38 m outside the platform edge nearest the box, facing it; stops within 1.5-2 cm | -- |
+| hands | `posture(pelvis_z=0.72)`, then `reach("both")` with the wrists pointing forward (x = the approach, z up) and the jaws open: each hand's outer finger flank 6.35 cm from the jaw axis is what touches a wall; targets at the wall plane + 6.35 cm + 0.5 cm, a pre-grasp 6 cm further out and 12 cm short, entry through a via point beside the walls; delivered 1-2 cm, attitude 2-6 deg (10 cm on one deep placement) | a pinch on each wall's top edge with the wrist pointing down: the attitude came out 50-75 deg off and the hands knocked the box (0 / 4) |
+| squeeze | `squeeze(0.06, 1 s)`: both hands' fingers on the box in 9 / 10 at the end of the second | 0.04 lifted 1 / 4 (the fingers slid up the walls); before the servo cap below, the lead wound to 12 cm and the box flew out of the hands |
+| lift | `reach("both", 10 cm up, keep_squeeze=True, pelvis_z=0.78)`: the legs lift, the arms keep pressing; the hands end 3.5-7 cm short of the 10 cm, the box rises 3-7 cm | `posture()` (stand up) keeps the arms in joint space: from the forward lean it swung the hands over the head and let go |
+
+While a squeeze is on, each hand's servo lead is capped at the offset along the push and at the offset's size across it
+(motor.py `_servo`): the command sits at most 2 x inward_m inside the wall. The gripper base (2.9 cm half width) is wider
+than the closed fingers (1.9 cm), so a hug with closed jaws touches the box with the base, which `held()` does not count.
 
 - Modes: walking is mode 2 (pelvis + wrists; the policy places its own steps); standing still is mode 4 (pelvis +
   wrists + ankles pinned). Walks run at 0.25 m/s, where mode 2 shuffles; straight walks stop within 1.5-2 cm.

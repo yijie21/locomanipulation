@@ -42,6 +42,9 @@ SETTLE_T = 1.5  # the object's reference pose: after the round's settle hold
 GRIP_OPEN = 0.0245  # runtime.GRIP_OPEN: the jaw command while open
 CLOSE_DROP = 0.004  # a command this far below open is a close
 OFF = np.array([0.1515, 0.0, 0.0])  # runtime.OFF: wrist frame -> jaw centre
+FLANK_M = (
+    0.039  # a finger's outer flank from the jaw axis at finger joint 0 (robot.xml); plus the joint value when open
+)
 WRISTS = ("left_wrist_yaw_link", "right_wrist_yaw_link")
 SIDES = ("left", "right")
 FK_STRIDE = 5
@@ -294,11 +297,13 @@ def bimanual_events(z: dict, world, key: str, ev: dict) -> dict:
             if fk is not None:
                 pw, Rw = fk(z["robot"][k], z["joints"][k])[j]
                 jaw = pw + Rw @ OFF
+                flank = Rw[:, 1] * (FLANK_M + float(np.mean(z["fingers"][k, 2 * j : 2 * j + 2])))
+                points = [jaw, jaw + flank, jaw - flank]  # the jaw centre and the two fingers' outer flanks (a hug)
             else:  # no robot model: the jaw centre is about OFF ahead of the wrist, towards the box's centre
                 w = z["wrists"][k, j]
                 d = obj[k, :3] + _quat_mat(obj[k, 3:7]) @ np.asarray(box.get("centre") or (0, 0, 0), float) - w
-                jaw = w + d / max(float(np.linalg.norm(d)), 1e-6) * float(np.linalg.norm(OFF))
-            hands[s] = _box_surface_cm(jaw, obj[k, :3], obj[k, 3:7], box)
+                points = [w + d / max(float(np.linalg.norm(d)), 1e-6) * float(np.linalg.norm(OFF))]
+            hands[s] = min(_box_surface_cm(p, obj[k, :3], obj[k, 3:7], box) for p in points)
         ev["hand_box_cm"] = hands
     return ev
 

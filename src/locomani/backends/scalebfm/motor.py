@@ -370,11 +370,21 @@ class Motor:
             n = float(np.linalg.norm(turn))
             turn = turn * (cfg.servo_cap_rot / n) if n > cfg.servo_cap_rot else turn
             self.servo[("turn", side)] = turn
-            lead = np.clip(
-                self.servo.get(("pos", side), np.zeros(3)) + cfg.servo_ki * R.DT * (jaw_ref - p_meas),
-                -cfg.servo_cap,
-                cfg.servo_cap,
-            )
+            prev = self.servo.get(("pos", side), np.zeros(3))
+            lead = np.clip(prev + cfg.servo_ki * R.DT * (jaw_ref - p_meas), -cfg.servo_cap, cfg.servo_cap)
+            if side in self.squeeze_offset:
+                # in contact, the integral winds up: along the push it is capped at the offset itself, so the command
+                # sits at most 2 x inward_m inside the wall (the box flew out of the hands at 12 cm, probe 2026-10-23);
+                # across the push the lead is capped at the offset's size too (a hand held by friction would otherwise
+                # wind its vertical and forward leads to servo_cap and drag the box)
+                off = R.rot_z(self.yaw()) @ self.squeeze_offset[side]
+                n = float(np.linalg.norm(off))
+                if n > 1e-9:
+                    u = off / n
+                    along = min(float(lead @ u), n)
+                    across = lead - u * float(lead @ u)
+                    a = float(np.linalg.norm(across))
+                    lead = (across * (n / a) if a > n else across) + u * along
             self.servo[("pos", side)] = lead
             Rt = expmap(turn)
             quats = np.array([R.quat_wxyz(Rt @ R.mat(q)) for q in fut[w][1]])
@@ -670,12 +680,14 @@ class Motor:
         rotation_weight: float | None = None,
         servo: bool = True,
         pelvis_z: float | None = None,
+        keep_squeeze: bool = False,
     ) -> Outcome:
         """Move `side`'s jaw centre to `pos` (world) with wrist rotation `rot` (3x3 world; None keeps the current one)
         through the points `via`, legs straight at `speed`, whole-body IK at waypoints reach_step_m apart, feet
         planted. side "both": `pos`, `rot` and each via point are pairs (left, right). The other jaw centre stays where it
         is in the world (IK weight 0.3). The servo integrates the jaw-centre
-        error from the start and settles up to reach_settle_s at the end."""
+        error from the start and settles up to reach_settle_s at the end. A reach ends the moved hands' squeeze
+        unless `keep_squeeze` (a two-hand lift by the arms: both hands up, still pressing; TODO 38.4)."""
         cfg = self.cfg
         sides = SIDES if side == "both" else (side,)
         solver = self._solver(pelvis_height_target=pelvis_z)
@@ -721,7 +733,8 @@ class Motor:
         for s in sides:
             self.servo_on[s] = servo
             self.servo_target.pop(s, None)
-            self.squeeze_offset.pop(s, None)  # a reach of this hand ends its squeeze
+            if not keep_squeeze:
+                self.squeeze_offset.pop(s, None)  # a reach of this hand ends its squeeze
         t0 = self.t
 
         def update(t):
