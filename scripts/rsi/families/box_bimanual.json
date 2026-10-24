@@ -72,7 +72,6 @@
    "claim_check",
    "family",
    "diag_pool",
-   "try",
    "batch",
    "scene_round",
    "locomani.tasks.scene.world",
