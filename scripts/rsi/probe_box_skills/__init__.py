@@ -20,7 +20,15 @@ from locomani.tasks.scene import navigate
 STAND_FROM_EDGE_M = 0.38  # pelvis to the platform edge the box is nearest to (body radius 0.35 keeps the map free)
 PELVIS_Z = 0.72  # lowered before the reach
 GRASP_Z_FRAC = 0.55  # grasp height as a fraction of the box's height above its bottom
-MODE = "hug"  # "hug": open jaws pressing the walls with the outer finger flanks + squeeze; "rim": a pinch on each wall's top edge
+MODE = "wall"  # "wall": the human-defined grasp, each side wall pinched near the rim with the palm pitched down
+# (default since 2026-10-24, user); "hug": open jaws pressing the walls with the outer finger flanks + squeeze;
+# "rim": a pinch on each wall's top edge with the wrist straight down
+WALL_INSET_M = 0.008  # grasp_region.GRASP_WALL_INSET_M: jaw centre this far inside the wall's outer face
+WALL_BELOW_RIM_M = 0.01  # visual_config.box_grasp_below_rim: jaw centre under the rim top (the cardboard box)
+PALM_PITCH_DEG = 60.0  # visual_config.palm_pitch_deg: the palm pitched this far below level
+WALL_PRE_ABOVE_M = 0.09  # visual_config.pregrasp_above
+WALL_PRE_BACK_M = 0.04  # visual_config.pregrasp_back
+WALL_PELVIS_Z = 0.76  # pelvis before the reach: the rim is at 0.70 m, the hands work at about pelvis height
 FLANK_OPEN_M = 0.0635  # the open jaw's outer finger flank from the jaw axis (robot.xml: 0.039 at 0 + 0.0245 travel)
 FLANK_GAP_M = 0.005  # ... plus this before the squeeze
 RIM_BELOW_M = 0.025  # rim pinch: jaw centre below the wall's top edge
@@ -28,9 +36,11 @@ RIM_ABOVE_M = 0.08  # rim pinch: the pre-grasp above the grasp
 PRE_OUT_M = 0.06  # the pre-grasp: this much further out from each wall
 PRE_BACK_M = 0.12  # ... and this much short of the walls' centre (the hands come in from the robot's side)
 INWARD_M = 0.06  # squeeze offset per hand (the push is at most twice this, motor._servo; 0.04: 1 / 4, 0.06 and 0.08: 4 / 4 on 2026-10-23)
-LIFT_M = 0.10  # the lift: both jaw centres this much up, squeeze kept
+LIFT_M = 0.32  # the lift: both jaw centres this much up (the strict goal needs the lowest corner 20 cm up; 0.25 fell a few mm short, 2026-10-24)
 LIFT_SPEED = 0.08  # m/s
-LIFT_PELVIS_Z = 0.78  # the lift is a whole-body IK with the pelvis back up: the legs lift, the arms keep the hold
+LIFT_PELVIS_Z = (
+    0.79  # the lift is a whole-body IK with the pelvis back up (standing): the legs lift, the arms keep the hold
+)
 SQUEEZE_S = 1.0
 LIFT_HOLD_S = 2.0
 NORMALS = {"-x": (-1.0, 0.0), "+x": (1.0, 0.0), "-y": (0.0, -1.0), "+y": (0.0, 1.0)}
@@ -87,10 +97,25 @@ def _two_hand_pick(ctx) -> Outcome:
         u = -u
     up = np.array([0.0, 0.0, 1.0])
     xf = np.r_[fwd, 0.0]
-    out = ctx.note("lower", m.posture(pelvis_z=PELVIS_Z))
+    out = ctx.note("lower", m.posture(pelvis_z=WALL_PELVIS_Z if MODE == "wall" else PELVIS_Z))
     if not out.ok:
         return out
-    if MODE == "hug":
+    if MODE == "wall":
+        # the human-defined two-arm grasp of the logistics room's box (the crate line's expert, DECISIONS 2026-09-22;
+        # tasks/crate/grasp_region.py, visual_config.py): one grasp point on each side wall -- the two walls left and
+        # right of the robot -- WALL_INSET_M inside its outer face (the open jaw straddles the 1 cm wall: one finger
+        # in the box, one outside) and WALL_BELOW_RIM_M under the rim; the jaw closes across the wall (wrist y = u);
+        # the palm pitched PALM_PITCH_DEG below level; pre-grasp WALL_PRE_ABOVE_M above and WALL_PRE_BACK_M toward
+        # the body, then straight down; both jaws close; the arms lift
+        z = float(pos[2]) + 2 * float(half[2]) - WALL_BELOW_RIM_M
+        gl = np.r_[centre[:2], z] + u * (half[j] - WALL_INSET_M)
+        gr = np.r_[centre[:2], z] - u * (half[j] - WALL_INSET_M)
+        th = np.radians(PALM_PITCH_DEG)
+        xw = np.cos(th) * xf - np.sin(th) * up
+        Rl = Rr = np.stack([xw, u, np.cross(xw, u)], axis=1)
+        pre = (gl + up * WALL_PRE_ABOVE_M - xf * WALL_PRE_BACK_M, gr + up * WALL_PRE_ABOVE_M - xf * WALL_PRE_BACK_M)
+        via = []
+    elif MODE == "hug":
         # open jaws, wrist x forward, z up: each hand's outer finger flank (FLANK_OPEN_M from the jaw axis) presses a
         # wall; the gripper base is narrower than that, so the fingers touch first (held() counts finger contacts)
         z = float(pos[2]) + GRASP_Z_FRAC * 2 * float(half[2])
@@ -120,9 +145,10 @@ def _two_hand_pick(ctx) -> Outcome:
         out = ctx.note("pinch", m.grip("both"))
         if m.fell_at is not None:
             return out
-    out = ctx.note("squeeze", m.squeeze(INWARD_M, SQUEEZE_S))
-    if m.fell_at is not None:
-        return out
+    if MODE != "wall":  # the wall pinch holds by the closed jaws; a squeeze would crush the box's walls inward
+        out = ctx.note("squeeze", m.squeeze(INWARD_M, SQUEEZE_S))
+        if m.fell_at is not None:
+            return out
     z0 = float(w.object_pose(key)[0][2])
     # the lift: both hands straight up in the world, still squeezing. posture() (stand up) keeps the arms in joint
     # space, so from a forward lean it swings the hands up and back and lets go (probe 2026-10-23)

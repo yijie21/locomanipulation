@@ -82,8 +82,9 @@ def test_the_strict_seed_dispatches_the_strict_goal_and_nothing_else():
     assert pkg.plan_for(T(["held(nor_cal_box)", "near(nor_cal_box, A, 0.5)"])) is None
 
 
-def test_the_family_walks_at_half_a_metre_per_second_and_the_others_keep_the_default():
-    # TODO 38.21 (user 2026-10-24): box_bimanual's motor block; the batch expects the same signature the worlds carry
+def test_a_family_motor_block_overrides_the_motor_defaults_and_box_bimanual_keeps_them(tmp_path, monkeypatch):
+    # TODO 38.21: a family file's `motor` block (box_bimanual walked at 0.5 m/s for one probe, back to the default
+    # 0.25 since 2026-10-24, user); the batch expects the same signature the worlds carry
     import importlib.util
 
     from locomani.backends.scalebfm.motor import MotorConfig
@@ -94,7 +95,13 @@ def test_the_family_walks_at_half_a_metre_per_second_and_the_others_keep_the_def
     sys.modules[spec.name] = B  # its dataclasses look their module up there
     spec.loader.exec_module(B)
 
-    cfg = B.family_motor("box_bimanual")
+    assert "motor" not in FAMILY and B.family_motor("box_bimanual") is None
+    (tmp_path / "families").mkdir()
+    (tmp_path / "families" / "fast.json").write_text(json.dumps({"name": "fast", "motor": {"walk_speed": 0.5}}))
+    monkeypatch.setattr(B, "HERE", tmp_path)
+    cfg = B.family_motor("fast")
     assert cfg.walk_speed == 0.5 and MotorConfig().walk_speed == 0.25
-    assert B.family_motor("grasp_atomic") is None
     assert B.motor_signature(motor_cfg=cfg) != B.motor_signature()
+    (tmp_path / "families" / "bad.json").write_text(json.dumps({"name": "bad", "motor": {"walk_sped": 0.5}}))
+    with pytest.raises(KeyError):
+        B.family_motor("bad")
