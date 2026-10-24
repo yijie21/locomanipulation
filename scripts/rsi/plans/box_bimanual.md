@@ -1,28 +1,35 @@
-# A two-hand box pickup from the motor layer: the plan the roles read (TODO 38, 2026-10-23)
+# A two-hand box pickup from the motor layer: the plan the roles read (TODO 38, 2026-10-23; strict goal 2026-10-24)
 
 This run's plan for the scene RSI inner loop's roles. Its section numbers are the ones the role prompts cite (0, 2, 3,
 4, 7, 8). The robot, the controller and the loop are the same as in every scene RSI run; what differs is the scene (a
 scanned logistics room instead of the ADT apartment), the object (one open cardboard box wider than a jaw, so it takes
-both hands) and the seed: the skills package starts empty.
+both hands) and the goal: the box lifted high and held.
 
 ## 0. Goal
 
-Only a 3D scene, a whole-body controller and a motor layer are given; the loop writes the skills that make the robot
-walk to a pallet platform and lift a cardboard box off it with both hands. This run is one task family,
-`box_bimanual`: `held(nor_cal_box)` -- the box off the platform with the fingers of both hands on it -- in two tasks that
-differ only in how the box sits on the platform (`box_long_side`: its 0.45 m side faces the nearest platform edge;
-`box_short_side`: its 0.32 m side does). The box's centre is 0.18-0.31 m (long side) or 0.25-0.375 m (short side) from
-that edge, so its near face is within 0.15 m of the edge; which of the four edges is nearest is random. The robot
-starts anywhere in the room it can walk from, facing a random way, 0.5 m or more from the box.
+The robot walks to a pallet platform and lifts a cardboard box off it with both hands, high, level and steady. This
+run is one task family, `box_bimanual`, with the strict goal of 2026-10-24 (rules.md 36):
+- `held(nor_cal_box)`: the fingers of both hands on the box and the box off every surface;
+- `lifted(nor_cal_box, 0.20, 30)`: the box's lowest corner 20 cm or more above the platform top (0.371 m), its bottom
+  less than 30 deg off level;
+- both checked every 0.1 s and holding at every check over the round's last 5 s (`judge_s`): the end of the plan and
+  then 2 s standing still (`hold_s`). The skill may still stand up or lift during the window; the box may not slip,
+  tip or drop in it.
+
+Two tasks differ only in how the box sits on the platform (`box_long_side`: its 0.45 m side faces the nearest
+platform edge; `box_short_side`: its 0.32 m side does), its near face within 0.15 m of that edge. The robot starts
+anywhere in the room it can walk from, facing a random way, 0.5 m or more from the box.
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.
-- **The seed**: the skills package has no skill. `plan_for(task)` returns None for every goal, so the seed succeeds
-  on no start. The first candidates may be a plain end-to-end two-hand pick built on the motor layer, improved one
-  Engineer call at a time (rules.md 27).
-- **Done by the loop**: diagnosing, writing and changing skills, choosing the stance, the hand placement, the squeeze
-  and the lift, accepting a change only through the gate.
-- **Not done by people**: no parameters tuned, no skill code written. Every human intervention is recorded.
+- **The seed**: not empty. It is the first run's incumbent (42ff17cb110f, 2026-10-23): the two-hand hug pick in
+  `bimanual.py`, written by the loop. Under the old goal (off the platform by 2 cm, judged once) it held on 49 of 50
+  sealed starts; it lifts the box only 3-7 cm, so under this goal it mostly fails with low_lift. Its dispatch was
+  widened by hand to accept the `lifted` goal; nothing else in it was touched.
+- **Done by the loop**: diagnosing and changing the pick -- the lift height, standing up, keeping the box level and
+  steady through the window -- accepting a change only through the gate.
+- **Not done by people**: no parameters tuned, no skill code written beyond that dispatch line. Every human
+  intervention is recorded.
 
 ## 2. Structure
 
@@ -90,10 +97,10 @@ Measured ScaleBFM facts (controller comparison, 2026-10-13; the box line, TODO 2
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random box placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
 | D8 | The loop stops when the incumbent wins 70 % of the acceptance pool, or at a hard stop: 12 gate calls, the wall-clock cap (6 h), or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
-| D12 | The success rule is `held(nor_cal_box)` alone: no tilt limit, no rise beyond the predicate's 2 cm. |
+| D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 30)` at every 0.1 s check over the round's last 5 s. Until 2026-10-23 it was `held` alone, judged once after a 2 s hold. |
 | D13 | Infeasibility is handled as in section 8. |
-| D14 | Graspability, the chooser, the body table and the preparatory layer describe one jaw; on this family they say nothing about the two-hand hold (rules.md 35). The failure classes are the two-hand set: walk_off, side_reach, one_hand_short, knocked, no_lift, slip, fell, other. |
-| 2026-10-23 | User for this run: the seed is the motor layer only; grasps are computed from the scene's geometry by code the loop writes; earlier skill catalogs, loop records and grasp programs are not in the sandbox; the experience library holds the single-hand lines' lessons, not their code. |
+| D14 | Graspability, the chooser, the body table and the preparatory layer describe one jaw; on this family they say nothing about the two-hand hold (rules.md 35). The failure classes are the two-hand set: walk_off, side_reach, one_hand_short, knocked, no_lift, low_lift, tilted, dropped_hold, slip, fell, other. |
+| 2026-10-23 | User for the first run: the seed is the motor layer only; grasps are computed from the scene's geometry by code the loop writes; earlier skill catalogs, loop records and grasp programs are not in the sandbox; the experience library holds the single-hand lines' lessons, not their code. |
 
 ## 7. What the layers below deliver (measured)
 

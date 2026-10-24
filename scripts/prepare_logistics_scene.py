@@ -63,6 +63,10 @@ def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str) -
 
     occ, lo = scan_room.slice_occupancy(model, data)
     room = scan_room.room_block(occ, lo, scan_room.RES_M, meta["robot_start"]["xy"], body_radius=body_radius, name=ROOM)
+    # the scene RSI films from a camera that follows the robot at the default 45 deg fovy (report_media.track), as on
+    # the ADT apartment; the pack's fixed `reverse_room` shot (73.74 deg) made the Unreal level's film camera disagree
+    # with the replays (TODO 38.20)
+    meta.pop("video_camera", None)
     meta["schema_version"] = 2
     meta["source"] = {
         "kind": "scan",

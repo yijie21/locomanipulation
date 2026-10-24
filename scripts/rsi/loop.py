@@ -135,6 +135,13 @@ CLASS_SUGGEST = {
     "targets are not symmetric about the body; a re-approach of that hand through stage() (bimanual_grip_check)",
     "no_lift": "both hands on the box, it never rose: not enough squeeze (motor.squeeze inward_m), the lift too small "
     "or too fast, or the hands too low on the walls; bimanual_lift_check and a re-squeeze through stage()",
+    # the strict box goal's classes (TODO 38.19): lifted(X, clearance, tilt) judged over the round's last window
+    "low_lift": "the box rose but its lowest corner never cleared the platform by the goal's clearance: a bigger lift "
+    "(stand up fully, raise the hands more), checked by the measured lowest corner before the window starts",
+    "tilted": "the box's bottom tipped past the goal's limit: the two hands at unequal heights, or the grasp off the "
+    "box's centre of mass along the walls; level the hands while lifting and check the tilt",
+    "dropped_hold": "the whole goal held at some moment, then failed inside the judging window: the box slid in the "
+    "hands or the body sagged; keep pressing (squeeze), stop moving before the window, or a re-grip",
 }
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
 REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
@@ -816,7 +823,7 @@ def claude(
     cmd = [
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
-        "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
+        "--permission-mode", "bypassPermissions", "--allowedTools", "Bash", "--disallowedTools", tools,
         *(["--effort", EFFORT.get(role) or EFFORT[role.split("_")[0]]] if (role in EFFORT or role.split("_")[0] in EFFORT) else []),
         *(["--add-dir", *allowed_dirs()] if allowed_dirs() else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),

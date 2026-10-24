@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 20, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 21, 2026-10-24)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -207,3 +207,14 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     (rule 31). The failure classes are the two-hand set when the family's object is bimanual (rule 32; TODO 38.11).
     Graspability, the chooser, the body table and the preparatory layer (rules 32, 34) describe one jaw: on a bimanual
     family they say nothing about the two-hand hold, and a hypothesis may not cite them for it (prompt).
+
+36. Strict goals and judging windows (TODO 38.19, user 2026-10-24; version 21). `lifted(X, clearance_m, tilt_deg)`
+    holds when the lowest corner of X's box is `clearance_m` or more above the top of the surface the scene file
+    rests X on, and X's bottom face is less than `tilt_deg` off level. A family may set `judge_s`: the goal is then
+    checked every 0.1 s and must hold at every check over the round's last `judge_s` seconds -- the end of the plan
+    included, then the runner's `hold_s` standing still -- so a skill may still stand up or lift in the window, but
+    the box may not slip, tip or drop at any check in it. The round record carries `judge` (the window, how many
+    checks held, the first one that failed and why, `ever_ok`). `box_bimanual` uses `held(X)` + `lifted(X, 0.20, 30)`
+    with `judge_s` 5 and `hold_s` 2; its failure classes add low_lift, tilted and dropped_hold (code: predicates.py,
+    episode.judge_window, failure_class.py). Its seed is the first run's incumbent, not an empty package, so rule 27
+    does not apply to it: change the pick that is there rather than writing a new one (prompt).

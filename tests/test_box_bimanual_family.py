@@ -24,10 +24,14 @@ def test_the_family_names_the_logistics_scene_two_tasks_and_a_scene_note():
     assert FAMILY["scene"] == "outputs/scene_discovery/logistics_room_mars"
     assert FAMILY["tasks"] == ["box_long_side", "box_short_side"] == list(ROWS)
     assert "logistics room" in FAMILY["scene_note"]
-    assert FAMILY["sandbox"]["seed"] == "scripts/rsi/seeds/atomic"
+    assert (
+        FAMILY["sandbox"]["seed"] == "scripts/rsi/seeds/box_strict_start"
+        and (ROOT / FAMILY["sandbox"]["seed"]).is_dir()
+    )
+    assert (FAMILY["hold_s"], FAMILY["judge_s"]) == (2.0, 5.0)  # TODO 38.19
     assert FAMILY["plan"] == "scripts/rsi/plans/box_bimanual.md" and (ROOT / FAMILY["plan"]).exists()
     for row in ROWS.values():
-        assert row["goal"] == ["held(nor_cal_box)"] and row["room"] == "logistics_room"
+        assert row["goal"] == ["held(nor_cal_box)", "lifted(nor_cal_box, 0.20, 30)"] and row["room"] == "logistics_room"
 
 
 def test_each_placement_keeps_the_near_face_within_15_cm_of_the_edge():
@@ -62,3 +66,17 @@ def test_a_start_of_each_task_draws_on_the_built_scene():
         lo, hi = fam["rows"][t]["placement"]["depth_m"]
         assert lo - 1e-6 <= depth <= hi + 1e-6
         assert np.hypot(st.robot_xy[0] - p[0], st.robot_xy[1] - p[1]) >= 0.5
+
+
+def test_the_strict_seed_dispatches_the_strict_goal_and_nothing_else():
+    from scene_round import load_skills
+
+    pkg = load_skills(ROOT / FAMILY["sandbox"]["seed"], "strict_seed_test")
+
+    class T:
+        def __init__(self, goal):
+            self.goal = goal
+
+    assert pkg.plan_for(T(ROWS["box_long_side"]["goal"])) is not None
+    assert pkg.plan_for(T(["held(nor_cal_box)"])) is not None
+    assert pkg.plan_for(T(["held(nor_cal_box)", "near(nor_cal_box, A, 0.5)"])) is None

@@ -214,6 +214,18 @@ class Bimanual(unittest.TestCase):
         self.assertEqual(cls, "knocked")
         self.assertEqual(ev["obj_moved_before_hold_cm"], 5.0)
 
+    def test_the_strict_goal_classes(self):
+        # TODO 38.19: rose 8 cm and stayed (bitrace rise without drop): too low for lifted(.., 0.20, ..)
+        low = rec(why="[goal] lifted(B, 0.2, 30.0): lowest corner 8.0 cm above table (need 20)")
+        self.assertEqual(FC.classify(low, bitrace(rise_cm=8.0), bibox_scene(), "B")[0], "low_lift")
+        tilt = rec(why="[goal] lifted(B, 0.2, 30.0): tilted 41 deg (limit 30)")
+        self.assertEqual(FC.classify(tilt, bitrace(rise_cm=8.0), bibox_scene(), "B")[0], "tilted")
+        judge = dict(ok=False, ever_ok=True, first_fail_t=12.0, first_fail_why="[goal] held(B): no hand touches it")
+        dropped = rec(why="[judge] ...", judge=judge)
+        cls, ev = FC.classify(dropped, bitrace(rise_cm=8.0), bibox_scene(), "B")
+        self.assertEqual(cls, "dropped_hold")
+        self.assertEqual(ev["judge"]["first_fail_t"], 12.0)
+
     def test_the_common_classes_come_first(self):
         self.assertEqual(FC.classify(rec(ok=True), bitrace(), bibox_scene(), "B")[0], "ok")
         self.assertEqual(FC.classify(rec(fell=True, steps=[WALK]), bitrace(), bibox_scene(), "B")[0], "fell_walk")

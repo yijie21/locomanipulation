@@ -308,10 +308,14 @@ def bimanual_events(z: dict, world, key: str, ev: dict) -> dict:
     return ev
 
 
-def _classify_bimanual(ev: dict) -> str:
+def _classify_bimanual(ev: dict, rec: dict | None = None) -> str:
     """The two-hand classes after the common ones (TODO 38.11): side_reach (neither hand got to the box),
     one_hand_short, knocked (the box moved or tipped before the hold), no_lift (both on it, it never rose), slip (it
-    rose and was not held at the end), other."""
+    rose and was not held at the end), other. With a `lifted` goal and a judging window (TODO 38.19): tilted (the
+    box's bottom more than the limit off level), dropped_hold (the whole goal held at some moment and then failed
+    inside the window), low_lift (it rose, never to the clearance)."""
+    rec = rec or {}
+    why, judge = f"{rec.get('why') or ''}", rec.get("judge") or {}
     hands = ev.get("hand_box_cm")
     if hands is None:
         miss = ev.get("reach_err_cm") is not None and ev["reach_err_cm"] > REACH_MISS_CM
@@ -325,6 +329,12 @@ def _classify_bimanual(ev: dict) -> str:
         return "knocked"
     if (ev.get("obj_rise_max_cm") or 0.0) < RISE_CM:
         return "no_lift"
+    if judge.get("ever_ok") and not judge.get("ok", True):
+        return "dropped_hold"
+    if "lifted(" in why and "tilted" in why:
+        return "tilted"
+    if "lifted(" in why and "lowest corner" in why:
+        return "low_lift"
     return "slip"
 
 
@@ -366,7 +376,8 @@ def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
     if ev["stop_err_cm"] is not None and ev["stop_err_cm"] > WALK_OFF_CM:
         return "walk_off", ev
     if two:
-        return _classify_bimanual(ev), ev
+        ev["judge"] = rec.get("judge")
+        return _classify_bimanual(ev, rec), ev
     pushed = (ev.get("obj_moved_before_grip_cm") or 0.0) > MOVED_CM or (
         ev.get("obj_tilt_before_grip_deg") or 0.0
     ) > TILT_DEG

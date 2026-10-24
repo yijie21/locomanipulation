@@ -1286,8 +1286,12 @@
 - [x] 38.15 `sealed.py box_bimanual`；最终版快照到 `scripts/rsi/seeds/box_<哈希>`（空种子任务族不写回技能目录）；结果写进方案 §5，同场景的调参 RSI（封存 48 / 80，TODO 25.9.1）只作参照数字，不做对照（用户 10-23）。（10-23 做了：封存集 49 / 50（25 / 25、24 / 25），种子 0 / 50；快照 `scripts/rsi/seeds/box_42ff17cb110f/`；参照：同场景调参 RSI 封存 48 / 80，池不同不可比）
 
 阶段 6 视频（用户 10-23：先 MuJoCo，确认后再 Unreal）
-- [ ] 38.16 `evolution_media.py --sandbox … --family box_bimanual`，预览 ≤ 500 KB。
-- [ ] 38.17 确认后：`scenes.yaml` 给 `logistics_room_mars` 配 Unreal 关卡（复用 `warehouse_textured` 房间关卡，建场景关卡），`report_unreal.py --media` 出 Unreal 版。
+- [x] 38.16 `evolution_media.py --sandbox … --family box_bimanual`，预览 ≤ 500 KB。
+- [x] 38.17 确认后：`scenes.yaml` 给 `logistics_room_mars` 配 Unreal 关卡（复用 `warehouse_textured` 房间关卡，建场景关卡），`report_unreal.py --media` 出 Unreal 版。
 
 文档
-- [~] 38.18 `docs/rsi.md` 加“换一个场景跑”一节（建场景、任务族文件、探针、运行）；方案页记决策和结果；README 和 docs/README 各一行。（10-23：runbook 顶着 245 行上限，只在开头加一句指到方案页第 6 节，命令写在那里；README 两行 10-23 已加；运行结果（38.15）和 Unreal（38.17）之后再补）
+- [x] 38.18 `docs/rsi.md` 加“换一个场景跑”一节（建场景、任务族文件、探针、运行）；方案页记决策和结果；README 和 docs/README 各一行。（10-23：runbook 顶着 245 行上限，只在开头加一句指到方案页第 6 节，命令写在那里；README 两行 10-23 已加；运行结果（38.15）和 Unreal（38.17）之后再补）
+- [x] 38.16 / 38.17 补记（10-24）：`evolution_media.py`、`report_unreal.py` 跟着任务族的场景走（`media.json`、`--scene`），`logistics_room_mars` 的 Unreal 关卡建好；用 `box-a` 的最终版本出了 MuJoCo 和 Unreal 各两段（`outputs/scene_rsi_20261016/box_media_20261023/`、`_unreal/`），对照图对齐。`--rsi` 不再保留场景包的 `video_camera`（73.74° 和回放的 45° 冲突）。
+- [x] 38.18 补记（10-24，用户“仿照 rsi.md 的格式，命名为 rsi_logistics_room.md；主 README 分成两行”）：执行文档 `docs/rsi_logistics_room.md`，README 两行（ADT 公寓 / 物流间），旧的一步一步页并入后删除。
+- [x] 38.19 严格判据（用户 10-24：“抬高 20 cm、倾斜小于 30°、保持 5 秒不掉”，Q1–Q15 问答）：`lifted(X, clearance, tilt)` 谓词（最低角、底面倾角）、任务族 `judge_s` 5 / `hold_s` 2（最后 5 秒每 0.1 秒判，`episode.judge_window`）、失败类 `low_lift` / `tilted` / `dropped_hold`、起步版本 `seeds/box_strict_start`、规则第 21 版第 36 条；`tests/test_strict_box_goal.py`。重判 0 / 60，探针 5 种设置 0 / 10（倾斜或滑落），按规则没开循环。
+- [ ] 38.20 下一步：找到能举高 20 cm 并稳住的抱法（手指压进箱口、一只手托底、两手更高并内扣），探针 ≥ 5 / 10 后跑 `loop.py run box_bimanual --max-iters 1` 确认代码，再定是否放开跑。

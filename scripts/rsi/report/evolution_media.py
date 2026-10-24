@@ -240,7 +240,12 @@ def main(argv=None) -> int:
     vs = versions(loop)
     cards = json.loads(a.cards.read_text()) if a.cards else {}
     a.out.mkdir(parents=True, exist_ok=True)
-    sc = V.Scene()
+    # the family's scene (TODO 38.20): the ADT apartment by default, the logistics room for box_bimanual; replayed on
+    # this checkout's copy of it (the sandbox links its scene back here). report_unreal.py --media reads media.json
+    fam = json.loads((a.sandbox / "scripts" / "rsi" / "families" / f"{a.family}.json").read_text())
+    scene = fam.get("scene") or str(V.SCENE.relative_to(V.REPO))
+    sc = V.Scene(V.REPO / scene)
+    (a.out / "media.json").write_text(json.dumps(dict(family=a.family, scene=scene, sandbox=str(a.sandbox)), indent=1))
     only = set(a.only.split(","))
     if "step" in only:
         used: set = set()

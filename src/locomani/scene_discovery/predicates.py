@@ -23,7 +23,7 @@ from locomani.tasks.bottle.place_phase import in_container
 ROBOT = "robot"
 UPRIGHT_MAX_DEG = 15.0
 RESTING_GAP_M = 0.02  # an underside this close to a surface top under it is resting, not held
-ARITY = {"on": 2, "in": 2, "held": 1, "upright": 1, "near": 3, "in_room": 2}
+ARITY = {"on": 2, "in": 2, "held": 1, "upright": 1, "near": 3, "in_room": 2, "lifted": 3}
 _FORM = re.compile(r"^\s*([a-z_]+)\s*\((.*)\)\s*$")
 
 
@@ -47,6 +47,8 @@ def parse(text: str) -> Predicate:
         raise ValueError(f"{text!r}: {name} takes {ARITY[name]} arguments, got {len(raw)}")
     if name == "near":
         raw[2] = float(raw[2])
+    if name == "lifted":
+        raw[1], raw[2] = float(raw[1]), float(raw[2])
     return Predicate(name, tuple(raw))
 
 
@@ -145,6 +147,27 @@ def _upright(scene: _Scene, obj: str, state: dict) -> tuple[bool, str]:
     return (True, "") if tilt < UPRIGHT_MAX_DEG else (False, f"tilted {tilt:.0f} deg (limit {UPRIGHT_MAX_DEG:.0f})")
 
 
+def _lifted(scene: _Scene, obj: str, clearance: float, max_tilt_deg: float, state: dict) -> tuple[bool, str]:
+    """TODO 38.19 (user 2026-10-24): the lowest corner of the object's box at least `clearance` m above the top of the
+    surface the scene file rests it on, and its bottom face within `max_tilt_deg` of level (the angle between the box's
+    upright axis and the vertical: the same number)."""
+    half, centre, _ = scene.box(obj)
+    o = state["objects"][obj]
+    pos, quat = np.asarray(o["pos"], dtype=float), o["quat"]
+    corners = [pos + _rotate(quat, centre + np.array([sx, sy, -1.0]) * half) for sx in (-1, 1) for sy in (-1, 1)]
+    low = min(float(c[2]) for c in corners)
+    surface = scene.objects[obj].get("surface")
+    top = float(scene.surfaces[surface]["top"]) if surface in scene.surfaces else 0.0
+    axis = (scene.objects[obj].get("semantic") or {}).get("upright_axis") or (0.0, 0.0, 1.0)
+    axis = np.asarray(axis, dtype=float) / np.linalg.norm(axis)
+    tilt = float(np.degrees(np.arccos(np.clip(_rotate(quat, axis)[2], -1.0, 1.0))))
+    if tilt >= max_tilt_deg:
+        return False, f"tilted {tilt:.0f} deg (limit {max_tilt_deg:.0f})"
+    if low - top < clearance:
+        return False, f"lowest corner {100 * (low - top):.1f} cm above {surface} (need {100 * clearance:.0f})"
+    return True, ""
+
+
 def _near(scene: _Scene, a: str, b: str, d: float, state: dict) -> tuple[bool, str]:
     dist = float(np.linalg.norm(scene.xy(a, state) - scene.xy(b, state)))
     return (True, "") if dist < d else (False, f"{dist:.2f} m apart (limit {d:.2f})")
@@ -173,7 +196,7 @@ def compile_goal(goal: list[str], meta: dict) -> Callable[[dict], tuple[bool, st
         elif p.name == "in":
             _require(scene, p, 0, "object")
             _require(scene, p, 1, "container")
-        elif p.name in ("held", "upright"):
+        elif p.name in ("held", "upright", "lifted"):
             _require(scene, p, 0, "object")
         elif p.name == "near":
             _require(scene, p, 0, "object", "robot")
@@ -181,7 +204,15 @@ def compile_goal(goal: list[str], meta: dict) -> Callable[[dict], tuple[bool, st
         elif p.name == "in_room":
             _require(scene, p, 0, "object", "robot")
             _require(scene, p, 1, "room")
-    rules = {"on": _on, "in": _in, "held": _held, "upright": _upright, "near": _near, "in_room": _in_room}
+    rules = {
+        "on": _on,
+        "in": _in,
+        "held": _held,
+        "upright": _upright,
+        "near": _near,
+        "in_room": _in_room,
+        "lifted": _lifted,
+    }
 
     def check(state: dict) -> tuple[bool, str]:
         if state.get("fallen"):

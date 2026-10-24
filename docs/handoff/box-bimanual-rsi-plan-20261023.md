@@ -64,33 +64,16 @@
 
 ### 5.2 第一次内环（2026-10-23，TODO 38.14）
 
-沙盒 `box-a`，`--max-iters 2`：第 0 轮 32 分钟、17.23 USD，Reviewer 3 条假设、三个 Engineer 的草稿诊断池 10 / 25 / 15 / 30、Composer 合并、验收门 39 / 40 对 0 / 40 接受（哈希 `42ff17cb110f`），现任超过 70% 停止线，循环自己停了。逐步数字、代码无 bug 的判据和这台机器上 `bypassPermissions` 不生效的问题在 [readme 页第 10 节](logistics-room-rsi-readme-20261023.md)。封存集 50 局：接受的版本 49 / 50（长边 25 / 25、短边 24 / 25），种子 0 / 50；快照 `scripts/rsi/seeds/box_42ff17cb110f/`。视频（38.16）和 Unreal（38.17）没做。
+沙盒 `box-a`，`--max-iters 2`：第 0 轮 32 分钟、17.23 USD，Reviewer 3 条假设、三个 Engineer 的草稿诊断池 10 / 25 / 15 / 30、Composer 合并、验收门 39 / 40 对 0 / 40 接受（哈希 `42ff17cb110f`），现任超过 70% 停止线，循环自己停了。逐步：Reviewer 12 分钟 3.53 USD 写了 3 条假设，Manager 三条全建，三个 Engineer 各 9–10 分钟、3.3–4.0 USD，Composer 以第 2 份草稿为主体合并，验收门 2 分钟。九步全走完、没有越界作废、没有 Traceback。问题：这台机器上 `claude -p --permission-mode bypassPermissions` 不放开 Bash，角色的 `python3 -c`、临时脚本、`try.py` 共被拒约 50 次，Composer 没能验证合成候选；2026-10-24 在 `loop.py` 的调用里加了 `--allowedTools "Bash"`（用户改）。封存集 50 局：接受的版本 49 / 50（长边 25 / 25、短边 24 / 25），种子 0 / 50；快照 `scripts/rsi/seeds/box_42ff17cb110f/`。视频：2026-10-24 用这个沙盒验证了 MuJoCo 和 Unreal 两套视频脚本（`outputs/scene_rsi_20261016/box_media_20261023/` 和 `_unreal/`）。
+
+### 5.3 严格判据（2026-10-24，TODO 38.19）
+
+用户要求“抬高 20 cm、倾斜小于 30°、保持 5 秒不掉”。逐条问答定下：新谓词 `lifted(X, 0.20, 30)`（最低角高出平台顶面 20 cm，底面和水平面夹角小于 30°）加 `held(X)`；任务族的 `judge_s` 5：一局最后 5 秒每 0.1 秒判一次，都要成立，技能的最后 3 秒可以还在站起来，之后原地保持 2 秒；直接改 `box_bimanual`；起步版本是第一次运行的现任，只把分派放宽（`seeds/box_strict_start`，人工干预）；失败分类加 `low_lift`、`tilted`、`dropped_hold`；规则第 21 版第 36 条；开循环前先重判、再探针，0 / 10 不开循环。
+
+结果：现有技能重判 0 / 60（探针 10 + 封存 50，`outputs/scene_rsi_20261016/box_strict_rescore_20261024/`），箱子只抬了 3–16 cm。人写探针 5 种设置全是 0 / 10：手能把箱子举到 15–29 cm，但抓点在箱高 55% 时两手连线几乎穿过重心，箱子倾斜 30–59°；抓点抬到 75–85% 后箱子从手指侧面滑落。按规则没有开循环。逐条设置见 [物流间 runbook 第 9 节](../rsi_logistics_room.md)。
+
+同日：`evolution_media.py` 和 `report_unreal.py` 原来写死 ADT 公寓，改成跟着任务族的场景走（`media.json`、`--scene`）；`logistics_room_mars` 的 Unreal 场景关卡建好（复用 Warehouse 房间关卡）；`--rsi` 建场景时去掉场景包的固定机位 `video_camera`（73.74°，和回放的 45° 机位冲突）。
 
 ## 6. 命令
 
-前提同 [runbook](../rsi.md) 第 0 节（环境变量、`$PY`）。同一套 `scripts/rsi/`，任务族文件的 `scene` 指向这个场景；角色读的方案是 `scripts/rsi/plans/box_bimanual.md`。
-
-```bash
-$PY scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_mars --robot mars --rsi
-SC=outputs/scene_discovery/logistics_room_mars
-$PY scripts/scene_settle.py --scene $SC --write
-$PY scripts/scene_lint.py --scene $SC
-```
-
-做什么：第一条从仓库里的场景包建 MuJoCo 场景，`--rsi` 补上场景 RSI 要的字段：从网格切出房间的范围、障碍和出生区（墙和货架不碰撞，只进导航地图）、台面的四条可站边、箱子的 `semantic`，并写 `env_only.xml`。后两条和 runbook 第 2 节一样：让箱子落稳，检查场景。
-得到什么：`$SC/` 下的 `scene_locomani.xml`、`env_only.xml`、`scene_meta.json`（`room` 块里约 80 个障碍矩形、55 个出生区矩形）、`settle.json`、`lint.json`，最后一条打印 `[lint] 0 errors`。一共不到 1 分钟。
-
-```bash
-CUDA_VISIBLE_DEVICES=0 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 PYTHONPATH=src $PY scripts/rsi/probe_box.py --out outputs/scene_rsi_20261016/box_probe
-```
-
-做什么：开循环之前的可行性探针：机器人从默认出生点出发，箱子随机放 10 次，用一段人写的序列（走到最近的台沿、放低骨盆、两手张开夹爪从两侧抱住、`squeeze`、保持夹持抬手）试举。这段序列不进沙盒，循环从空种子开始。
-得到什么：打印每局成败和步骤，`summary.json`，`videos/` 下每局一段回放和 `previews/`。2026-10-23 是 10 / 10，约 1 分钟；少于 5 / 10 不要开循环，先查控制器。
-
-```bash
-S=$LOCOMANI_WORKSPACE/code/rsi-scene/box-a
-python3 scripts/rsi/sandbox.py $S box_bimanual
-cd $S && RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6 nohup setsid $PY scripts/rsi/loop.py run box_bimanual > loop.log 2>&1 &
-```
-
-做什么：建沙盒、跑内环，和 runbook 第 5.2 节一样；两张卡的机器去掉三个 `RSI_` 变量。先加 `--max-iters 2` 看一轮角色读不读得懂新场景和双手动作，再去掉续跑。封存集、看过程的视频同 runbook 第 5.3、8 节，任务族名换成 `box_bimanual`；空种子的任务族不写回技能目录。
+全部命令在 [物流间 runbook](../rsi_logistics_room.md)。
