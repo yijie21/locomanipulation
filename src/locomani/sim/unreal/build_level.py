@@ -97,7 +97,10 @@ def build_room(bake_dir: Path, name: str | None = None) -> None:
     report_path.unlink(missing_ok=True)  # the script writes it last: an old one must not read as this run's
     out = editor.checked(
         editor.run_file(
-            editor.IN_EDITOR / "warehouse_level.py", WAREHOUSE_DIR=str(bake_dir.resolve()), **room_level(name)[1]
+            editor.IN_EDITOR / "warehouse_level.py",
+            timeout=3600.0,  # the apartment's 400-mesh bake imports for ~20 min (editor.run_file)
+            WAREHOUSE_DIR=str(bake_dir.resolve()),
+            **room_level(name)[1],
         )
     )
     print(out.strip())
@@ -134,7 +137,9 @@ def build(name: str) -> dict:
 
     # urlab_client waits 120 s for import_xml; a mars scene's ghost grippers (d405, wrist mount) took 135 s on the
     # editor's 4 cores (2026-10-04) and the client gave up while the editor finished. import_xml takes no timeout.
-    urlab_rpc._OP_TIMEOUTS_S["import_xml"] = 600.0
+    # The ADT apartment (122 meshes, 64 free objects) spent 12 min in URLab's mesh preparation alone before the
+    # import proper, and a 600 s client gave up again (SRA0889, 2026-10-23): wait up to two hours.
+    urlab_rpc._OP_TIMEOUTS_S["import_xml"] = 7200.0
     client = editor.connect(local_model=False)
     client.scene.load_level(level_path)
     client.scene.ensure_manager()

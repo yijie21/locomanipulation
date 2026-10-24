@@ -19,15 +19,19 @@ No ghost grippers: the traces carry the commanded wrist positions but no attitud
 gripper mesh. The rig and ghosts stay parked except for the rig while filming. The editor's guard kills it when the
 container is saturated (scripts/unreal/editor_guard.sh), so nothing CPU-heavy runs beside it.
 
+Any other run: `--media <evolution_media.py --out dir>` films that directory's videos instead (steps.json, tasks.json,
+tasks_final.json: the same starts, versions and cards as its MuJoCo videos; user 2026-10-23, the pick-repro run).
     bash scripts/start_unreal.sh --gpu 1
     PYTHONPATH=src:$PYTHONPATH MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" \\
         scripts/rsi/report/report_unreal.py ps_00 [on_02 u_wolf_cart ... | all] \\
         [--out outputs/scene_rsi_20261016/report/media_unreal]
+    ... report_unreal.py all --media outputs/rsi_repro/visual --out outputs/rsi_repro/visual_unreal
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import sys
 import time
@@ -41,6 +45,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]  # scripts/rsi/report/ since TODO 36.8
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+import evolution_media as EM  # noqa: E402
 import report_media as RM  # noqa: E402
 import visualize as V  # noqa: E402
 
@@ -144,6 +149,47 @@ def held_still(view: UnrealView, sc: V.Scene, r, cam: dict, out: Path, text: str
     return RM.held(np.asarray(img.convert("RGB").resize(PANEL, Image.LANCZOS)), text)
 
 
+def media_index(media: Path, names: list[str]) -> dict[str, dict]:
+    """The rows of an evolution_media.py output directory to film, by video name (`all` = every row)."""
+    rows = []
+    for f in ("steps.json", "tasks.json", "tasks_final.json"):
+        if (media / f).is_file():
+            rows += json.loads((media / f).read_text())
+    by = {Path(r["video"]).stem: r for r in rows}
+    if not by:
+        raise SystemExit(f"{media} has no steps.json / tasks.json / tasks_final.json: run evolution_media.py first")
+    picked = list(by) if names == ["all"] else names
+    bad = [n for n in picked if n not in by]
+    if bad:
+        raise SystemExit(f"not in {media}: {bad}; known: {sorted(by)}")
+    return {n: by[n] for n in picked}
+
+
+def media_job(sc: V.Scene, row: dict) -> dict:
+    """A job from an evolution_media row: its panels' rounds on the row's start, cameras as report_media plans them,
+    captions as evolution_media writes them, the card with " · Unreal 渲染" appended. A panel marked `held` (the old
+    version had no trace) is the start's first frame, held, as the STEPS branch of `job` does."""
+    label = row["label"]
+    live = [p for p in row["panels"] if not p.get("held")]
+    rounds = [RM.Rd(Path(p["diag"]) / label) for p in live]
+    ps = RM.plan(sc, rounds, None)
+    panels = [(f"panel{k}", r, p) for k, (r, p) in enumerate(zip(rounds, ps))]
+    caps = [[(p["name"], V.FG), EM.outcome(r)] for p, r in zip(live, rounds)]
+    lines = [*row["lines"][:-1], row["lines"][-1] + " · Unreal 渲染"]
+    out = dict(panels=panels, caps=caps, lines=lines, speed=EM.SPEED, compare=rounds[-1])
+    if len(live) < len(row["panels"]):
+        aft, p0 = rounds[-1], ps[-1]
+        r0 = aft.z["robot"][0, :3]
+        lk = V.follow_lookat(r0, p0["obj0"])
+        sc.set(aft, 0)
+        cam = dict(lookat=lk, distance=min(V.follow_distance(r0, p0["obj0"], 1.3), sc.clear_distance(lk, p0["az1"], -26)),
+                   azimuth=p0["az1"], elevation=-26)  # fmt: skip
+        out["panels"] = [("before", aft, cam), *panels]
+        out["caps"] = [[(row["panels"][0]["name"], V.FG), ("失败", (255, 110, 100))], *caps]
+        out["held"] = RM.NO_SKILL
+    return out
+
+
 def job(sc: V.Scene, name: str) -> dict:
     """What one video films: panels (a round and its camera plan, or a held still), captions, card, speed."""
     if name in PS:
@@ -197,14 +243,16 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--rounds", default="", help="read the rounds from report/<name>/ (report_rerun.py), e.g. rounds_20261020"
     )
+    ap.add_argument("--media", type=Path, help="film an evolution_media.py --out directory's videos instead (any run)")
     a = ap.parse_args(argv)
     global PICK
     RM.use_rounds(a.rounds)
     if a.rounds:
         new = RM.REPO / "outputs" / "scene_rsi_20261016" / "report" / a.rounds / "pick"
         RM.ORIG[new], PICK = PICK, new
-    names = [*PS, *RM.STEPS, *RM.SOLOS] if a.names == ["all"] else a.names
-    bad = [n for n in names if n not in PS and n not in RM.STEPS and n not in RM.SOLOS]
+    media = media_index(a.media, a.names) if a.media else None
+    names = list(media) if media else [*PS, *RM.STEPS, *RM.SOLOS] if a.names == ["all"] else a.names
+    bad = [] if media else [n for n in names if n not in PS and n not in RM.STEPS and n not in RM.SOLOS]
     if bad:
         raise SystemExit(f"unknown videos: {bad}")
     sc = V.Scene()
@@ -213,7 +261,7 @@ def main(argv=None) -> int:
         view.film_setup(*FILM, 45.0)
         for name in names:
             t0 = time.time()
-            j = job(sc, name)
+            j = media_job(sc, media[name]) if media else job(sc, name)
             work = a.out / name
             panels = []
             for side, r, p in j["panels"]:

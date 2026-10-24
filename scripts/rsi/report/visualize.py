@@ -134,6 +134,11 @@ def why_zh(why: str) -> str:
         # motor.grip and skills/pick.py's lift check; left in English on the grasp_atomic pages' videos (2026-10-23)
         (r"nothing between the fingers", "合爪后两指之间是空的（没夹到）"),
         (r"not between the fingers after the lift", "抬起后物体不在两指之间（没拿住）"),
+        # pick-repro iteration 6's refusal for the wallet (2026-10-23); shown in English on task_08 until this line
+        (
+            r"too thin for a level grasp over its support and too wide for a pinch from above",
+            "规划拒绝（太薄不能平抓，太宽不能从上捏）",
+        ),
     ]
     for pat, rep in rules:
         m = re.search(pat, why)
@@ -787,6 +792,14 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="clue,step,infeasible,overview")
     a = ap.parse_args(argv)
     loop = a.sandbox / "outputs" / "scene_rsi_20261016" / FAMILY
+    # This script is the hand-written film of the pick-a run (VERSIONS, the start labels, the clue cards). Another
+    # sandbox lacks those rounds and used to die mid-way with FileNotFoundError (pick-repro, 2026-10-23).
+    missing = [h for h, _ in VERSIONS if not (loop / "diag" / f"incumbent_{h}").is_dir()]
+    if missing:
+        raise SystemExit(
+            f"{a.sandbox} is not the pick-a run this script was written for: no diag/incumbent_{{{', '.join(missing)}}}"
+            " under its loop. For any sandbox use scripts/rsi/report/evolution_media.py --sandbox ... --family ..."
+        )
     only = set(a.only.split(","))
     a.out.mkdir(parents=True, exist_ok=True)
     sc = Scene()
