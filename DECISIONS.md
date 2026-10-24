@@ -2962,3 +2962,22 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 强制建造也改 `reopen`、`review`、`stop` 决定：重开本来就占一个 Engineer，复看和停是 Manager 对整轮的判断，硬改会越过它的理由；这种情况下 `recurring` 仍排在下一轮上下文的最前面。
 - 一次强制多个机制：只占一个名额，其余名额仍由 Manager 决定。
 - 33.15 的记录库（方案 §3.6）这次一起做：没做，留作 33.15.1。现在的 `status` 只来自这一轮的探针。
+
+## 2026-10-23 TODO 38：场景 RSI 迁到物流间，从 9 个原子动作进化双臂移动抓箱（用户“把 RSI 在 ADT 场景的 pipeline 迁移到 logistics room……添加一个双臂抓取 atomic skill……自我进化出双臂移动抓取箱子的能力”）
+
+### 目标与约束的变化
+- 场景 RSI 的内环第一次离开 ADT：同一套 `scripts/rsi/`，任务族文件的 `scene` 指向物流间。只跑 L1，外环和 `rsi_kit` 不迁。
+- 开发在分支 `henry-logistic-room`。
+
+### 决策（用户逐条问答定的，理由在[方案](docs/handoff/box-bimanual-rsi-plan-20261023.md) §3）
+- 只用房间自带的纸箱；箱子近侧面离最近台沿 0–0.15 m，朝向两档分成两个任务；出生点全房间随机、离平台 0.5 m 以上、四边都允许。
+- 成功判据 `held(nor_cal_box)`，不加 `upright`。
+- 第 9 个原子动作保持原子：`grip` / `release` 的 `"both"` 加 `squeeze(inward_m, seconds)`；不含站位、抓点、抬起。
+- 先做手写探针，5 / 10 以上才开循环。
+- 场景文件由 `prepare_logistics_scene.py --rsi` 补 v2 字段，放 `outputs/scene_discovery/logistics_room_mars/`；墙不加碰撞盒；不加第二个台面。
+- 失败分类扩成双手，其他单手工具这次不接。
+- 配置沿用 grasp_atomic，经验库带单手经验不带代码；调参 RSI 的 48 / 80 只作参照；视频先 MuJoCo 后 Unreal。
+
+### 被否决的方案（及原因）
+- 整套移植 warehouse 双臂专家，或一个伸夹抬一体的动作：任务退化成调参数。
+- 成功判据加 `upright`、箱子朝向完全随机、不限箱子深度、现在加第二个台面：用户不要或第一次运行不需要。

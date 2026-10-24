@@ -1255,3 +1255,39 @@
 - [x] 37.4 E：验收门第二枪 `--second-shot`（默认开）：合成候选被拒（不是作废）时，同一轮再送诊断池净翻转最好、没被拒过的那份草稿（算一次验收门调用）；每份草稿一交就跑它的诊断池，不等最慢的（10-23 做了：`second_shot()` / `second_shot_pick()`，预算满了不打，第一枪留 `gate_shot1.json`，账本 `second_shot` 行、第二枪的 gate 行带 `shot: 2`，机制表照读；`early_diag()` 在 Engineer 线程里起它的诊断池，主流程再跑只补缺的；规则第 28 条；测试 `tests/test_rsi_second_shot.py`。没跑实验）
 - [ ] 37.5 F（用户 10-23 没选，等 B–E 之后再议）：Reviewer effort high vs xhigh，重放 4 个状态 × 2，探针增益不掉才换
 - [ ] 37.6 G（同上）：第 n+1 轮 Reviewer 在第 n 轮 Engineer 期间先跑；要先让验收门在隐藏池的私有副本上跑（沙盒外随机目录），不然角色会话期间的 000 锁挡住它
+
+## 38. 场景 RSI 迁到物流间：从 9 个原子动作进化双臂移动抓箱（用户 2026-10-23：“把 RSI 在 ADT 场景的 pipeline 迁移到 logistics room……添加一个双臂抓取 atomic skill……自我进化出双臂移动抓取箱子的能力”；分支 `henry-logistic-room`；方案 [box-bimanual-rsi-plan-20261023](docs/handoff/box-bimanual-rsi-plan-20261023.md)；DECISIONS 2026-10-23 TODO 38）
+
+只跑 L1，不跑外环；一套 `scripts/rsi/` 按任务族文件的 `scene` 跑两个场景。场景是 `warehouse_textured_mars` 那间扫描的物流间，只用房间自带的纸箱（0.45 × 0.32 × 0.33 m，1.2 kg，HP 平台顶面 0.371 m）。阶段按顺序做，38.8 不过就不开循环。
+
+阶段 1 场景
+- [ ] 38.1 `scripts/prepare_logistics_scene.py --rsi`：在 v1 的 scene_meta 上补 v2 字段——`schema_version`、`room.bounds` / `walls` / `rooms` / `spawn`（从 `room_parts.json` 量房间；出生区扣掉平台占地加机器人半径 0.35 m）、台面 A 的 `yaw: 0` 和四条 `approach_edges`；输出到 `outputs/scene_discovery/logistics_room_mars/`（放在 `outputs/scene_discovery/` 下是为了沙盒链接和越界审计不用改）。墙只写进导航器的 `walls`，不加碰撞盒（用户 10-23：不加第二个台面）。
+- [ ] 38.2 `configs/scenes.yaml` 加 `logistics_room_mars`（Unreal 先标 `unsupported`）；`tests/test_run_context.py`、`test_image_source.py`、`test_unreal_paths.py` 里钉死的场景名集合同步。
+- [ ] 38.3 新场景过 `scene_settle.py --write` 和 `scene_lint.py`（0 error）；`physics_scene()` 能出 `_physics` 副本；`scene_round.py` 用空种子跑一局（规划拒绝、机器人站着不动也算跑通）。
+
+阶段 2 动作层（第 9 个原子动作）
+- [ ] 38.4 `src/locomani/backends/scalebfm/motor.py`：`grip` / `release` 接受 `"both"`（两手同时合、同时松）；新增 `squeeze(inward_m, seconds)`——两手在当前夹爪中心各向内偏置并保持，偏置在之后的 `posture` / `hold` / `walk_to` 中持续到 `release`；只在被调用时生效（规则第 1 条：动作层只加默认关闭的开关）。单元测试进 `tests/test_scalebfm_motor.py`。
+- [ ] 38.5 `src/locomani/tasks/scene/stage.py`：`grip_check` / `lift_check` 的双手版（两手手指都接触同一物体；抬起时物体随两手走）。
+- [ ] 38.6 `scripts/rsi/rules.md` 第 20 版：9 个动作、双手任务族的说明、单手工具（可抓性、挑选器、身体表、准备动作层）只对单手有效；`motor.py` 文档串“8 个动作”改成 9 个。
+
+阶段 3 可行性探针（用户 10-23：先做探针，≥ 5 / 10 开循环）
+- [ ] 38.7 `scripts/rsi/probe_box.py`：默认出生点（平台 ym 边前），10 个随机箱位（两档朝向各半、近侧面离台沿 0–0.15 m），手写 `reach("both")` 到箱子两端 → `squeeze` → `posture()` 站直抬起 → `hold(2)`；输出逐局 `held(nor_cal_box)`、失败步和轨迹视频（预览 ≤ 500 KB）。
+- [ ] 38.8 判定：≥ 5 / 10 进阶段 4；1–4 / 10 调 `squeeze` 的偏置和抓高重跑一次；0 / 10 停下回控制器层查，不开循环。结果写进方案 §5。
+
+阶段 4 任务族与参数化
+- [ ] 38.9 `scripts/rsi/families/box_bimanual.json` + `box_bimanual_tasks.jsonl`：两个任务 `box_long_side`（`placement.yaw_deg [0, 5]`）、`box_short_side`（`[85, 90]`），都带 `depth_m [0, 0.15]`，目标 `held(nor_cal_box)`（不加 `upright`，用户 10-23）；`spawn {"rooms": "all", "distance_m": [0.5, null]}`；池 30 / 40 / 50，新种子段；种子 `scripts/rsi/seeds/atomic`；`sandbox` 块（`keep` / `closure` / `strip` / `scene_exclude` 按新场景）；`plan: scripts/rsi/plans/box_bimanual.md`。经验库默认带 ADT 的单手条目、不带代码。
+- [ ] 38.10 `scripts/rsi/loop.py` 越界审计（`scene_links`、`own_link_targets`、origin 泄漏模式）改读任务族的 `scene`，不再写死 `outputs/scene_discovery` 之外的假设；五个角色提示词里的“公寓”改成任务族给的场景描述字段。
+- [ ] 38.11 `scripts/rsi/failure_class.py` 双手类型：没走到站位、一手没到位、夹住没抬起、抬起后滑脱、摔倒、其他；进验收门结论的 `per_class` 和 Manager 的 `repair_notes`。
+- [ ] 38.12 测试：v2 合成夹具上的新场景起点抽样（四边、深度、两档朝向）、家族文件加载、双手失败分类、提示词参数化、审计路径。
+- [ ] 38.13 L0 冒烟：`scene_round.py box_bimanual` 一局；沙盒里 `loop.py run box_bimanual --stub --max-iters 1`。
+
+阶段 5 运行（配置沿用 grasp_atomic：三 Engineer + Composer、墙钟 6 h、验收门 12 次、停止线 70%）
+- [ ] 38.14 建沙盒，先 `loop.py run box_bimanual --max-iters 2` 看角色读不读得懂新场景和新动作，再放开到停止条件。本机只有一张仿真卡：`RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`。
+- [ ] 38.15 `sealed.py box_bimanual`；最终版快照到 `scripts/rsi/seeds/box_<哈希>`（空种子任务族不写回技能目录）；结果写进方案 §5，同场景的调参 RSI（封存 48 / 80，TODO 25.9.1）只作参照数字，不做对照（用户 10-23）。
+
+阶段 6 视频（用户 10-23：先 MuJoCo，确认后再 Unreal）
+- [ ] 38.16 `evolution_media.py --sandbox … --family box_bimanual`，预览 ≤ 500 KB。
+- [ ] 38.17 确认后：`scenes.yaml` 给 `logistics_room_mars` 配 Unreal 关卡（复用 `warehouse_textured` 房间关卡，建场景关卡），`report_unreal.py --media` 出 Unreal 版。
+
+文档
+- [ ] 38.18 `docs/rsi.md` 加“换一个场景跑”一节（建场景、任务族文件、探针、运行）；方案页记决策和结果；README 和 docs/README 各一行。
