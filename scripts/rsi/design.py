@@ -10,8 +10,14 @@ Factors (the forcing is written here, by people; what to measure is the Reviewer
   spawn_bearing   the robot turned on its spawn so the object lies `level` degrees off its heading (0 ahead, 90 left)
   spawn_distance  the robot moved along the line from the object to its spawn until `level` metres from the object,
                   facing the object as it did; a start whose new spot is not free and reachable is left out
-  object_yaw      the task's object turned in place by `level` degrees about the vertical; left out when its footprint
-                  then leaves its surface's top or meets a neighbour
+  object_yaw      the task's object turned by `level` degrees about the vertical, then slid by the smallest shift (at
+                  most MAX_SHIFT_M) that keeps its footprint on its surface's top and clear of its neighbours; left out
+                  when no spot that close fits
+
+Each level reports how many starts were left out and why (`skipped_why`), an object_yaw level how far the objects were
+slid (`shift_cm_max`), and the result a `note` naming the levels that lost more than half their starts. Run D turned a
+0.31 m spoon in place twice (iterations 15 and 17): 11 of 16 starts left out, no reason given, and the Reviewer asked
+again (TODO 37.9.1).
 
     python3 scripts/rsi/design.py <family> --pool <starts> --skills <dir> --set '{...}' --out <dir> \\
         --factor spawn_bearing --levels 0 90 180 --starts 4 [--task T ...] [--name pick.X]
@@ -41,6 +47,8 @@ FACTORS = ("param", "spawn_bearing", "spawn_distance", "object_yaw")
 MAX_PROBES = 2  # per iteration
 MAX_ROUNDS = 300  # per probe: levels x starts x tasks
 MAX_LEVELS = 8
+MAX_SHIFT_M = 0.15  # object_yaw: how far a turned object may slide on its top to fit (TODO 37.9.1)
+SHIFT_STEP_M = 0.01
 
 
 def check(spec: dict, tasks_all: list[str], params: dict | None = None) -> str | None:
@@ -64,32 +72,53 @@ def _object_of(fam: dict, task_id: str) -> str:
     return t.objects[0]
 
 
-def _rotated(meta: dict, key: str, start: dict, deg: float):
-    """The object's placement turned by `deg` about the vertical, or None when it leaves its top or meets a neighbour."""
+def _shifts() -> list[np.ndarray]:
+    """The candidate slides of a turned object, nearest first (a fixed order, so a start always lands the same way)."""
+    k = int(round(MAX_SHIFT_M / SHIFT_STEP_M))
+    grid = [(i, j) for i in range(-k, k + 1) for j in range(-k, k + 1) if math.hypot(i, j) <= k + 1e-9]
+    return [SHIFT_STEP_M * np.array(ij, float) for ij in sorted(grid, key=lambda ij: (math.hypot(*ij), ij))]
+
+
+def _rotated(meta: dict, key: str, start: dict, deg: float) -> tuple[list | None, dict]:
+    """The object's placement turned by `deg` about the vertical and slid by the nearest shift (MAX_SHIFT_M at most)
+    that keeps its footprint on its top and clear of its neighbours, with {"shift_m"}; (None, {"why"}) when no spot
+    fits -- `off_top` or `neighbour`, what the turn in place ran into."""
     obj = meta["objects"][key]
     pos, quat = start["placements"][key]
     q = ST._qmul(ST._yaw_quat(math.radians(deg)), np.asarray(quat, float))
     surf = meta["surfaces"][obj["surface"]]
     flat = np.asarray(surf.get("flat_half_extent") or surf["half_extent"], float)[:2]
     top = (np.asarray(surf["xy"], float), flat - ST.SURFACE_MARGIN_M, float(surf.get("yaw", 0.0)))
-    fp = ST.footprint(obj, np.asarray(pos, float)[:2], q)
     others = []
     for k, o in meta["objects"].items():
         if k == key or o.get("surface") != obj["surface"]:
             continue
         p, qq = start["placements"].get(k, (o["init_pos"], o["init_quat"]))
         others.append(ST.footprint(o, np.asarray(p, float)[:2], qq))
-    if not ST.inside_top(fp, top) or any(ST.overlap(fp, t, ST.OBJECT_GAP_M) for t in others):
-        return None
-    return [list(map(float, pos)), q.tolist()]
+
+    def clash(xy) -> str | None:
+        fp = ST.footprint(obj, xy, q)
+        if not ST.inside_top(fp, top):
+            return "off_top"
+        return "neighbour" if any(ST.overlap(fp, t, ST.OBJECT_GAP_M) for t in others) else None
+
+    xy0 = np.asarray(pos, float)[:2]
+    why = clash(xy0)
+    for d in _shifts() if why else [np.zeros(2)]:
+        if clash(xy0 + d) is None:
+            xy = xy0 + d
+            return [[float(xy[0]), float(xy[1]), float(pos[2])], q.tolist()], dict(shift_m=float(np.hypot(*d)))
+    return None, dict(why=why)
 
 
-def transform(factor: str, level: float, row: dict, key: str, meta: dict, nav=None) -> dict | None:
-    """The start under one level of a start factor; None when the forced start is not valid."""
+def transform(factor: str, level: float, row: dict, key: str, meta: dict, nav=None) -> tuple[dict | None, dict]:
+    """The start under one level of a start factor, with what the forcing did (an object_yaw `shift_m`); (None,
+    {"why"}) when the forced start is not valid."""
     s = json.loads(json.dumps(row["start"]))
     obj = np.asarray(s["placements"][key][0], float)[:2]
     robot = np.asarray(s["robot_xy"], float)
     to_obj = math.atan2(obj[1] - robot[1], obj[0] - robot[0])
+    info: dict = {}
     if factor == "spawn_bearing":
         s["robot_yaw"] = to_obj - math.radians(level)
     elif factor == "spawn_distance":
@@ -99,17 +128,19 @@ def transform(factor: str, level: float, row: dict, key: str, meta: dict, nav=No
         if nav is not None:
             occ, navi = nav
             navi.set_goal_ring(obj, *ST.APPROACH_RING_M)
-            if not occ.is_free(xy) or not navi.reachable(xy):
-                return None
+            if not occ.is_free(xy):
+                return None, dict(why="not_free")
+            if not navi.reachable(xy):
+                return None, dict(why="unreachable")
         bearing = s["robot_yaw"] - to_obj  # keep the object where it was in the robot's view
         s["robot_xy"] = [float(xy[0]), float(xy[1])]
         s["robot_yaw"] = math.atan2(obj[1] - xy[1], obj[0] - xy[0]) + bearing
     elif factor == "object_yaw":
-        spot = _rotated(meta, key, s, float(level))
+        spot, info = _rotated(meta, key, s, float(level))
         if spot is None:
-            return None
+            return None, info
         s["placements"][key] = spot
-    return dict(row, start=s)
+    return dict(row, start=s), info
 
 
 def base_starts(pool: Path, tasks: list[str], per_task: int) -> list[tuple[str, dict]]:
@@ -139,16 +170,20 @@ def run(spec: dict, family: str, pool: Path, skills: Path, overrides: dict, out:
         nav = build_navigation(fam["meta"], body_radius=BODY_RADIUS_M)
     dpool = out / "pool"
     dpool.mkdir(parents=True, exist_ok=True)
-    jobs, skipped = [], collections.Counter()
+    jobs, skipped, shifts = [], collections.defaultdict(collections.Counter), collections.defaultdict(list)
     for i, lv in enumerate(levels):
         labels = []
         for label, row in starts:
-            new = (
-                row if factor == "param" else transform(factor, lv, row, _object_of(fam, row["task"]), fam["meta"], nav)
+            new, info = (
+                (row, {})
+                if factor == "param"
+                else transform(factor, lv, row, _object_of(fam, row["task"]), fam["meta"], nav)
             )
             if new is None:
-                skipped[i] += 1
+                skipped[i][info.get("why", "invalid")] += 1
                 continue
+            if "shift_m" in info:
+                shifts[i].append(info["shift_m"])
             lab = f"{label}_L{i}"
             (dpool / f"{lab}.json").write_text(json.dumps(new))
             labels.append(lab)
@@ -159,9 +194,19 @@ def run(spec: dict, family: str, pool: Path, skills: Path, overrides: dict, out:
     for i, (lv, job) in enumerate(zip(levels, jobs, strict=True)):
         rounds = list(B.outcomes(job.out).values()) if job.out.exists() else []
         n, ok = len(rounds), sum(bool(r["ok"]) for r in rounds)
-        per.append(dict(level=lv, n=n, ok=ok, rate=round(ok / n, 3) if n else None, skipped=skipped[i],
-                        classes=dict(collections.Counter(r.get("failure_class") for r in rounds if not r["ok"]))))  # fmt: skip
+        per.append(dict(level=lv, n=n, ok=ok, rate=round(ok / n, 3) if n else None, skipped=sum(skipped[i].values()),
+                        skipped_why=dict(skipped[i]),
+                        classes=dict(collections.Counter(r.get("failure_class") for r in rounds if not r["ok"])),
+                        **({"shift_cm_max": round(100 * max(shifts[i]), 1)} if shifts[i] else {})))  # fmt: skip
     res = dict(factor=factor, name=spec.get("name"), tasks=tasks, starts=len(starts), levels=per, dir=str(out))
+    thin = [p for p in per if 2 * p["skipped"] > len(starts)]
+    if thin:
+        why = "; ".join(f"{p['level']:g}: " + ", ".join(f"{k} {v}" for k, v in p["skipped_why"].items()) for p in thin)
+        res["note"] = (
+            f"levels {', '.join(format(p['level'], 'g') for p in thin)} left out more than half of the {len(starts)} "
+            f"starts ({why}); their rates say little -- pick other levels, other starts or another factor rather than "
+            "asking again"
+        )
     (out / "result.json").write_text(json.dumps(res, indent=1))
     return res
 

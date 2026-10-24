@@ -1006,6 +1006,17 @@ def own_link_targets() -> list[str]:
     return sorted({os.path.realpath(x) for x in links if x.is_symlink()})
 
 
+def reaches(path: str) -> bool:
+    """A resolved path that touches the file system outside: it exists, or the directory it would be created in does
+    (writing a new file there is leaving the sandbox too). A glob or a brace reaches the directory it is cut in at its
+    first wildcard, so `../*/x` lists the sandbox's parent. A fragment that resolves into a directory that does not
+    exist reaches nothing (TODO 37.9.2)."""
+    m = re.search(r"[*?\[{]", path)
+    if m:
+        return os.path.isdir(os.path.dirname(path[: m.start()]) or "/")
+    return os.path.lexists(path) or os.path.isdir(os.path.dirname(path) or "/")
+
+
 def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     """TODO 36 (review 2026-10-22, L8; review_outer finding 2): a path-like token in a tool input with a `..` segment,
     resolved (symlinks first, as the shell does) from the directory the command runs in, that lands outside the sandbox
@@ -1016,7 +1027,10 @@ def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     ../../../../../src/.../pick.py`, a path inside the sandbox (2026-10-22, option B's iteration 6). The role's own
     scratch tree (role_tmp) counts as inside, and a bare `..` counts only as a `cd` target: `from .. import hull` in a
     script an Engineer wrote is no path (iteration 7 voided two drafts for that and for `cd <scratch>/engineer_2 && ln
-    -s ../x`); `transcript_leaks` also leaves file contents out of this check (`climb_view`)."""
+    -s ../x`); `transcript_leaks` also leaves file contents out of this check (`climb_view`). A climb counts only when it
+    reaches something (`reaches`): run D's iteration-19 Engineer built a path inside the sandbox with
+    `p.replace('iter_19/cand_2/smoke_final', '../diag/candidate_bafa768225dd')`, and that fragment, resolved from the
+    root into a directory that does not exist, voided the draft (2026-10-24, TODO 37.9.2)."""
     repo = os.path.realpath(REPO)
     inside = lambda path, root: path == root or path.startswith(root.rstrip("/") + "/")  # noqa: E731
     roots = [repo, os.path.realpath(role_tmp()), *targets]
@@ -1025,10 +1039,14 @@ def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     toks = re.findall(r"[^\s\"'`;|&<>()$\\,]+", text.replace("\\n", " ").replace("\\t", " "))
     out = False
     for i, tok in enumerate(toks):
-        path = os.path.realpath(tok if tok.startswith("/") else os.path.join(base, tok))
+        raw = tok if tok.startswith("/") else os.path.join(base, tok)
+        head, last = os.path.split(raw.rstrip("/") or "/")
+        # the directories' links, not the last name's: the venv's `python` is a link out to the base interpreter, and
+        # `<diag dir>/../../../../../third_party/.../.venv_sim/bin/python` voided run C's iteration-10 draft (TODO 37.9.2)
+        path = os.path.realpath(raw) if last in ("", ".", "..") else os.path.join(os.path.realpath(head), last)
         is_cd = i and toks[i - 1] == "cd"
         if ".." in tok.split("/") and not tok.startswith("~") and (tok != ".." or is_cd):
-            if not any(inside(path, r) for r in roots):
+            if not any(inside(path, r) for r in roots) and reaches(path):
                 out = True
         if is_cd and not tok.startswith(("~", "-")):
             base = path

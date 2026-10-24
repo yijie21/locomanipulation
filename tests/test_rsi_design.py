@@ -61,7 +61,7 @@ def test_a_spec_is_checked_before_anything_runs():
 
 def test_spawn_bearing_turns_the_robot_in_place():
     for lv in (0.0, 90.0, 180.0):
-        s = DS.transform("spawn_bearing", lv, row(), "Mug", META)["start"]
+        s = DS.transform("spawn_bearing", lv, row(), "Mug", META)[0]["start"]
         assert s["robot_xy"] == [2.0, 0.0]
         to_obj = math.pi  # the mug lies in -x from the robot
         off = (to_obj - s["robot_yaw"] + math.pi) % (2 * math.pi) - math.pi
@@ -70,7 +70,7 @@ def test_spawn_bearing_turns_the_robot_in_place():
 
 def test_spawn_distance_keeps_the_object_where_it_was_in_view():
     r = row(robot=(2.0, 0.0), yaw=math.pi - 0.3)  # the mug 0.3 rad to the robot's left... seen at bearing +0.3
-    s = DS.transform("spawn_distance", 1.0, r, "Mug", META)["start"]
+    s = DS.transform("spawn_distance", 1.0, r, "Mug", META)[0]["start"]
     assert np.allclose(s["robot_xy"], [1.0, 0.0])
     to_obj = math.atan2(0.0 - 0.0, 0.0 - 1.0)
     assert math.isclose((s["robot_yaw"] - to_obj + math.pi) % (2 * math.pi) - math.pi, -0.3, abs_tol=1e-9)
@@ -86,24 +86,70 @@ def test_spawn_distance_keeps_the_object_where_it_was_in_view():
         def reachable(self, xy):
             return True
 
-    assert DS.transform("spawn_distance", 1.0, r, "Mug", META, (Occ(), Nav())) is None  # 1.0 m out is inside furniture
-    assert DS.transform("spawn_distance", 1.8, r, "Mug", META, (Occ(), Nav())) is not None
+    assert DS.transform("spawn_distance", 1.0, r, "Mug", META, (Occ(), Nav())) == (None, {"why": "not_free"})
+    assert DS.transform("spawn_distance", 1.8, r, "Mug", META, (Occ(), Nav()))[0] is not None
 
 
-def test_object_yaw_turns_in_place_unless_it_hits_a_neighbour_or_leaves_the_top():
-    s = DS.transform("object_yaw", 90.0, row(box=(0.4, 0.2)), "Mug", META)["start"]
-    q = s["placements"]["Mug"][1]
+def test_object_yaw_turns_in_place_when_it_fits():
+    s, info = DS.transform("object_yaw", 90.0, row(box=(0.4, 0.2)), "Mug", META)
+    q = s["start"]["placements"]["Mug"][1]
     assert math.isclose(2 * math.atan2(q[3], q[0]), math.pi / 2, abs_tol=1e-6)
-    assert s["placements"]["Mug"][0] == [0.0, 0.0, 0.8]
-    # a long box beside the mug: turned 90 deg the box itself would collide -- turn the box instead of the mug
-    r = row(mug=(0.0, 0.0), box=(0.08, 0.0))
-    r["task"] = "pick_Box"
-    assert DS.transform("object_yaw", 90.0, r, "Box", META) is None
-    # the long box at the top's end: turned 90 deg it would stick out of the top
-    r = row(mug=(-0.3, 0.0), box=(0.32, 0.0))
-    assert DS.transform("object_yaw", 0.0, r, "Box", META) is not None
-    assert DS.transform("object_yaw", 90.0, dict(r, start=dict(r["start"], placements={
-        "Mug": r["start"]["placements"]["Mug"], "Box": [[0.32, 0.2, 0.8], [1, 0, 0, 0]]})), "Box", META) is None  # fmt: skip
+    assert s["start"]["placements"]["Mug"][0] == [0.0, 0.0, 0.8] and info == {"shift_m": 0.0}
+
+
+def test_object_yaw_slides_a_turned_object_to_the_nearest_spot_that_fits(monkeypatch):
+    """TODO 37.9.1: run D turned a 0.31 m spoon in place and left out 11 of 16 starts. A turned object now slides on
+    its top (MAX_SHIFT_M at most) until it is on the top and clear of its neighbours; the start says how far."""
+    # the long box near the top's back edge: turned 90 deg it sticks out by 0.07 m and slides back in
+    r = row(mug=(-0.3, 0.0), box=(0.32, 0.2))
+    s, info = DS.transform("object_yaw", 90.0, r, "Box", META)
+    (x, y, z), q = s["start"]["placements"]["Box"]
+    assert math.isclose(info["shift_m"], 0.07, abs_tol=1e-9) and (x, z) == (0.32, 0.8) and math.isclose(y, 0.13)
+    fp = DS.ST.footprint(META["objects"]["Box"], (x, y), q)
+    assert DS.ST.inside_top(fp, ((0.0, 0.0), np.array([0.5, 0.3]) - DS.ST.SURFACE_MARGIN_M, 0.0))
+    # beside the mug it slides clear of it
+    s, info = DS.transform("object_yaw", 90.0, row(mug=(0.0, 0.0), box=(0.08, 0.0)), "Box", META)
+    assert s is not None and info["shift_m"] > 0
+    # with no slide allowed, what the turn in place ran into
+    monkeypatch.setattr(DS, "MAX_SHIFT_M", 0.0)
+    assert DS.transform("object_yaw", 90.0, r, "Box", META) == (None, {"why": "off_top"})
+    assert DS.transform("object_yaw", 90.0, row(mug=(0.0, 0.0), box=(0.08, 0.0)), "Box", META) == (
+        None,
+        {"why": "neighbour"},
+    )
+    # a top too narrow for the turned box anywhere
+    narrow = json.loads(json.dumps(META))
+    narrow["surfaces"]["T"]["half_extent"] = [0.5, 0.1, 0.01]
+    monkeypatch.setattr(DS, "MAX_SHIFT_M", 0.15)
+    assert DS.transform("object_yaw", 90.0, row(mug=(-0.3, 0.0), box=(0.3, 0.0)), "Box", narrow) == (
+        None,
+        {"why": "off_top"},
+    )
+
+
+def test_a_probe_reports_why_starts_were_left_out(tmp_path, monkeypatch):
+    """TODO 37.9.1: each level says how many starts the forcing left out and why, how far objects slid, and the result
+    names the levels that lost more than half their starts."""
+    narrow = json.loads(json.dumps(META))
+    narrow["surfaces"]["T"]["half_extent"] = [0.5, 0.1, 0.01]
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    for k, y in enumerate((0.0, 0.02)):  # the box's end 0.48 m out, at the top's end
+        (pool / f"pick_Box_s{k}.json").write_text(
+            json.dumps(dict(row(mug=(-0.3, 0.0), box=(0.33, y)), task="pick_Box"))
+        )
+    monkeypatch.setattr(DS.F, "load", lambda fam: dict(tasks=["pick_Box"], meta=narrow))
+    monkeypatch.setattr(DS, "_object_of", lambda fam, task: "Box")
+    ran = []
+    monkeypatch.setattr(DS.B, "run_jobs", lambda jobs, *a: ran.extend(j.labels for j in jobs))
+    spec = dict(factor="object_yaw", levels=[0, 10, 90], starts=2)
+    res = DS.run(spec, "fam", pool, tmp_path / "skills", {}, tmp_path / "out", 1, "0")
+    by = {p["level"]: p for p in res["levels"]}
+    assert by[0]["skipped"] == 0 and by[0]["shift_cm_max"] == 0.0
+    assert by[10]["skipped"] == 0 and by[10]["shift_cm_max"] > 0  # turned 10 deg the box slides to stay on
+    assert by[90]["skipped"] == 2 and by[90]["skipped_why"] == {"off_top": 2} and "shift_cm_max" not in by[90]
+    assert res["note"].startswith("levels 90 left out more than half of the 2 starts (90: off_top 2)")
+    assert len(ran) == 2  # the empty level runs nothing
 
 
 def test_the_driver_runs_at_most_two_and_records_where_results_go(tmp_path, monkeypatch):

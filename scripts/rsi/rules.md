@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 20, 2026-10-23)
+# Rules for the scene RSI loop (TODO 27, version 21, 2026-10-24)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -212,7 +212,9 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     one factor forced at a few levels on the same diagnostic starts, under the incumbent -- `param` (an overridable
     parameter `name` set to each level), `spawn_bearing` (the object `level` degrees off the robot's heading at the
     spawn), `spawn_distance` (the robot `level` metres from the object along the line to its spawn), `object_yaw` (the
-    object turned `level` degrees in place). At most 2 an iteration, at most 300 rounds each; a start the forcing
-    makes invalid is left out. The per-level outcome goes to the Manager, the next Reviewer and the body model's
-    curves; it says how the factor changes the outcome, never that a change should stay (rule 7) (code: design.py,
-    loop.py run_designs) (version 20).
+    object turned `level` degrees, slid up to 0.15 m on its top when it no longer fits there). At most 2 an iteration,
+    at most 300 rounds each; a start the forcing makes invalid is left out, and each level says how many and why
+    (`skipped_why`); a level that lost more than half its starts is named in the result's `note` and says little. The
+    per-level outcome goes to the Manager, the next Reviewer and the body model's curves; it says how the factor
+    changes the outcome, never that a change should stay (rule 7) (code: design.py, loop.py run_designs) (version 20;
+    the slide and the reasons version 21, TODO 37.9.1).

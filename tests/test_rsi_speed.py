@@ -616,6 +616,39 @@ class RoleSafety(unittest.TestCase):
         edit = [["Edit", {"file_path": f"{sandbox}/../origin/x.py", "old_string": "a", "new_string": "b"}, None]]
         self.assertTrue(self.lp.climbs_out(self.lp.climb_view(json.dumps(edit)), targets))
 
+    def test_a_dotdot_fragment_that_reaches_nothing_is_no_climb(self):
+        """2026-10-24, run D's iteration 19 (TODO 37.9.2): an Engineer built a path inside the sandbox with
+        `p.replace(..., '../diag/candidate_<hash>')`; the fragment, resolved from the root into a directory that does
+        not exist, voided the draft. What reaches something outside still counts."""
+        sandbox, origin = self.root / "sb", self.root / "origin"
+        (origin / "third_party").mkdir(parents=True)
+        (sandbox / "outputs" / "loop").mkdir(parents=True)
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        self.patch(REPO=sandbox, ORIGIN=origin)
+        targets = self.lp.own_link_targets()
+        code = "python3 -c \"b=p.replace('iter_19/cand_2/smoke_final', '../diag/candidate_bafa768225dd')\""
+        self.assertFalse(self.lp.climbs_out(json.dumps([["Bash", {"command": code}, None]]), targets))
+        self.assertFalse(self.lp.climbs_out("ls ../diag/*.json", targets))
+        self.assertTrue(self.lp.climbs_out("ls ../origin", targets))  # an existing directory
+        self.assertTrue(self.lp.climbs_out("touch ../origin/new.py", targets))  # a new file in one
+        self.assertTrue(self.lp.climbs_out("ls ../*/third_party", targets))  # a glob over the sandbox's parent
+        self.assertTrue(self.lp.climbs_out("ls ../ori{gin,x}", targets))  # a brace
+
+    def test_a_link_as_the_last_name_is_not_followed(self):
+        """Run C's iteration 10 (TODO 37.9.2): `cd <diag dir> && ../../../../../third_party/.../bin/python` is the
+        sandbox's own venv; its `python` links out to the base interpreter, and following that link voided the draft."""
+        sandbox, origin, system = self.root / "sb", self.root / "origin", self.root / "usr"
+        (origin / "third_party" / "venv" / "bin").mkdir(parents=True)
+        system.mkdir()
+        (system / "python3").write_text("")
+        os.symlink(system / "python3", origin / "third_party" / "venv" / "bin" / "python")
+        (sandbox / "outputs" / "a" / "b").mkdir(parents=True)
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        self.patch(REPO=sandbox, ORIGIN=origin)
+        targets = self.lp.own_link_targets()
+        self.assertFalse(self.lp.climbs_out("cd outputs/a/b && ../../../third_party/venv/bin/python -c 1", targets))
+        self.assertTrue(self.lp.climbs_out("cd outputs/a/b && ls ../../../third_party/..", targets))
+
     def test_voided_drafts_move_to_the_hidden_tree(self):
         hid = self.root / "hid"
         hid.mkdir()
