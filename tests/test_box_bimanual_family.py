@@ -31,7 +31,7 @@ def test_the_family_names_the_logistics_scene_two_tasks_and_a_scene_note():
     assert (FAMILY["hold_s"], FAMILY["judge_s"]) == (2.0, 5.0)  # TODO 38.19
     assert FAMILY["plan"] == "scripts/rsi/plans/box_bimanual.md" and (ROOT / FAMILY["plan"]).exists()
     for row in ROWS.values():
-        assert row["goal"] == ["held(nor_cal_box)", "lifted(nor_cal_box, 0.20, 30)"] and row["room"] == "logistics_room"
+        assert row["goal"] == ["held(nor_cal_box)", "lifted(nor_cal_box, 0.20, 60)"] and row["room"] == "logistics_room"
 
 
 def test_each_placement_keeps_the_near_face_within_15_cm_of_the_edge():

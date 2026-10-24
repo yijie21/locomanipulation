@@ -10,8 +10,8 @@ both hands) and the goal: the box lifted high and held.
 The robot walks to a pallet platform and lifts a cardboard box off it with both hands, high, level and steady. This
 run is one task family, `box_bimanual`, with the strict goal of 2026-10-24 (rules.md 36):
 - `held(nor_cal_box)`: the fingers of both hands on the box and the box off every surface;
-- `lifted(nor_cal_box, 0.20, 30)`: the box's lowest corner 20 cm or more above the platform top (0.371 m), its bottom
-  less than 30 deg off level;
+- `lifted(nor_cal_box, 0.20, 60)`: the box's lowest corner 20 cm or more above the platform top (0.371 m), its bottom
+  less than 60 deg off level (the user widened it from 30 deg, 2026-10-24);
 - both checked every 0.1 s and holding at every check over the round's last 5 s (`judge_s`): the end of the plan and
   then 2 s standing still (`hold_s`). The skill may still stand up or lift during the window; the box may not slip,
   tip or drop in it.
@@ -96,7 +96,7 @@ Measured ScaleBFM facts (controller comparison, 2026-10-13; the box line, TODO 2
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random box placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
 | D8 | The loop stops when the incumbent wins 70 % of the acceptance pool, or at a hard stop: 12 gate calls, the wall-clock cap (6 h), or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
-| D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 30)` at every 0.1 s check over the round's last 5 s. |
+| D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 60)` at every 0.1 s check over the round's last 5 s. |
 | D13 | Infeasibility is handled as in section 8. |
 | D14 | Graspability, the chooser, the body table and the preparatory layer describe one jaw; on this family they say nothing about the two-hand hold (rules.md 35). The failure classes are the two-hand set: walk_off, side_reach, one_hand_short, knocked, no_lift, low_lift, tilted, dropped_hold, slip, fell, other. |
 | 2026-10-23 | User for the first run: the seed is the motor layer only; grasps are computed from the scene's geometry by code the loop writes; earlier skill catalogs, loop records and grasp programs are not in the sandbox; the experience library holds the single-hand lines' lessons, not their code. |

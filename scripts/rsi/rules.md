@@ -214,7 +214,7 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     checked every 0.1 s and must hold at every check over the round's last `judge_s` seconds -- the end of the plan
     included, then the runner's `hold_s` standing still -- so a skill may still stand up or lift in the window, but
     the box may not slip, tip or drop at any check in it. The round record carries `judge` (the window, how many
-    checks held, the first one that failed and why, `ever_ok`). `box_bimanual` uses `held(X)` + `lifted(X, 0.20, 30)`
+    checks held, the first one that failed and why, `ever_ok`). `box_bimanual` uses `held(X)` + `lifted(X, 0.20, 60)`
     with `judge_s` 5 and `hold_s` 2; its failure classes add low_lift, tilted and dropped_hold (code: predicates.py,
     episode.judge_window, failure_class.py). Its seed is the first run's incumbent, not an empty package, so rule 27
     does not apply to it: change the pick that is there rather than writing a new one (prompt).
