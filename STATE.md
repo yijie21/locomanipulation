@@ -1,60 +1,50 @@
-# STATE — 2026-10-23（主线：场景 RSI。run C 跑完，封存集 36 → 38 / 50；TODO 37 内环提速 B–E 做完、没跑实验（用户：先不开 usage credits，B 到 E 按顺序做，先不开始实验）：37.1 `try.py`、37.2 压缩 history + 机制表、37.3 Engineer 软截止、37.4 验收门第二枪 + 草稿诊断池提前跑（规则第 16 版）；下一次 RSI 运行就是它们的检验；一轮 79 min 的分解见 `outputs/scene_rsi_20261016/speedup_20261023/analysis.md`；10-23 失败分析（`outputs/scene_rsi_20261016/failures_20261023/analysis.md`）：现任 19 / 90 败（手入手碰倒 7、木勺 7、走路 5、太宽 2、够不到 1），诊断池 30 / 30 饱和 → TODO 33.23 诊断池重抽（10-23 做了，用户“按这个顺序来，先做 33.23”：`diag_pool.py`、`loop.py redraw`、规则第 17 版；run C 沙盒驱动已同步，现任重抽完：60 个新起点、3 分钟，诊断池 0 → 15 / 30 失败，没续跑）；SuperMimic（arXiv 2610.28480）读完：是训法不是接口，不训控制器（用户），33.1.4 预测器做了（10-23：任务记录只有 41 个起点、按起点留出 AUC 0.5，改用 A800 15,120 格包络表 `body.reach()`，现行技能线预抓 AUC 0.78，IK 残差 0.60；看不到家具：0.3–0.4 m 那带的失败是花瓶和洗洁精）；33.12 挑选器做了（10-23：`choose.py` 站位、手、抓法、姿态一起打分，规则第 18 版；离线核对 150 局：成功局抓法种类全一致，木勺俯捏改斜 45° 失误概率 0.76 → 0.05）；33.5 准备动作层做了（10-23：`prep.py` 转 / 挪 / 清三种目标的接口和挑选器，起点 `placement` 选项，能力族 `grasp_prep` 三个任务、种子 `seeds/grasp_c11`，规则第 19 版；挑选器改为只站 `approach_edges`、算矮家具、走廊被挡算要准备）；都没接进技能、没开运行；36.10 未定）
+# STATE — 2026-10-24 02:10 UTC（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-23）：合并了 origin/main 的 6 个提交（henry-zhao 在 SRA0889 上改的 LOCOMANI_WORKSPACE / LOCOMANI_VENV / RSI_GPUS / RSI_PROCS，合并提交 `366bb8f`），连同文档更新一起推送（用户 10-23“先把文档更新，让另一个开发者能够复现目前为止的 RSI 过程，然后 push 上去”）。henry-zhao 直接推 origin/main，可能自带检查失败；推之前先 `git fetch` 再合并。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`。已确认：`origin/main` = `edeb44a0`（10-24 02:00 推送，先合并了 henry-zhao 10-23 的 5 个提交）；之后只有 handoff 提交，没推送。决策和被否决的方案见 `DECISIONS.md` 2026-10-23 – 10-24 一节。
 
 ## 提交与磁盘
+- 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`、`.playwright-mcp/`、`run_engineer.out`。按名字暂存，不用 `git add -A`。
+- henry-zhao 直接推 origin/main：推之前 `git fetch` 再合并；合并提交的钩子跑全套 CPU 测试（5–8 分钟）。只改根目录 `.md` 的提交只跑文档检查。
+- 提交前确认：`git config --get core.bare` 是 false，`git config user.name` 是 yijie21（测试改坏过共享配置，29.8 已修）。
+- 已确认（10-23 13:00）：`/workspace` 剩 138 GB；A/B 重放、replay2、rsi-phase4 四个臂的 `.git` 打成了副本根目录的 `_sandbox_git.bundle`，恢复步骤 `/workspace/code/rsi-scene/_SANDBOX_GIT_BUNDLES.md`。
 
-- 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`、`.playwright-mcp/`。按名字暂存，不用 `git add -A`。
-- 已确认（10-23 13:00）：`/workspace` 剩 138 GB。会话 locomanipulation-ea（视觉 RSI 新线，用户 10-23 开）清了缓存 31 GB，又在主线同意后省了 32.5 GB：76 个 A/B 重放（`rsi-scene/ab-*`）、`replay2-r2*`（6 个）、`rsi-phase4/arm-{a,a2,b,b2}` 的 `.git` 打成副本根目录的 `_sandbox_git.bundle`（另有 `.refs`、`.config`）后删掉，工作区、记录、`~/.claude/projects` 的会话记录都在；恢复步骤 `/workspace/code/rsi-scene/_SANDBOX_GIT_BUNDLES.md`（LFS 对象从主仓库 `.git/lfs` 拷），这些副本的 `assets/`、`papers/` 10-21 已删，要恢复先按它克隆；`replay-ga-i3-{mc,test}` 整个删了（32.5 的桩重放）。清单和日志 `outputs/cleanup_20261023/`。正在用和有用的沙盒（`ga-*`、`grasp-atomic-a`、`pick-a`、`r1-*-a`、`r2-*-a`）没动；`rsi-phase4/bottle-1` 不存在。
-- 10-23 推送到 origin/main = `d9e4a3f`；之后的本地提交（`2442257` resume 修复、33.11）按用户要求再推。
+## 另一个会话（已确认）
+- `locomanipulation-ea`：视觉 RSI 新线，worktree `/workspace/code/locomanipulation-vision-rsi`，分支 `design/vision-rsi-20261023`，不碰 main。共用 12 个仿真槽；它在 GPU 1 上开 Unreal 和 SAM 3 服务。
+- 约定：主线开仿真或 RSI 运行前先发消息给它（它会降进程数或关 Unreal）；RSI 循环在跑时它不开 Unreal；Unreal 开着时主线不做占满 CPU 的事。
 
-## 当前进度（全部已确认）
+## 当前进度（已确认）
+- grasp_atomic 线：封存集 0 → 31 → 36 → 38 / 50（run B0、B、C，沙盒 `ga-confirm-025-20261021`、`ga-cont-b-20261022`、`ga-cont-c-20261022`）；C 续跑第 13、14 轮没接受，现任仍是 `5cba2fa49d31`（TODO 37.7）。交接文档 `docs/handoff/grasp-atomic-line-20261023.md`。
+- grasp_prep 第一次运行（TODO 33.5.1，沙盒 `grasp-prep-a`）：封存集 17 → 27 → 31 / 40；循环写出准备动作 `clear.py`；每轮约 63 分钟；停在验收池 29 / 32。
+- Reviewer 默认推理档位 high（37.5，`outputs/scene_rsi_20261016/reviewer_effort_20261023/analysis.md`）；经验库给法不改（33.11）。
+- 10-23 做好、还没在任何运行里用过：33.1.2 预测进局记录、33.15.1 记录库、33.20 按层归因、33.19 设计探针、37.8 越界放行场景目录（规则第 20 版）。
+- 记录库文件 `outputs/scene_rsi_20261016/records/library.jsonl`：110 个沙盒、15,911 局，没收 A800 的局。
+- A800（`ssh -p 26804 root@14.103.60.188`）10-23 起连不上。
 
-- 32（10-21）：仿真提速 S1 + S3 + 休眠，150 局 579 → 224 s；重放（`replay.py`）+ 五组对照（`outputs/rsi_speed_20261021/ab/`）：Reviewer 工具、分范围 Reviewer 没好处（关），Engineer 保持 xhigh，三候选 + Composer 和经验库倾向采用，进 32.12。
-- 32.4.4（A800）：书本任务在 0.5 m/s 下变差是到位后身体还在晃（预抓误差 2.27 → 等 1 s 1.22 cm），成功只差 4–7 / 95、不显著；动作层不改，等稳留给技能层（32.4.5）。
-- 33.1.1（A800）：身体包络 15120 格，5000 成功；前伸上限 0.6–0.7 m，0.7 m 以内的失败是控制器送不到；姿态原语骨盆最低 0.60 m，下蹲不帮忙（`outputs/scene_rsi_20261016/capability/envelope_remote/summary.txt`）。33 的 D1–D5 待用户定。
-- 34（A800）：gr00t_wbc 走路更顺但场景任务 10 / 92 vs ScaleBFM 55 / 92，不换。
-- 31（完成，2026-10-21）：任务族 `grasp_atomic`，空种子 → 2 次采纳；封存集 50 局：种子 0，第 1 版 18，第 2 版 24（= 当前目录 24，旧种子 2）。沙盒 `/workspace/code/rsi-scene/grasp-atomic-a`；参照和被拒候选的封存局在 `outputs/scene_rsi_20261016/grasp_atomic_refs/`；页面 https://claude.ai/artifact/Cm4CZTFfFp8tvid6GxyKKp （源 `outputs/scene_rsi_20261016/grasp_atomic_media/`）。
-- 27.14：台面高度改按面积、视频按实测手指画，已改并重测：8 族 188 → 187 / 632，标定 101 → 106 / 856，做成的任务 30 → 31。报告视频在新场景重跑、Unreal 重渲（10 局因 10-19 补碰撞变失败，用户定保留原起点）。报告网页第 4 版：https://claude.ai/artifact/1YY339VYjnSk8FTG1WCfBN （分享设置是“任何拿到链接的人”，原来就是）。
-- 29：文档主线换成 RSI（`docs/rsi.md` 命令、`docs/rsi_design.md` 原理），VLA 文档原地归档；代码在 `scripts/rsi/`；复现材料 `rsi_kit/` 进了 git（用户推翻场景发现方案第 17 条），`git archive` 里没有它。
-- 29.5 新读者测试：做完 0–4 节和 5.1，L1 第一次迭代的 Reviewer 跑到一半时按用户要求停了；7 处偏差已记进 TODO 29.5.1–29.5.8；现场见 `/workspace/tmp/fresh_rsi_20261020/PAUSED.md` 和 `report.md`。
-- 30：动作层默认走路速度 0.25 → 0.5 m/s（`58d1dc5`，`rules.md` 第 7 版）。0.25 m/s 时 ScaleBFM 碎步蹭地（15 cm 步长、2 cm 抬脚、34–40% 滑行），0.5 m/s 正常迈步。对比视频页（私有）：https://claude.ai/artifact/Ss5X8HZdbX1f9RFZiqjfAe
-- 28：AMO 不用，控制器还是 ScaleBFM（用户定）。第 2 轮外环仍暂停（用户 10-19）。
-
-## 下一步（10-22 整理的待办，编号见 `TODO.md`）
-
-- 0. 10-23 grasp_prep 第一次运行跑完（TODO 33.5.1，沙盒 `grasp-prep-a`）：封存集 17 → 27 → 31 / 40，循环写出准备动作 `clear.py`，停在验收池 29 / 32；每轮约 63 min；3 份草稿因用了原仓库场景目录的绝对路径被判越界作废，10-24 按用户放行了这个目录本身（37.8）。run C 续跑两轮（37.7）和 37.5（Reviewer 改 high）见 TODO。
-- 1. 33（用户 10-23 定的顺序：33.23 → 33.1.4 预测器 + 33.12 → 33.21 → 33.5 → 37.5 / 37.6；33.23、33.1.4 预测器、33.12 挑选器、33.5 准备动作层做了；33.21 脆弱起点等 A800 能连上；下一步要么开 `grasp_prep` 的运行（`sandbox.py <沙盒> grasp_prep` 建沙盒再 `loop.py run grasp_prep --stop-rate 0.9`，约 8 小时），要么 37.5 / 37.6，用户定；33.8、33.13 结构、33.14 已做；选项 B 续跑完：沙盒 `ga-cont-b-20261022`，第 6、9 轮接受，封存集 31 → 36 / 50；再按 33.15–33.18 续跑 `ga-cont-c-20261022`，第 11 轮接受，封存集 38 / 50，见 TODO 33.18.1；33.18.2 预算 bug 10-23 修了，只数本次运行的验收门调用）：33.10 已做（`ab5403d`，6 / 10 次运行的第一个结论改判接受）；33.15–33.18 已做（10-22，规则第 15 版，D12–D14 按推荐，33.15.1 记录库没做）；接着从第 9 轮的现任接着跑一轮（`--stop-rate`），再 33.7 三人按范围分工、33.11，再 33.1 身体模型（含 10-22 A800 经验：33.19 设计探针、33.20 按层归因、33.21 脆弱起点、33.22 算力分工，D16–D20；A800 数据 `outputs/scene_rsi_20261016/a800_20261022/summary.md`）（含 33.1.2 动手前预测）、33.9 关键点约束原语、33.12 站位和抓法一起选、33.2、33.3、33.4、33.5、33.6。10-22 失败分析：32.12 第 1 轮那版 90 局失败 38（物体比爪口宽 9 + 5、侧抓够不到 13、木勺 5、没走到站位 7、摔倒 3）。
-- 2. 小项：29.8 查测试在提交钩子里跑 git（29.5.1–29.5.8 文档偏差、29.7 `walk_mars` 登记 10-23 做完）。
-- 3. 等用户：32.7 在账号里开 usage credits（角色用快速输出）；第 2 轮外环何时恢复（10-19 起暂停，27.5.3 / 27.5.4 / 27.8.5 / 27.10.8 跟着它）。
-- 4. 可选 30.6 边走边转；推迟 27.6 对照（写论文前；10-22 加第 ③ 组 RoboHarness 式运行时大模型基线）。放弃（10-22 用户：研究初期不做严格对照）：35.2、30.4、30.5、29.5.9、32.4.5、27.2.1.2、27.7、27.13.3。
-- 最近完成：33.19（10-23：设计探针 `design.py`，四种因素，本机队列上跑，每轮至多 2 个）、33.20（10-23：动作层调用日志 + `isolate.py` 单独重跑失败命令，判动作层还是技能；run C 两局摔倒都是动作层）、33.1.2（10-23：每次单手伸手动之前，身体模型的预测写进局记录，封存集汇总加 `prediction`）、33.15.1（10-23：记录库 `scripts/rsi/records.py`，110 个沙盒 15,911 局；假设的 `measure` 在探针之后按库定状态，规则第 20 版）、33.11（10-23：`scripts/rsi/report/library_monitor.py`；有库运行四成假设点名经验库但用词不像原文、每轮假设数没变少，不改给法；B、C 七成假设是 Manager 认定的旧机制，`outputs/scene_rsi_20261016/library_20261023/analysis.md`）、29.10 / 29.5.x / 29.7（10-23：交接文档 `docs/handoff/grasp-atomic-line-20261023.md`——grasp_atomic 四次运行、每版改动、复现和续跑命令；runbook 8 处偏差、§5.2 工具和开关改列表；`walk_mars` 进 `configs/scenes.yaml`）、37.0 / 37.1（10-23：一轮时间分解；角色实验命令 `try.py`，走队列并行、240 局预算；修 `family.hidden_seeds` 在隐藏树锁住时崩）、33.18.1 / 33.18.2（run C 38 / 50；验收门预算只数本次运行）、33.8 / 33.13（结构）/ 33.14（多赢 − 少赢 ≥ 3 且少赢 ≤ 多赢 / 3，候补池留 2 个，`base` / `adopted_pool`，反复提出的优先，重开最多连两轮，技能代码不许写物体名字）、36.7 / 36.8（越界作废一轮、连续两轮才停；删“连续 3 次被拒”停止；Manager 第 5 轮上下文 93 → 42 KB；删 `library/`、`review_replay.py`；工具和展示脚本在 `scripts/rsi/report/`）、36（流程复查，约 60 条；32.12 第 1 轮被采用的草稿读过经验库里的旧抓取代码，31 vs 20 不干净）、32.12 / 35.3、32.15（三 Engineer + Composer + 经验库默认，规则第 11 版）。
+## 下一步（编号见 `TODO.md`）
+- 37.9：开一次新运行，用 `184cb113` 之后建的沙盒，检验上面五项；跑哪个任务族（续 grasp_atomic 还是 grasp_prep）用户定，开跑前先通知 `locomanipulation-ea`。
+- 33.21 / 33.22：A800 能连上后做脆弱起点和算力分工。
+- 33.7（三个 Engineer 按范围分工）或 37.6（下一轮 Reviewer 提前跑），用户定。
 
 ## 未解决 / 卡点
-
-- 已确认：登记表基准和复现材料是 0.5 m/s + 休眠的记录（`sleep_20261021`），动作层默认已是 0.25 m/s；按用户 10-22 不重测，下次外环的回归拿它比，结论只作参考。
-- 已确认：同一台机器上用复现材料重测 pick_single 不是逐局相同（b 3 c 3，总数相同）。用户 10-22：不查原因，文档改成“总数相近”（29.5.6）。
-- 已确认：测试在 worktree 的提交钩子里继承 `GIT_DIR` 会改共享的 `.git/config`（10-20 bare；10-23 12:35 又一次：bare + user `t <t@t>`，视觉 worktree 的索引多了 `a.txt`）；已改回，三个会跑 git 的测试现在都清 `GIT_*`（29.8 完）。提交前 `git config --get core.bare` 应是 false、`git config user.name` 应是 yijie21。
-- 已确认：A800 和本机同一设置的场景局只有 73 / 80 结局相同，远端的局不能和本机的配对。
-- 规则：`pkill -f` 会杀到命令行含同样字样的 shell，停进程用明确的 PID 或会话号（`pkill -s <sid>`）；不改正在跑的 bash 脚本。
+- 已确认：登记表基准和复现材料是 0.5 m/s + 休眠的记录（`sleep_20261021`），默认已是 0.25 m/s；按用户不重测，回归结论只作参考。
+- 已确认：A800 和本机同一设置只有 73 / 80 局结局相同，远端的局不和本机配对。
+- 已确认：本机重测 pick_single 总数相近、不逐局相同（用户：不查）。
+- 待验证：设计探针、记录库的判定、按层归因在真实运行里帮不帮得上（37.9）。
+- 待查：部分会话账本里的 `usage` 偏少（37.5.1），分析一律用会话记录。
+- 规则：停进程用明确的 PID 或进程组（`kill -TERM -<pgid>`），不用 `pkill -f` / `pgrep -f` 去匹配写在同一条命令里的文字；不改正在跑的 bash 脚本。
 
 ## 关键路径与命令
-
 ```bash
-cd /workspace/code/locomanipulation && . scripts/paths.sh && export TMPDIR=/workspace/tmp NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2 && PY=$VENV_SIM_PY
-# 全部任务族和标定样本按当前技能目录重测（后台跑，日志看每族一行）
+cd /workspace/code/locomanipulation && . scripts/paths.sh && export TMPDIR=$LOCOMANI_TMP NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2 && PY=$VENV_SIM_PY
+# 新运行：照 outputs/scene_rsi_20261016/grasp_prep_a/launch.sh 写一份（建沙盒、核对文件、loop、封存集），nohup setsid 后台跑
+python3 scripts/rsi/sandbox.py $LOCOMANI_WORKSPACE/code/rsi-scene/<名字> grasp_prep
+cd <沙盒> && RSI_MAX_WALL_H=8 $PY scripts/rsi/loop.py run grasp_prep --stop-rate 0.9; $PY scripts/rsi/sealed.py grasp_prep --all
+# 续跑一个已停的沙盒（沙盒驱动要先按名字同步：loop.py 等单个文件，不拷 families/ experience/ seeds/）
+cd <沙盒> && $PY scripts/rsi/loop.py run grasp_atomic --stop-rate 0.9 --max-iters 2
+python3 scripts/rsi/records.py build <沙盒> ...        # 原仓库的记录库（写 outputs/scene_rsi_20261016/records/library.jsonl）
+python3 scripts/rsi/report/library_monitor.py run <沙盒> --out <目录>/library.json   # 33.11 的两个数
+python3 outputs/rsi_speed_20261021/ab/run_ab.py <plan.json> --jobs 8                  # 重放对照（37.5 用过）
 nohup setsid $PY scripts/rsi/regress.py run <tag> --procs 12 > /workspace/tmp/regress_<tag>.log 2>&1 &
-# 32.12 完整内环确认：launch.sh <提交> 从头起；resume.sh 从第 4 轮的 Prober 续跑
-nohup setsid outputs/rsi_speed_20261021/confirm/resume.sh > outputs/rsi_speed_20261021/confirm/run_resume.log 2>&1 &
-PYTHONPATH=src $PY scripts/rsi/successes.py            # 按任务统计做成 / 偶尔成 / 没成
-PYTHONPATH=src $PY scripts/rsi/kit.py pack              # 登记表基准前移后重打复现材料，再按名字提交 rsi_kit/
-# 步态对比视频（空地直走 4 m，两种速度）：输出在 outputs/scene_rsi_20261016/gait/
-CUDA_VISIBLE_DEVICES=1 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 PYTHONPATH=src $PY outputs/scene_rsi_20261016/gait/gait_video.py 0.25 0.5
-# 报告视频：先 bash scripts/start_unreal.sh --gpu 1（渲染时不跑仿真），脚本 /workspace/tmp/report_unreal_v4.sh；停：bash scripts/stop_unreal.sh
-# 新读者测试：删掉 /workspace/tmp/fresh_rsi_20261020/repo 后 bash /workspace/tmp/fresh_rsi_20261020/launch.sh（提示在 prompt.md，监视 watch2.sh）
 ```
-
-- 登记表 `outputs/scene_rsi_20261016/outer/registry.json`，各族 `last` = `sleep_20261021`（0.5 m/s + 休眠；0.25 m/s 的上一批是 `surfaces_20261020`）；备份 `/workspace/tmp/registry_before_surfaces.json`。
-- 场景 `outputs/scene_discovery/adt_apartment_mars/`（台面修正前的备份 `adt_apartment_mars.bak_20261020_before_surface_heights/`）；沙盒都在 `/workspace/code/rsi-scene/`。
-- 更早的线（warehouse / bottle 的 ScaleBFM RSI、SONIC 路线）都停着，状态在 TODO 25、26。
+- 场景 `outputs/scene_discovery/adt_apartment_mars/`；沙盒都在 `/workspace/code/rsi-scene/`；登记表 `outputs/scene_rsi_20261016/outer/registry.json`（`last` = `sleep_20261021`）。
+- 更早的线（warehouse / bottle 的 ScaleBFM RSI、SONIC、VLA）都停着，见 TODO 1–26。
