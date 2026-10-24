@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 23, 2026-10-24)
+# Rules for the scene RSI loop (TODO 27, version 24, 2026-10-24)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -161,6 +161,10 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     by features, the generic pick as the fallback, so a similar object reuses it. A flow is never chosen by an
     object's name: a string constant equal to a scene object's key, body, ADT instance name or name stem (Mug_2,
     Mug_2_object, Mug) outside a docstring voids the draft (code); semantic fields (category, prototype) are features.
+    Whether a flow serves similar objects is checked after a run (TODO 33.13, D15): on the three objects outside the
+    family its `match` and features rank closest, with and without it; it is promotable when no similar object loses
+    a round with it and at least two it matches were run, else it stays local and its SIGNATURE should stay as tight
+    as its birth objects. The verdict is a `recipe_transfer` row in the run's ledger (version 24).
 
 31. Every grasp step of a skill goes through `stage()` (src/locomani/tasks/scene/stage.py, TODO 33.16, D12): the motor
     call, a check of the measured state after it (`stance_check`, `reach_check` with its stall ratio `track_ratio`,
