@@ -53,3 +53,13 @@ def test_reaches_come_from_the_call_log_in_the_pelvis_heading_frame():
     assert math.isclose(r["dx"], -0.02, abs_tol=1e-6)  # 2 cm short of a target ahead, in the heading frame
     assert math.isclose(r["dy"], 0.0, abs_tol=1e-6) and math.isclose(r["dz"], 0.0, abs_tol=1e-6)
     assert RV.segments(z, dict(steps=[dict(step="pregrasp", t0=1.0, t1=2.0, jaw_err_cm=2.0)])) == []  # no call log
+
+
+def test_the_free_space_reach_grid():
+    import reach_bias_probe as RB
+
+    cells = RB.grid_cells()
+    assert len(cells) == 2 * 3 * 2 * 4 * 9 * 5 and len({c["id"] for c in cells}) == len(cells)
+    c = next(c for c in cells if c["side"] == "right" and c["y_out"] == 0.15)
+    assert c["y"] == -0.15  # outward of the right hand is -y
+    assert RB.features(c)[:3] == [c["x"], 0.15, c["z"]]

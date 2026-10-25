@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 24, 2026-10-24)
+# Rules for the scene RSI loop (TODO 27, version 25, 2026-10-25)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -213,7 +213,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     them); the actions are skills the loop writes. A kind no action implements is a gap the Reviewer reports
     (`prep.wanted`). A task family may give its tasks a `placement` option (`depth_m`, `yaw_deg`, `blocker`) so its
     pools hold the situations that need these actions; it changes no other family's pools (code: start.sample_start,
-    family.draw; prompt) (version 19).
+    family.draw; prompt) (version 19). In a scene whose scene file lists `movable` floor furniture (TODO 33.24.3:
+    movable_scene.py, run at the origin), a fourth kind, `floor`, moves a chair or a stool near the object 20-30 cm away from
+    it or to a side, after turn, pull and clear; the action that moves it is the loop's, and after it moved a piece
+    the skill calls `floor.refresh(world)` so the map shows it where it now stands (every round starts from the
+    scene's map again). A family may keep only the starts that need one kind (`require_prep`) (version 25).
 
 35. Design probes (TODO 33.19; D16): a hypothesis may ask for one, `design` {factor, levels, starts, tasks?, name?}:
     one factor forced at a few levels on the same diagnostic starts, under the incumbent -- `param` (an overridable

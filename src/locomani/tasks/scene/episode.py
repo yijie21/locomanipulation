@@ -12,6 +12,7 @@ import numpy as np
 from locomani.backends.scalebfm.motor import Outcome
 from locomani.pipeline.execution_record import RoundResult
 from locomani.scene_discovery.predicates import parse
+from locomani.tasks.scene import floor
 from locomani.tasks.scene.start import Start
 from locomani.tasks.scene.world import SceneWorld, Task
 
@@ -64,6 +65,7 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
     m.reset(start.robot_xy, start.robot_yaw)
     for k, (pos, quat) in start.placements.items():
         m.place(world.meta["objects"][k]["body"], pos, quat)
+    floor.reset(world)  # TODO 33.24.3: a skill that moved floor furniture rebuilt the map; the pieces are back now
     seated = {k: round(world.seat(k), 4) for k in start.placements}  # placements drawn on older surface heights
     seated = {k: v for k, v in seated.items() if v > 0}
     ctx = SkillContext(world, task, np.random.default_rng(start.seed))

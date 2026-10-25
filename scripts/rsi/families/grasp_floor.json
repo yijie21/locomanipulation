@@ -1,0 +1,120 @@
+{
+ "name": "grasp_floor",
+ "about": "TODO 33.24.3 (user 2026-10-24/25): held(X) of an object on the dining table where a chair stands in the only stance that serves it, in the apartment variant whose chairs and step stool are free bodies (scripts/rsi/movable_scene.py); a start is kept only when the preparatory-action selector proposes moving a piece of floor furniture (`require_prep: floor`); the seed is the grasp_atomic line's incumbent after run C; new skill: the preparatory action floor (locomani.tasks.scene.prep, floor)",
+ "scene": "outputs/scene_discovery/adt_apartment_mars_movable",
+ "tasks_file": "scripts/rsi/families/grasp_floor_tasks.jsonl",
+ "tasks": [
+  "floor_Mug_2",
+  "floor_NIT_CoffeeCan_Anon",
+  "floor_GreenApple_A",
+  "floor_Donut_B"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "require_prep": "floor",
+ "skip_limit": 400,
+ "pools": {
+  "diag": {
+   "seed": 430000,
+   "n": 20
+  },
+  "accept": {
+   "seed": 530000,
+   "n": 24
+  },
+  "sealed": {
+   "seed": 630000,
+   "n": 32
+  }
+ },
+ "plan": "scripts/rsi/plans/grasp_floor.md",
+ "skills_note": "the incumbent's skills; the seed is scripts/rsi/seeds/grasp_c11, the grasp_atomic line's incumbent after run C (iteration 11, 2026-10-23: pick, rim, clutter, doorway, recipes/tall_narrow), which the loop wrote; what this family adds is the floor preparatory action registered with locomani.tasks.scene.prep",
+ "sandbox": {
+  "seed": "scripts/rsi/seeds/grasp_c11",
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/keypoints.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/prep.py",
+   "scripts/rsi/plans/grasp_floor.md",
+   "scripts/rsi/families/grasp_floor.json",
+   "scripts/rsi/families/grasp_floor_tasks.jsonl"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.keypoints",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "discovery",
+   "experiments",
+   "feasibility_stock_copy",
+   "unreal_room",
+   "unreal_room_bake.log",
+   "unreal_room_level.log",
+   "unreal_level_build.log",
+   "mujoco_build.log",
+   "lint.json"
+  ]
+ }
+}

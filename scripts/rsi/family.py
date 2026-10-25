@@ -62,6 +62,36 @@ def task(fam: dict, task_id: str) -> Task:
     return Task.from_row(fam["rows"][task_id], fam["meta"])
 
 
+_STATIC: dict = {}
+
+
+def needs_prep(fam: dict, t, start: dict, kind: str) -> bool:
+    """TODO 33.24.3: a family's `require_prep` -- the start counts only when the chooser finds no standing option for
+    the task's object and a preparatory goal of `kind` would give one (prep.propose), the robot walking from its spawn.
+    The scene's physics model loads once per process (about 7 s)."""
+    from locomani.tasks.scene import choose as C
+    from locomani.tasks.scene import graspability as G
+    from locomani.tasks.scene import prep as P
+
+    sd = str(fam["scene_dir"])
+    if sd not in _STATIC:
+        _STATIC[sd] = G.StaticScene(fam["scene_dir"])
+    s = _STATIC[sd]
+    s.place(dict(start.get("placements") or {}))  # objects on tables leave the map as it is: built once per process
+    key = t.objects[0]
+    was = P.ACTIONS.get(kind)
+    P.ACTIONS[kind] = was or (lambda ctx, plan: None)  # listed whether or not a skill implements it yet
+    try:
+        best = C.choose(s, key, start.get("robot_xy"))
+        if best is not None and not best.needs_prep:
+            return False
+        return bool(P.propose(s, key, start.get("robot_xy"), kinds=(kind,)))
+    finally:
+        if was is None:
+            P.ACTIONS.pop(kind, None)
+        s.place({})
+
+
 def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i: int = 0) -> dict:
     """Write the pool's starts into `out`; returns {"written": n, "skipped": [(task, seed, why)], "next_seed": s}.
     `seed`, `n` and `tasks` override the family's pool spec and `start_i` is where the task rotation starts (TODO
@@ -78,7 +108,7 @@ def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i
     while written < n and tasks:
         t = task(fam, tasks[i % len(tasks)])
         st = None
-        for _ in range(SKIP_LIMIT):
+        for _ in range(int(fam.get("skip_limit") or SKIP_LIMIT)):
             try:
                 st = sample_start(
                     fam["meta"],
@@ -93,6 +123,8 @@ def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i
                 )
                 if goal_holds(fam["rows"][t.id]["goal"], fam["meta"], st.to_dict()):
                     raise RuntimeError("the goal holds at the start")
+                if fam.get("require_prep") and not needs_prep(fam, t, st.to_dict(), fam["require_prep"]):
+                    raise RuntimeError(f"no {fam['require_prep']} preparation needed")
                 break
             except RuntimeError as e:
                 st = None

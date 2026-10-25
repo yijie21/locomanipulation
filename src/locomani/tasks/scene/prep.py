@@ -1,6 +1,7 @@
 """TODO 33.5 (plan section 2, D2, D5, D9; user 2026-10-23 "先做 33.5"): the preparatory-action layer -- what a skill does
 when the chooser finds no stance from which the hand is delivered: turn the object so a side that fits faces a stance,
-pull or push it across its support toward an edge, move a neighbour out of the hand's corridor. The user's order
+pull or push it across its support toward an edge, move a neighbour out of the hand's corridor, or (TODO 33.24.3,
+floor.py, in a scene with movable floor furniture) move a chair or a stool out of the way. The user's order
 (2026-10-22): nudge the object so the narrow side faces you; stand where it is nearest. This module is the interface
 and the selector, written by hand once (D2); the actions themselves -- the motions that turn, pull and clear -- are
 skills the loop writes and registers here.
@@ -28,17 +29,20 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 
 from locomani.tasks.scene import choose as C
+from locomani.tasks.scene import floor as FL
 from locomani.tasks.scene import graspability as G
 from locomani.tasks.scene.start import SURFACE_MARGIN_M, footprint, inside_top, overlap
 
-KINDS = ("turn", "pull", "clear")
+KINDS = ("turn", "pull", "clear", "floor")  # floor: a piece of floor furniture moved aside (TODO 33.24.3, floor.py)
 TURN_STEP_DEG, TURN_MAX_DEG = 30.0, 90.0  # turns tried about the vertical, smallest first, either way
 PULL_STEP_M, PULL_MAX_M = 0.10, 0.50  # pulls tried toward each approach edge
 EDGE_IN_M = 0.12  # a pulled object stops this far inside the edge
 CLEAR_ASIDE_M = (0.10, 0.15, 0.20)  # a neighbour is moved this far out of the corridor, either way ...
 CLEAR_BACK_M = (0.15, 0.20)  # ... or this far along the approach, behind the object
 SECOND_STEP = 0.30  # score for a clear that leaves one more neighbour to move
-COST = {"turn": 0.10, "pull": 0.15, "clear": 0.20}  # the user's order, as score: turn before pull before clear
+COST = {"turn": 0.10, "pull": 0.15, "clear": 0.20, "floor": 0.25}  # the user's order, as score: turn before pull
+# before clear; moving furniture last
+TOL_FLOOR_M = 0.08  # a pushed piece of furniture lands this loosely (the 2026-10-24 probe: 19-35 cm for 30 asked)
 TURN_W = 0.10 / 90.0  # score per degree turned
 PULL_W = 0.3  # score per metre moved
 TOL_TURN_DEG = 10.0  # what counts as the goal met, for the action and the check after it
@@ -192,7 +196,8 @@ def blockers(world, key: str, u: np.ndarray, z: float) -> list[str]:
 
 
 def goals(world, key: str, before: C.Option | None) -> list[PrepGoal]:
-    """The candidate goals: turns, pulls toward each approach edge, the corridor blocker moved aside."""
+    """The candidate goals: turns, pulls toward each approach edge, the corridor blocker moved aside, and (in a scene
+    with movable floor furniture, floor.py) a piece near the object moved out of the way."""
     p, q = world.object_pose(key)
     p, q = np.asarray(p, float), np.asarray(q, float)
     out = []
@@ -223,6 +228,9 @@ def goals(world, key: str, before: C.Option | None) -> list[PrepGoal]:
                                     move_m=float(math.hypot(lat, back)),
                                     direction_deg=math.degrees(math.atan2(lat * left[1] + back * u[1], lat * left[0] + back * u[0])),
                                     note=f"move {bk} {how}, out of the hand's corridor"))  # fmt: skip
+    for g in FL.goals(world, key):  # floor furniture near the object (a scene with movable pieces only)
+        out.append(PrepGoal("floor", g["key"], g["pos"], g["quat"], move_m=g["move_m"], direction_deg=g["direction_deg"],
+                            tol_m=TOL_FLOOR_M, note=g["note"]))  # fmt: skip
     return out
 
 
@@ -235,9 +243,11 @@ def propose(world, key: str, start_xy=None, kinds=KINDS, table: str | None = Non
     before_p = None if before is None else before.p_miss
     plans = []
     for g in goals(world, key, before):
-        if g.kind not in kinds or not on_support(world, g.key, g.pos, g.quat):
+        if g.kind not in kinds or (g.kind != "floor" and not on_support(world, g.key, g.pos, g.quat)):
             continue
         view = Shifted(world, {g.key: (np.asarray(g.pos, float), np.asarray(g.quat, float))})
+        if g.kind == "floor":  # the map, too, with the piece where it would stand
+            view.occ, view.nav = FL.navigation(view)
         opts = C.options(view, key, start_xy, postures=(None,), table=table)
         good = [o for o in opts if o.p_miss <= C.P_MISS_OK and o.corridor is None]  # a free corridor, delivered
         remaining = None

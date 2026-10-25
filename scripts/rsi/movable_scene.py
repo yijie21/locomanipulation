@@ -11,7 +11,9 @@ other furniture's collision meshes, whose convex hulls fill the space under a ta
 conaffinity CONAFFINITY; the robot's conaffinity is 5, the furniture's contype 4, the walls' 6, the free objects'
 conaffinity 3).
 The scene file marks them free and movable and drops the seat surfaces they carried (a seat that moves is not a
-support the planners may count on). Everything else is the source scene's: the small files are copied, the mesh
+support the planners may count on), and records under `movable` each piece's navigation footprint in its own frame and
+the room obstacle it is (the step stool, which the map left out, gets its box as a new obstacle), so
+locomani.tasks.scene.floor can rebuild the map with the pieces where they are (TODO 33.24.3). Everything else is the source scene's: the small files are copied, the mesh
 directory linked; SceneWorld builds the physics copy (`<dir>_physics`) on first use.
 
     python3 scripts/rsi/movable_scene.py build [--src outputs/scene_discovery/adt_apartment_mars] [--dst ...] [--keys K ...]
@@ -21,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import shutil
 import sys
@@ -32,17 +35,13 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "outputs" / "scene_discovery" / "adt_apartment_mars"
 DST = REPO / "outputs" / "scene_discovery" / "adt_apartment_mars_movable"
-MOVABLE = (
-    "BlackKitchenChair",
-    "BlackKitchenChair_B",
-    "YellowDiningChair",
-    "WhiteChair",
-    "BlackBarStool_B",
-    "StepStool",
-)
+MOVABLE = ("BlackKitchenChair", "BlackKitchenChair_B", "YellowDiningChair", "WhiteChair", "StepStool")
+# not the bar stool: walking into it moved it 11 cm and both hands 1.5 cm (push probe 2026-10-24); the user kept the
+# chairs and the step stool (2026-10-25)
 CONTYPE, CONAFFINITY = "5", "3"  # not 7: the other furniture collides by its collision mesh's convex hull, solid under
 # a table top -- a dining chair tucked under the table starts 20-30 cm inside it and is thrown out (2026-10-24)
 FRICTION = "0.6 0.005 0.0001"
+OBSTACLE_MATCH_M = 0.05  # a room obstacle centred this close to a piece is its footprint on the map
 SMALL_FILES = ("colliders.json", "floorplan.png", "panels.json", "settle.json", "shadowed.json", "surface_heights.json",
                "upright.json")  # fmt: skip
 
@@ -120,7 +119,24 @@ def build(src: Path = SRC, dst: Path = DST, keys=MOVABLE) -> dict:
         dropped = [s for s in list(meta["surfaces"]) if s.startswith(f"{key}__")]
         for s in dropped:
             meta["surfaces"].pop(s)
-        done[key] = dict(geoms=len(geoms), colliders=colliders, mass_kg=mass, surfaces_dropped=dropped)
+        # TODO 33.24.3: the navigation map's footprint of it -- the room obstacle centred on it, else (the step stool,
+        # which the map left out) its box -- kept in its own frame, so the map can follow it when it moves
+        obs = meta["room"].setdefault("obstacles", [])
+        idx = next((i for i, poly in enumerate(obs)
+                    if np.linalg.norm(np.asarray(poly, float)[:, :2].mean(0) - p_b[:2]) < OBSTACLE_MATCH_M), None)  # fmt: skip
+        yaw = math.atan2(2 * (q_b[0] * q_b[3] + q_b[1] * q_b[2]), 1 - 2 * (q_b[2] ** 2 + q_b[3] ** 2))
+        if idx is None:
+            hx, hy = (float(v) for v in o["box"]["half_extent"][:2])
+            corners = np.array([[-hx, -hy], [hx, -hy], [hx, hy], [-hx, hy]]) @ np.array(
+                [[math.cos(yaw), math.sin(yaw)], [-math.sin(yaw), math.cos(yaw)]]
+            )
+            obs.append((corners + p_b[:2]).tolist())
+            idx = len(obs) - 1
+        world_poly = np.asarray(obs[idx], float)[:, :2] - p_b[:2]
+        c, s = math.cos(-yaw), math.sin(-yaw)
+        local = world_poly @ np.array([[c, s], [-s, c]])
+        meta.setdefault("movable", {})[key] = dict(obstacle=idx, footprint=np.round(local, 4).tolist())
+        done[key] = dict(geoms=len(geoms), colliders=colliders, mass_kg=mass, surfaces_dropped=dropped, obstacle=idx)
     if dst.exists():
         shutil.rmtree(dst)
     dst.mkdir(parents=True)

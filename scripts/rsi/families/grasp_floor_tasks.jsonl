@@ -1,0 +1,4 @@
+{"id": "floor_Mug_2", "goal": ["held(Mug_2)"], "prompts": ["pick up the mug", "grab the mug"], "room": "living_dining_kitchen", "placement": {"edge": "-y", "depth_m": [0.2, 0.32]}}
+{"id": "floor_NIT_CoffeeCan_Anon", "goal": ["held(NIT_CoffeeCan_Anon)"], "prompts": ["pick up the coffee can", "grab the coffee can"], "room": "living_dining_kitchen", "placement": {"edge": "-y", "depth_m": [0.2, 0.32]}}
+{"id": "floor_GreenApple_A", "goal": ["held(GreenApple_A)"], "prompts": ["pick up the green apple", "grab the green apple"], "room": "living_dining_kitchen", "placement": {"edge": "-y", "depth_m": [0.2, 0.32]}}
+{"id": "floor_Donut_B", "goal": ["held(Donut_B)"], "prompts": ["pick up the donut", "grab the donut"], "room": "living_dining_kitchen", "placement": {"edge": "-y", "depth_m": [0.2, 0.32]}}
