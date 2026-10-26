@@ -137,6 +137,65 @@ def reach_note(path: str | None = None):
     return note
 
 
+BIAS = TABLE.parent / "reach_bias_knn.npz"
+BIAS_INSIDE = 1.0  # the neighbours' mean standardised distance under this: the reach lies inside the measured grid
+BIAS_MAX_M = 0.10  # a predicted miss is capped at this (the grid's misses after the hold: 0-20 cm, median under 2)
+
+
+@lru_cache(maxsize=4)
+def bias_table(path: str | None = None) -> dict:
+    d = np.load(Path(path) if path else BIAS, allow_pickle=True)
+    return dict(X=d["X"].astype(float), E=d["E"].astype(float), mu=d["mu"].astype(float), sd=d["sd"].astype(float),
+                k=int(d["k"]))  # fmt: skip
+
+
+def bias(x: float, y_out: float, z: float, att: str = "level", pelvis: float | None = None, hand: str = "right",
+         path: str | None = None) -> dict:  # fmt: skip
+    """TODO 33.1.4 (2): where the controller puts the jaw centre against the target, on open floor -- the miss vector
+    (x ahead, y left, z up, metres, the pelvis heading frame) a distance-weighted k-NN reads off the free-space grid of
+    2,160 reaches (scripts/rsi/reach_bias_probe.py, 2026-10-26), with `inside` (the query lies within the grid). The
+    grid's closed-loop check: moving the target by minus this halved the miss (3.07 -> 1.57 cm; wrist down 6.6 -> 2.6
+    cm). It has no furniture in it: a reach beside a table misses for other reasons too."""
+    b = bias_table(path)
+    row = np.array([x, y_out, z, ATT[att], table().stand_z if pelvis is None else float(pelvis), HANDS[hand]])
+    zq = (row - b["mu"]) / b["sd"]
+    dist = np.sqrt(((b["X"] - zq) ** 2).sum(1))
+    k = min(b["k"], len(dist))
+    idx = np.argpartition(dist, k - 1)[:k]
+    w = 1.0 / (dist[idx] + 0.05)
+    e = (w[:, None] * b["E"][idx]).sum(0) / w.sum()
+    n = float(np.linalg.norm(e))
+    if n > BIAS_MAX_M:
+        e = e * (BIAS_MAX_M / n)
+    far = float(dist[idx].mean())
+    return dict(miss=[round(float(v), 4) for v in e], miss_cm=round(100 * min(n, BIAS_MAX_M), 2), far=round(far, 2),
+                inside=bool(far < BIAS_INSIDE))  # fmt: skip
+
+
+def reach_offset(path: str | None = None):
+    """TODO 33.1.4 (2): the motor's `reach_offset` hook (MotorConfig.reach_compensation, default off) -- before a
+    one-hand reach moves, the world vector to take off its jaw target so the controller's free-space miss lands it on
+    the target: the k-NN miss for the command's grid coordinates and attitude, turned into the world by the pelvis
+    heading. None (no offset) outside the grid or when the table cannot be read."""
+    try:
+        bias_table(path)
+    except (OSError, KeyError, ValueError):
+        return None
+
+    def offset(side, pos, rot, pelvis_pos, pelvis_quat, pelvis_z):
+        x, y_out, z = grid_coords(pos, pelvis_pos, pelvis_quat, side)
+        start_z = float(pelvis_z) if pelvis_z is not None else float(pelvis_pos[2])
+        b = bias(x, y_out, z, attitude(rot), start_z, side, path)
+        if not b["inside"]:
+            return None
+        yaw = yaw_of(pelvis_quat)
+        c, s = math.cos(yaw), math.sin(yaw)
+        ex, ey, ez = b["miss"]
+        return np.array([c * ex - s * ey, s * ex + c * ey, ez])
+
+    return offset
+
+
 CURVES = TABLE.parent / "curves.jsonl"
 BEST_MIN_N = 6  # rounds a level needs, pooled over the curves, before best_level names it
 BEST_MARGIN = 0.15  # ... and the success rate it must have over every other measured level

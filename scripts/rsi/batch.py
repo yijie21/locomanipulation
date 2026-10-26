@@ -50,6 +50,18 @@ class Job:
     controller: str = "scalebfm"  # scene_round --controller (TODO 28: "amo")
 
 
+OFF_SWITCHES = {"reach_compensation": False}  # MotorConfig switches left out of the signature while off: a new
+# default-off switch must not make every earlier record stale (TODO 33.1.4 (2), 2026-10-26)
+
+
+def motor_config():
+    """TODO 33.1.4 (2): the MotorConfig a batch's rounds run under -- the defaults, with the reach compensation on when
+    RSI_REACH_COMPENSATION=1 (the workers inherit the environment; scene_round.make_world reads it the same way)."""
+    from locomani.backends.scalebfm.motor import MotorConfig
+
+    return MotorConfig(reach_compensation=os.environ.get("RSI_REACH_COMPENSATION") == "1")
+
+
 def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | None = None,
                     cuda_graph: bool | None = None) -> str:  # fmt: skip
     """TODO 36 (review 2026-10-22): a short hash of the motor-relevant settings a round ran under -- every MotorConfig
@@ -63,18 +75,16 @@ def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | 
     import inspect
 
     from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
-    from locomani.backends.scalebfm.motor import MotorConfig
     from locomani.tasks.scene.world import SceneWorld
 
     if motor_cfg is None:
-        motor_cfg = MotorConfig()
+        motor_cfg = motor_config()
     if sleep is None:
         sleep = inspect.signature(SceneWorld.__init__).parameters["sleep"].default
     if cuda_graph is None:
         cuda_graph = ScaleBfmBackendConfig().cuda_graph
-    spec = dict(
-        controller=controller, motor=dataclasses.asdict(motor_cfg), sleep=bool(sleep), cuda_graph=bool(cuda_graph)
-    )
+    motor = {k: v for k, v in dataclasses.asdict(motor_cfg).items() if OFF_SWITCHES.get(k, object()) != v}
+    spec = dict(controller=controller, motor=motor, sleep=bool(sleep), cuda_graph=bool(cuda_graph))
     return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:10]
 
 

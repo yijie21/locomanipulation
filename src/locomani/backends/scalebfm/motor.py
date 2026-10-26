@@ -53,6 +53,11 @@ class MotorConfig:
     # when the reach starts (pregrasp jaw error 2.27 vs 1.28 cm), and the trained families went 187 -> 169 / 632 (TODO 32.4.4)
     walk_speed: float = 0.25
     walk_acc: float = 0.6  # m/s^2 (runtime.WALK_ACC)
+    # TODO 33.1.4 (2): take the body model's free-space miss off every one-hand reach's jaw target (the scene layer
+    # installs `reach_offset`); off by default and left out of the motor signature while off (batch.motor_signature).
+    # On (RSI_REACH_COMPENSATION=1 for scripts/rsi's rounds, batch.motor_config): the open-floor grid's closed-loop
+    # check halved the miss.
+    reach_compensation: bool = False
     turn_rate: float = 0.8  # rad/s peak of an in-place turn
     face_travel_deg: float = 20.0  # a walk longer than face_travel_min_m first turns toward its goal past this
     face_travel_min_m: float = 0.30
@@ -264,6 +269,9 @@ class Motor:
         # quaternion wxyz, pelvis_z, jaw open) -> dict merged into the reach's Outcome info -- the scene's body-model
         # prediction (locomani.tasks.scene.body.reach_note). None: nothing; it reads state only, never steps the sim.
         self.reach_note = None
+        # TODO 33.1.4 (2): (side, jaw target, wrist rotation, pelvis position, pelvis quaternion wxyz, pelvis_z) -> the world
+        # vector to take off the target, or None -- installed by the scene layer only when cfg.reach_compensation
+        self.reach_offset = None
         self.calls: list[dict] = []  # TODO 33.20: the primitive calls of the current round (_logged), cleared by reset
         self._call_depth = 0
 
@@ -741,6 +749,17 @@ class Motor:
                 pred = self.reach_note(side, goal_p[side], goal_R[side], pelvis_p, pelvis_q, pelvis_z, jaw_open) or {}
             except Exception as e:  # noqa: BLE001
                 pred = {"pred_error": repr(e)[:160]}
+        true_p = {s: np.asarray(goal_p[s], float).copy() for s in sides}  # what the skill asked; errors are against it
+        if self.reach_offset is not None and side != "both":
+            try:  # a compensation that fails leaves the command as it was
+                pelvis_p, pelvis_q = self.pelvis()
+                off = self.reach_offset(side, goal_p[side], goal_R[side], pelvis_p, pelvis_q, pelvis_z)
+                if off is not None:
+                    goal_p[side] = goal_p[side] - np.asarray(off, float)
+                    pred["comp_offset_cm"] = [round(100 * float(v), 2) for v in off]
+            except Exception as e:  # noqa: BLE001
+                pred["comp_error"] = repr(e)[:160]
+            points[-1] = {s: goal_p[s] for s in sides}
         yaw = self.yaw()
         weights = tuple(1.0 if s in sides else 0.3 for s in SIDES)
         poses, durations, errs = [self.ref(self.t)], [], []
@@ -777,7 +796,7 @@ class Motor:
             tt = t - t0
             if tt < total:
                 return None
-            err = max(float(np.linalg.norm(self.jaw_centre(s)[0] - goal_p[s])) for s in sides)
+            err = max(float(np.linalg.norm(self.jaw_centre(s)[0] - true_p[s])) for s in sides)
             if tt >= total + cfg.reach_settle_s or (tt >= total + 0.3 and err <= cfg.reach_tolerance):
                 att = max(float(np.degrees(np.linalg.norm(rotvec(goal_R[s] @ self.jaw_centre(s)[1].T)))) for s in sides)
                 return Outcome(

@@ -7,6 +7,8 @@ motor_check.py."""
 import json
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import numpy as np
 import torch
@@ -144,3 +146,58 @@ class HandProgram(unittest.TestCase):
         m.tick()
         p, q = m.last_fut[WRIST["left"]]
         np.testing.assert_allclose(m.commanded_jaw("left"), p[0] + R.mat(q[0]) @ R.OFF)
+
+
+class ReachCompensation(unittest.TestCase):
+    """TODO 33.1.4 (2): the `reach_offset` hook moves a one-hand reach's command; the outcome is judged against the
+    target the skill asked for."""
+
+    def _reach(self, m, asked, landed):
+        """One right-hand reach with the IK, the blend and the ticking stubbed out: the commanded jaw target, and the
+        outcome when the jaw ends at `landed`."""
+        seen, jaw = [], {"left": np.array([0.0, 0.2, 0.9]), "right": np.array([0.0, -0.2, 0.9])}
+
+        def solve(solver, tp, tr, **kw):
+            seen.append(np.array(tp))
+            return SimpleNamespace(hand_errors=(0.0, 0.0))
+
+        def run(name, update, timeout):
+            jaw["right"] = landed
+            return update(m.t + 5.0)
+
+        m.reach_note = None
+        with (
+            mock.patch.object(m, "_solver", lambda **kw: None),
+            mock.patch.object(m, "_solve", solve),
+            mock.patch.object(m, "_pose_of", lambda pose, yaw: None),
+            mock.patch.object(m, "_blend", lambda poses, durations: (lambda t: None, 1.0)),
+            mock.patch.object(m, "_stand", lambda pose: None),
+            mock.patch.object(m, "jaw_centre", lambda s: (jaw[s], np.eye(3))),
+            mock.patch.object(m, "_run", run),
+        ):
+            out = m.reach("right", asked, np.eye(3))
+        return seen[-1][1], out
+
+    def test_the_command_moves_by_the_offset_and_the_error_stays_against_the_asked_target(self):
+        m = motor()
+        m.tick()
+        asked, off = np.array([0.3, -0.25, 0.85]), np.array([0.02, -0.01, 0.005])
+        m.reach_offset = lambda side, pos, rot, pelvis_p, pelvis_q, pelvis_z: off
+        commanded, out = self._reach(m, asked, landed=asked.copy())
+        np.testing.assert_allclose(commanded, asked - off)
+        self.assertTrue(out.ok)
+        self.assertEqual(out.info["jaw_err_cm"], 0.0)
+        self.assertEqual(out.info["comp_offset_cm"], [2.0, -1.0, 0.5])
+
+    def test_no_offset_leaves_the_command_alone(self):
+        m = motor()
+        m.tick()
+        asked = np.array([0.3, -0.25, 0.85])
+        for hook in (None, lambda *a: None, lambda *a: 1 / 0):
+            m.reach_offset = hook
+            commanded, out = self._reach(m, asked, landed=asked + np.array([0.0, 0.0, 0.03]))
+            np.testing.assert_allclose(commanded, asked)
+            self.assertNotIn("comp_offset_cm", out.info)
+            self.assertEqual(out.info["jaw_err_cm"], 3.0)
+        self.assertIn("ZeroDivisionError", out.info["comp_error"])
+        self.assertFalse(MotorConfig().reach_compensation)

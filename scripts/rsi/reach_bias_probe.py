@@ -20,6 +20,11 @@ capability probe's `Probe`, as the A800's dense envelope did) and keeps the miss
     $PY scripts/rsi/reach_bias_probe.py check
     nohup setsid $PY scripts/rsi/reach_bias_probe.py run comp --procs 12 >> /workspace/tmp/reach_bias.log 2>&1 &
     $PY scripts/rsi/reach_bias_probe.py report
+    $PY scripts/rsi/reach_bias_probe.py table      # the compensation table body.bias reads
+
+2026-10-26: the miss is predictable on open floor (left-out forward slices: residual 1.89 cm against 2.74), and
+moving the target by -e_hat halves it in closed loop (240 cells: 3.07 -> 1.57 cm, misses >= 3 cm 67 -> 32, no fall;
+wrist down 6.63 -> 2.62 cm, tilt45 1.43 -> 1.03, level 1.14 -> 1.07).
 """
 
 from __future__ import annotations
@@ -206,6 +211,19 @@ def run(kind: str, procs: int, gpus: str, shard: int = 30) -> None:
     print(f"{kind}: done", flush=True)
 
 
+TABLE = REPO / "outputs" / "scene_rsi_20261016" / "body" / "reach_bias_knn.npz"
+
+
+def write_table(path: Path = TABLE) -> dict:
+    """The grid's miss vectors as the body model's compensation table (locomani.tasks.scene.body.bias): features as
+    `features`, the vector in the start's pelvis heading frame (x ahead, y left, z up) after the hold."""
+    X, E, ids = table()
+    mu, sd = X.mean(0), X.std(0) + 1e-9
+    np.savez(path, X=((X - mu) / sd).astype(np.float32), E=E.astype(np.float32), mu=mu, sd=sd, k=np.array(K),
+             features=np.array(["x", "y_out", "z", "att", "pelvis", "hand"]))  # fmt: skip
+    return dict(cells=len(ids), out=str(path))
+
+
 def report() -> dict:
     grid, comp = load("grid"), load("comp")
     pairs = [
@@ -234,11 +252,14 @@ def main(argv=None) -> int:
     w.add_argument("--ids", required=True)
     sub.add_parser("check")
     sub.add_parser("report")
+    sub.add_parser("table")
     a = ap.parse_args(argv)
     if a.cmd == "run":
         run(a.kind, a.procs, a.gpus)
     elif a.cmd == "worker":
         worker(a.kind, a.ids.split(","))
+    elif a.cmd == "table":
+        print(json.dumps(write_table()))
     else:
         print(json.dumps(check() if a.cmd == "check" else report(), indent=1))
     return 0

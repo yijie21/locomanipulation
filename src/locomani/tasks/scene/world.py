@@ -8,6 +8,7 @@ it); static objects carry their scene-file pose; `pelvis` = pos, quat; `fallen`.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -157,10 +158,19 @@ class SceneWorld:
             )
         # TODO 33.1.2: every one-hand reach's record carries the body model's prediction for its command
         self.motor.reach_note = body.reach_note()
+        if getattr(self.motor.cfg, "reach_compensation", False):  # TODO 33.1.4 (2): default off
+            self.motor.reach_offset = body.reach_offset()
         m = self.sim.m
         self.free = {k: m.body(o["body"]).id for k, o in self.meta["objects"].items() if o.get("free")}
         self.occ, self.nav = build_navigation(self.meta, body_radius=BODY_RADIUS_M)
         self._goals: dict = {}
+
+    def compensate_reaches(self) -> None:
+        """TODO 33.1.4 (2): turn the motor's reach compensation on (MotorConfig.reach_compensation, default off) and
+        install the body model's free-space miss as its `reach_offset` hook, keeping the rest of the motor's own config
+        (scripts/rsi/scene_round.make_world under RSI_REACH_COMPENSATION=1)."""
+        self.motor.cfg = dataclasses.replace(self.motor.cfg, reach_compensation=True)
+        self.motor.reach_offset = body.reach_offset()
 
     def check(self, goal) -> callable:
         """compile_goal, cached per goal."""

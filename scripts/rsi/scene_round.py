@@ -83,7 +83,10 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
         policy = Gr00tPolicy()
     else:
         policy = R.Policy("cuda", ScaleBfmBackendConfig())
-    return SceneWorld(fam["scene_dir"], policy, controller=controller)
+    world = SceneWorld(fam["scene_dir"], policy, controller=controller)
+    if B.motor_config().reach_compensation:  # TODO 33.1.4 (2): RSI_REACH_COMPENSATION=1
+        world.compensate_reaches()
+    return world
 
 
 def world_signature(world: SceneWorld, controller: str) -> str:

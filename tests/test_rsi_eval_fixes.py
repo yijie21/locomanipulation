@@ -4,11 +4,13 @@ versions round records (batch.done) and makes a regression reference-only, the e
 dict-entry overrides, the sealed version order."""
 
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
@@ -120,6 +122,13 @@ class MotorSignatureTest(unittest.TestCase):
         self.assertNotEqual(base, B.motor_signature(sleep=False))
         self.assertNotEqual(base, B.motor_signature(cuda_graph=False))
         self.assertNotEqual(base, B.motor_signature("amo"))
+        # a default-off switch is left out while off (the records made before it existed stay done), counted when on
+        self.assertEqual(base, B.motor_signature(motor_cfg=MotorConfig(reach_compensation=False)))
+        self.assertNotEqual(base, B.motor_signature(motor_cfg=MotorConfig(reach_compensation=True)))
+        for env, on in (("", False), ("0", False), ("1", True)):  # the batch's config: on with RSI_REACH_COMPENSATION=1
+            with mock.patch.dict(os.environ, {"RSI_REACH_COMPENSATION": env}):
+                self.assertEqual(B.motor_config().reach_compensation, on)
+                self.assertEqual(B.motor_signature() == base, not on)
 
     def test_done_and_retire(self):
         sig = B.motor_signature()
