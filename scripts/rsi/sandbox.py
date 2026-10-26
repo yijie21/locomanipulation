@@ -205,17 +205,8 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     loop = dest / "outputs" / "scene_rsi_20261016" / family
     hidden = dest / HIDDEN / family
     fam = dest / "scripts" / "rsi" / "family.py"
-    for pool, out in (("diag", loop / "pool_diag"), ("accept", hidden / "pool_accept")):
-        r = subprocess.run(
-            [str(SIM_PY), str(fam), "draw", family, pool, str(out)],
-            cwd=dest,
-            env=SUB_ENV,
-            capture_output=True,
-            text=True,
-        )
-        if r.returncode:
-            raise SystemExit(r.stderr[-2000:])
-        print(r.stdout.strip())
+    # the runtime data first: a family whose pools keep only starts needing a preparation (`require_prep`, TODO
+    # 33.24.3) asks the chooser, and the chooser the body model's table, while it draws
     lib = REPO / "outputs" / "scene_rsi_20261016" / "records" / "library.jsonl"  # TODO 33.15.1: the record library
     if lib.exists():
         (loop.parent / "records").mkdir(parents=True, exist_ok=True)
@@ -228,6 +219,17 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
         for name in ("curves.jsonl", "constraints.jsonl"):  # TODO 33.1.7: the measured curves, fixed for the run
             if (body / name).exists():
                 shutil.copy(body / name, loop.parent / "body" / name)
+    for pool, out in (("diag", loop / "pool_diag"), ("accept", hidden / "pool_accept")):
+        r = subprocess.run(
+            [str(SIM_PY), str(fam), "draw", family, pool, str(out)],
+            cwd=dest,
+            env=SUB_ENV,
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode:
+            raise SystemExit(r.stderr[-2000:])
+        print(r.stdout.strip())
     print(f"{dest}: sandbox for {family}")
 
 
