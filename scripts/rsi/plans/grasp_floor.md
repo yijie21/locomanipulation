@@ -43,7 +43,7 @@ One inner loop on one family (no outer loop in this run). One iteration:
 4. **Engineer** (Claude) writes code in the skills package and/or parameter overrides: one candidate.
 5. **Gate** (program) compares candidate and incumbent start by start on the hidden acceptance pool.
 
-Pools (D7, sized for this run): diagnostic 20 starts, acceptance 24, sealed 32 (drawn only after the loop ends), four
+Pools (D7, sized for this run): diagnostic 20 starts, acceptance 40 (the gate needs at least 31), sealed 32 (drawn only after the loop ends), four
 objects on the dining table; the roles see only the diagnostic pool.
 
 ## 3. What exists below the skills

@@ -93,3 +93,15 @@ def test_the_closure_reaches_every_src_module_a_kept_script_imports(family):
 
 def test_there_is_a_family_with_a_keep_list():
     assert "grasp_atomic" in FAMILIES and "grasp_prep" in FAMILIES
+
+
+def test_every_acceptance_pool_is_big_enough_for_the_gate():
+    """2026-10-26: grasp_floor's acceptance pool had 24 starts, and the gate refuses any candidate when the pool has
+    fewer than STAGE1 + 1 (stage 1 alone is STAGE1 pairs) -- iteration 0's two calls were refused before a round ran."""
+    stage1 = int(re.search(r"^STAGE1 = (\d+)", (RSI / "gate.py").read_text(), re.M).group(1))
+    small = {}
+    for p in sorted((RSI / "families").glob("*.json")):
+        accept = json.loads(p.read_text()).get("pools", {}).get("accept")
+        if accept and accept.get("n", 0) < stage1 + 1:
+            small[p.stem] = accept["n"]
+    assert not small, f"acceptance pools under {stage1 + 1} starts: {small}"

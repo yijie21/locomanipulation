@@ -17,7 +17,7 @@
   ]
  },
  "require_prep": "floor",
- "skip_limit": 400,
+ "skip_limit": 1200,
  "pools": {
   "diag": {
    "seed": 430000,
@@ -25,7 +25,7 @@
   },
   "accept": {
    "seed": 530000,
-   "n": 24
+   "n": 40
   },
   "sealed": {
    "seed": 630000,
