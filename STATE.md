@@ -1,4 +1,4 @@
-# STATE — 2026-10-26 01:20 UTC（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep / grasp_floor）
+# STATE — 2026-10-26 02:10 UTC（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep / grasp_floor）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。已确认：`origin/main` = `edeb44a0`（10-24 02:00 推送，先合并了 henry-zhao 10-23 的 5 个提交）；之后只有 handoff 提交，没推送。决策和被否决的方案见 `DECISIONS.md` 2026-10-23 – 10-24 一节。
 
@@ -25,7 +25,7 @@
 
 ## 下一步（编号见 `TODO.md`）
 - 正在跑（10-26 01:18 起，pgid 1905290，约 7.5 h，`outputs/scene_rsi_20261016/grasp_floor_a/queue.sh` / `queue.log`）：① 33.1.4 空地受控伸手探针（2,160 + 240 格）；② 33.9.5 续跑接着跑完剩下约 1.3 h 再封存集；③ 33.24.4 `grasp_floor` 内环（沙盒 `grasp-floor-a`，5 h）再封存集。跑完要告诉 `locomanipulation-ea`（它停着 Unreal 和批量任务等主线）。
-- ① 的结果（10-26 01:25）：空地有能补的系统偏差（平均 2.74 cm、往前多伸 1.66 cm，闭环补完 3.07 → 1.57 cm）；补偿做成默认关的动作层开关 `RSI_REACH_COMPENSATION=1`（33.1.4 ②，已提交）。之后：33.1.4.1 任务级对照（队列放出仿真后）；看 ③ 循环写不写得出推椅子动作。
+- ① 的结果（10-26 01:25）：空地有能补的系统偏差（平均 2.74 cm、往前多伸 1.66 cm，闭环补完 3.07 → 1.57 cm）；补偿做成默认关的动作层开关 `RSI_REACH_COMPENSATION=1`（33.1.4 ②，已提交）。33.1.4.1 任务级对照已排在队列后面：等待进程 pgid 1939982（`outputs/scene_rsi_20261016/body/comp_ab_20261026/after_queue.sh`，队列一结束就跑 `run_ab.py run` 再 `report`，约 480 局 30 分钟；沙盒 `comp-ab-20261026` 从 `0b9a0705` 建，现任 `5cba2fa49d31`，120 个起点 = run D 重抽的诊断池 30 + 验收池 40 + 封存池 50，关 / 开 / 关 / 开交替；单局冒烟试过，开着时签名 `73adddd5a4`）。已告诉 `locomanipulation-ea`。之后看 ③ 循环写不写得出推椅子动作。
 - 33.21 / 33.22：A800 能连上后做脆弱起点和算力分工。33.7 / 37.6 用户定。
 
 ## 未解决 / 卡点
