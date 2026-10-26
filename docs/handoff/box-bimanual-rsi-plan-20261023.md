@@ -74,7 +74,7 @@
 
 循环学会的仍是抱箱，不是探针里的人工夹壁抓法：它把夹持力、抬高和站位调大，并把“抬完马上保持”换成“看着判据等它稳住”。剩下的失败集中在短边朝外（16 / 25），和探针看到的一样。
 
-结果文件（在沙盒里，不在 git 中）：账本 `outputs/scene_rsi_20261016/box_bimanual/loop/ledger.jsonl`，这一轮的全部材料 `loop/iter_00/`，接受版本的技能 `loop/iter_00/candidate/skills/`，封存集 `outputs/scene_rsi_20261016_hidden/box_bimanual/sealed/summary.json`。
+结果文件（在沙盒里，不在 git 中）：账本 `outputs/scene_rsi_20261016/box_bimanual/loop/ledger.jsonl`，这一轮的全部材料 `loop/iter_00/`，接受版本 `loop/iter_00/candidate_2/`（`skills/` 加参数覆盖 `candidate.json`），封存集 `outputs/scene_rsi_20261016_hidden/box_bimanual/sealed/summary.json`。
 
 ## 6. 命令
 

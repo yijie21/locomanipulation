@@ -99,7 +99,7 @@ cat $S/outputs/scene_rsi_20261016_hidden/box_bimanual/sealed/summary.json
 ```
 
 做什么：在 50 局封存集上跑起步版本和每一版被接受的现任。封存集连验收门都没见过，是报告用的成绩。
-得到什么：`summary.json` 的 `versions` 里每个版本的成功数、按任务的成功数、摔倒和掉落数；约 2 分钟。被接受的技能目录在 `$S/outputs/scene_rsi_20261016/box_bimanual/loop/iter_NN/candidate/skills/`；要留下来，复制到 `scripts/rsi/seeds/` 下以版本哈希命名的目录再提交。这条线不写回 `src/locomani/tasks/scene/skills/`。
+得到什么：`summary.json` 的 `versions` 里每个版本的成功数、按任务的成功数、摔倒和掉落数；约 2 分钟。被接受的版本在 `$S/outputs/scene_rsi_20261016/box_bimanual/loop/iter_NN/` 下：Composer 合成的在 `candidate/`，原样采用第 k 份草稿的在 `candidate_k/`（账本 `compose` 行的 `adopted` 是 k），里面是 `skills/` 和参数覆盖 `candidate.json`；要留下来，复制到 `scripts/rsi/seeds/` 下以版本哈希命名的目录再提交。这条线不写回 `src/locomani/tasks/scene/skills/`。
 
 ## 6. 看过程：MuJoCo 视频
 
