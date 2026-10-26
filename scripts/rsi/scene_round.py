@@ -6,7 +6,8 @@ motor trace) per start into --out. One process loads the policy and the scene on
 Round record: label, task, ok, why (the goal's), fell, dropped (the goal missed and a task object ended more than DROP_M
 below where it started), plan_ok / plan_why, steps (every skill step's outcome), skills (the package's content hash), set, wall_s,
 rule (batch.SUCCESS_RULE: which `held` judged it), motor (batch.motor_signature: the motor settings it ran under),
-failure_class and events (failure_class.py, TODO 33.15: computed from the trace, every round).
+failure_class and events (failure_class.py, TODO 33.15: computed from the trace, every round), others_moved (the
+non-task free objects the round moved more than 2 cm or tilted more than 10 deg, episode.others_moved; TODO 36.9).
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src $PY scripts/rsi/scene_round.py pick_single \\
@@ -130,7 +131,8 @@ def run_round(
         )
         rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
                    plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
-                   t_end=ex["t_end"], seated=ex["seated"], calls=ex.get("calls", []))  # fmt: skip
+                   t_end=ex["t_end"], seated=ex["seated"], calls=ex.get("calls", []),
+                   others_moved=ex.get("others_moved", {}))  # fmt: skip
         if npz:
             np.savez_compressed(out / f"{label}.npz", **arrays)
     try:  # TODO 33.15: the round's failure class and events (failure_class.py); a classifier bug never costs a round

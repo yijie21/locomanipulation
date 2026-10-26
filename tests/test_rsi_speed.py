@@ -179,11 +179,22 @@ class LoopProcedure(unittest.TestCase):
 
         with mock.patch.object(self.lp, "claude", fake):
             hyps, acct = self.lp.scoped_review("propose at most 4 interventions", Path("."), None)
-        self.assertEqual([h["id"] for h in hyps["hypotheses"]], ["PH1", "PH2", "OH1", "OH2"])
-        self.assertEqual({h["scope"] for h in hyps["hypotheses"]}, {"P", "O"})
-        self.assertEqual(len(hyps["infeasible"]), 2)
-        self.assertEqual(acct["cost_usd"], 2.0)
-        self.assertEqual(sorted(acct["sessions"]), ["O", "P"])
+        self.assertEqual([h["id"] for h in hyps["hypotheses"]], ["PH1", "PH2", "OH1", "OH2", "SH1", "SH2"])
+        self.assertEqual({h["scope"] for h in hyps["hypotheses"]}, {"P", "O", "S"})
+        self.assertEqual(len(hyps["infeasible"]), 3)
+        self.assertEqual(acct["cost_usd"], 3.0)
+        self.assertEqual(sorted(acct["sessions"]), ["O", "P", "S"])
+
+    def test_the_scoped_reviewers_get_six_probes_and_the_manager_their_note(self):
+        # TODO 33.3: three scopes x two hypotheses all reach the Prober; the Manager is told what S means
+        from unittest import mock
+
+        with mock.patch.object(self.lp, "SCOPED", True):
+            self.assertEqual(self.lp.hypothesis_cap(), 6)
+            self.assertIn("a different way of doing it", self.lp.prompt_vars()["CANDIDATES_NOTE"])
+        with mock.patch.object(self.lp, "SCOPED", False):
+            self.assertEqual(self.lp.hypothesis_cap(), self.lp.MAX_HYPOTHESES)
+            self.assertNotIn("scoped Reviewers", self.lp.prompt_vars()["CANDIDATES_NOTE"])
 
     def test_a_failed_scoped_reviewer_raises_role_failed(self):
         # 2026-10-21: a usage limit inside one Reviewer's thread surfaced as KeyError 'P' and crashed the run

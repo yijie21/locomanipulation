@@ -181,7 +181,20 @@ SCOPES = {  # TODO 32.11 (Harness2's scoped proposals): each scoped Reviewer giv
     "which side and orientation a grasp can take given the object's size and shape, the jaw's width, the surface's "
     "height, slabs above, neighbours and edges -- written as rules over the geometry, not lists of objects. Do not "
     "propose changes to the step sequence or its timing; another Reviewer owns them.",
+    # TODO 33.3 (plan section 4): the third direction, a different way of doing it
+    "S": "YOUR SCOPE: A DIFFERENT WAY TO DO IT. You own how a person would change the approach when the current one "
+    "cannot work: stand elsewhere (the other side, a nearer edge, the side), handle the object first (pull it closer, "
+    "push it to an edge, turn it, tilt it, move a neighbour away), use both hands, switch hands. First show with the "
+    "body model that the current way falls outside what the body delivers, then that the new way falls inside it; "
+    "what a parameter cannot test goes in `needs_code`. Do not tune the current procedure's tolerances or timing, or "
+    "the current approach's grasp side; the other Reviewers own them.",
 }
+SCOPED_NOTE = (  # TODO 33.3: what the Manager reads when the scoped Reviewers ran
+    "Hypotheses come from three scoped Reviewers: P (the procedure), O (what the objects and the scene require) and S "
+    "(a different way of doing it: another stance, handling the object first, two hands, the other hand). S hypotheses "
+    "mostly need code, so their probes are often empty: judge them by the body model's prediction their evidence "
+    "cites, not by a missing probe result.\n"
+)
 CANDIDATES_NOTE = (  # TODO 32.9: what the Manager reads when an iteration builds several candidates
     "This iteration builds {K} candidates at once: with `engineer`, list up to {K} hypothesis ids in `hypotheses`, best "
     "first (the same id twice gives two independent drafts; `hypothesis` is the first). {K} Engineers build them in "
@@ -369,7 +382,8 @@ def prompt_vars() -> dict:
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
-        CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
+        CANDIDATES_NOTE=(CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "")
+        + (SCOPED_NOTE if SCOPED else ""),
         LIBRARY=LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "",
     )
 
@@ -1558,9 +1572,15 @@ def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, d
     return hyps, acct
 
 
+def hypothesis_cap() -> int:
+    """How many hypotheses the Prober runs: MAX_HYPOTHESES, or two per scope with the scoped Reviewers (TODO 33.3:
+    three scopes, six, the plan's 4 -> 6; the probes are cheap since the speed-up)."""
+    return 2 * len(SCOPES) if SCOPED else MAX_HYPOTHESES
+
+
 def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
     """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`)."""
-    pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
+    pr = probe(hyps["hypotheses"][: hypothesis_cap()], inc, base, it_dir)
     set_statuses(hyps, pr)  # TODO 33.17
     records_statuses(hyps, pr, base)  # TODO 33.15.1
     jdump(it_dir / "hypotheses.json", hyps)

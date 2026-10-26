@@ -209,6 +209,20 @@ class Family:
         shutil.copytree(self.snapshot, SKILLS)
         shutil.rmtree(self.snapshot)
 
+    def unregister(self) -> None:
+        """This family's registry row as it was before its regress step (TODO 36.9: a family blocked at regress or
+        capability had its catalog put back but stayed registered, so every later family's regression re-ran it)."""
+        prev = self.state.pop("registry_prev", None)
+        if prev is None:
+            return
+        reg = regress.load()
+        if prev["present"]:
+            reg[self.name] = prev["row"]
+        else:
+            reg.pop(self.name, None)
+        regress.REGISTRY.write_text(json.dumps(reg, indent=1))
+        self.save()
+
     def writeback_(self) -> None:
         if self.snapshot.exists():  # an earlier attempt of this step: start again from before its write-back
             self.restore()
@@ -233,6 +247,7 @@ class Family:
     def regress_(self) -> None:
         reg = regress.load()
         final = self.state.get("sealed", {}).get("final", "seed")
+        self.save(registry_prev=dict(present=self.name in reg, row=reg.get(self.name)))  # unregister() puts it back
         reg[self.name] = dict(sandbox=str(self.sandbox), kind=kind_of(self.name), pool=None, last=final)
         regress.REGISTRY.parent.mkdir(parents=True, exist_ok=True)
         regress.REGISTRY.write_text(json.dumps(reg, indent=1))
@@ -280,6 +295,7 @@ class Family:
                 log(f"{self.name}: blocked at {step}: {why}")
                 if step in ROLLBACK_STEPS and self.snapshot.exists():
                     self.restore()
+                    self.unregister()
                     self.save(restored=f"catalog skills put back to before the write-back (blocked at {step}); set "
                                        "`step` back to writeback to try again")  # fmt: skip
                     log(f"{self.name}: catalog restored")

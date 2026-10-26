@@ -47,6 +47,25 @@ class SkillContext:
         return out
 
 
+MOVED_M, TILTED_DEG = 0.02, 10.0  # a non-task object counts as knocked past either
+
+
+def others_moved(rest: dict, now: dict, skip=()) -> dict:
+    """TODO 36.9: the free objects other than `skip` (the task's) that the round moved: `rest` and `now` map a key to
+    (pos, wxyz quat), after the settle and at the end; {key: {moved_cm, tilt_deg}} past MOVED_M or TILTED_DEG."""
+    out = {}
+    for k, (p0, q0) in rest.items():
+        if k in skip or k not in now:
+            continue
+        p1, q1 = now[k]
+        d = float(np.linalg.norm(np.asarray(p1, float) - np.asarray(p0, float)))
+        dot = abs(float(np.dot(np.asarray(q0, float), np.asarray(q1, float))))
+        tilt = float(np.degrees(2 * np.arccos(min(1.0, dot))))
+        if d > MOVED_M or tilt > TILTED_DEG:
+            out[k] = dict(moved_cm=round(100 * d, 1), tilt_deg=round(tilt, 1))
+    return out
+
+
 def goal_keys(goal) -> list[str]:
     keys = []
     for g in goal:
@@ -77,9 +96,10 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
             raise EpisodeTimeLimit
         return tick()
 
-    m.tick, timed_out, error = limited, False, ""
+    m.tick, timed_out, error, rest = limited, False, "", {}
     try:
         ctx.note("settle", m.hold(SETTLE_S))
+        rest = {k: world.object_pose(k) for k in world.free}
         try:
             out = plan(ctx)
         except Exception as e:  # a skill's bug is the round's failure, recorded, not the batch's crash
@@ -108,6 +128,7 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
         calls=list(getattr(m, "calls", [])),  # TODO 33.20: the primitive calls, for scripts/rsi/isolate.py
         fell=fell,
         seated=seated,
+        others_moved=others_moved(rest, {k: world.object_pose(k) for k in rest}, task.objects),
         t_end=round(m.t, 2),
         wall_s=round(time.time() - wall, 1),
     )

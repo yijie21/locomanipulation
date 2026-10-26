@@ -489,6 +489,18 @@ class OuterRun(unittest.TestCase):
     def setUp(self):
         self.run_mod = _fresh("scene_rsi_outer_run", "outer_run.py")
 
+    def test_wanted_capabilities_map_every_name_to_its_class_families(self):
+        # TODO 33.4: outer.py select --wanted reads capabilities_wanted.py's classes by normalised name
+        outer = _fresh("scene_rsi_outer", "outer.py")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "w.json"
+            p.write_text(json.dumps(dict(classes=[dict(names=["Move neighbour first", "move_neighbour_first"],
+                                                       n_families=6), dict(names=["kneel"], n_families=2)])))  # fmt: skip
+            w = outer.wanted_families(p)
+        self.assertEqual(w["move neighbour first"], 6)
+        self.assertEqual(w["kneel"], 2)
+        self.assertEqual(outer.wanted_families(None), {})
+
     def test_kind_follows_the_goals(self):
         k = self.run_mod.kind_of
         self.assertEqual([k(f) for f in ("r2_held_near_single", "r2_in_single", "r2_on_single", "r2_held_single",
@@ -578,6 +590,35 @@ class OuterRun(unittest.TestCase):
             self.assertFalse((skills / "extra.py").exists())
             self.assertIn("put back", f.state["restored"])
             self.assertEqual(f.state["step"], "tests")
+
+    def test_a_family_blocked_at_regress_leaves_the_registry_as_it_was(self):
+        # TODO 36.9: the catalog went back but the family stayed registered, so later regressions re-ran it
+        import shutil
+        from unittest import mock
+
+        run = self.run_mod
+        with tempfile.TemporaryDirectory() as d:
+            skills, reg = Path(d) / "skills", Path(d) / "outer" / "registry.json"
+            skills.mkdir()
+            (skills / "pick.py").write_text("old")
+            reg.parent.mkdir()
+            reg.write_text(json.dumps({"r1_held_single": {"last": "x"}}))
+            f = run.Family(Path(d), "r2_on_single")
+            f.state["step"] = "writeback"
+            shutil.copytree(skills, f.snapshot)
+
+            def sh(cmd, cwd, log):  # regress.py: writes a report with a regression
+                (reg.parent / "regress_after_r2_on_single.json").write_text(json.dumps(dict(total=2, worse=["r1"])))
+                return 0
+
+            with mock.patch.object(run, "SKILLS", skills), mock.patch.object(run.regress, "REGISTRY", reg), \
+                    mock.patch.object(run, "sh", sh), mock.patch.multiple(f, writeback_=lambda: None,
+                                                                          tests_=lambda: None):  # fmt: skip
+                self.assertFalse(f.advance("done"))
+            self.assertEqual(f.state["step"], "regress")
+            self.assertIn("regression", f.state["blocked"])
+            self.assertEqual(json.loads(reg.read_text()), {"r1_held_single": {"last": "x"}})
+            self.assertNotIn("registry_prev", f.state)
 
     def test_the_steps_find_claude(self):
         # the loop's roles and reflect.py call `claude`; a PATH of system directories alone missed ~/.local/bin

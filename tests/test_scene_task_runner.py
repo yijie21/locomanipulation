@@ -10,7 +10,7 @@ import numpy as np
 
 from locomani.primitives.navigator import build
 from locomani.tasks.scene import start as S
-from locomani.tasks.scene.episode import goal_keys
+from locomani.tasks.scene.episode import goal_keys, others_moved
 from locomani.tasks.scene.navigate import line_clear, path
 from locomani.tasks.scene.world import Task
 
@@ -51,6 +51,22 @@ def meta():
     room = dict(bounds=dict(x=[-3.0, 3.0], y=[-3.0, 3.0]), walls=[], obstacles=[],
                 spawn={"r": [[[-2.8, -2.8], [2.8, -2.8], [2.8, 2.8], [-2.8, 2.8]]]})  # fmt: skip
     return dict(objects=objects, surfaces={"T": table}, room=room)
+
+
+class OthersMoved(unittest.TestCase):
+    """TODO 36.9: a knocked neighbour is in the round record; the task's own objects and small drift are not."""
+
+    def test_moved_and_tilted_neighbours_only(self):
+        up, tipped = [1.0, 0, 0, 0], [np.cos(np.radians(10)), np.sin(np.radians(10)), 0, 0]  # 20 deg about x
+        rest = {"vase": ([0, 0, 0.8], up), "cup": ([1, 0, 0.8], up), "jar": ([2, 0, 0.8], up),
+                "spoon": ([3, 0, 0.8], up)}  # fmt: skip
+        now = {"vase": ([0, 0.05, 0.8], up), "cup": ([1, 0.005, 0.8], up), "jar": ([2, 0, 0.8], tipped),
+               "spoon": ([3, 0.3, 1.0], up)}  # fmt: skip
+        out = others_moved(rest, now, skip=("spoon",))
+        self.assertEqual(sorted(out), ["jar", "vase"])
+        self.assertEqual(out["vase"]["moved_cm"], 5.0)
+        self.assertAlmostEqual(out["jar"]["tilt_deg"], 20.0, places=1)
+        self.assertEqual(others_moved({}, now), {})
 
 
 class Placement(unittest.TestCase):

@@ -48,6 +48,8 @@ SCENE = "outputs/scene_discovery/adt_apartment_mars"
 EST_USD_EXTEND = 75.0
 EST_USD_NEW = 150.0
 MAX_GAPS = 6  # D9
+XFAM_W = 2.0  # TODO 33.4: each further family that asked for a proposal's capability counts as this many tasks
+RESERVED = 1  # TODO 33.4: slots kept for the best capability several families asked for (plan section 5: 1-2)
 MAX_TASKS = 10  # per family: 8 sealed starts per task at 80
 POOLS = {"diag": 50, "accept": 60, "sealed": 80}
 SEED_BLOCK = 10000  # family k: diag 100000 + k block, accept 200000 + .., sealed 300000 + ..; round r adds ROUND_SEEDS
@@ -103,9 +105,21 @@ def family_skills(fam: dict) -> list[str]:
     return list(ast.literal_eval(m.group(1))) if m else []
 
 
-def select(round_dir: Path, loops: list[Path]) -> dict:
+def wanted_families(path: Path | None) -> dict[str, int]:
+    """capabilities_wanted.py's classes as {normalised name: families that asked for its class} (TODO 33.4)."""
+    if path is None:
+        return {}
+    out = {}
+    for c in json.loads(path.read_text())["classes"]:
+        for n in c["names"]:
+            out[re.sub(r"[^a-z0-9]+", " ", n.lower()).strip()] = c["n_families"]
+    return out
+
+
+def select(round_dir: Path, loops: list[Path], wanted: Path | None = None, out_path: Path | None = None) -> dict:
     meta = json.loads((REPO / SCENE / "scene_meta.json").read_text())
     rows = [json.loads(x) for x in (round_dir / "discovery" / "tasks.jsonl").read_text().splitlines() if x.strip()]
+    xfam = wanted_families(wanted)
     buckets = collections.Counter(r["bucket"] for r in rows)
     groups: dict = collections.defaultdict(list)
     for r in rows:
@@ -159,18 +173,24 @@ def select(round_dir: Path, loops: list[Path]) -> dict:
                                 proposed=g["proposed"]))  # fmt: skip
             continue
         n = len(g["tasks"])
-        gaps.append(dict(g, tasks=sorted(g["tasks"]), n=n, new_skills=[name], est_usd=EST_USD_NEW * 2,
-                         per_usd=round(n / (2 * EST_USD_NEW), 4)))  # fmt: skip
+        fams = xfam.get(re.sub(r"[^a-z0-9]+", " ", name.lower()).strip(), 1)
+        gaps.append(dict(g, tasks=sorted(g["tasks"]), n=n, new_skills=[name], est_usd=EST_USD_NEW * 2, families=fams,
+                         per_usd=round((n + XFAM_W * (fams - 1)) / (2 * EST_USD_NEW), 4)))  # fmt: skip
     gaps.sort(key=lambda g: (-g["per_usd"], -g["n"], g["name"]))
-    chosen, spent = [], 0.0
-    for g in gaps:
-        if len(chosen) < MAX_GAPS and g["n"] > 0:
-            chosen.append(g["name"])
-            spent += g["est_usd"]
+    chosen = [g["name"] for g in gaps if g["n"] > 0][:MAX_GAPS]
+    if xfam:  # TODO 33.4: the best capability several families asked for keeps a slot
+        asked = [g["name"] for g in gaps if g["n"] > 0 and g.get("families", 1) >= 2]
+        for name in asked[:RESERVED]:
+            if name not in chosen:
+                chosen = chosen[: MAX_GAPS - 1] + [name] if len(chosen) >= MAX_GAPS else chosen + [name]
+    spent = sum(g["est_usd"] for g in gaps if g["name"] in chosen)
+    rule = f"tasks / estimated USD (extend {EST_USD_EXTEND}, new skill {EST_USD_NEW} each); first {MAX_GAPS}"
+    if xfam:
+        rule += (f"; a proposal adds {XFAM_W} per further family asking for its capability ({wanted}), and the best "
+                 f"one asked by >= 2 families keeps {RESERVED} slot")  # fmt: skip
     out = dict(round=round_dir.name, discovered=len(rows), buckets=dict(sorted(buckets.items())), gaps=gaps,
-               skipped_proposals=skipped, selected=chosen, est_usd=spent, rule=f"tasks / estimated USD (extend {EST_USD_EXTEND}, new skill "
-               f"{EST_USD_NEW} each); first {MAX_GAPS}")  # fmt: skip
-    (round_dir / "selection.json").write_text(json.dumps(out, indent=1))
+               skipped_proposals=skipped, selected=chosen, est_usd=spent, rule=rule)  # fmt: skip
+    (out_path or round_dir / "selection.json").write_text(json.dumps(out, indent=1))
     return out
 
 
@@ -213,13 +233,17 @@ def main(argv=None) -> int:
     s = sub.add_parser("select")
     s.add_argument("round_dir", type=Path)
     s.add_argument("--loops", type=Path, nargs="*", default=[], help="finished loop sandboxes (their gaps.jsonl)")
+    s.add_argument(
+        "--wanted", type=Path, help="capabilities_wanted.py's JSON: weight proposals by families (TODO 33.4)"
+    )
+    s.add_argument("--out", type=Path, help="write the selection here instead of <round dir>/selection.json")
     f = sub.add_parser("family")
     f.add_argument("round_dir", type=Path)
     f.add_argument("gap")
     a = ap.parse_args(argv)
     rd = a.round_dir if a.round_dir.is_absolute() else REPO / a.round_dir
     if a.cmd == "select":
-        out = select(rd, a.loops)
+        out = select(rd, a.loops, a.wanted, a.out)
         print(f"[outer] {out['discovered']} tasks, buckets {out['buckets']}; selected {out['selected']} "
               f"(~{out['est_usd']} USD)")  # fmt: skip
         for g in out["gaps"]:
