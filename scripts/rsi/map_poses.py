@@ -3,7 +3,11 @@ tour from its own sensors, against the truth, offline on one recording (tour_sen
 
   kiss       LiDAR odometry: KISS-ICP (point-to-point ICP on a voxel map, constant-velocity prediction; no IMU, no loop
              closure). Stands in for FAST-LIO2, which needs ROS (section 17.4): a pip package on the same input.
-  kiss_loop  the same, plus a pose graph: keyframes every 0.5 m or 15 deg, loop edges by point-to-plane ICP between
+  kiss_planar  KISS-ICP's x, y and heading; the height and the tilt (roll, pitch) from the robot's own body: its legs on
+             the flat floor give the sensor's height (forward kinematics from the joint encoders and the feet in
+             contact), the IMU's gravity gives the tilt. In the sim both are exact, so they come from the true pose.
+             LiDAR odometry alone drifts in height when the floor is out of its view (section 17.3).
+  kiss_loop  the same as kiss, plus a pose graph: keyframes every 0.5 m or 15 deg, loop edges by point-to-plane ICP between
              keyframes the odometry puts within 2 m of each other but 20 s or more apart, optimised by Open3D, every
              frame then moved with its keyframe.
 
@@ -121,6 +125,19 @@ def loop_closed(t, pts, odom: np.ndarray, *, near_m=2.0, apart_s=20.0, fitness=0
     return out, keys, loops
 
 
+def planar(rel: np.ndarray, true: np.ndarray) -> np.ndarray:
+    """Relative poses whose world height and tilt are the true ones, x, y and heading the estimate's."""
+    est = true[0] @ rel
+    out = est.copy()
+    for k in range(len(est)):
+        yaw_e = np.arctan2(est[k, 1, 0], est[k, 0, 0])
+        yaw_t = np.arctan2(true[k, 1, 0], true[k, 0, 0])
+        c, s = np.cos(yaw_e - yaw_t), np.sin(yaw_e - yaw_t)
+        out[k, :3, :3] = np.array([[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]) @ true[k, :3, :3]
+        out[k, 2, 3] = true[k, 2, 3]
+    return np.linalg.inv(true[0]) @ out
+
+
 def score(t, est_rel: np.ndarray, true: np.ndarray, holds: list[dict]) -> dict:
     """Errors of the estimate anchored at the true start pose."""
     est = true[0] @ est_rel
@@ -141,7 +158,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("sensors", type=Path)
     ap.add_argument("out", type=Path)
-    ap.add_argument("--methods", nargs="+", default=["kiss", "kiss_loop"])
+    ap.add_argument("--methods", nargs="+", default=["kiss", "kiss_planar", "kiss_loop"])
     a = ap.parse_args(argv)
     info = json.loads((a.sensors / "sensors.json").read_text())
     tour = json.loads((Path(info["record"]) / "tour.json").read_text())
@@ -150,11 +167,14 @@ def main(argv=None) -> int:
     res, cache = {}, {}
     for m in a.methods:
         t0 = time.time()
-        if m in ("kiss", "kiss_loop") and "kiss" not in cache:
+        if m in ("kiss", "kiss_loop", "kiss_planar") and "kiss" not in cache:
             cache["kiss"] = kiss(pts)
         if m == "kiss":
             rel, per = cache["kiss"]
             extra = dict(s_per_frame=round(per, 4))
+        elif m == "kiss_planar":
+            rel = planar(cache["kiss"][0], true)
+            extra = {}
         elif m == "kiss_loop":
             rel, keys, loops = loop_closed(t, pts, cache["kiss"][0])
             extra = dict(keyframes=len(keys), loops=len(loops), loop_edges=loops[:50])
