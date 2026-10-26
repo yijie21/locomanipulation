@@ -57,6 +57,25 @@
 
 同日：`evolution_media.py` 和 `report_unreal.py` 原来写死 ADT 公寓，改成跟着任务族的场景走（`media.json`、`--scene`）；`logistics_room_mars` 的 Unreal 场景关卡建好（复用 Warehouse 房间关卡）；`--rsi` 建场景时去掉场景包的固定机位 `video_camera`（73.74°，和回放的 45° 机位冲突）。这台机器上角色的 `claude -p` 不放开 Bash，`loop.py` 的调用加了 `--allowedTools "Bash"`。
 
+### 5.2 严格判据下的第一次内环（2026-10-24，TODO 38.24）
+
+用户决定在探针 3 / 10 时开循环，`loop.py run box_bimanual --max-iters 3`，沙盒 `~/workspace/code/rsi-scene/box-b`，15:06 起。判据是 `held` 加 `lifted(nor_cal_box, 0.20, 60)`、最后 5 秒每 0.1 秒都成立，走路 0.25 m/s，起步技能 `seeds/box_strict_start`（抱箱）。第 0 轮的候选被接受后现任在验收池上 34 / 40，过了 70% 的停止线，循环自己停了，只跑了 1 轮。
+
+| 步骤 | 耗时 | 费用 | 结果 |
+|---|---|---|---|
+| Reviewer | 24 min | 5.33 USD | 4 条假设，起步技能诊断池 0 / 30（29 局 `low_lift`、1 局 `no_lift`） |
+| Prober | 4 min | 0 | 四条都“已验证”：夹得更紧、抬得更高、窗口内多保持 → 11 / 30；再站近到 0.26 m → 22 / 30 |
+| Manager | 1 min | 0.53 USD | 建三条：按箱深定站位、抬后按目标本身的量等它稳住、抓高离重心 9–10 cm |
+| 三个 Engineer | 13–20 min | 3.7–5.3 USD 各 | 诊断池 22 / 25 / 22 / 30，没有一局变坏 |
+| Composer | 5 min | 2.00 USD | 原样采用第 2 份（`hug_judged_while_rising`）：参数 SQUEEZE_M 0.10、LIFT_DZ_M 0.35、LIFT_HOLD_S 3.2、STANDOFF_M 0.26，加一个抬后等待步骤——每拍看两手都碰着、最低角够高、倾斜在限内，连续成立 3.2 s 才结束，6 s 封顶 |
+| 验收门 | 3 min | 0 | 34 / 40 对 0 / 40，多赢 34、少赢 0；候选失败 4 局 `dropped_hold`、1 局 `slip`、1 局 `side_reach` |
+
+合计约 1 小时、20.47 USD。封存集 50 局：接受的版本 `6834ec73d077` **41 / 50（82%）**，长边朝外 25 / 25，短边朝外 16 / 25；种子 0 / 50。9 局失败里 6 局 `dropped_hold`、2 局 `slip`、1 局 `side_reach`，没有摔倒，1 局掉落。
+
+循环学会的仍是抱箱，不是探针里的人工夹壁抓法：它把夹持力、抬高和站位调大，并把“抬完马上保持”换成“看着判据等它稳住”。剩下的失败集中在短边朝外（16 / 25），和探针看到的一样。
+
+结果文件（在沙盒里，不在 git 中）：账本 `outputs/scene_rsi_20261016/box_bimanual/loop/ledger.jsonl`，这一轮的全部材料 `loop/iter_00/`，接受版本的技能 `loop/iter_00/candidate/skills/`，封存集 `outputs/scene_rsi_20261016_hidden/box_bimanual/sealed/summary.json`。
+
 ## 6. 命令
 
 全部命令在 [物流间 runbook](../rsi_logistics_room.md)。
