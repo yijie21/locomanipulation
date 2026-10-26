@@ -34,6 +34,9 @@ class Mid360Config:
     max_range_m: float = 40.0
     noise_m: float = 0.02
     seed: int = 0
+    # geom groups the rays may hit (MuJoCo's geomgroup, six flags), None: all. A full scene model carries visual
+    # meshes in groups 0-2 and their collision shapes in group 3: (1, 1, 1, 0, 0, 0) casts on what the cameras see
+    geomgroup: tuple[int, ...] | None = None
 
 
 def directions(n: int, start: int, cfg: Mid360Config) -> np.ndarray:
@@ -72,7 +75,8 @@ class Mid360:
         vec = directions(n, self.frame * n, cfg) @ R.T
         geom, dist = np.zeros(n, np.int32), np.zeros(n)
         t0 = time.perf_counter()
-        mujoco.mj_multiRay(self.m, data, p, vec.reshape(-1), None, 1, self.torso, geom, dist, None, n, cfg.max_range_m)
+        group = None if cfg.geomgroup is None else np.asarray(cfg.geomgroup, np.uint8)
+        mujoco.mj_multiRay(self.m, data, p, vec.reshape(-1), group, 1, self.torso, geom, dist, None, n, cfg.max_range_m)
         seconds = time.perf_counter() - t0
         self.frame += 1
         hit = (geom >= 0) & (dist >= cfg.min_range_m)

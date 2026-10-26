@@ -31,8 +31,10 @@ whether SAM 3 found the object at all)."""
 from __future__ import annotations
 
 import functools
+import json
 import zlib
 from dataclasses import dataclass
+from pathlib import Path
 
 import mujoco
 import numpy as np
@@ -68,6 +70,10 @@ class RenderConfig:
     unreal_port: int = UNREAL_ADDRESS[1]
     sam3_port: int = SAM3_ADDRESS[1]
     seed: int = 0
+    # vision D2 step 2d: a JSON {round seed: {object: [x, y, z] or null}}, the map's object nodes from the round's own
+    # mapping tour (scripts/rsi/map_memory.py). Such an object's prior is its node (null: the map found none, so the
+    # centre of the surface it stands on); the others keep prior_bias_m
+    memory: str = ""
 
     @classmethod
     def of(cls, spec: dict) -> RenderConfig:
@@ -78,6 +84,8 @@ class RenderConfig:
             raise ValueError(f"depth {cfg.depth!r}: mujoco, or unreal with masks sam3 (Unreal's frames)")
         if cfg.shape not in ("collision", "visual") or (cfg.shape == "visual" and not cfg.visual_scene):
             raise ValueError(f"shape {cfg.shape!r}: collision, or visual with a visual_scene")
+        if cfg.memory and not Path(cfg.memory).is_file():
+            raise ValueError(f"memory {cfg.memory!r}: no such file")
         return cfg
 
 
@@ -253,7 +261,7 @@ def mujoco_frames(model: mujoco.MjModel, cfg: RenderConfig):
 class RenderedView(TruthView):
     """TruthView with the free objects' poses from the cameras (module doc)."""
 
-    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n", "_log", "_sam3", "_seg", "_diag")
+    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n", "_log", "_sam3", "_seg", "_diag", "_mem")
 
     def __init__(self, world, cfg: RenderConfig, round_seed: int, frames=None):
         super().__init__(world)
@@ -267,6 +275,7 @@ class RenderedView(TruthView):
         self._sam3 = Client((SAM3_ADDRESS[0], int(cfg.sam3_port))) if cfg.masks == "sam3" else None
         self._seg: dict = {}  # (shot tick, camera, prompt) -> SAM 3 instances [(score, mask)]
         self._diag: dict = {}  # key -> what the last refresh's masks were against the exact ones
+        self._mem = json.loads(Path(cfg.memory).read_text()).get(str(self._round), {}) if cfg.memory else {}
 
     def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         if key not in self._world.free:
@@ -293,6 +302,13 @@ class RenderedView(TruthView):
 
     def _prior(self, key: str) -> dict:
         pos, quat = self._world.object_pose(key)
+        if key in self._mem:  # the map's memory (the orientation stays the start's, as below)
+            node = self._mem[key]
+            if node is None:
+                o = self._world.meta["objects"][key]
+                surf = self._world.meta["surfaces"][o["surface"]]
+                node = [*surf["xy"], float(surf["top"]) + float(o["box"]["half_extent"][2])]
+            return dict(pos=np.asarray(node, float), quat=np.asarray(quat, float), t=None, seen=False, rms=None)
         rng = np.random.default_rng([self._round, int(self._cfg.seed), zlib.crc32(key.encode())])
         a = rng.uniform(0.0, 2 * np.pi)
         off = float(self._cfg.prior_bias_m) * np.array([np.cos(a), np.sin(a), 0.0])

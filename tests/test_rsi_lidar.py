@@ -19,6 +19,7 @@ SCENE = """
   <worldbody>
     <geom name="floor" type="plane" size="10 10 0.1"/>
     <geom name="wall" type="box" pos="2.0 0 1.5" size="0.05 5 1.5"/>
+    <geom name="hull" type="box" pos="-2.0 0 1.5" size="0.05 5 1.5" group="3"/>
     <body name="pelvis" pos="0 0 0.8">
       <freejoint/>
       <geom type="box" size="0.1 0.1 0.1"/>
@@ -76,6 +77,18 @@ class Scan(unittest.TestCase):
             (np.abs(np.degrees(np.arctan2(rel[:, 1], rel[:, 0])) - 90) < 3) & (rel[:, 2] < 0.05) & (rel[:, 2] > -0.05)
         )
         self.assertEqual(int(toward_arm.sum()), 0)  # behind the arm's box (0.3 m to the side) nothing is seen
+
+
+class Groups(unittest.TestCase):
+    def test_a_geomgroup_mask_hides_the_collision_group(self):
+        m = mujoco.MjModel.from_xml_string(SCENE)
+        d = mujoco.MjData(m)
+        mujoco.mj_forward(m, d)
+        hull = m.geom("hull").id
+        every = L.Mid360(m, L.Mid360Config(rays_per_frame=4000, noise_m=0.0)).scan(d)
+        visual = L.Mid360(m, L.Mid360Config(rays_per_frame=4000, noise_m=0.0, geomgroup=(1, 1, 1, 0, 0, 0))).scan(d)
+        self.assertIn(hull, set(every["geoms"].tolist()))
+        self.assertNotIn(hull, set(visual["geoms"].tolist()))
 
 
 if __name__ == "__main__":

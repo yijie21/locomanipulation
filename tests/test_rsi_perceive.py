@@ -2,7 +2,9 @@
 world points, surface samples of a collision shape, ICP on one visible side, and RenderedView's refresh / sighting /
 prior logic over a synthetic camera (no renderer needed)."""
 
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -146,6 +148,23 @@ class Rendered(unittest.TestCase):
         self.assertEqual(s["log"][0]["rot_deg"], 0.0)  # the prior's orientation is the start's
         self.assertLess(s["log"][-1]["rot_deg"], 3.0)
         self.assertIsNone(s["log"][1]["pts"])  # inside period_s: no new picture
+
+    def test_the_maps_memory_is_the_prior_and_a_miss_falls_back_to_the_surface(self):
+        self.visible = False
+        self.world.meta = {"objects": {"obj": {"body": "obj_b", "surface": "t", "box": {"half_extent": [0.03, 0.03, 0.05]}},
+                                       "other": {"body": "o_b", "surface": "t", "box": {"half_extent": [0.03, 0.03, 0.04]}}},
+                           "surfaces": {"t": {"xy": [1.0, -0.5], "top": 0.77}}}  # fmt: skip
+        self.world.free["other"] = 8
+        with tempfile.TemporaryDirectory() as d:
+            mem = Path(d) / "memory.json"
+            mem.write_text(json.dumps({"610001": {"obj": [1.25, -0.38, 0.83], "other": None}, "610002": {}}))
+            self.cfg = P.RenderConfig.of(dict(prior_bias_m=0.05, memory=str(mem)))
+            v = self.view()
+            np.testing.assert_allclose(v.object_pose("obj")[0], [1.25, -0.38, 0.83])
+            np.testing.assert_allclose(v.object_pose("other")[0], [1.0, -0.5, 0.81])  # the surface, the half height up
+        self.assertEqual(v.stats()["obj"]["log"][0]["src"], "prior")
+        with self.assertRaises(ValueError):
+            P.RenderConfig.of(dict(memory="/nonexistent/memory.json"))
 
     def test_a_hidden_object_keeps_its_last_estimate_and_a_moved_one_is_followed(self):
         v = self.view()
