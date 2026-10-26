@@ -37,25 +37,14 @@ from sklearn.cluster import DBSCAN
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "src"))
 
+from map_common import MAX_DEPTH_M, kmat, se3, stereo_noise  # noqa: E402
+
 from locomani.primitives.navigator import build as build_navigation  # noqa: E402
 
 BODY_RADIUS_M = 0.35  # scene.world's
-STEREO_PX, BASELINE_M, MAX_DEPTH_M = 0.08, 0.095, 6.0
 OBST_Z, FLOOR_Z, MIN_HITS = (0.08, 1.7), 0.04, 3
 SURF_Z = (0.25, 1.35)
 CELL_M = 0.05  # surface footprints compared on this grid
-
-
-def se3(R, p) -> np.ndarray:
-    T = np.eye(4)
-    T[:3, :3], T[:3, 3] = R, p
-    return T
-
-
-def kmat(K) -> np.ndarray:
-    """The camera matrix, from either a 3 x 3 or tour_sensors' first (fx, fy, cx, cy)."""
-    K = np.asarray(K, float)
-    return K if K.shape == (3, 3) else np.array([[K[0], 0.0, K[2]], [0.0, K[1], K[3]], [0.0, 0.0, 1.0]])
 
 
 def load(sensors: Path, poses: str):
@@ -77,7 +66,7 @@ def camera_points(sensors: Path, cz, lt, le, lidar_t, stride: int, noise: bool, 
     for i, t in enumerate(cz["t"]):
         z = cv2.imread(str(sensors / "depth" / f"{i:05d}.png"), cv2.IMREAD_UNCHANGED)[::stride, ::stride] / 1000.0
         if noise:
-            z = z + rng.normal(size=z.shape) * z**2 * STEREO_PX / (K[1, 1] * BASELINE_M)
+            z = stereo_noise(z, K[1, 1], rng)
         ok = (z > 0.1) & (z < MAX_DEPTH_M)
         own = sensors / "self" / f"{i:05d}.png"
         if own.exists():  # the robot's own arms and hands (the self filter)

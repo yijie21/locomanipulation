@@ -37,6 +37,8 @@ hard way elsewhere and worth stating up front:
 
 from __future__ import annotations
 
+import base64
+
 import numpy as np
 import skfmm
 from scipy.ndimage import distance_transform_edt
@@ -96,6 +98,8 @@ class OccupancyMap:
             self.add_segment(a, b)
         for poly in room.get("obstacles") or ():
             self.add_polygon(poly)
+        if room.get("blocked"):  # a raster of blocked cells (vision RSI D2's perceived map, scene/mapped.py)
+            self.add_raster(room["blocked"])
 
         self.surfaces = {}
         for key, surf in meta.get("surfaces", {}).items():
@@ -162,6 +166,17 @@ class OccupancyMap:
                 c = cells + [dx, dy]
                 ok = (c[:, 0] >= 0) & (c[:, 0] < self.nx) & (c[:, 1] >= 0) & (c[:, 1] < self.ny)
                 self.occupied[c[ok, 0], c[ok, 1]] = True
+
+    def add_raster(self, raster: dict) -> None:
+        """Mark the cells under a raster's blocked cells ({origin, res, shape [nx, ny], bits: base64 of
+        np.packbits over the [x, y]-ordered mask}), each by its centre."""
+        nx, ny = (int(v) for v in raster["shape"])
+        mask = np.unpackbits(np.frombuffer(base64.b64decode(raster["bits"]), np.uint8), count=nx * ny)
+        ij = np.argwhere(mask.reshape(nx, ny).astype(bool))
+        xy = np.asarray(raster["origin"], float) + (ij + 0.5) * float(raster["res"])
+        c = np.floor((xy - self.origin) / self.res).astype(int)
+        ok = (c[:, 0] >= 0) & (c[:, 0] < self.nx) & (c[:, 1] >= 0) & (c[:, 1] < self.ny)
+        self.occupied[c[ok, 0], c[ok, 1]] = True
 
     def cell_of(self, xy) -> np.ndarray:
         return np.floor((np.asarray(xy, dtype=float)[:2] - self.origin) / self.res).astype(int)

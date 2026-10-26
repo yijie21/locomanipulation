@@ -40,6 +40,8 @@ import mujoco
 import numpy as np
 from scipy.spatial import cKDTree
 
+from locomani.primitives.navigator import build as build_navigation
+from locomani.tasks.scene.mapped import with_free_disc
 from locomani.tasks.scene.services import SAM3_ADDRESS, UNREAL_ADDRESS, Client, prompt_of, unpack_mask
 from locomani.tasks.scene.view import TruthView, geom_rows
 
@@ -74,6 +76,9 @@ class RenderConfig:
     # mapping tour (scripts/rsi/map_memory.py). Such an object's prior is its node (null: the map found none, so the
     # centre of the surface it stands on); the others keep prior_bias_m
     memory: str = ""
+    # vision D2 step 2d: a perceived scene description (scripts/rsi/map_meta.py, scene.mapped): the plan reads it as
+    # `meta`, with the occupancy map and navigator built from it; the judge keeps the truth
+    mapped: str = ""
 
     @classmethod
     def of(cls, spec: dict) -> RenderConfig:
@@ -84,8 +89,9 @@ class RenderConfig:
             raise ValueError(f"depth {cfg.depth!r}: mujoco, or unreal with masks sam3 (Unreal's frames)")
         if cfg.shape not in ("collision", "visual") or (cfg.shape == "visual" and not cfg.visual_scene):
             raise ValueError(f"shape {cfg.shape!r}: collision, or visual with a visual_scene")
-        if cfg.memory and not Path(cfg.memory).is_file():
-            raise ValueError(f"memory {cfg.memory!r}: no such file")
+        for name in ("memory", "mapped"):
+            if getattr(cfg, name) and not Path(getattr(cfg, name)).is_file():
+                raise ValueError(f"{name} {getattr(cfg, name)!r}: no such file")
         return cfg
 
 
@@ -258,10 +264,34 @@ def mujoco_frames(model: mujoco.MjModel, cfg: RenderConfig):
     return _FRAMES[k]
 
 
+START_FREE_M = 0.5  # a mapped round: the floor this far around the robot's start counts as seen free
+
+
+@functools.lru_cache(maxsize=4)
+def _mapped(path: str) -> dict:
+    """A perceived scene description, read once per process (the skills key their map caches on its identity)."""
+    return json.loads(Path(path).read_text())
+
+
 class RenderedView(TruthView):
     """TruthView with the free objects' poses from the cameras (module doc)."""
 
-    __slots__ = ("_cfg", "_round", "_frames", "_shot", "_est", "_model", "_n", "_log", "_sam3", "_seg", "_diag", "_mem")
+    __slots__ = (
+        "_cfg",
+        "_round",
+        "_frames",
+        "_shot",
+        "_est",
+        "_model",
+        "_n",
+        "_log",
+        "_sam3",
+        "_seg",
+        "_diag",
+        "_mem",
+        "_meta",
+        "_maps",
+    )
 
     def __init__(self, world, cfg: RenderConfig, round_seed: int, frames=None):
         super().__init__(world)
@@ -276,6 +306,22 @@ class RenderedView(TruthView):
         self._seg: dict = {}  # (shot tick, camera, prompt) -> SAM 3 instances [(score, mask)]
         self._diag: dict = {}  # key -> what the last refresh's masks were against the exact ones
         self._mem = json.loads(Path(cfg.memory).read_text()).get(str(self._round), {}) if cfg.memory else {}
+        self._meta, self._maps = None, None
+        if cfg.mapped:  # the round's floor is free around where it starts (scene.mapped.with_free_disc)
+            self._meta = with_free_disc(_mapped(cfg.mapped), world.motor.pelvis()[0][:2], START_FREE_M)
+            self._maps = build_navigation(self._meta, body_radius=world.occ.body_radius)
+
+    @property
+    def meta(self) -> dict:
+        return self._world.meta if self._meta is None else self._meta
+
+    @property
+    def occ(self):
+        return self._world.occ if self._maps is None else self._maps[0]
+
+    @property
+    def nav(self):
+        return self._world.nav if self._maps is None else self._maps[1]
 
     def object_pose(self, key: str) -> tuple[np.ndarray, np.ndarray]:
         if key not in self._world.free:

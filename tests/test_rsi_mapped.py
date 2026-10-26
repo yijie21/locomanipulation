@@ -39,7 +39,7 @@ class Perceived(unittest.TestCase):
         g = grid_with_box()
         meta = M.perceived_meta(META, g, [], {}, {}, parts=("grid",))
         occ, _ = build(meta, body_radius=0.35)
-        self.assertEqual(meta["room"]["walls"], [])
+        self.assertEqual((meta["room"]["walls"], meta["room"]["obstacles"]), ([], []))
         self.assertNotIn("lamp", meta["objects"])  # statics are in the grid
         self.assertTrue(occ.occupied[25, 45])  # the obstacle
         self.assertTrue(occ.occupied[10, 78])  # the unseen strip
@@ -58,6 +58,16 @@ class Perceived(unittest.TestCase):
         self.assertEqual(meta["objects"]["cup"]["init_pos"], [3.01, 2.99, 0.81])
         self.assertEqual(meta["room"]["walls"], META["room"]["walls"])  # the grid part not asked for
         self.assertEqual(META["surfaces"]["t"]["xy"], [3.0, 3.0])  # the input untouched
+
+    def test_the_start_disc_frees_the_floor_around_the_robot(self):
+        meta = M.perceived_meta(META, grid_with_box(), [], {}, {}, parts=("grid",))
+        free = M.with_free_disc(meta, [1.25, 2.25], 0.4)  # the obstacle's middle
+        occ0, _ = build(meta, body_radius=0.35)
+        occ1, _ = build(free, body_radius=0.35)
+        self.assertTrue(occ0.occupied[25, 45])
+        self.assertFalse(occ1.occupied[25, 45])
+        self.assertTrue(occ1.occupied[10, 78])  # far from the disc: unchanged
+        self.assertIsNot(free["room"], meta["room"])
 
     def test_what_the_map_missed_keeps_the_truth_and_is_listed(self):
         meta = M.perceived_meta(META, grid_with_box(), [], {}, {}, parts=("surfaces", "objects"))

@@ -2,9 +2,9 @@
 would have after its mapping tour, in the scene file's own shape, so the skills read it as `world.meta` unchanged.
 
 Each part replaces its truth independently (`parts`), for the swap-back matrix of section 6:
-  grid      the walking map: the room's walls and obstacles become the perceived blocked cells (obstacles, and cells
-            never seen as floor: section 17.1, rule 4) as polygons; static objects leave the description (the grid
-            holds what was seen of them)
+  grid      the walking map: the room's walls and obstacles give way to the perceived blocked cells (obstacles, and
+            cells never seen as floor: section 17.1, rule 4) as a raster (room.blocked, which the navigator reads);
+            static objects leave the description (the grid holds what was seen of them)
   surfaces  every surface the map found takes its perceived centre, height, extent and heading, and approach edges by
             the scene file's rule (scene_discovery.floorplan.approach_edges) on the perceived clearance; a surface the
             map did not find keeps the truth, listed in `meta["perceived"]["surfaces_kept"]`
@@ -14,28 +14,20 @@ Each part replaces its truth independently (`parts`), for the swap-back matrix o
 
 from __future__ import annotations
 
+import base64
 import copy
 
-import cv2
 import numpy as np
 from scipy.ndimage import distance_transform_edt
 
 PARTS = ("grid", "surfaces", "objects")
 
 
-def blocked_polygons(blocked: np.ndarray, origin, res: float) -> list[list[list[float]]]:
-    """Outlines of the blocked cells' connected regions, world xy (a polygon per outer contour; holes are free)."""
-    img = np.ascontiguousarray(blocked.T.astype(np.uint8))  # rows y, columns x
-    contours, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    out = []
-    for c in contours:
-        if len(c) < 3:
-            ij = c[:, 0, :]
-            lo, hi = ij.min(0), ij.max(0) + 1
-            c = np.array([[lo], [[hi[0], lo[1]]], [hi], [[lo[0], hi[1]]]])
-        xy = np.asarray(origin, float) + (c[:, 0, :] + 0.5) * res
-        out.append(xy.round(4).tolist())
-    return out
+def raster(blocked: np.ndarray, origin, res: float) -> dict:
+    """The navigator's raster form of a blocked-cell mask ([x, y]-indexed): navigator.OccupancyMap.add_raster."""
+    bits = np.packbits(np.asarray(blocked, bool).ravel())
+    return dict(origin=[float(v) for v in origin], res=float(res), shape=list(blocked.shape),
+                bits=base64.b64encode(bits.tobytes()).decode())  # fmt: skip
 
 
 class _Grid:
@@ -68,7 +60,7 @@ def perceived_meta(meta: dict, grid: dict, surfaces: list[dict], match: dict[str
     clear = distance_transform_edt(~blocked, sampling=res)
     info = dict(parts=list(parts), surfaces_kept=[], objects_kept=[])
     if "grid" in parts:
-        out["room"] = dict(out["room"], walls=[], obstacles=blocked_polygons(blocked, origin, res))
+        out["room"] = dict(out["room"], walls=[], obstacles=[], blocked=raster(blocked, origin, res))
         out["objects"] = {k: o for k, o in out["objects"].items() if o.get("free")}
     if "surfaces" in parts:
         for k, s in out["surfaces"].items():
@@ -89,4 +81,19 @@ def perceived_meta(meta: dict, grid: dict, surfaces: list[dict], match: dict[str
             else:
                 info["objects_kept"].append(k)
     out["perceived"] = info
+    return out
+
+
+def with_free_disc(meta: dict, xy, radius: float) -> dict:
+    """A copy of a perceived description whose raster has the cells within `radius` of `xy` free: the floor a round
+    starts on (the robot stands there and its first looks see around it; the tour need not have)."""
+    r = meta["room"].get("blocked")
+    if not r:
+        return meta
+    nx, ny = (int(v) for v in r["shape"])
+    mask = np.unpackbits(np.frombuffer(base64.b64decode(r["bits"]), np.uint8), count=nx * ny).reshape(nx, ny)
+    ij = np.stack(np.meshgrid(np.arange(nx), np.arange(ny), indexing="ij"), -1)
+    centres = np.asarray(r["origin"], float) + (ij + 0.5) * float(r["res"])
+    mask[np.linalg.norm(centres - np.asarray(xy, float)[:2], axis=-1) <= radius] = 0
+    out = dict(meta, room=dict(meta["room"], blocked=raster(mask.astype(bool), r["origin"], r["res"])))
     return out

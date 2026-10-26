@@ -7,11 +7,14 @@ Replay: MuJoCo, doors open, the robot's own pixels removed), SAM 3 is prompted w
 
 Which node is the target: the instruction names the object's category and the surface it stands on ("the small vase
 on the bottom shelf of the wide display unit"; the scene description's surface phrase), so the node is the one standing
-on that surface (inside its footprint, padded 5 cm, at most 40 cm above its top) seen in the most views. None there:
+on that surface (inside its footprint, padded 5 cm, at most 40 cm above its top) that `choice` rates highest: views
+times mean score, discounted by how far its 3-D extent is from the named object's model (the object models L2 and L3
+fit already; the small vase and the medium one beside it differ by size). None there:
 null, and the round's prior is the surface's centre (perceive.RenderConfig.memory).
 
-The frames: every head-scan frame at a viewpoint the tour assigned the support to, and every walking frame whose view
-holds the support's centre within 3.5 m (by the estimated camera pose).
+The frames: every head-scan frame at a viewpoint the tour assigned the support to, and every tour frame in which some of
+the support's top is in view and not hidden (frames_seeing). The diagnosis
+file keeps every candidate node on the support (views, best and mean score, error) to compare choice rules.
 
     MUJOCO_GL=egl PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/rsi/map_memory.py \\
         outputs/vision_rsi_20261023/tour outputs/vision_rsi_20261023/pool_sealed outputs/vision_rsi_20261023/tour/memory.json \\
@@ -34,34 +37,51 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
-from map_build import BASELINE_M, MAX_DEPTH_M, STEREO_PX, kmat, se3  # noqa: E402
+from map_common import MAX_DEPTH_M, kmat, se3, stereo_noise  # noqa: E402
 from tour_sensors import H, Replay, W, head_quat  # noqa: E402
 
 from locomani.tasks.scene.services import SAM3_ADDRESS, Client, prompt_of, unpack_mask  # noqa: E402
 from locomani.tasks.scene.tour import in_box  # noqa: E402
 
-MIN_SCORE, SIZE_FACTOR, MERGE_M = 0.4, 1.6, 0.08
+MIN_SCORE, SIZE_FACTOR, MERGE_M = 0.3, 1.6, 0.08  # the score floor as L3's sam3_min_score
 
 
-def frames_seeing(surface: dict, tour: dict, frames: list[dict], cams: np.ndarray, K: np.ndarray) -> list[int]:
-    """Scan frames at the support's viewpoints, and walking frames whose (estimated) view holds its centre within
-    3.5 m."""
-    vps = {k for k, v in enumerate(tour["viewpoints"]) if surface["key"] in v["surfaces"]}
-    c = np.r_[surface["xy"], float(surface["top"])]
+def frames_seeing(surface: dict, sensors: Path, frames: list[dict], cams: np.ndarray, K: np.ndarray,
+                  cache: dict) -> list[int]:  # fmt: skip
+    """The tour frames in which some of the support's top is in view and unoccluded: 5 x 5 points on its footprint at
+    its height, projected with the estimated camera pose, within 3.5 m and no farther than the tour's own depth there
+    (+3 cm; the tour's render, default placements). Cached per surface."""
+    if surface["key"] in cache:
+        return cache[surface["key"]]
+    he, yaw = np.asarray(surface["half_extent"], float), float(surface.get("yaw", 0.0))
+    R = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+    g = np.stack(np.meshgrid(np.linspace(-0.8, 0.8, 5), np.linspace(-0.8, 0.8, 5)), -1).reshape(-1, 2) * he
+    pts = np.c_[np.asarray(surface["xy"], float) + g @ R.T, np.full(len(g), float(surface["top"]))]
     out = []
     for f in frames:
-        if f["kind"] == "scan":
-            if f["viewpoint"] in vps:
-                out.append(f["i"])
-            continue
         T = cams[f["i"]]
-        p = T[:3, :3].T @ (c - T[:3, 3])  # camera frame: x right, y up, z backward
-        if not 0.3 < -p[2] < 3.5:
+        p = (pts - T[:3, 3]) @ T[:3, :3]  # camera frame: x right, y up, z backward
+        z = -p[:, 2]
+        ok = (z > 0.3) & (z < 3.5)
+        if not ok.any():
             continue
-        u, v = K[0, 0] * p[0] / -p[2] + K[0, 2], -K[1, 1] * p[1] / -p[2] + K[1, 2]
-        if 20 <= u < W - 20 and 20 <= v < H - 20:
+        u = K[0, 0] * p[ok, 0] / z[ok] + K[0, 2]
+        v = -K[1, 1] * p[ok, 1] / z[ok] + K[1, 2]
+        inside = (u >= 0) & (u < W) & (v >= 0) & (v < H)
+        if not inside.any():
+            continue
+        depth = cv2.imread(str(sensors / "depth" / f"{f['i']:05d}.png"), cv2.IMREAD_UNCHANGED) / 1000.0
+        d = depth[v[inside].astype(int), u[inside].astype(int)]
+        if np.any(d + 0.03 >= z[ok][inside]):
             out.append(f["i"])
+    cache[surface["key"]] = out
     return out
+
+
+def choice(node: dict, own: float) -> float:
+    """How likely a node is the named object: views times mean score, discounted by how far its extent is from the
+    object model's (a factor of 2 off halves it)."""
+    return node["views"] * node["mean_score"] * 2.0 ** -abs(np.log2(max(node["extent"], 1e-3) / own))
 
 
 def nodes_of(dets: list[dict]) -> list[dict]:
@@ -76,7 +96,9 @@ def nodes_of(dets: list[dict]) -> list[dict]:
         else:
             out.append(dict(centre=list(d["centre"]), members=[d]))
     return [dict(centre=np.round(n["centre"], 4).tolist(), views=len(n["members"]),
-                 score=round(max(m["score"] for m in n["members"]), 3)) for n in out]  # fmt: skip
+                 score=round(max(m["score"] for m in n["members"]), 3),
+                 mean_score=round(float(np.mean([m["score"] for m in n["members"]])), 3),
+                 extent=round(float(np.median([m["extent"] for m in n["members"]])), 3)) for n in out]  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -108,6 +130,7 @@ def main(argv=None) -> int:
     diag_path = a.out.with_name(a.out.stem + "_diag.json")
     diag = json.loads(diag_path.read_text()) if diag_path.exists() else {}
     rng = np.random.default_rng(0)
+    seen_cache: dict = {}
     for start_file in sorted(a.pool.glob("pick_*.json")):
         st = json.loads(start_file.read_text())
         seed = str(st["start"]["seed"])
@@ -117,7 +140,9 @@ def main(argv=None) -> int:
         t0 = time.time()
         phrase, sk = prompt_of(meta["objects"][key], key), meta["objects"][key]["surface"]
         surf = dict(meta["surfaces"][sk], key=sk)
-        pick = frames_seeing(surf, tour, frames, cams, K)
+        vps = {k for k, v in enumerate(tour["viewpoints"]) if sk in v["surfaces"]}
+        scans = [f["i"] for f in frames if f["kind"] == "scan" and f["viewpoint"] in vps]
+        pick = sorted(set(frames_seeing(surf, a.tour / "sensors", frames, cams, K, seen_cache)) | set(scans))
         rp = Replay(scene_dir, traj, st["start"]["placements"], meta)
         m, d = rp.m, rp.d
         cid = m.camera("head_camera").id
@@ -141,7 +166,7 @@ def main(argv=None) -> int:
             r.disable_segmentation_rendering()
             mine = (seg[..., 1] == int(mujoco.mjtObj.mjOBJ_GEOM)) & (seg[..., 0] >= 0)
             mine[mine] = robot[seg[..., 0][mine]]
-            z = z + rng.normal(size=z.shape) * z**2 * STEREO_PX / (K[1, 1] * BASELINE_M)
+            z = stereo_noise(z, K[1, 1], rng)
             res = sam.call(dict(image=rgb, prompts=[phrase]))
             if "error" in res:
                 raise SystemExit(res["error"])
@@ -161,20 +186,23 @@ def main(argv=None) -> int:
                 ext = float(np.linalg.norm(np.percentile(w, 95, axis=0) - np.percentile(w, 5, axis=0)))
                 if ext > SIZE_FACTOR * size[phrase]:
                     continue
-                dets.append(dict(frame=i, score=float(score), centre=np.median(w, axis=0).tolist()))
+                dets.append(dict(frame=i, score=float(score), centre=np.median(w, axis=0).tolist(), extent=ext))
         m.cam_quat[cid] = mount
         r.close()
         nodes = nodes_of(dets)
         top = float(surf["top"])
         on = [n for n in nodes if in_box(n["centre"][:2], surf, 0.05) and top - 0.02 <= n["centre"][2] <= top + 0.4]
-        best = max(on, key=lambda n: (n["views"], n["score"])) if on else None
+        own = 2 * float(np.linalg.norm(meta["objects"][key]["box"]["half_extent"]))  # the named object's model
+        best = max(on, key=lambda n: choice(n, own)) if on else None
         truth = np.asarray(st["start"]["placements"][key][0], float)
         out[seed] = {key: best["centre"] if best else None}
         diag[seed] = dict(task=st["task"], phrase=phrase, frames=len(pick), detections=len(dets), nodes=len(nodes),
                           on_support=len(on), views=best["views"] if best else 0,
                           err_cm=round(100 * float(np.linalg.norm(np.subtract(best["centre"], truth))), 1) if best else None,
                           nearest_on_support_cm=round(100 * min(float(np.linalg.norm(np.subtract(n["centre"], truth))) for n in on), 1) if on else None,
-                          seconds=round(time.time() - t0, 1))  # fmt: skip
+                          seconds=round(time.time() - t0, 1),
+                          candidates=[dict(n, err_cm=round(100 * float(np.linalg.norm(np.subtract(n["centre"], truth))), 1))
+                                      for n in on])  # fmt: skip
         print(seed, json.dumps(diag[seed]), flush=True)
         a.out.parent.mkdir(parents=True, exist_ok=True)
         a.out.write_text(json.dumps(out, indent=1))

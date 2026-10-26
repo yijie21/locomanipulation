@@ -29,7 +29,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
-from map_build import BASELINE_M, MAX_DEPTH_M, STEREO_PX, kmat, load, se3  # noqa: E402
+from map_build import load  # noqa: E402
+from map_common import MAX_DEPTH_M, kmat, se3, stereo_noise  # noqa: E402
 
 from locomani.tasks.scene.services import SAM3_ADDRESS, Client, prompt_of, unpack_mask  # noqa: E402
 
@@ -81,7 +82,7 @@ def main(argv=None) -> int:
     for i in pick:
         rgb = cv2.cvtColor(cv2.imread(str(a.sensors / "rgb" / f"{i:05d}.jpg")), cv2.COLOR_BGR2RGB)
         z = cv2.imread(str(a.sensors / "depth" / f"{i:05d}.png"), cv2.IMREAD_UNCHANGED) / 1000.0
-        z = z + rng.normal(size=z.shape) * z**2 * STEREO_PX / (K[1, 1] * BASELINE_M)
+        z = stereo_noise(z, K[1, 1], rng)
         n = int(np.argmin(np.abs(lz["t"] - cz["t"][i])))
         cam = le[n] @ np.linalg.inv(lt[n]) @ se3(cz["R"][i], cz["pos"][i])
         res = sam.call(dict(image=rgb, prompts=phrases))

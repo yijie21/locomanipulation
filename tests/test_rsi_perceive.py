@@ -166,6 +166,21 @@ class Rendered(unittest.TestCase):
         with self.assertRaises(ValueError):
             P.RenderConfig.of(dict(memory="/nonexistent/memory.json"))
 
+    def test_a_perceived_description_is_what_the_plan_reads(self):
+        mapped = {"room": {"bounds": {"x": [0.0, 2.0], "y": [0.0, 2.0]}, "walls": [], "obstacles": [[[0.5, 0.5], [1.0, 0.5], [1.0, 1.0], [0.5, 1.0]]]},
+                  "surfaces": {}, "objects": {"obj": {"body": "obj_b"}}}  # fmt: skip
+        self.world.occ = SimpleNamespace(body_radius=0.35)
+        self.motor.pelvis = lambda: (np.array([1.8, 1.8, 0.79]), np.array([1.0, 0, 0, 0]))
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "meta.json"
+            f.write_text(json.dumps(mapped))
+            self.cfg = P.RenderConfig.of(dict(mapped=str(f)))
+            v = self.view()
+        self.assertEqual(v.meta["room"]["obstacles"], mapped["room"]["obstacles"])
+        self.assertTrue(v.occ.occupied[15, 15])  # (0.75, 0.75): the perceived obstacle
+        self.assertIs(v.nav.occ, v.occ)
+        self.assertIsNot(v.meta, self.world.meta)  # the judge keeps the world's
+
     def test_a_hidden_object_keeps_its_last_estimate_and_a_moved_one_is_followed(self):
         v = self.view()
         p1, _ = v.object_pose("obj")
