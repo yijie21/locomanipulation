@@ -6,7 +6,7 @@ the progress report.
           camera depth and LiDAR placed with its estimated poses (map_build.py's rules: obstacle 3+ points at
           0.08-1.7 m, floor 3+ below 0.04 m, the rest not seen), its path, the head camera's field of view, the
           viewpoints (filled once scanned); for the exploration walk also the frontier (seen floor next to unseen)
-  figure  (vision_map venv) the finished map of the planned tour: its point cloud from above coloured by height, and
+  figure  (vision_map venv) the finished map of a walk: its point cloud from above coloured by height, and
           its walking map against the scene file's, the surfaces it found and where it put the targets
 
     MUJOCO_GL=egl PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python \\
@@ -186,77 +186,90 @@ def hide_ceilings(m, d) -> int:
     return n
 
 
-def video(a) -> int:
-    import mujoco
-    from tour_sensors import Replay
+class WalkVideo:
+    """One walk's video, frame by frame. The map panel, the overlays and the encoding are built here; the overhead shot
+    and the head camera's image are passed in to `frame` -- MuJoCo's (`video` below) or another renderer's (an Unreal
+    capture: push `qpos(t)`, shoot, pass the two images). Call `frame` in the order of `times()`: the map accumulates."""
 
-    walk = a.walk
-    tour = json.loads((walk / "record" / "tour.json").read_text())
-    traj = dict(np.load(walk / "record" / "trajectory.npz"))
-    meta = json.loads((REPO / tour["scene"] / "scene_meta.json").read_text())
-    poses = np.load(walk / "poses" / "kiss_planar.npy")
-    contrib, cz, cams, lidar_t, _ = contributions(walk, poses)
-    rp = Replay(REPO / tour["scene"], traj, None, meta)
-    m, d = rp.m, rp.d
-    hide_ceilings(m, d)
     LW, RW, H = 600, 360, 540
-    r = mujoco.Renderer(m, H, LW, max_geom=int(m.ngeom) + 1000)
-    text = Text()
-    nx, ny = grid_shape()
-    obst, floor = np.zeros(nx * ny, np.int32), np.zeros(nx * ny, np.int32)
-    vps = [np.asarray(v["xy"], float) for v in tour["viewpoints"]]
-    holds = tour["holds"]
-    fov = 2 * np.arctan(320.0 / kmat(cz["K"])[0, 0])
-    t_end = float(traj["t"][-1])
-    n = int(t_end * FPS / SPEED) + 1
-    frames, ci, path = [], 0, []
-    for k in range(n + FPS * 2):  # two still seconds at the end
-        t = min(k * SPEED / FPS, t_end)
-        while ci < len(contrib) and contrib[ci][0] <= t:
-            _, o, f = contrib[ci]
-            np.add.at(obst, o[o >= 0], 1)
-            np.add.at(floor, f[f >= 0], 1)
-            ci += 1
-        li = int(np.clip(np.searchsorted(lidar_t, t), 0, len(lidar_t) - 1))
-        here = poses[li][:3, 3]
-        path.append(here[:2].copy())
-        cj = int(np.clip(np.searchsorted(cz["t"], t, side="right") - 1, 0, len(cz["t"]) - 1))
-        fwd = cams[cj][:3, :3] @ np.array([0.0, 0.0, -1.0])  # the head camera's view direction
+
+    def __init__(self, walk, explore: bool = True, speed: float = SPEED, fps: int = FPS):
+        from tour_sensors import Replay
+
+        self.walk, self.explore, self.speed, self.fps = Path(walk), bool(explore), float(speed), int(fps)
+        self.tour = json.loads((self.walk / "record" / "tour.json").read_text())
+        traj = dict(np.load(self.walk / "record" / "trajectory.npz"))
+        self.meta = json.loads((REPO / self.tour["scene"] / "scene_meta.json").read_text())
+        self.poses = np.load(self.walk / "poses" / "kiss_planar.npy")
+        self.contrib, self.cz, self.cams, self.lidar_t, _ = contributions(self.walk, self.poses)
+        self.rp = Replay(REPO / self.tour["scene"], traj, None, self.meta)  # the full scene model, doors open
+        self.t_end = float(traj["t"][-1])
+        nx, ny = grid_shape()
+        self.obst, self.floor = np.zeros(nx * ny, np.int32), np.zeros(nx * ny, np.int32)
+        self.ci, self.path = 0, []
+        self.vps = [np.asarray(v["xy"], float) for v in self.tour["viewpoints"]]
+        self.holds = self.tour["holds"]
+        self.fov = 2 * np.arctan(320.0 / kmat(self.cz["K"])[0, 0])
+        self.text = Text()
+
+    def times(self) -> list[float]:
+        """Frame times (sim seconds): the walk at `speed`, then two still seconds."""
+        n = int(self.t_end * self.fps / self.speed) + 1
+        return [min(k * self.speed / self.fps, self.t_end) for k in range(n + self.fps * 2)]
+
+    def qpos(self, t: float) -> np.ndarray:
+        """The scene's qpos at `t` (same layout in the full and the physics model): the robot from the trace, the
+        objects at the scene's defaults."""
+        self.rp.pose(self.rp.row(t))
+        return self.rp.d.qpos.copy()
+
+    def head_index(self, t: float) -> int:
+        """The head-camera frame (tour_sensors' sensors/rgb/<index>.jpg) shown at `t`."""
+        return int(np.clip(np.searchsorted(self.cz["t"], t, side="right") - 1, 0, len(self.cz["t"]) - 1))
+
+    def frame(self, t: float, overhead: np.ndarray, head: np.ndarray) -> np.ndarray:
+        """The composed RGB frame: `overhead` (any size, fitted to 600 x 540) on the left with `head` in its corner,
+        the map so far on the right, the titles and the caption."""
+        LW, RW, H = self.LW, self.RW, self.H
+        while self.ci < len(self.contrib) and self.contrib[self.ci][0] <= t:
+            _, o, f = self.contrib[self.ci]
+            np.add.at(self.obst, o[o >= 0], 1)
+            np.add.at(self.floor, f[f >= 0], 1)
+            self.ci += 1
+        li = int(np.clip(np.searchsorted(self.lidar_t, t), 0, len(self.lidar_t) - 1))
+        here = self.poses[li][:3, 3]
+        self.path.append(here[:2].copy())
+        fwd = self.cams[self.head_index(t)][:3, :3] @ np.array([0.0, 0.0, -1.0])  # the head camera's view direction
         yaw = float(np.arctan2(fwd[1], fwd[0]))
-        scanned = {h["viewpoint"] for h in holds if h["t1"] <= t}
-        holding = next((h for h in holds if h["t0"] <= t < h["t1"]), None)
-        rp.pose(rp.row(t))
-        cam = mujoco.MjvCamera()
-        cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-        cam.lookat[:] = [*d.xpos[m.body("pelvis").id][:2], 0.4]
-        cam.azimuth, cam.elevation, cam.distance = 90.0, -89.9, 4.5
-        r.update_scene(d, camera=cam)
-        left = Image.fromarray(r.render().copy())
-        inset = Image.open(walk / "sensors" / "rgb" / f"{cj:05d}.jpg").convert("RGB").resize((208, 156))
-        left.paste(inset, (10, H - 156 - 10))
+        scanned = {h["viewpoint"] for h in self.holds if h["t1"] <= t}
+        holding = next((h for h in self.holds if h["t0"] <= t < h["t1"]), None)
+        left = Image.fromarray(np.asarray(overhead, np.uint8)).convert("RGB").resize((LW, H))
+        left.paste(Image.fromarray(np.asarray(head, np.uint8)).convert("RGB").resize((208, 156)), (10, H - 156 - 10))
         # the exploration's stops are chosen as it goes: draw only the ones reached
-        shown = [j for j in range(len(vps)) if not a.explore or j in scanned or (holding or {}).get("viewpoint") == j]
-        right = map_panel(obst, floor, path, here[:2], yaw, fov, [vps[j] for j in shown],
+        shown = [j for j in range(len(self.vps))
+                 if not self.explore or j in scanned or (holding or {}).get("viewpoint") == j]  # fmt: skip
+        right = map_panel(self.obst, self.floor, self.path, here[:2], yaw, self.fov, [self.vps[j] for j in shown],
                           {i for i, j in enumerate(shown) if j in scanned},
-                          frontier_cells(obst, floor) if a.explore else None, RW, H - 60)  # fmt: skip
+                          frontier_cells(self.obst, self.floor) if self.explore else None, RW, H - 60)  # fmt: skip
         canvas = Image.new("RGB", (LW + RW, H + 34), (24, 24, 24))
         canvas.paste(left, (0, 0))
         canvas.paste(right, (LW, 0))
         dr = ImageDraw.Draw(canvas, "RGBA")
-        title = (f"机器人自己探索房间（{SPEED:g} 倍速）" if a.explore
-                 else f"巡房：机器人按规划的路线走一圈（{SPEED:g} 倍速）")  # fmt: skip
+        text = self.text
+        title = (f"机器人自己探索房间（{self.speed:g} 倍速）" if self.explore
+                 else f"巡房：机器人按规划的路线走一圈（{self.speed:g} 倍速）")  # fmt: skip
         text.put(dr, (10, 8), title, big=True)
         text.put(dr, (10, 36), f"第 {t:.0f} 秒")
         if holding is not None:
-            what = f"在第 {holding['viewpoint'] + 1} 个停留点转头看一圈" if not a.explore else "停下转头看一圈"
+            what = "停下转头看一圈" if self.explore else f"在第 {holding['viewpoint'] + 1} 个停留点转头看一圈"
         else:
-            what = "去下一个看不到的地方" if a.explore else "走向下一个观察点"
+            what = "去下一个看不到的地方" if self.explore else "走向下一个观察点"
         text.put(dr, (10, 60), what)
         text.put(dr, (14, H - 156 - 34), "头部相机看到的")
         text.put(dr, (LW + 10, 8), "它自己建的地图", big=True)
         ly = H - 52
         swatches = [((232, 232, 226), "看到的地面"), ((52, 86, 150), "障碍"), ((55, 55, 55), "还没看到")]
-        if a.explore:
+        if self.explore:
             swatches.append(((230, 70, 200), "交界"))
         x = LW + 10
         for col, name in swatches:
@@ -267,18 +280,45 @@ def video(a) -> int:
         dr.ellipse((LW + 10, y2 + 3, LW + 22, y2 + 15), fill=(235, 50, 40))
         text.put(dr, (LW + 26, y2), "机器人和相机朝向", box=False)
         dr.ellipse((LW + 168, y2 + 3, LW + 180, y2 + 15), outline=(250, 220, 60), width=2)
-        text.put(dr, (LW + 184, y2), "停留点" if a.explore else "观察点", box=False)
-        cap = ("左：从正上方跟拍机器人；右：它用自己的深度相机和激光雷达、按自己估计的位置拼出的地图，桔线是走过的路"
-               if not a.explore else "不给路线：每次走向“看到的地面和没看到的地方的交界”（粉色）最多处，到了转头看一圈，直到无处可去")  # fmt: skip
+        text.put(dr, (LW + 184, y2), "停留点" if self.explore else "观察点", box=False)
+        cap = ("不给路线：每次走向“看到的地面和没看到的地方的交界”（粉色）最多处，到了转头看一圈，直到无处可去"
+               if self.explore else "左：从正上方跟拍机器人；右：它用自己的深度相机和激光雷达、按自己估计的位置拼出的地图，桔线是走过的路")  # fmt: skip
         text.put(dr, (10, H + 8), cap, box=False, fill=(225, 225, 225))
-        frames.append(np.asarray(canvas))
+        return np.asarray(canvas)
+
+    def encode(self, frames: list[np.ndarray], out) -> dict:
+        """The mp4 under MAX_BYTES (the CRF raised as needed) and its last frame as the poster (<out>.jpg)."""
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        globals()["FPS"] = self.fps  # encode() reads the frame rate from the module
+        crf, size = encode(frames, out)
+        Image.fromarray(frames[-1]).save(out.with_suffix(".jpg"), quality=85)
+        return dict(out=str(out), frames=len(frames), seconds=round(len(frames) / self.fps, 1), crf=crf, bytes=size)
+
+
+ExploreVideo = WalkVideo  # the name the main line's Unreal batch imports (explore=True is the default)
+
+
+def video(a) -> int:
+    """MuJoCo's shots: straight down above the robot (ceilings hidden for this shot), the head camera as rendered."""
+    import mujoco
+
+    v = WalkVideo(a.walk, a.explore, SPEED, FPS)
+    m, d = v.rp.m, v.rp.d
+    hide_ceilings(m, d)
+    r = mujoco.Renderer(m, v.H, v.LW, max_geom=int(m.ngeom) + 1000)
+    frames = []
+    for t in v.times():
+        v.qpos(t)  # poses the model
+        cam = mujoco.MjvCamera()
+        cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+        cam.lookat[:] = [*d.xpos[m.body("pelvis").id][:2], 0.4]
+        cam.azimuth, cam.elevation, cam.distance = 90.0, -89.9, 4.5
+        r.update_scene(d, camera=cam)
+        head = np.asarray(Image.open(a.walk / "sensors" / "rgb" / f"{v.head_index(t):05d}.jpg").convert("RGB"))
+        frames.append(v.frame(t, r.render().copy(), head))
     r.close()
-    a.out.parent.mkdir(parents=True, exist_ok=True)
-    crf, size = encode(frames, a.out)
-    Image.fromarray(frames[-1]).save(a.out.with_suffix(".jpg"), quality=85)
-    print(
-        json.dumps(dict(out=str(a.out), frames=len(frames), seconds=round(len(frames) / FPS, 1), crf=crf, bytes=size))
-    )
+    print(json.dumps(v.encode(frames, a.out)))
     return 0
 
 
@@ -304,7 +344,8 @@ def figure(a) -> int:
     g = dict(np.load(mp / "grid.npz"))
     surfaces = json.loads((mp / "surfaces.json").read_text())
     match = json.loads((mp / "surface_match.json").read_text())
-    objs = json.loads((walk / "map_kiss" / "objects.json").read_text())
+    objs_file = mp / "objects.json" if (mp / "objects.json").exists() else walk / "map_kiss" / "objects.json"
+    objs = json.loads(objs_file.read_text())
     occ, _ = build_navigation(meta, body_radius=0.35)
     fig, ax = plt.subplots(1, 2, figsize=(13, 11.5), dpi=100)
     order = np.argsort(pts[:, 2])
@@ -322,7 +363,7 @@ def figure(a) -> int:
     ax[1].contour(np.arange(occ.nx) * occ.res + occ.origin[0] + occ.res / 2,
                   np.arange(occ.ny) * occ.res + occ.origin[1] + occ.res / 2, np.nan_to_num(truth), levels=[0.5],
                   colors=["#ff5a5a"], linewidths=0.6)  # fmt: skip
-    targets = set(tour["config"].get("must") or [])
+    targets = set(tour["config"].get("must") or []) or {meta["objects"][k]["surface"] for k in objs["targets"]}
     for k, i in match.items():
         s = surfaces[i]
         c, he, yaw = np.asarray(s["xy"]), np.asarray(s["half_extent"]), float(s["yaw"])
