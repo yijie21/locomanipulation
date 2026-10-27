@@ -19,7 +19,8 @@ slabs, every movable object as a hull (containers as five boxes), free bodies on
 graspable movable object resting on a surface). A free body is drawn with its own textured mesh (`free_visuals`);
 its hull only collides. Then `scripts/scene_add_panels.py` (the furniture panels free objects rest against),
 `scripts/scene_add_colliders.py` (boxes for the walls and the furniture above its lowest surface) and
-`scripts/scene_settle.py --write` (poses the simulator keeps) finish the scene (format §3). A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
+`scripts/scene_settle.py --write` (poses the simulator keeps) finish the scene (format §3). `walkmap --scene` then puts
+the movable objects that got no free joint (a static hull each) on the walking map and the spawn regions (TODO 42). A scene on another robot is another directory: copy `scene_meta.json` (the geometry and
 estimate stages do not depend on the robot) and run this stage there. The output is ADT-derived and stays under
 `outputs/` (plan decision 17).
 """
@@ -35,6 +36,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 import yaml
+from scipy import ndimage
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
@@ -46,6 +48,7 @@ from locomani.sim import make_dex1_model  # noqa: E402
 DATA = Path(paths.ADT_DATA)  # $LOCOMANI_WORKSPACE/datasets/adt
 SECTION_HEIGHTS = (0.3, 0.6, 0.9, 1.2, 1.5)  # below windows, above skirting; a wall at any of them blocks
 OBSTACLE_Z = (0.05, 1.8)  # furniture that occupies this height band blocks walking
+FLOOR_REST_M = 0.10  # an object whose underside is below this stands on the floor (walk_obstacles)
 SUPPORT_SKIP = frozenset(
     {
         "shelter",
@@ -62,6 +65,7 @@ SUPPORT_SKIP = frozenset(
 BODY_RADIUS = 0.26  # navigator.BODY_RADIUS
 RUNUP = 0.6  # m of clear floor an approach edge needs behind the stand: the shortest spawn the plan runner takes
 SPAWN_MARGIN = 0.15
+SPAWN_MIN_AREA = 0.25  # m^2: floorplan.spawn_regions min_area
 
 
 def load_mesh(name: str) -> trimesh.Trimesh:
@@ -105,6 +109,94 @@ def obstacle_polygons(fixed: list) -> list:
     ]
 
 
+def walk_obstacles(meta: dict, objs: dict) -> list:
+    """`obstacle_polygons` of everything the simulator does not move: the furniture, then the movable objects that
+    `mujoco` gave no free joint and that stand on the floor (it makes each a static hull: the step stool, the bins, the
+    laundry basket, the floor speaker; the ones on shelves, in racks or in cabinets stand inside their furniture's
+    footprint already). Until 2026-10-27 the map took the furniture alone and the walk planner routed through those, starts
+    spawning on the step stool (TODO 42: 6 of the incumbent's 7 walk falls)."""
+    held = [o for k, o in objs.items()
+            if o.movable and not meta["objects"].get(k, {}).get("free") and o.world_z()[0] < FLOOR_REST_M]  # fmt: skip
+    return obstacle_polygons([o for o in objs.values() if not o.movable]) + obstacle_polygons(held)
+
+
+def walkmap(args) -> None:
+    """TODO 42 (user 2026-10-27): put `walk_obstacles` on a scene file's map. The missing footprints are appended to
+    `room.obstacles` (existing indices stay: a movable variant's `movable` pieces point at theirs); the cells within
+    the spawn margin of them leave the spawn regions (a region they do not touch stays exactly as it is -- rebuilding
+    the regions from the walls does not reproduce the stored ones); a surface's approach edges change where the new
+    footprints change them (how many stored edges the old map reproduces is printed). Object poses and everything else stay (`refresh`
+    also re-derives the poses `scene_settle.py` wrote). `--check` writes nothing. A `<dir>_physics/` copy of the file
+    (tasks.scene.world.physics_scene, rebuilt only when the scene xml changes) is rewritten too."""
+    path = Path(args.scene)
+    meta = json.loads(path.read_text())
+    objs = {
+        o.name: o
+        for o in adt.read_sequence(DATA / "sequences" / meta["source"]["sequence"])
+        if o.name in meta["objects"]
+    }
+    shell = objs.pop(adt.SHELL)
+    walls, floor_tris, _shell_mesh = shell_walls(shell)
+    grid = floorplan.Grid(meta["room"]["bounds"])
+    wall_img = grid.segments(walls, thickness=0.10)
+    floor = grid.triangles(floor_tris)
+    old = meta["room"].get("obstacles") or []
+    extra = [p for p in walk_obstacles(meta, objs) if p not in old]
+    added = sorted(k for k, o in objs.items() if hull(o.footprint()) in extra)
+
+    def edges(obstacles: list) -> dict:
+        clear = floorplan.clearance(wall_img | grid.polygons(obstacles) | ~floor)
+        out = {}
+        for key, s in meta["surfaces"].items():
+            of = s.get("of_object")
+            own = wall_img if of == adt.SHELL else grid.polygons([hull(objs[of].footprint())])
+            out[key] = floorplan.approach_edges(s, clear, grid, BODY_RADIUS, own=own, runup=RUNUP)
+        return out
+
+    stored = {k: s.get("approach_edges") for k, s in meta["surfaces"].items()}
+    before, after = edges(old), edges(old + extra)
+    same = sum(v == stored[k] for k, v in before.items())
+    # only what the new footprints change: a movable variant stores its edges without its pieces on the map
+    new_edges = {k: after[k] if after[k] != before[k] else stored[k] for k in stored}
+    near = floorplan.clearance(grid.polygons(extra)) < BODY_RADIUS + SPAWN_MARGIN
+    spawn = {}
+    for room, polys in meta["room"]["spawn"].items():
+        kept = []
+        for poly in polys:
+            cells = grid.polygons([poly])
+            if not (cells & near).any():
+                kept.append(poly)
+                continue
+            parts, n = ndimage.label(cells & ~near)
+            kept += [
+                grid.contour(parts == c) for c in range(1, n + 1) if (parts == c).sum() * grid.res**2 >= SPAWN_MIN_AREA
+            ]
+        if kept:
+            spawn[room] = kept
+    changed = [f"{k}: {stored[k]} -> {v}" for k, v in new_edges.items() if v != stored[k]]
+    print(f"[walkmap] obstacles {len(old)} -> {len(old) + len(extra)} (+ {', '.join(added) or 'none'}); spawn cells per "
+          f"room {_spawn_area(grid, meta['room']['spawn'])} -> {_spawn_area(grid, spawn)}; the old map reproduces "
+          f"{same} / {len(stored)} stored approach edges; edges changed on {len(changed)} surfaces")  # fmt: skip
+    for line in changed:
+        print("   ", line)
+    if args.check or not extra:
+        return
+    meta["room"]["obstacles"] = old + extra
+    meta["room"]["spawn"] = spawn
+    for key, s in meta["surfaces"].items():
+        s["approach_edges"] = new_edges[key]
+    path.write_text(json.dumps(meta, indent=1))
+    physics = path.parent.parent / f"{path.parent.name}_physics" / path.name
+    if physics.exists():  # its back-reference stays as physics_scene wrote it
+        was = json.loads(physics.read_text()).get("physics_of", str(path.parent))
+        physics.write_text(json.dumps({**meta, "physics_of": was}))
+    print(f"[walkmap] wrote {path}" + (f" and {physics}" if physics.exists() else ""))
+
+
+def _spawn_area(grid: floorplan.Grid, spawn: dict) -> dict:
+    return {k: int(grid.polygons(v).sum()) for k, v in spawn.items()}
+
+
 def refresh(args) -> None:
     """Recompute the rule-derived object poses, room obstacles and surface approach edges of a scene file in place.
 
@@ -126,7 +218,7 @@ def refresh(args) -> None:
         len(meta["room"].get("obstacles") or []),
         sum(bool(s.get("approach_edges")) for s in meta["surfaces"].values()),
     )
-    meta["room"]["obstacles"] = obstacle_polygons([o for o in objs.values() if not o.movable])
+    meta["room"]["obstacles"] = walk_obstacles(meta, objs)
     for key, o in objs.items():  # the body frame rule (origin at the box centre, adt.AdtObject.body)
         b = o.body()
         meta["objects"][key]["init_pos"] = b["init_pos"]
@@ -718,8 +810,12 @@ def main() -> None:
     )
     b = sub.add_parser("refresh", help="recompute obstacles and approach edges in place (keeps Claude's fields)")
     b.add_argument("--scene", required=True)
+    w = sub.add_parser("walkmap", help="add the static movable objects to the walking map (after mujoco; TODO 42)")
+    w.add_argument("--scene", required=True)
+    w.add_argument("--check", action="store_true", help="print what would change, write nothing")
     args = ap.parse_args()
-    {"geometry": geometry, "estimate": estimate, "mujoco": mujoco, "refresh": refresh}[args.stage](args)
+    stages = {"geometry": geometry, "estimate": estimate, "mujoco": mujoco, "refresh": refresh, "walkmap": walkmap}
+    stages[args.stage](args)
 
 
 if __name__ == "__main__":
