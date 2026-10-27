@@ -42,6 +42,9 @@ SETTLE_T = 1.5  # the object's reference pose: after the round's settle hold
 GRIP_OPEN = 0.0245  # runtime.GRIP_OPEN: the jaw command while open
 CLOSE_DROP = 0.004  # a command this far below open is a close
 OFF = np.array([0.1515, 0.0, 0.0])  # runtime.OFF: wrist frame -> jaw centre
+FLANK_M = (
+    0.039  # a finger's outer flank from the jaw axis at finger joint 0 (robot.xml); plus the joint value when open
+)
 WRISTS = ("left_wrist_yaw_link", "right_wrist_yaw_link")
 SIDES = ("left", "right")
 FK_STRIDE = 5
@@ -235,15 +238,119 @@ def steps_events(rec: dict, world, key: str) -> dict:
     return ev
 
 
+HAND_ON_CM = 4.0  # a jaw centre this close to the box's surface at the hold counts as on it (TODO 38.11)
+RISE_CM = 3.0  # the object this far above its settled height was lifted
+
+
+def bimanual(world, key: str | None) -> bool:
+    """A family object wider than a jaw (`bimanual`, or semantic.graspable "bimanual"): the two-hand classes apply."""
+    o = (world.meta.get("objects", {}).get(key) if world is not None and key else None) or {}
+    return bool(o.get("bimanual") or (o.get("semantic") or {}).get("graspable") == "bimanual")
+
+
+def _box_surface_cm(p, pos, quat, box: dict) -> float:
+    """Distance (cm) from a world point to the surface of an object's box (0 inside it)."""
+    Rm = _quat_mat(quat)
+    centre = np.asarray(pos, float) + Rm @ np.asarray(box.get("centre") or (0.0, 0.0, 0.0), float)
+    local = Rm.T @ (np.asarray(p, float) - centre)
+    outside = np.maximum(np.abs(local) - np.asarray(box["half_extent"], float), 0.0)
+    return round(float(np.linalg.norm(outside)) * 100, 2)
+
+
+def bimanual_events(z: dict, world, key: str, ev: dict) -> dict:
+    """The two-hand hold's events (TODO 38.11): `hold_t` (the first `squeeze`, else the first jaw close, else the end of
+    the last reach), each jaw centre's distance to the box's surface one second into the hold (`hand_box_cm`), how
+    far the object moved or tipped before the hold, and the most it rose after it."""
+    t = z["t"].astype(float)
+    names = z["primitives"][z["primitive"]] if len(z["primitives"]) else np.array([""] * len(t))
+    squeezes = _segments(names, "squeeze")
+    reaches = _segments(names, "reach")
+    if squeezes:
+        hi = squeezes[0][0]
+    elif ev.get("grip_t") is not None:
+        hi = int(np.searchsorted(t, ev["grip_t"]))
+    elif reaches:
+        hi = reaches[-1][1] - 1
+    else:
+        hi = None
+    ev["hold_t"] = None if hi is None else round(float(t[hi]), 2)
+    body = world.meta["objects"][key]["body"] if world is not None and key in world.meta["objects"] else None
+    obj = z.get(f"obj_{body}") if body is not None else None
+    if obj is None:
+        return ev
+    s0 = min(len(t) - 1, int(np.searchsorted(t, SETTLE_T)))
+    p0, q0 = obj[s0, :3], obj[s0, 3:7]
+    rise = (obj[:, 2] - p0[2]) * 100
+    if hi is None:
+        ev["obj_rise_max_cm"] = round(float(rise[s0:].max()), 2)
+        return ev
+    pre = max(hi, s0)
+    ev["obj_moved_before_hold_cm"] = round(float(np.linalg.norm(obj[s0 : pre + 1, :2] - p0[:2], axis=1).max()) * 100, 2)
+    ev["obj_tilt_before_hold_deg"] = round(_tilt(q0, obj[pre, 3:7]), 1)
+    ev["obj_rise_max_cm"] = round(float(rise[hi:].max()), 2)
+    k = min(len(t) - 1, hi + 50)
+    box = world.meta["objects"][key].get("box")
+    fk = fk_of(world)
+    if box:
+        hands = {}
+        for j, s in enumerate(SIDES):
+            if fk is not None:
+                pw, Rw = fk(z["robot"][k], z["joints"][k])[j]
+                jaw = pw + Rw @ OFF
+                flank = Rw[:, 1] * (FLANK_M + float(np.mean(z["fingers"][k, 2 * j : 2 * j + 2])))
+                points = [jaw, jaw + flank, jaw - flank]  # the jaw centre and the two fingers' outer flanks (a hug)
+            else:  # no robot model: the jaw centre is about OFF ahead of the wrist, towards the box's centre
+                w = z["wrists"][k, j]
+                d = obj[k, :3] + _quat_mat(obj[k, 3:7]) @ np.asarray(box.get("centre") or (0, 0, 0), float) - w
+                points = [w + d / max(float(np.linalg.norm(d)), 1e-6) * float(np.linalg.norm(OFF))]
+            hands[s] = min(_box_surface_cm(p, obj[k, :3], obj[k, 3:7], box) for p in points)
+        ev["hand_box_cm"] = hands
+    return ev
+
+
+def _classify_bimanual(ev: dict, rec: dict | None = None) -> str:
+    """The two-hand classes after the common ones (TODO 38.11): side_reach (neither hand got to the box),
+    one_hand_short, knocked (the box moved or tipped before the hold), no_lift (both on it, it never rose), slip (it
+    rose and was not held at the end), other. With a `lifted` goal and a judging window (TODO 38.19): tilted (the
+    box's bottom more than the limit off level), dropped_hold (the whole goal held at some moment and then failed
+    inside the window), low_lift (it rose, never to the clearance)."""
+    rec = rec or {}
+    why, judge = f"{rec.get('why') or ''}", rec.get("judge") or {}
+    hands = ev.get("hand_box_cm")
+    if hands is None:
+        miss = ev.get("reach_err_cm") is not None and ev["reach_err_cm"] > REACH_MISS_CM
+        return "side_reach" if miss or ev.get("hold_t") is None else "other"
+    short = [s for s in SIDES if hands[s] > HAND_ON_CM]
+    if len(short) == 2:
+        return "side_reach"
+    if len(short) == 1:
+        return "one_hand_short"
+    if (ev.get("obj_moved_before_hold_cm") or 0.0) > MOVED_CM or (ev.get("obj_tilt_before_hold_deg") or 0.0) > TILT_DEG:
+        return "knocked"
+    if (ev.get("obj_rise_max_cm") or 0.0) < RISE_CM:
+        return "no_lift"
+    if judge.get("ever_ok") and not judge.get("ok", True):
+        return "dropped_hold"
+    if "lifted(" in why and "tilted" in why:
+        return "tilted"
+    if "lifted(" in why and "lowest corner" in why:
+        return "low_lift"
+    return "slip"
+
+
 def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
-    """(failure class, events) of one round; see the module docstring."""
+    """(failure class, events) of one round; see the module docstring. A bimanual object (`bimanual()`) takes the
+    two-hand classes after the common ones (TODO 38.11, rules.md 35)."""
     steps = rec.get("steps") or []
     z = _arrays(arrays)
+    two = bimanual(world, key)
     if z is not None and len(z.get("t", [])) > 1:
         ev = trace_events(rec, z, world, key)
         hint = steps_events(rec, None, key)
         ev.update({k: v for k, v in hint.items() if k not in ev and k != "source"})
         ev["pinch"] = bool(ev.get("pinch")) or hint["pinch"]  # a pinch whose wrist never pointed down is still one
+        if two:
+            bimanual_events(z, world, key, ev)
     else:
         ev = steps_events(rec, world, key)
     grip_t = ev.get("grip_t")
@@ -268,6 +375,9 @@ def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
         return ("fell_walk" if early or (first is None and ev.get("grip_t") is None and "walk" in last) else "fell"), ev
     if ev["stop_err_cm"] is not None and ev["stop_err_cm"] > WALK_OFF_CM:
         return "walk_off", ev
+    if two:
+        ev["judge"] = rec.get("judge")
+        return _classify_bimanual(ev, rec), ev
     pushed = (ev.get("obj_moved_before_grip_cm") or 0.0) > MOVED_CM or (
         ev.get("obj_tilt_before_grip_deg") or 0.0
     ) > TILT_DEG

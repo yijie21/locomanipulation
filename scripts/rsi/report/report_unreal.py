@@ -26,6 +26,9 @@ tasks_final.json: the same starts, versions and cards as its MuJoCo videos; user
         scripts/rsi/report/report_unreal.py ps_00 [on_02 u_wolf_cart ... | all] \\
         [--out outputs/scene_rsi_20261016/report/media_unreal]
     ... report_unreal.py all --media outputs/rsi_repro/visual --out outputs/rsi_repro/visual_unreal
+`--scene` (TODO 38.20) films in another configs/scenes.yaml scene's level; a --media directory made by
+evolution_media.py names its own scene (media.json), so the logistics room's videos need no flag:
+    ... report_unreal.py all --media outputs/scene_rsi_20261016/box_media --out outputs/scene_rsi_20261016/box_media_unreal
 """
 
 from __future__ import annotations
@@ -53,8 +56,36 @@ from locomani.sim.unreal import export_mjcf  # noqa: E402
 from locomani.sim.unreal.view import UnrealView  # noqa: E402
 
 dv = V.dv
+SCENE_NAME = "adt_apartment_mars"  # the configs/scenes.yaml entry filmed by default (`--scene`, TODO 38.20)
 LEVEL = "/Game/Levels/adt_apartment_mars"
 SCENE_XML = REPO / "outputs" / "scene_discovery" / "adt_apartment_mars" / "scene_locomani.xml"
+
+
+def scene_entry(name: str) -> tuple[Path, str]:
+    """(scene directory, Unreal level path) of a configs/scenes.yaml entry with an `unreal.level` (TODO 38.20)."""
+    import yaml
+
+    entry = (yaml.safe_load((REPO / "configs" / "scenes.yaml").read_text()) or {}).get(name)
+    if entry is None:
+        raise SystemExit(f"no scene called {name!r} in configs/scenes.yaml")
+    level = (entry.get("unreal") or {}).get("level")
+    if not level:
+        why = (entry.get("unreal") or {}).get("unsupported") or "no unreal.level"
+        raise SystemExit(
+            f"{name}: no Unreal level ({why}); build it first (bash scripts/build_scene.sh {name} --unreal)"
+        )
+    return REPO / entry["dir"], f"/Game/Levels/{level}"
+
+
+def scene_of_media(media: Path) -> str | None:
+    """The scenes.yaml name of the scene an evolution_media.py directory was made on (its media.json), if any."""
+    f = media / "media.json"
+    if not f.is_file():
+        return None
+    scene = Path(json.loads(f.read_text())["scene"]).name
+    return scene
+
+
 OUT = REPO / "outputs" / "scene_rsi_20261016" / "report" / "media_unreal"
 PICK = Path("/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/diag")
 FILM = (1280, 960)  # the level's source.json `film`
@@ -244,6 +275,12 @@ def main(argv=None) -> int:
         "--rounds", default="", help="read the rounds from report/<name>/ (report_rerun.py), e.g. rounds_20261020"
     )
     ap.add_argument("--media", type=Path, help="film an evolution_media.py --out directory's videos instead (any run)")
+    ap.add_argument(
+        "--scene",
+        default=None,
+        help="the configs/scenes.yaml scene to film in (its unreal.level): default the --media directory's scene "
+        "(media.json), else adt_apartment_mars; logistics_room_mars for box_bimanual (TODO 38.20)",
+    )
     a = ap.parse_args(argv)
     global PICK
     RM.use_rounds(a.rounds)
@@ -255,8 +292,10 @@ def main(argv=None) -> int:
     bad = [] if media else [n for n in names if n not in PS and n not in RM.STEPS and n not in RM.SOLOS]
     if bad:
         raise SystemExit(f"unknown videos: {bad}")
-    sc = V.Scene()
-    view = UnrealView(str(SCENE_XML), LEVEL, repeats=8, streams=())
+    scene = a.scene or (scene_of_media(a.media) if a.media else None) or SCENE_NAME
+    scene_dir, level = scene_entry(scene) if scene != SCENE_NAME else (SCENE_XML.parent, LEVEL)
+    sc = V.Scene(scene_dir)
+    view = UnrealView(str(scene_dir / "scene_locomani.xml"), level, repeats=8, streams=())
     try:
         view.film_setup(*FILM, 45.0)
         for name in names:

@@ -1,5 +1,5 @@
-"""ScaleBFM motor layer: the eight primitives the scene RSI loop's skills compose (TODO 27.2.1, plan
-docs/handoff/scene-rsi-plan-20261016.md D5).
+"""ScaleBFM motor layer: the nine primitives the scene RSI loop's skills compose (TODO 27.2.1, plan
+docs/handoff/scene-rsi-plan-20261016.md D5; the ninth, `squeeze`, TODO 38.4).
 
 `Motor` owns one `runtime.Sim` + `runtime.Policy` pair and a whole-body reference (pelvis pose, 29 joints, joint
 velocity, two jaw targets). Each primitive moves that reference, steps the simulation at 50 Hz until it is done and
@@ -11,8 +11,14 @@ class or a scene layout: skills (task level) decide where to walk, what to reach
     sidestep(dy)          walk_to sideways (or backward, `forward`), facing kept
     posture(z, pitch)     pelvis height and forward torso lean by whole-body IK, feet planted
     reach(side, pos, R)   one jaw centre (or both) along straight legs through `via`, IK at waypoints, servoed
-    grip(side) / release(side)
+    grip(side) / release(side)   one jaw, or both at once (side "both")
+    squeeze(inward, seconds)     both jaw centres pushed towards each other and kept there (a two-hand hold)
     hold(seconds)
+
+The ninth action, `squeeze` (TODO 38.4, D4): the two-hand hold of a box wider than a jaw. Each jaw-centre servo gets an
+inward offset (pelvis frame, so it turns with the body) that stays on through posture, hold and walk_to until
+`release` or a `reach` of that hand drops it; blocked by the object, the servo's lead winds up to its cap and the
+controller keeps pressing. Nothing here decides where to stand, where to put the hands or how to lift.
 
 Modes (network.py's mode table): a walk runs in mode 2 (pelvis + wrists; the policy places its own steps); everything
 stationary runs in mode 4 (pelvis + wrists + both ankles, the ankles pinned where they stand). Standing 15 s in the ADT
@@ -254,6 +260,7 @@ class Motor:
         self.servo: dict = {}
         self.servo_on = {s: False for s in SIDES}
         self.servo_target: dict = {}
+        self.squeeze_offset: dict = {}  # side -> jaw-centre offset in the pelvis (yaw) frame: `squeeze`
         self.hand_override: dict = {}  # side -> (jaw centre, wrist rotation, velocity): `hand`
         self.last_fut: dict = {}
         self.trace: list[dict] = []
@@ -334,7 +341,7 @@ class Motor:
         self.pol.reset(st)
         self.k, self.trace, self.fell_at = 0, [], None
         self.jaw[:] = JAW_OPEN
-        self.servo, self.servo_target, self.hand_override = {}, {}, {}
+        self.servo, self.servo_target, self.squeeze_offset, self.hand_override = {}, {}, {}, {}
         self.servo_on = {s: False for s in SIDES}
         self._stand()
         self.stand_pose = self.ref(0.0)
@@ -401,16 +408,28 @@ class Motor:
             w = WRIST[side]
             p_ref, R_ref = fut[w][0][0], R.mat(fut[w][1][0])
             jaw_ref = self.servo_target.get(side, p_ref + R_ref @ R.OFF)
+            if side in self.squeeze_offset:  # `squeeze`: the inward push rides on the reference, turned with the body
+                jaw_ref = jaw_ref + R.rot_z(self.yaw()) @ self.squeeze_offset[side]
             p_meas, R_meas = self.jaw_centre(side)
             turn = self.servo.get(("turn", side), np.zeros(3)) + cfg.servo_ki_rot * R.DT * rotvec(R_ref @ R_meas.T)
             n = float(np.linalg.norm(turn))
             turn = turn * (cfg.servo_cap_rot / n) if n > cfg.servo_cap_rot else turn
             self.servo[("turn", side)] = turn
-            lead = np.clip(
-                self.servo.get(("pos", side), np.zeros(3)) + cfg.servo_ki * R.DT * (jaw_ref - p_meas),
-                -cfg.servo_cap,
-                cfg.servo_cap,
-            )
+            prev = self.servo.get(("pos", side), np.zeros(3))
+            lead = np.clip(prev + cfg.servo_ki * R.DT * (jaw_ref - p_meas), -cfg.servo_cap, cfg.servo_cap)
+            if side in self.squeeze_offset:
+                # in contact, the integral winds up: along the push it is capped at the offset itself, so the command
+                # sits at most 2 x inward_m inside the wall (the box flew out of the hands at 12 cm, probe 2026-10-23);
+                # across the push the lead is capped at the offset's size too (a hand held by friction would otherwise
+                # wind its vertical and forward leads to servo_cap and drag the box)
+                off = R.rot_z(self.yaw()) @ self.squeeze_offset[side]
+                n = float(np.linalg.norm(off))
+                if n > 1e-9:
+                    u = off / n
+                    along = min(float(lead @ u), n)
+                    across = lead - u * float(lead @ u)
+                    a = float(np.linalg.norm(across))
+                    lead = (across * (n / a) if a > n else across) + u * along
             self.servo[("pos", side)] = lead
             Rt = expmap(turn)
             quats = np.array([R.quat_wxyz(Rt @ R.mat(q)) for q in fut[w][1]])
@@ -711,12 +730,14 @@ class Motor:
         rotation_weight: float | None = None,
         servo: bool = True,
         pelvis_z: float | None = None,
+        keep_squeeze: bool = False,
     ) -> Outcome:
         """Move `side`'s jaw centre to `pos` (world) with wrist rotation `rot` (3x3 world; None keeps the current one)
         through the points `via`, legs straight at `speed`, whole-body IK at waypoints reach_step_m apart, feet
         planted. side "both": `pos`, `rot` and each via point are pairs (left, right). The other jaw centre stays where it
         is in the world (IK weight 0.3). The servo integrates the jaw-centre
-        error from the start and settles up to reach_settle_s at the end."""
+        error from the start and settles up to reach_settle_s at the end. A reach ends the moved hands' squeeze
+        unless `keep_squeeze` (a two-hand lift by the arms: both hands up, still pressing; TODO 38.4)."""
         cfg = self.cfg
         sides = SIDES if side == "both" else (side,)
         solver = self._solver(pelvis_height_target=pelvis_z)
@@ -771,6 +792,8 @@ class Motor:
         for s in sides:
             self.servo_on[s] = servo
             self.servo_target.pop(s, None)
+            if not keep_squeeze:
+                self.squeeze_offset.pop(s, None)  # a reach of this hand ends its squeeze
         t0 = self.t
 
         def update(t):
@@ -816,44 +839,104 @@ class Motor:
     # -- hands ------------------------------------------------------------------------------------------------------
     @_logged
     def grip(self, side: str, *, seconds: float | None = None, target: float | None = None) -> Outcome:
-        """Close `side`'s jaw (ramp to `target`, default jaw_close) and report what is between the fingers."""
+        """Close `side`'s jaw (ramp to `target`, default jaw_close) and report what is between the fingers. side
+        "both" closes the two jaws together (TODO 38.4): ok when each holds something; `held` and `opening_cm` are
+        then per side, left then right."""
         cfg = self.cfg
-        i = SIDES.index(side)
-        j0, j1 = float(self.jaw[i]), cfg.jaw_close if target is None else float(target)
+        sides = SIDES if side == "both" else (side,)
+        idx = [SIDES.index(s) for s in sides]
+        j0, j1 = [float(self.jaw[i]) for i in idx], cfg.jaw_close if target is None else float(target)
         T = seconds or cfg.grip_seconds
         t0 = self.t
 
         def update(t):
             u = (t - t0) / max(T, 1e-9)
-            self.jaw[i] = j0 + min(1.0, u) * (j1 - j0)
+            for i, a in zip(idx, j0):
+                self.jaw[i] = a + min(1.0, u) * (j1 - a)
             if u < 1.0 + 0.25 / T:
                 return None
-            held = sorted(self.sim.m.body(b).name for b in self.between_fingers(side))
-            opening = self.jaw_opening(side)
+            held = [sorted(self.sim.m.body(b).name for b in self.between_fingers(s)) for s in sides]
+            opening = [round(100 * self.jaw_opening(s), 2) for s in sides]
+            empty = [s for s, h in zip(sides, held) if not h]
             return Outcome(
-                bool(held),
-                "" if held else "nothing between the fingers",
-                info=dict(held=held, opening_cm=round(100 * opening, 2)),
-            )
+                not empty,
+                "" if not empty else f"nothing between the fingers ({', '.join(empty)})" if side == "both"
+                else "nothing between the fingers",
+                info=dict(held=held if side == "both" else held[0], opening_cm=opening if side == "both" else opening[0]),
+            )  # fmt: skip
 
         return self._run("grip", update, T + 1.0)
 
     @_logged
     def release(self, side: str, *, seconds: float = 0.5) -> Outcome:
-        i = SIDES.index(side)
-        j0 = float(self.jaw[i])
+        """Open `side`'s jaw (side "both": the two together) and end its squeeze, if any."""
+        sides = SIDES if side == "both" else (side,)
+        idx = [SIDES.index(s) for s in sides]
+        j0 = [float(self.jaw[i]) for i in idx]
+        for s in sides:
+            self.squeeze_offset.pop(s, None)
         t0 = self.t
 
         def update(t):
             u = (t - t0) / seconds
-            self.jaw[i] = j0 + min(1.0, u) * (JAW_OPEN - j0)
-            return (
-                None
-                if u < 1.0 + 0.25 / seconds
-                else Outcome(True, info=dict(opening_cm=round(100 * self.jaw_opening(side), 2)))
-            )
+            for i, a in zip(idx, j0):
+                self.jaw[i] = a + min(1.0, u) * (JAW_OPEN - a)
+            if u < 1.0 + 0.25 / seconds:
+                return None
+            opening = [round(100 * self.jaw_opening(s), 2) for s in sides]
+            return Outcome(True, info=dict(opening_cm=opening if side == "both" else opening[0]))
 
         return self._run("release", update, seconds + 1.0)
+
+    @_logged
+    def squeeze(self, inward_m: float = 0.03, seconds: float = 1.0) -> Outcome:
+        """Push the two jaw centres towards each other by `inward_m` each, along the line between them, and keep
+        pushing (TODO 38.4, D4): the offsets ride on each hand's servo reference in the pelvis frame, so they stay on
+        through posture, hold and walk_to until `release` (or a `reach` of that hand) drops them; blocked by an object,
+        each servo's lead winds up to servo_cap and the controller keeps pressing. Ticks `seconds` for the leads to build.
+        ok when, at the end, the fingers of both hands touch one common body; info: that body (`common`), the jaw-centre
+        distance, each side's lead."""
+        left, right = self.jaw_centre("left")[0], self.jaw_centre("right")[0]
+        axis = right - left
+        n = float(np.linalg.norm(axis))
+        if n < 1e-6:
+            return Outcome(False, "the jaw centres coincide", self.t, self.t)
+        axis = axis / n
+        back = R.rot_z(-self.yaw())
+        self.squeeze_offset = {
+            **self.squeeze_offset,
+            "left": back @ (inward_m * axis),
+            "right": back @ (-inward_m * axis),
+        }
+        for s in SIDES:
+            self.servo_on[s] = True
+        t0 = self.t
+
+        def update(t):
+            if t - t0 < seconds:
+                return None
+            m, d = self.sim.m, self.sim.d
+            touched = {s: set() for s in SIDES}
+            for i in range(d.ncon):
+                pair = (int(m.geom_bodyid[d.contact[i].geom1]), int(m.geom_bodyid[d.contact[i].geom2]))
+                for s in SIDES:
+                    for f in self.fingers[s]:
+                        if f in pair:
+                            touched[s].add(pair[1] if pair[0] == f else pair[0])
+            common = sorted(
+                m.body(b).name
+                for b in touched["left"] & touched["right"]
+                if b not in self.fingers["left"] + self.fingers["right"]
+            )
+            gap = float(np.linalg.norm(self.jaw_centre("right")[0] - self.jaw_centre("left")[0]))
+            return Outcome(
+                bool(common),
+                "" if common else "the two hands touch no common body",
+                info=dict(common=common, gap_cm=round(100 * gap, 2),
+                          lead_cm=[round(100 * float(np.linalg.norm(self.servo.get(("pos", s), np.zeros(3)))), 2) for s in SIDES]),
+            )  # fmt: skip
+
+        return self._run("squeeze", update, seconds + 1.0)
 
     @_logged
     def hold(self, seconds: float) -> Outcome:

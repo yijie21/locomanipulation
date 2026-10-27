@@ -280,6 +280,14 @@ warehouse_box_45x32x33_mars_d435:  # warehouse_box_45x32x33_mars with the D435 e
 # change to the MuJoCo scene only, `build` rebuilds the import alone. Furniture collides with the robot only
 # (`--furniture-collision robot`, the default since TODO 27.2.5: a convex hull, or for a piece holding surfaces the hull
 # of its part under the lowest one; free objects still rest on the surface slabs).
+logistics_room_mars:  # the scanned logistics room on the mars robot with the scene-file v2 fields the scene RSI reads (TODO 38.1): `room` sliced from the meshes (scene_discovery/scan_room.py), env_only.xml; under outputs/scene_discovery/ because the sandbox links that directory. Then scene_settle.py --write and scene_lint.py (docs/rsi.md)
+  dir: outputs/scene_discovery/logistics_room_mars
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_mars --robot mars --rsi
+  unreal:  # the warehouse room level (built once per install, docs/setup.md) with this scene's robot and carton (TODO 38.20)
+    level: logistics_room_mars  # /Game/Levels/logistics_room_mars in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_mars
+
 adt_apartment_mars:
   dir: outputs/scene_discovery/adt_apartment_mars
   build: >-

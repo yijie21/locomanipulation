@@ -160,7 +160,7 @@ def main(argv=None) -> int:
     labels = pick_labels(pool, a.labels, a.task, a.all)
     overrides = parse_set(a.set)
     out = a.out or Path(os.environ.get("TMPDIR") or SCRATCH_ROOT) / "try" / time.strftime("%H%M%S")
-    motor = B.motor_signature()
+    motor = B.motor_signature(motor_cfg=B.family_motor(a.family))
     missing = [x for x in labels if not B.done(out / f"{x}.json", motor)]
     ledger = ledger_path()
     spent = used(ledger)

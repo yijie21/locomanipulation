@@ -39,6 +39,7 @@ GUIDES = {
     "docs/object_grasp_design.md": 95,
     # 2026-10-20 (user): the scene RSI line is the main line; its runbook (four levels, the check of recorded results)
     # and its design page. The VLA pages above are archived in place.
+    "docs/rsi_logistics_room.md": 200,  # 2026-10-24: the logistics-room runbook (TODO 38)
     "docs/rsi.md": 245,  # 2026-10-23: + section 8 (both video scripts) and section 9 (Unreal assets once, then renders)
     "docs/rsi_design.md": 150,
     "docs/agents/doc-ownership.md": 50,
@@ -69,6 +70,7 @@ COMMAND_DOCUMENTS = (
     "docs/running.md",
     "docs/object_grasp.md",
     "docs/rsi.md",  # 2026-10-20: the main line's runbook
+    "docs/rsi_logistics_room.md",  # 2026-10-24: the scene RSI runbook on the logistics room (TODO 38)
 )
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")

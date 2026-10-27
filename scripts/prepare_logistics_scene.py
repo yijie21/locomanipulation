@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Install the packaged logistics MJCF as a box-probe runtime scene."""
+"""Install the packaged logistics MJCF as a box-probe runtime scene; `--rsi` adds the scene-file v2 fields and
+`env_only.xml` the scene RSI needs (TODO 38.1, docs/handoff/box-bimanual-rsi-plan-20261023.md)."""
 
 from __future__ import annotations
 
@@ -49,6 +50,85 @@ def _relative_references(tree: ET.ElementTree, source: Path, destination: Path) 
             element.set("file", str(resolved))
 
 
+ROOM = "logistics_room"  # the one room; tasks and spawn regions name it
+BOX_KEY, BOX_MASS_KG = "nor_cal_box", 1.2  # assets/scene/logistics_room_box_v1/README.md
+
+
+def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str) -> None:
+    """Extend the v1 meta in place to the scene-file v2 fields the scene RSI reads (TODO 38.1): `room` from the
+    meshes (scan_room), the platform's yaw / approach edges / room, the box's `semantic`, `randomization`."""
+    from datetime import datetime, timezone
+
+    from locomani.scene_discovery import scan_room
+
+    occ, lo = scan_room.slice_occupancy(model, data)
+    room = scan_room.room_block(occ, lo, scan_room.RES_M, meta["robot_start"]["xy"], body_radius=body_radius, name=ROOM)
+    # the scene RSI films from a camera that follows the robot at the default 45 deg fovy (report_media.track), as on
+    # the ADT apartment; the pack's fixed `reverse_room` shot (73.74 deg) made the Unreal level's film camera disagree
+    # with the replays (TODO 38.20)
+    meta.pop("video_camera", None)
+    meta["schema_version"] = 2
+    meta["source"] = {
+        "kind": "scan",
+        "pack": source_scene,
+        "built_by": "scripts/prepare_logistics_scene.py --rsi",
+        "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    meta["room"] = room
+    surf = meta["surfaces"]["A"]
+    surf.update(yaw=0.0, approach_edges=["-x", "+x", "-y", "+y"], room=ROOM, phrase="pallet platform")
+    surf["provenance"] = {"yaw": "rule", "approach_edges": "rule", "room": "rule", "top": "measured"}
+    box = meta["objects"][BOX_KEY]
+    box["semantic"] = {
+        "phrase": meta["object_phrase"][BOX_KEY],
+        "room": ROOM,
+        "movable": True,
+        "graspable": "bimanual",  # 0.32 m across its narrow side: wider than a Dex1 jaw (9.5 cm) either way
+        "mass_kg": BOX_MASS_KG,
+        "upright_axis": [0.0, 0.0, 1.0],
+        "container": {"is": True, "opening_half_extent": [0.215, 0.15], "rim_height": 0.33},
+    }
+    box["provenance"] = {"semantic": "rule", "bimanual": "rule", "container": "rule", "mass_kg": "measured"}
+    meta["randomization"] = {
+        "movable_pool": [BOX_KEY],
+        "placements": {BOX_KEY: ["A"]},
+        "distractor_pool": [],
+        "spawn_rooms": [ROOM],
+    }
+
+
+def write_env_only(tree: ET.ElementTree, destination: Path) -> None:
+    """`env_only.xml`: the scene without the robot, for scene_settle.py's and scene_lint.py's rest tests. The robot's
+    equalities, actuators and sensors name robot elements, so the pelvis subtree and those sections go; assets nothing
+    references any more are pruned (the physics copy does the same, tasks/scene/world.physics_scene)."""
+    import copy
+
+    root = tree.getroot()
+    env = ET.Element("mujoco", model="logistics_env_only")
+    for tag in ("compiler", "option", "statistic", "visual", "default", "asset"):
+        el = root.find(tag)
+        if el is not None:
+            env.append(copy.deepcopy(el))
+    world = ET.SubElement(env, "worldbody")
+    for el in root.find("worldbody"):
+        if not (el.tag == "body" and el.get("name") == "pelvis"):
+            world.append(copy.deepcopy(el))
+    geoms = list(env.iter("geom"))
+    meshes = {g.get("mesh") for g in geoms if g.get("mesh")}
+    mats = {g.get("material") for g in geoms if g.get("material")}
+    asset = env.find("asset")
+    for el in list(asset):
+        if (el.tag == "mesh" and el.get("name") not in meshes) or (el.tag == "material" and el.get("name") not in mats):
+            asset.remove(el)
+    texs = {m.get("texture") for m in asset.iter("material") if m.get("texture")}
+    for el in list(asset):
+        if el.tag == "texture" and el.get("type") != "skybox" and el.get("name") not in texs:
+            asset.remove(el)
+    path = destination / "env_only.xml"
+    ET.ElementTree(env).write(path, encoding="unicode")
+    mujoco.MjModel.from_xml_path(str(path))  # it must compile on its own
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir", type=Path, help="new runtime directory under outputs/")
@@ -67,6 +147,22 @@ def main() -> int:
         help=f"mars only: which head camera is the ego view (head_camera); default {make_dex1_model.MARS_EGO_DEFAULT}, "
         "the D455 on the pan/tilt bracket; d435_head is the D435 fixed in the face. Recorded as scene_meta.json "
         "`ego_camera`",
+    )
+    parser.add_argument(
+        "--rsi",
+        action="store_true",
+        help="also write what the scene RSI needs (TODO 38.1): the v2 scene-file fields -- `room` sliced from the "
+        "meshes (scene_discovery.scan_room: bounds, obstacles, the spawn region), the surface's yaw and approach "
+        "edges, the object's `semantic`, `randomization` -- and `env_only.xml` (the scene without the robot, for "
+        "scene_settle.py and scene_lint.py). Put the output under outputs/scene_discovery/ (the sandbox links that "
+        "directory and the leak audit expects a scene there)",
+    )
+    parser.add_argument(
+        "--body-radius",
+        type=float,
+        default=0.35,
+        help="--rsi: the navigation body radius the spawn region keeps from any obstacle "
+        "(locomani.tasks.scene.world.BODY_RADIUS_M, not imported: it pulls in the simulator)",
     )
     args = parser.parse_args()
     if args.ego_camera and args.robot != "mars":
@@ -95,6 +191,9 @@ def main() -> int:
     if args.robot == "mars":
         make_dex1_model.write_mars()  # the meshes the scene references (and the robot model) are gitignored
         tree = make_dex1_model.apply_mars(tree, make_dex1_model.MARS_MESHES, ego_camera)
+    if args.rsi:  # scene_settle.py rewrites a free body's `pos="..." quat="..."` pair; the pack's box has no quat
+        box_body = tree.getroot().find("worldbody").find("body[@name='nor_cal_box_object']")
+        box_body.set("quat", box_body.get("quat") or "1 0 0 0")
     tree.write(runtime_xml, encoding="unicode")
     if args.robot == "mars":
         make_dex1_model.check_mars(str(runtime_xml))
@@ -179,6 +278,9 @@ def main() -> int:
         ),
         "video_camera": "reverse_room",
     }
+    if args.rsi:
+        rsi_fields(meta, model, data, args.body_radius, source_scene)
+        write_env_only(tree, destination)
     meta_path = destination / "scene_meta.json"
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")
     print(
@@ -191,6 +293,18 @@ def main() -> int:
                 "surface_top_m": top,
                 "box_qpos_adr": qpos_address,
                 "compiled": {"nbody": model.nbody, "ngeom": model.ngeom, "nq": model.nq},
+                **(
+                    {
+                        "rsi": {
+                            "bounds": meta["room"]["bounds"],
+                            "obstacles": len(meta["room"]["obstacles"]),
+                            "spawn_rectangles": len(meta["room"]["spawn"][ROOM]),
+                            "env_only": str(destination / "env_only.xml"),
+                        }
+                    }
+                    if args.rsi
+                    else {}
+                ),
             },
             indent=2,
         )

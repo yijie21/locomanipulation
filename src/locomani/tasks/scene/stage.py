@@ -142,3 +142,20 @@ def lift_check(world, key: str, z0: float, min_rise_m: float = 0.03):
     p, _ = world.object_pose(key)
     rise = float(p[2]) - float(z0)
     return rise >= min_rise_m, dict(rise_cm=round(100 * rise, 2))
+
+
+def bimanual_grip_check(m, body: int):
+    """Both hands on `body` (TODO 38.5): the fingers of each side touch it (what `held(X)`'s two-hand branch needs;
+    a box wider than a jaw is never between one hand's fingers). Values: the touching sides, each jaw's opening."""
+    touching = sorted(m.touching(body))
+    values = dict(touching=touching, opening_cm=[round(100 * float(m.jaw_opening(s)), 2) for s in SIDES])
+    return touching == list(SIDES), values
+
+
+def bimanual_lift_check(world, m, key: str, z0: float, min_rise_m: float = 0.03):
+    """The object rose `min_rise_m` and both hands are still on it (TODO 38.5): a lift where one hand slid off or the
+    object tipped out is a failed step even when it left the surface."""
+    ok_rise, values = lift_check(world, key, z0, min_rise_m)
+    touching = sorted(m.touching(world.free[key]))
+    values["touching"] = touching
+    return ok_rise and touching == list(SIDES), values
