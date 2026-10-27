@@ -105,6 +105,75 @@ def reach_world(point_xyz, pelvis_xyz, pelvis_quat_wxyz, hand: str = "right", pi
     return reach(x, y_out, z, att or ("down" if pinch else "level"), float(pelvis_xyz[2]), hand, path)
 
 
+def attitude(rot) -> str:
+    """The grid's attitude class of a commanded wrist rotation. The jaw approaches along the rotation's first column
+    (the envelope probe commanded level = identity, down = rot_y(90 deg), tilt45 = rot_y(45 deg)); pitched below the
+    horizontal by under 22.5 deg it is level, under 67.5 tilt45, else down."""
+    a = np.asarray(rot, dtype=float)[:, 0]
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, -float(a[2]) / (float(np.linalg.norm(a)) or 1.0)))))
+    return "level" if pitch < 22.5 else "tilt45" if pitch < 67.5 else "down"
+
+
+def reach_note(path: str | None = None):
+    """TODO 33.1.2: the motor's `reach_note` hook -- before every one-hand reach moves, the body model's prediction for
+    the command (pred_p_miss, pred_err_cm, pred_att, pred_inside, pred_open: the jaw was open, as on the grid) goes
+    into the reach's record. None when the table cannot be read (the reach records then carry no prediction)."""
+    try:
+        table(path)
+    except (OSError, KeyError, ValueError):
+        return None
+
+    def note(side, pos, rot, pelvis_pos, pelvis_quat, pelvis_z, jaw_open) -> dict:
+        x, y_out, z = grid_coords(pos, pelvis_pos, pelvis_quat, side)
+        att = attitude(rot)
+        start_z = float(pelvis_z) if pelvis_z is not None else float(pelvis_pos[2])
+        r = reach(x, y_out, z, att, start_z, side, path)
+        return dict(pred_p_miss=r["p_miss"], pred_err_cm=r["err_cm"], pred_att=att, pred_inside=r["inside"],
+                    pred_open=bool(jaw_open))  # fmt: skip
+
+    return note
+
+
+MISS_CM = 3.0  # a reach that ends this far off counts as missed (the grid's label)
+RISKY = 0.5  # a reach predicted this likely to miss is one the skill could have known about
+
+
+def _auc(scores: list[float], labels: list[bool]) -> float | None:
+    pos = [s for s, y in zip(scores, labels, strict=True) if y]
+    neg = [s for s, y in zip(scores, labels, strict=True) if not y]
+    if not pos or not neg:
+        return None
+    wins = sum((p > n) + 0.5 * (p == n) for p in pos for n in neg)
+    return round(wins / (len(pos) * len(neg)), 3)
+
+
+def score(rounds) -> dict:
+    """TODO 33.1.2: the body model's predictions against what was delivered, over round records (dicts with `ok` and
+    `steps`). Counted: reach steps that carry a prediction and a delivered error with the jaw open (empty-handed, as on
+    the grid). AUC of pred_p_miss for a miss (jaw_err_cm >= MISS_CM); mean predicted vs delivered error; and the failed
+    rounds with a reach predicted risky (pred_p_miss >= RISKY) -- the misses a skill could have seen coming."""
+    p, err, pred_err, missed, risky_failed, failed, scored = [], [], [], [], 0, 0, 0
+    for r in rounds:
+        steps = [s for s in r.get("steps") or [] if isinstance(s, dict)]
+        reaches = [s for s in steps if s.get("pred_p_miss") is not None and s.get("jaw_err_cm") is not None
+                   and s.get("pred_open", True)]  # fmt: skip
+        if not reaches:
+            continue
+        scored += 1
+        for s in reaches:
+            p.append(float(s["pred_p_miss"]))
+            err.append(float(s["jaw_err_cm"]))
+            pred_err.append(float(s["pred_err_cm"]))
+            missed.append(float(s["jaw_err_cm"]) >= MISS_CM)
+        if not r.get("ok"):
+            failed += 1
+            risky_failed += any(float(s["pred_p_miss"]) >= RISKY for s in reaches)
+    mean = lambda xs: round(float(np.mean(xs)), 2) if xs else None  # noqa: E731
+    return dict(rounds=scored, reaches=len(p), missed=int(sum(missed)), auc=_auc(p, missed),
+                pred_err_cm=mean(pred_err), err_cm=mean(err), failed_rounds=failed,
+                failed_with_risky_reach=risky_failed)  # fmt: skip
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--table", default=None, help=f"the reach table (default {TABLE})")

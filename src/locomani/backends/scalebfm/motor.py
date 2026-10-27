@@ -30,6 +30,7 @@ of controller-compare 25.3 (`pad_servo` there) shifts the wrist keypoint toward 
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, field
 
 import mujoco
@@ -194,6 +195,43 @@ def lowest_foot_point(m, d, bodies) -> float:
     return low
 
 
+def _plain(x):
+    """A primitive's argument as JSON: arrays and tuples to lists, numpy scalars to floats, anything else to its repr."""
+    if isinstance(x, np.ndarray):
+        return np.round(x.astype(float), 6).tolist()
+    if isinstance(x, (list, tuple)):
+        return [_plain(v) for v in x]
+    if isinstance(x, dict):
+        return {str(k): _plain(v) for k, v in x.items()}
+    if isinstance(x, (bool, int, float, str)) or x is None:
+        return x
+    if isinstance(x, np.generic):
+        return x.item()
+    return repr(x)[:200]
+
+
+def _logged(fn):
+    """TODO 33.20: each primitive call goes on `self.calls` -- name, start and end time, its arguments, its outcome --
+    so one command of a round can be run again alone from the round's start (scripts/rsi/isolate.py). A call made
+    inside another (turn -> walk_to) is part of the outer one. Recording only: nothing here touches the simulation."""
+
+    @functools.wraps(fn)
+    def wrap(self, *args, **kwargs):
+        if self._call_depth:
+            return fn(self, *args, **kwargs)
+        row = dict(name=fn.__name__, t0=round(self.t, 3), args=_plain(list(args)), kwargs=_plain(kwargs))
+        self._call_depth += 1
+        try:
+            out = fn(self, *args, **kwargs)
+        finally:
+            self._call_depth -= 1
+        row.update(t1=round(self.t, 3), ok=bool(getattr(out, "ok", True)), why=str(getattr(out, "why", ""))[:80])
+        self.calls.append(row)
+        return out
+
+    return wrap
+
+
 class Motor:
     """One robot in one scene under ScaleBFM. `t` is simulated time since `reset`; `trace` holds one row per tick."""
 
@@ -229,6 +267,12 @@ class Motor:
         self.primitive = ""
         self.fell_at: float | None = None
         self.stand_pose: Pose | None = None
+        # TODO 33.1.2: called by `reach` before the arm moves, (side, jaw target, wrist rotation, pelvis position, pelvis
+        # quaternion wxyz, pelvis_z, jaw open) -> dict merged into the reach's Outcome info -- the scene's body-model
+        # prediction (locomani.tasks.scene.body.reach_note). None: nothing; it reads state only, never steps the sim.
+        self.reach_note = None
+        self.calls: list[dict] = []  # TODO 33.20: the primitive calls of the current round (_logged), cleared by reset
+        self._call_depth = 0
 
     @property
     def t(self) -> float:
@@ -286,6 +330,7 @@ class Motor:
         """Robot standing at (xy, yaw) with its feet 5 mm above the floor, the policy history at that state; the
         scene's free objects stay where the model (or the caller, after this) put them."""
         sim = self.sim
+        self.calls, self._call_depth = [], 0
         sim.reset(np.asarray(xy, float), float(yaw), 0.0)
         sim.d.qpos[2] += 0.005 - lowest_foot_point(sim.m, sim.d, self.foot_bodies)
         mujoco.mj_forward(sim.m, sim.d)
@@ -439,6 +484,7 @@ class Motor:
         return Outcome(False, "timeout", t0, self.t)
 
     # -- locomotion -------------------------------------------------------------------------------------------------
+    @_logged
     def walk_to(self, xy, yaw: float | None = None, *, speed: float | None = None, face: str = "travel") -> Outcome:
         """Walk the pelvis to `xy` and end facing `yaw` (None: the heading it walked on). face "travel": turn toward the goal first when
         it is farther than face_travel_min_m and off the heading by face_travel_deg; "fixed": keep the heading while
@@ -517,9 +563,11 @@ class Motor:
             self._stand()
         return out
 
+    @_logged
     def turn(self, yaw: float) -> Outcome:
         return self.walk_to(self.sim.d.qpos[:2].copy(), yaw)
 
+    @_logged
     def sidestep(self, left: float = 0.0, forward: float = 0.0) -> Outcome:
         """Move the pelvis `left` (and `forward`) metres in its own frame, keeping the heading."""
         yaw = self.yaw()
@@ -618,6 +666,7 @@ class Motor:
 
         return self._run("posture", update, total + cfg.settle_s + 1.0)
 
+    @_logged
     def posture(
         self, pelvis_z: float | None = None, torso_pitch: float | None = None, *, seconds: float | None = None
     ) -> Outcome:
@@ -669,6 +718,7 @@ class Motor:
         t0 = self.t
         return self._run("posture", update, total + cfg.settle_s + 1.0)
 
+    @_logged
     def reach(
         self,
         side: str,
@@ -703,6 +753,15 @@ class Motor:
             )
             legs = [{side: np.asarray(v, float)} for v in via]
         points = [{s: cur[s][0] for s in sides}] + legs + [goal_p]
+        pred = {}
+        if self.reach_note is not None and side != "both":
+            try:  # a prediction must never change or end a round
+                pelvis_p, pelvis_q = self.pelvis()
+                i = SIDES.index(side)
+                jaw_open = abs(float(self.jaw[i]) - JAW_OPEN) < 1e-3
+                pred = self.reach_note(side, goal_p[side], goal_R[side], pelvis_p, pelvis_q, pelvis_z, jaw_open) or {}
+            except Exception as e:  # noqa: BLE001
+                pred = {"pred_error": repr(e)[:160]}
         yaw = self.yaw()
         weights = tuple(1.0 if s in sides else 0.3 for s in SIDES)
         poses, durations, errs = [self.ref(self.t)], [], []
@@ -752,12 +811,14 @@ class Motor:
                         attitude_err_deg=round(att, 1),
                         ik_err_cm=round(100 * max(max(e) for e in errs), 2),
                         legs=len(points) - 1,
+                        **pred,
                     ),
                 )
             return None
 
         return self._run("reach", update, total + cfg.reach_settle_s + 1.0)
 
+    @_logged
     def adopt_hand(self, side: str) -> None:
         """Make the reference carry `side`'s wrist where `hand` drives it now, then release the override: a walk after
         a hand program then carries the hand with the body instead of snapping the wrist back to the last IK pose."""
@@ -776,6 +837,7 @@ class Motor:
         self.servo.pop(("turn", side), None)
 
     # -- hands ------------------------------------------------------------------------------------------------------
+    @_logged
     def grip(self, side: str, *, seconds: float | None = None, target: float | None = None) -> Outcome:
         """Close `side`'s jaw (ramp to `target`, default jaw_close) and report what is between the fingers. side
         "both" closes the two jaws together (TODO 38.4): ok when each holds something; `held` and `opening_cm` are
@@ -805,6 +867,7 @@ class Motor:
 
         return self._run("grip", update, T + 1.0)
 
+    @_logged
     def release(self, side: str, *, seconds: float = 0.5) -> Outcome:
         """Open `side`'s jaw (side "both": the two together) and end its squeeze, if any."""
         sides = SIDES if side == "both" else (side,)
@@ -825,6 +888,7 @@ class Motor:
 
         return self._run("release", update, seconds + 1.0)
 
+    @_logged
     def squeeze(self, inward_m: float = 0.03, seconds: float = 1.0) -> Outcome:
         """Push the two jaw centres towards each other by `inward_m` each, along the line between them, and keep
         pushing (TODO 38.4, D4): the offsets ride on each hand's servo reference in the pelvis frame, so they stay on
@@ -874,6 +938,7 @@ class Motor:
 
         return self._run("squeeze", update, seconds + 1.0)
 
+    @_logged
     def hold(self, seconds: float) -> Outcome:
         """Keep the current reference for `seconds` (a walk's end state stays pinned in mode 4)."""
         t0 = self.t

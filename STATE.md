@@ -1,14 +1,13 @@
 # STATE — 2026-10-23（主线：场景 RSI。run C 跑完，封存集 36 → 38 / 50；TODO 37 内环提速 B–E 做完、没跑实验（用户：先不开 usage credits，B 到 E 按顺序做，先不开始实验）：37.1 `try.py`、37.2 压缩 history + 机制表、37.3 Engineer 软截止、37.4 验收门第二枪 + 草稿诊断池提前跑（规则第 16 版）；下一次 RSI 运行就是它们的检验；一轮 79 min 的分解见 `outputs/scene_rsi_20261016/speedup_20261023/analysis.md`；10-23 失败分析（`outputs/scene_rsi_20261016/failures_20261023/analysis.md`）：现任 19 / 90 败（手入手碰倒 7、木勺 7、走路 5、太宽 2、够不到 1），诊断池 30 / 30 饱和 → TODO 33.23 诊断池重抽（10-23 做了，用户“按这个顺序来，先做 33.23”：`diag_pool.py`、`loop.py redraw`、规则第 17 版；run C 沙盒驱动已同步，现任重抽完：60 个新起点、3 分钟，诊断池 0 → 15 / 30 失败，没续跑）；SuperMimic（arXiv 2610.28480）读完：是训法不是接口，不训控制器（用户），33.1.4 预测器做了（10-23：任务记录只有 41 个起点、按起点留出 AUC 0.5，改用 A800 15,120 格包络表 `body.reach()`，现行技能线预抓 AUC 0.78，IK 残差 0.60；看不到家具：0.3–0.4 m 那带的失败是花瓶和洗洁精）；33.12 挑选器做了（10-23：`choose.py` 站位、手、抓法、姿态一起打分，规则第 18 版；离线核对 150 局：成功局抓法种类全一致，木勺俯捏改斜 45° 失误概率 0.76 → 0.05）；33.5 准备动作层做了（10-23：`prep.py` 转 / 挪 / 清三种目标的接口和挑选器，起点 `placement` 选项，能力族 `grasp_prep` 三个任务、种子 `seeds/grasp_c11`，规则第 19 版；挑选器改为只站 `approach_edges`、算矮家具、走廊被挡算要准备）；都没接进技能、没开运行；36.10 未定）（**另一条线，SRA0889 本机，分支 `henry-logistic-room`**：物流间双臂抱箱 TODO 38；判据（10-24）：举高 20 cm、倾斜 < 30°、最后 5 秒一直成立；严格判据下第一次内环（沙盒 `box-b`）1 轮到停止线，封存集 41 / 50（长边 25 / 25、短边 16 / 25），TODO 38.24；命令见 `docs/rsi_logistics_room.md`）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`。
-已确认（10-23）：合并了 origin/main 的 6 个提交（henry-zhao 在 SRA0889 上改的 LOCOMANI_WORKSPACE / LOCOMANI_VENV / RSI_GPUS / RSI_PROCS，合并提交 `366bb8f`），连同文档更新一起推送（用户 10-23“先把文档更新，让另一个开发者能够复现目前为止的 RSI 过程，然后 push 上去”）。
-已确认：henry-zhao 直接推 origin/main，可能自带检查失败；推之前先 `git fetch` 再合并。
+已确认（10-23）：合并了 origin/main 的 6 个提交（henry-zhao 在 SRA0889 上改的 LOCOMANI_WORKSPACE / LOCOMANI_VENV / RSI_GPUS / RSI_PROCS，合并提交 `366bb8f`），连同文档更新一起推送（用户 10-23“先把文档更新，让另一个开发者能够复现目前为止的 RSI 过程，然后 push 上去”）。henry-zhao 直接推 origin/main，可能自带检查失败；推之前先 `git fetch` 再合并。
 
 ## 提交与磁盘
 
 - 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_locomanipulation_discussion_2026-10-12.md`、`.playwright-mcp/`。按名字暂存，不用 `git add -A`。
-- 已确认（10-21 12:10）：`/workspace` 剩 86 GB（之前 98%、23 GB）。78 个 A/B 重放沙盒（`/workspace/code/rsi-scene/ab-*`、`replay-ga-*`）删了 `assets/`、`papers/`（都在各自沙盒的 git 里，`git checkout` 能恢复），记录和会话没动；29.9 的两个沙盒已删，材料在 `outputs/fresh_rsi_20261020/`。
-- 10-23 已全部推送到 origin/main；之后的本地提交按用户要求再推。
+- 已确认（10-23 13:00）：`/workspace` 剩 138 GB。会话 locomanipulation-ea（视觉 RSI 新线，用户 10-23 开）清了缓存 31 GB，又在主线同意后省了 32.5 GB：76 个 A/B 重放（`rsi-scene/ab-*`）、`replay2-r2*`（6 个）、`rsi-phase4/arm-{a,a2,b,b2}` 的 `.git` 打成副本根目录的 `_sandbox_git.bundle`（另有 `.refs`、`.config`）后删掉，工作区、记录、`~/.claude/projects` 的会话记录都在；恢复步骤 `/workspace/code/rsi-scene/_SANDBOX_GIT_BUNDLES.md`（LFS 对象从主仓库 `.git/lfs` 拷），这些副本的 `assets/`、`papers/` 10-21 已删，要恢复先按它克隆；`replay-ga-i3-{mc,test}` 整个删了（32.5 的桩重放）。清单和日志 `outputs/cleanup_20261023/`。正在用和有用的沙盒（`ga-*`、`grasp-atomic-a`、`pick-a`、`r1-*-a`、`r2-*-a`）没动；`rsi-phase4/bottle-1` 不存在。
+- 10-23 推送到 origin/main = `d9e4a3f`；之后的本地提交（`2442257` resume 修复、33.11）按用户要求再推。
 
 ## 当前进度（全部已确认）
 
@@ -25,17 +24,18 @@
 
 ## 下一步（10-22 整理的待办，编号见 `TODO.md`）
 
+- 0. 10-23 grasp_prep 第一次运行跑完（TODO 33.5.1，沙盒 `grasp-prep-a`）：封存集 17 → 27 → 31 / 40，循环写出准备动作 `clear.py`，停在验收池 29 / 32；每轮约 63 min；3 份草稿因用了原仓库场景目录的绝对路径被判越界作废，10-24 按用户放行了这个目录本身（37.8）。run C 续跑两轮（37.7）和 37.5（Reviewer 改 high）见 TODO。
 - 1. 33（用户 10-23 定的顺序：33.23 → 33.1.4 预测器 + 33.12 → 33.21 → 33.5 → 37.5 / 37.6；33.23、33.1.4 预测器、33.12 挑选器、33.5 准备动作层做了；33.21 脆弱起点等 A800 能连上；下一步要么开 `grasp_prep` 的运行（`sandbox.py <沙盒> grasp_prep` 建沙盒再 `loop.py run grasp_prep --stop-rate 0.9`，约 8 小时），要么 37.5 / 37.6，用户定；33.8、33.13 结构、33.14 已做；选项 B 续跑完：沙盒 `ga-cont-b-20261022`，第 6、9 轮接受，封存集 31 → 36 / 50；再按 33.15–33.18 续跑 `ga-cont-c-20261022`，第 11 轮接受，封存集 38 / 50，见 TODO 33.18.1；33.18.2 预算 bug 10-23 修了，只数本次运行的验收门调用）：33.10 已做（`ab5403d`，6 / 10 次运行的第一个结论改判接受）；33.15–33.18 已做（10-22，规则第 15 版，D12–D14 按推荐，33.15.1 记录库没做）；接着从第 9 轮的现任接着跑一轮（`--stop-rate`），再 33.7 三人按范围分工、33.11，再 33.1 身体模型（含 10-22 A800 经验：33.19 设计探针、33.20 按层归因、33.21 脆弱起点、33.22 算力分工，D16–D20；A800 数据 `outputs/scene_rsi_20261016/a800_20261022/summary.md`）（含 33.1.2 动手前预测）、33.9 关键点约束原语、33.12 站位和抓法一起选、33.2、33.3、33.4、33.5、33.6。10-22 失败分析：32.12 第 1 轮那版 90 局失败 38（物体比爪口宽 9 + 5、侧抓够不到 13、木勺 5、没走到站位 7、摔倒 3）。
 - 2. 小项：29.8 查测试在提交钩子里跑 git（29.5.1–29.5.8 文档偏差、29.7 `walk_mars` 登记 10-23 做完）。
 - 3. 等用户：32.7 在账号里开 usage credits（角色用快速输出）；第 2 轮外环何时恢复（10-19 起暂停，27.5.3 / 27.5.4 / 27.8.5 / 27.10.8 跟着它）。
 - 4. 可选 30.6 边走边转；推迟 27.6 对照（写论文前；10-22 加第 ③ 组 RoboHarness 式运行时大模型基线）。放弃（10-22 用户：研究初期不做严格对照）：35.2、30.4、30.5、29.5.9、32.4.5、27.2.1.2、27.7、27.13.3。
-- 最近完成：29.10 / 29.5.x / 29.7（10-23：交接文档 `docs/handoff/grasp-atomic-line-20261023.md`——grasp_atomic 四次运行、每版改动、复现和续跑命令；runbook 8 处偏差、§5.2 工具和开关改列表；`walk_mars` 进 `configs/scenes.yaml`）、37.0 / 37.1（10-23：一轮时间分解；角色实验命令 `try.py`，走队列并行、240 局预算；修 `family.hidden_seeds` 在隐藏树锁住时崩）、33.18.1 / 33.18.2（run C 38 / 50；验收门预算只数本次运行）、33.8 / 33.13（结构）/ 33.14（多赢 − 少赢 ≥ 3 且少赢 ≤ 多赢 / 3，候补池留 2 个，`base` / `adopted_pool`，反复提出的优先，重开最多连两轮，技能代码不许写物体名字）、36.7 / 36.8（越界作废一轮、连续两轮才停；删“连续 3 次被拒”停止；Manager 第 5 轮上下文 93 → 42 KB；删 `library/`、`review_replay.py`；工具和展示脚本在 `scripts/rsi/report/`）、36（流程复查，约 60 条；32.12 第 1 轮被采用的草稿读过经验库里的旧抓取代码，31 vs 20 不干净）、32.12 / 35.3、32.15（三 Engineer + Composer + 经验库默认，规则第 11 版）。
+- 最近完成：33.19（10-23：设计探针 `design.py`，四种因素，本机队列上跑，每轮至多 2 个）、33.20（10-23：动作层调用日志 + `isolate.py` 单独重跑失败命令，判动作层还是技能；run C 两局摔倒都是动作层）、33.1.2（10-23：每次单手伸手动之前，身体模型的预测写进局记录，封存集汇总加 `prediction`）、33.15.1（10-23：记录库 `scripts/rsi/records.py`，110 个沙盒 15,911 局；假设的 `measure` 在探针之后按库定状态，规则第 20 版）、33.11（10-23：`scripts/rsi/report/library_monitor.py`；有库运行四成假设点名经验库但用词不像原文、每轮假设数没变少，不改给法；B、C 七成假设是 Manager 认定的旧机制，`outputs/scene_rsi_20261016/library_20261023/analysis.md`）、29.10 / 29.5.x / 29.7（10-23：交接文档 `docs/handoff/grasp-atomic-line-20261023.md`——grasp_atomic 四次运行、每版改动、复现和续跑命令；runbook 8 处偏差、§5.2 工具和开关改列表；`walk_mars` 进 `configs/scenes.yaml`）、37.0 / 37.1（10-23：一轮时间分解；角色实验命令 `try.py`，走队列并行、240 局预算；修 `family.hidden_seeds` 在隐藏树锁住时崩）、33.18.1 / 33.18.2（run C 38 / 50；验收门预算只数本次运行）、33.8 / 33.13（结构）/ 33.14（多赢 − 少赢 ≥ 3 且少赢 ≤ 多赢 / 3，候补池留 2 个，`base` / `adopted_pool`，反复提出的优先，重开最多连两轮，技能代码不许写物体名字）、36.7 / 36.8（越界作废一轮、连续两轮才停；删“连续 3 次被拒”停止；Manager 第 5 轮上下文 93 → 42 KB；删 `library/`、`review_replay.py`；工具和展示脚本在 `scripts/rsi/report/`）、36（流程复查，约 60 条；32.12 第 1 轮被采用的草稿读过经验库里的旧抓取代码，31 vs 20 不干净）、32.12 / 35.3、32.15（三 Engineer + Composer + 经验库默认，规则第 11 版）。
 
 ## 未解决 / 卡点
 
 - 已确认：登记表基准和复现材料是 0.5 m/s + 休眠的记录（`sleep_20261021`），动作层默认已是 0.25 m/s；按用户 10-22 不重测，下次外环的回归拿它比，结论只作参考。
 - 已确认：同一台机器上用复现材料重测 pick_single 不是逐局相同（b 3 c 3，总数相同）。用户 10-22：不查原因，文档改成“总数相近”（29.5.6）。
-- 已确认：10-20 09:06 一个测试在工作树的提交钩子里把共享的 `.git/config` 改成 `bare = true`，已改回、测试已修；别的测试里有没有同样的问题**待查**（29.8）。
+- 已确认：测试在 worktree 的提交钩子里继承 `GIT_DIR` 会改共享的 `.git/config`（10-20 bare；10-23 12:35 又一次：bare + user `t <t@t>`，视觉 worktree 的索引多了 `a.txt`）；已改回，三个会跑 git 的测试现在都清 `GIT_*`（29.8 完）。提交前 `git config --get core.bare` 应是 false、`git config user.name` 应是 yijie21。
 - 已确认：A800 和本机同一设置的场景局只有 73 / 80 结局相同，远端的局不能和本机的配对。
 - 规则：`pkill -f` 会杀到命令行含同样字样的 shell，停进程用明确的 PID 或会话号（`pkill -s <sid>`）；不改正在跑的 bash 脚本。
 

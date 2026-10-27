@@ -507,6 +507,11 @@ class RoleSafety(unittest.TestCase):
     def test_a_role_commit_becomes_working_tree_changes(self):
         import subprocess
 
+        # TODO 29.8 (2026-10-23): a commit hook exports GIT_DIR / GIT_INDEX_FILE; inherited, this test's `git init` and
+        # the loop's git_head / undo_commits ran on the committing checkout -- the shared .git/config got bare = true
+        # and user t <t@t>, and a.txt was staged in a worktree's index. The test and the loop's helpers see none of them.
+        for k in [k for k in os.environ if k.startswith("GIT_")]:
+            self.addCleanup(os.environ.__setitem__, k, os.environ.pop(k))
         git = lambda *a: subprocess.run(["git", *a], cwd=self.root, capture_output=True, text=True, check=True)  # noqa: E731
         git("init", "-q")
         git("config", "user.email", "t@t")
@@ -541,6 +546,30 @@ class RoleSafety(unittest.TestCase):
         self.assertTrue(self.lp.climbs_out("cd third_party/..", targets))
         self.assertFalse(self.lp.climbs_out("ls outputs/scene_discovery/scn/mesh/../ third_party/x/../y", targets))
         self.assertFalse(self.lp.climbs_out("ls ./src/../outputs", targets))
+
+    def test_the_origins_scene_directory_named_bare_is_no_leak_but_its_unlinked_entries_are(self):
+        """2026-10-24 (user: 越界检查要放行原仓库场景目录本身): three drafts were voided for naming the origin's scene
+        directory, reached by resolving a link; its unlinked entries (scene_exclude) and a glob over it stay flagged."""
+        import re
+
+        sandbox, origin = self.root / "sb", self.root / "origin"
+        scn = origin / "outputs" / "scene_discovery" / "scn"
+        (scn / "discovery").mkdir(parents=True)
+        (scn / "meta.json").write_text("{}")
+        (origin / "third_party").mkdir()
+        (sandbox / "outputs" / "scene_discovery" / "scn").mkdir(parents=True)
+        os.symlink(origin / "third_party", sandbox / "third_party")
+        os.symlink(scn / "meta.json", sandbox / "outputs" / "scene_discovery" / "scn" / "meta.json")
+        self.patch(REPO=sandbox, ORIGIN=origin.resolve())
+        pat = self.lp.leak_patterns()["origin"]
+        o = origin.resolve()
+        for ok in (f"ls {o}/outputs/scene_discovery/scn", f'ls "{o}/outputs/scene_discovery/scn/"',
+                   f"cat {o}/outputs/scene_discovery/scn/meta.json", f"cd {o}/outputs/scene_discovery/scn && ls",
+                   f"ls {o}/third_party/x"):  # fmt: skip
+            self.assertIsNone(re.search(pat, ok), ok)
+        for bad in (f"cat {o}/outputs/scene_discovery/scn/discovery/tasks.jsonl", f"ls {o}/outputs/scene_discovery/scn/*",
+                    f"ls {o}/outputs/scene_discovery", f"ls {o}/outputs/secret", f"ls {o}/outputs/scene_discovery/scn2"):  # fmt: skip
+            self.assertIsNotNone(re.search(pat, bad), bad)
 
     def test_a_cd_sets_where_dotdot_resolves(self):
         """2026-10-22: `cd <loop>/pool && diff a ../../../../../src/...` stays inside the sandbox; it was resolved from
@@ -880,6 +909,21 @@ class TranscriptAudit(unittest.TestCase):
         self.assertEqual(self.lp.entries()[-1]["step"], "resume")
         self.lp.resume(meta)  # the last entry is no longer a stop: nothing more is taken off
         self.assertAlmostEqual(self.lp.wall_h(meta), 3.5, places=2)
+
+    def test_bookkeeping_rows_after_the_stop_do_not_hide_the_pause(self):
+        """TODO 33.23 / 2026-10-23: run C's ledger gained a standalone redraw's diag_pool row after its stop; the resume
+        then saw no stop, counted 16 h and stopped on the wall clock at once."""
+        meta = dict(started_s=time.time() - 16 * 3600)
+        self.stopped(12)  # ran 4 h
+        with (self.state / "ledger.jsonl").open("a") as fh:
+            for hours_ago, step in ((3, "diag_pool"), (0.01, "settings"), (0.01, "stop")):
+                t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours_ago * 3600))
+                fh.write(json.dumps(dict(t=t, step=step)) + "\n")
+        self.lp.resume(meta)
+        self.assertAlmostEqual(self.lp.wall_h(meta), 4.0, places=2)
+        self.assertEqual(self.lp.entries()[-1]["step"], "resume")
+        self.lp.resume(meta)  # the resume row ends the walk back: nothing is taken off twice
+        self.assertAlmostEqual(self.lp.wall_h(meta), 4.0, places=2)
 
     def test_a_stop_from_before_the_run_started_is_not_a_pause(self):
         meta = dict(started_s=time.time() - 3600)

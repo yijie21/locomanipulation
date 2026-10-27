@@ -28,6 +28,8 @@ import batch as B  # noqa: E402
 import family as F  # noqa: E402
 from gate import mcnemar_one_sided, overrides, wilson  # noqa: E402
 
+from locomani.tasks.scene import body  # noqa: E402
+
 BUCKET1_RATE = 0.50
 
 
@@ -71,7 +73,9 @@ def main(argv=None) -> int:
     jobs = [B.Job(d / "skills", out / name, overrides(d)) for name, d in order]
     missing = B.run_jobs(jobs, a.family, pool, a.procs, out / "run.log", a.gpus)
     summary = dict(pool=str(pool), versions={name: tally(B.outcomes(out / name)) for name, _ in order},
-                   missing={order[k][0]: v for k, v in missing.items() if v})  # fmt: skip
+                   missing={order[k][0]: v for k, v in missing.items() if v},
+                   # TODO 33.1.2: the body model's predictions against the delivered reaches, beside the success rate
+                   prediction={name: body.score(B.outcomes(out / name).values()) for name, _ in order})  # fmt: skip
     final, seed = B.outcomes(out / order[0][0]), B.outcomes(out / "seed")
     keys = sorted(set(final) & set(seed))
     b = sum(final[k]["ok"] and not seed[k]["ok"] for k in keys)

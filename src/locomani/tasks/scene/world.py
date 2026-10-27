@@ -21,6 +21,7 @@ from locomani.backends.scalebfm.motor import Motor, MotorConfig
 from locomani.primitives.navigator import build as build_navigation
 from locomani.scene_discovery.predicates import compile_goal, parse
 from locomani.scene_discovery.scene_file import to_surface_frame
+from locomani.tasks.scene import body
 
 GRIP_LAW = dict(grip_kp=1.5, grip_kd=0.1, grip_clip=20.0)
 # navigation inflation: the navigator's 0.26 m (arms tucked, SONIC) let a path run 0.33 m from the kitchen island's
@@ -154,6 +155,8 @@ class SceneWorld:
             self.motor = Motor(
                 self.sim, policy, motor_config, model_xml=str(self.physics / "robot.xml"), jacobian=jacobian
             )
+        # TODO 33.1.2: every one-hand reach's record carries the body model's prediction for its command
+        self.motor.reach_note = body.reach_note()
         m = self.sim.m
         self.free = {k: m.body(o["body"]).id for k, o in self.meta["objects"].items() if o.get("free")}
         self.occ, self.nav = build_navigation(self.meta, body_radius=BODY_RADIUS_M)

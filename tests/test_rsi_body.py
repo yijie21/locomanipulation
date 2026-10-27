@@ -98,5 +98,65 @@ class Fit(unittest.TestCase):
         self.assertEqual(len(BF.dedupe(rows)), 3)
 
 
+def _rot_y(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+
+def _rot_z(a):
+    c, s = math.cos(a), math.sin(a)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+class Prediction(unittest.TestCase):
+    """TODO 33.1.2: every one-hand reach's record carries the body model's prediction; the sealed report scores it."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = Path(self.tmp.name) / "table.npz"
+        _table(self.path)
+        body.table.cache_clear()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_the_wrist_rotation_maps_onto_the_grids_three_attitudes_whatever_the_heading(self):
+        for yaw in (0.0, 1.0, -2.5):
+            self.assertEqual(body.attitude(_rot_z(yaw)), "level")
+            self.assertEqual(body.attitude(_rot_z(yaw) @ _rot_y(math.pi / 4)), "tilt45")
+            self.assertEqual(body.attitude(_rot_z(yaw) @ _rot_y(math.pi / 2)), "down")
+            self.assertEqual(body.attitude(_rot_z(yaw) @ _rot_y(math.radians(15))), "level")
+            self.assertEqual(body.attitude(_rot_z(yaw) @ _rot_y(math.radians(75))), "down")
+
+    def test_the_hook_predicts_from_the_command_and_the_pelvis_pose(self):
+        note = body.reach_note(str(self.path))
+        pelvis, q = np.array([0.0, 0.0, 0.78]), np.array([1.0, 0.0, 0.0, 0.0])  # facing +x
+        near = note("right", np.array([0.45, -0.05, 0.9]), np.eye(3), pelvis, q, None, True)
+        far = note("right", np.array([0.85, -0.05, 0.9]), np.eye(3), pelvis, q, None, False)
+        self.assertEqual(set(near), {"pred_p_miss", "pred_err_cm", "pred_att", "pred_inside", "pred_open"})
+        self.assertLess(near["pred_p_miss"], 0.2)
+        self.assertGreater(far["pred_p_miss"], 0.8)
+        self.assertEqual((near["pred_att"], near["pred_open"], far["pred_open"]), ("level", True, False))
+        self.assertIsNone(body.reach_note(str(Path(self.tmp.name) / "missing.npz")))
+
+    def test_the_score_counts_open_jaw_reaches_and_the_failures_seen_coming(self):
+        def rd(ok, *reaches):
+            steps = [dict(step="walk")] + [dict(step="pre", pred_p_miss=p, pred_err_cm=pe, jaw_err_cm=e, pred_open=o)
+                                           for p, pe, e, o in reaches]  # fmt: skip
+            return dict(ok=ok, steps=steps)
+
+        rounds = [
+            rd(True, (0.1, 1.0, 1.0, True)),
+            rd(False, (0.9, 10.0, 12.0, True)),  # a miss the model saw coming
+            rd(False, (0.2, 2.0, 6.0, True), (0.95, 9.0, 0.5, False)),  # a surprise; the held-object reach is left out
+            dict(ok=False, steps=[dict(step="walk", ok=False)]),  # no reach: not scored
+        ]
+        sc = body.score(rounds)
+        self.assertEqual((sc["rounds"], sc["reaches"], sc["missed"]), (3, 3, 2))
+        self.assertEqual(sc["auc"], 1.0)  # both misses (0.9, 0.2) rank above the landed reach (0.1)
+        self.assertEqual((sc["failed_rounds"], sc["failed_with_risky_reach"]), (2, 1))
+        self.assertEqual(sc["err_cm"], round((1.0 + 12.0 + 6.0) / 3, 2))
+
+
 if __name__ == "__main__":
     unittest.main()

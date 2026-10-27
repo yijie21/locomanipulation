@@ -72,9 +72,17 @@ def test_reused_image_advances_control_and_only_success_publishes_training_bound
                 finished,
             )
 
-    stamp = time.time()
+    # One image, reused: stamped on the camera's first read and the same stamp after (2026-10-23: stamped before the
+    # expert's own setup, it was already older than vision_timeout 0.7 s on that first read on a loaded machine, and
+    # no control step ran).
+    first = {}
     images = {name: np.ones((16, 16, 3), dtype=np.uint8) for name in ("ego_view", "left_wrist", "right_wrist")}
-    camera = SimpleNamespace(read=lambda: dict(images=images, timestamps={name: stamp for name in images}))
+
+    def read():
+        stamp = first.setdefault("t", time.time())
+        return dict(images=images, timestamps={name: stamp for name in images})
+
+    camera = SimpleNamespace(read=read)
     guidance = SimpleNamespace(
         diagnostics={},
         update=lambda images, raw, stamp: CrateEstimate(np.array([0.4, 0, -0.4]), np.eye(3), stamp, None, {}),

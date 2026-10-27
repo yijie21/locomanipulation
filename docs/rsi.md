@@ -116,8 +116,10 @@ cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 - `scripts/rsi/try.py`：点名几个起点、用一份技能目录跑，走 12 进程队列并行，返回逐局结果和对现任的翻转；每次至多 40 局、每个角色每轮至多 240 局（TODO 37.1）。
 - `PYTHONPATH=src $PY scripts/rsi/body.py reach --x 0.45 --y-out 0.05 --z 0.9 --att level --hand right`：身体模型——这个伸手目标（骨盆朝向系：前伸、朝手外侧、离地高度，加手腕姿态）控制器送不送得到、差多少。表在 `outputs/scene_rsi_20261016/body/`，建沙盒时复制进去（TODO 33.1.4）。
 - `PYTHONPATH=src $PY scripts/rsi/choose.py outputs/scene_discovery/adt_apartment_mars Mug_2 --start <起点文件>`：站位和抓法一起选——每种抓法、左右手、站位、姿态的预计送达概率，最好的在前，并说明兜底顺序（站着 → 降骨盆 → 准备动作，TODO 33.12）。
+- `PYTHONPATH=src $PY scripts/rsi/records.py features --task pick_Mug_2` 和 `PYTHONPATH=src $PY scripts/rsi/records.py query events.reach_gap_cm ">=" 5 --task pick_Mug_2`：记录库——角色看得到的全部历史局，每局一行，起点、事件和每一步的数值展开成列；查一个量和成败的关系。假设里写了 `measure` 的，驱动程序在探针之后按它定状态（TODO 33.15.1）。原仓库的库文件由人汇总：`python3 scripts/rsi/records.py build <沙盒> ...`，写到 `outputs/scene_rsi_20261016/records/library.jsonl`，建沙盒时拷进去。
+- 假设里写 `design`，驱动程序在探针之后跑设计探针：一个因素分几档，强制在同一批诊断起点上（`scripts/rsi/design.py`；单独试可以 `PYTHONPATH=src $PY scripts/rsi/design.py grasp_atomic --pool <起点目录> --skills <技能目录> --out <目录> --factor spawn_bearing --levels 0 180 --starts 2`，TODO 33.19）。
 - `PYTHONPATH=src $PY scripts/rsi/prep.py outputs/scene_discovery/adt_apartment_mars DishSoap_1 --start <起点文件> --skills <技能目录>`：挑选器没有站位时，转、拉、挪邻居哪种目标能换来站位，技能包里有没有实现（TODO 33.5；任务族 `grasp_prep` 用起点的 `placement` 选项专抽这类局面）。
-驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`。
+驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；同一类失败（走路摔倒）有 2 局以上时，驱动程序把每局失败那一刻的命令从同一起点单独再跑一遍，判是动作层还是技能的毛病，动作层的写进 `loop/escalations.jsonl`（`scripts/rsi/isolate.py`，TODO 33.20）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`；角色的推理档位 `--effort 角色=档位`（默认 Reviewer high，其余 xhigh，TODO 37.5）。
 得到什么：账本在 `$S/outputs/scene_rsi_20261016/pick_single/loop/`。原来这一族跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
 
 ```bash
@@ -136,7 +138,7 @@ $PY scripts/rsi/regress.py add pick_single $S pick --last $(python3 -c "import j
 ```
 
 做什么：第一条在封存集上跑种子和最终的现任；第二条把最终现任合并进主仓库的技能目录；第三条把这个任务族登记进回归，记录取最终现任在封存集上的那一批，以后每次写回或改场景都和它比。
-得到什么：`$SUM` 里 `versions` 列出种子和最终版本各自的成功数，`final` 是最终版本的名字。原来种子 0 / 80，最终 41 / 80（当时的场景）。写回改动了 `src/locomani/tasks/scene/skills/`，跑 `make test` 通过后提交。
+得到什么：`$SUM` 里 `versions` 列出种子和最终版本各自的成功数，`final` 是最终版本的名字；`prediction` 是每个版本上身体模型的预测对实送的比较：空手伸手的 AUC、预计误差对实送误差、失败局里出手前就被判"多半够不到"的有几局（TODO 33.1.2）。有经验库的运行再跑 `python3 scripts/rsi/report/library_monitor.py run $S --out $S/library.json`：假设里点名经验库的比例和点了哪几条、用词接近原文的比例、每轮假设数、Manager 认定的旧机制数（TODO 33.11，只读记录，几秒钟）。原来种子 0 / 80，最终 41 / 80（当时的场景）。写回改动了 `src/locomani/tasks/scene/skills/`，跑 `make test` 通过后提交。
 
 ## 6. L2：一轮外环
 

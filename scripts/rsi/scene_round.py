@@ -129,7 +129,7 @@ def run_round(
         )
         rec = dict(label=label, task=task.id, ok=res.ok, why=res.why, fell=ex["fell"], dropped=bool(dropped),
                    plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
-                   t_end=ex["t_end"], seated=ex["seated"])  # fmt: skip
+                   t_end=ex["t_end"], seated=ex["seated"], calls=ex.get("calls", []))  # fmt: skip
         if ex.get("judge") is not None:
             rec["judge"] = ex["judge"]
         if npz:

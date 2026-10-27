@@ -78,9 +78,11 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
+import design as DS  # noqa: E402
 import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
+import records as RC  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
 
 from locomani import paths  # noqa: E402
@@ -143,6 +145,8 @@ CLASS_SUGGEST = {
     "dropped_hold": "the whole goal held at some moment, then failed inside the judging window: the box slid in the "
     "hands or the body sagged; keep pressing (squeeze), stop moving before the window, or a re-grip",
 }
+ATTRIBUTE_CLASSES = ("fell_walk",)  # TODO 33.20: failure classes the driver attributes to a layer (isolate.CLASSES)
+ATTRIBUTE_MIN = 2  # ... once the incumbent fails at least this many diagnostic rounds of the class
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
 REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
 # (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
@@ -165,8 +169,10 @@ FAMILY = ""
 LOOP = HIDDEN = STATE = GATE_DIR = Path()
 # role -> claude --effort level. Pinned: role calls used to inherit the operator's settings.json (effortLevel xhigh for
 # Opus 5.5 on this machine, so every recorded run is xhigh), and another operator's settings would change the loop.
-# run --effort engineer=medium overrides one role (TODO 32.8).
-EFFORT: dict = dict(reviewer="xhigh", manager="xhigh", engineer="xhigh", composer="xhigh")
+# run --effort engineer=medium overrides one role (TODO 32.8). Reviewer high since TODO 37.5 (2026-10-23: 16 replays on
+# 4 states, model time 15.6 vs 24.7 min, wall 33 vs 57, the same mechanisms found, coverage and probe gains not lower;
+# `--effort reviewer=xhigh` restores it); the Engineers stay xhigh (32.8).
+EFFORT: dict = dict(reviewer="high", manager="xhigh", engineer="xhigh", composer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
 SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
 CANDIDATES = 3  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step); 3 by
@@ -251,6 +257,31 @@ HYPOTHESES_SCHEMA = {
                     "evidence": {"type": "string"},
                     "delta": {"type": "object", "properties": {"set": {"type": "object"}}, "required": ["set"]},
                     "needs_code": {"type": "string"},
+                    # TODO 33.15.1: a measurable claim the driver checks on the record library when the probe cannot
+                    "measure": {
+                        "type": "object",
+                        "required": ["feature", "op", "value", "expect"],
+                        "properties": {
+                            "feature": {"type": "string"},
+                            "op": {"enum": sorted(RC.OPS)},
+                            "value": {"type": ["number", "string"]},
+                            "expect": {"enum": ["fails", "succeeds"]},
+                            "tasks": {"type": "array", "items": {"type": "string"}},
+                            "scope": {"enum": ["incumbent", "all"]},
+                        },
+                    },
+                    # TODO 33.19: a design probe -- one factor at a few levels, forced on the same diagnostic starts
+                    "design": {
+                        "type": "object",
+                        "required": ["factor", "levels"],
+                        "properties": {
+                            "factor": {"enum": list(DS.FACTORS)},
+                            "levels": {"type": "array", "items": {"type": "number"}},
+                            "starts": {"type": "integer"},
+                            "tasks": {"type": "array", "items": {"type": "string"}},
+                            "name": {"type": "string"},
+                        },
+                    },
                     "predicted_fixed": {"type": "array", "items": {"type": "string"}},
                     "predicted_broken": {"type": "array", "items": {"type": "string"}},
                 },
@@ -950,15 +981,25 @@ def allowed_dirs() -> list[str]:
     return sorted({str(p if p.is_dir() else p.parent) for p in scene_links()})
 
 
+BARE_END = (
+    r"""(?:[\s"'`):;,|&>\\]|$)"""  # what may follow a path named bare: a space, quote, separator, an escape, the end
+)
+
+
 def leak_patterns() -> dict[str, str]:
     pats = {"gate": re.escape(HIDDEN.parent.name)}
     pats["kit"] = r"rsi_kit|scene_rsi_20261016/kit/"  # kit.py: every family's pools and outcomes (2026-10-20)
     if ORIGIN != REPO:
-        # the origin checkout, except what the sandbox links into it: third_party and the scene (its linked entries)
-        linked = [
-            "/" + re.escape(str(p.relative_to(ORIGIN))) + r"(?:/|\b)" for p in scene_links() if p.is_relative_to(ORIGIN)
-        ]
-        pats["origin"] = re.escape(str(ORIGIN)) + rf"(?!/third_party{''.join('|' + x for x in linked)})"
+        # the origin checkout, except what the sandbox links into it: third_party, the scene's linked entries, and the
+        # scene directories themselves named bare -- a role that resolves a link reaches the origin's scene directory,
+        # and three drafts were voided for naming it (user 2026-10-24: 越界检查要放行原仓库场景目录本身); an entry
+        # the sandbox does not link (scene_exclude), or a glob over the directory, is still flagged
+        links = [p for p in scene_links() if p.is_relative_to(ORIGIN)]
+        linked = ["/" + re.escape(str(p.relative_to(ORIGIN))) + r"(?:/|\b)" for p in links]
+        scene_root = ORIGIN / "outputs" / "scene_discovery"
+        dirs = sorted({p.parent for p in links if p.parent != scene_root and p.parent.is_relative_to(scene_root)})
+        bare = ["/" + re.escape(str(d.relative_to(ORIGIN))) + rf"/?(?={BARE_END})" for d in dirs]
+        pats["origin"] = re.escape(str(ORIGIN)) + rf"(?!/third_party{''.join('|' + x for x in linked + bare)})"
         pats["climb"] = r"third_party/\.\."
         # Claude Code's own home (other sessions' transcripts, settings), not a `.claude/` inside the checkout: the
         # iteration-5 Engineer only looked for the sandbox's project settings and that voided its round (2026-10-23)
@@ -1111,6 +1152,77 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
     B.run_jobs([B.Job(Path(inc["dir"]) / "skills", d, inc["set"], None, True)], FAMILY, LOOP / "pool_diag", PROCS,
                it_dir / "prober.log", GPUS)  # fmt: skip
     return d
+
+
+def attribute(inc: dict, base: Path, n: int, it_dir: Path, stub: bool) -> dict | None:
+    """TODO 33.20 (plan section 1.4, D20): whose failure is it. When the incumbent fails ATTRIBUTE_MIN or more
+    diagnostic rounds of a class in ATTRIBUTE_CLASSES, each one's failing command is run again alone from its start
+    (scripts/rsi/isolate.py; cached per incumbent in diag/attribution_<hash>, which the roles may read). `motor` -- the
+    command alone fails the same way -- is the motor layer's or the controller's limit: an escalation row
+    (loop/escalations.jsonl, rules.md 20) and a body-model constraint (body/constraints.jsonl); a skill may route around
+    it, not fix it. `skill` -- alone it does not fail -- is the skill's. The summary goes to the Reviewer and the
+    Manager."""
+    if stub:
+        return None
+    fails = [r for r in B.outcomes(base).values() if not r.get("ok")]
+    count = collections.Counter(r.get("failure_class") for r in fails)
+    classes = [c for c in ATTRIBUTE_CLASSES if count[c] >= ATTRIBUTE_MIN]
+    if not classes:
+        return None
+    out = LOOP / "diag" / f"attribution_{inc['hash']}"
+    cmd = [str(SIM_PY), str(HERE / "isolate.py"), FAMILY, "--pool", str(LOOP / "pool_diag"), "--rounds", str(base),
+           "--out", str(out), *[x for c in classes for x in ("--class", c)]]  # fmt: skip
+    env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0",
+               CUDA_VISIBLE_DEVICES=GPUS.split(",")[0])  # fmt: skip
+    with (it_dir / "isolate.log").open("w") as fh:
+        rc = subprocess.run(cmd, cwd=REPO, env=env, stdout=fh, stderr=subprocess.STDOUT).returncode
+    if rc:
+        ledger(dict(step="attribution", iter=n, error=f"isolate.py exit {rc}"))
+        return None
+    rows = [jload(p) for p in sorted(out.glob("*.json")) if p.name != "summary.json"]
+    motor = [r for r in rows if r.get("verdict") == "motor"]
+    record_escalations(inc, n, motor)
+    summary = dict(
+        classes=classes,
+        rounds=[
+            dict(
+                label=r["label"],
+                failure_class=r.get("original", {}).get("failure_class"),
+                verdict=r.get("verdict"),
+                command=(r.get("call") or {}).get("name"),
+                alone=r.get("isolated", {}).get("call_why"),
+            )
+            for r in rows
+        ],  # fmt: skip
+        note="motor: the command alone, from the round's start, fails the same way -- the motor layer's or the "
+        "controller's limit (rules.md 20): route around it (another first move, another stance), do not try to fix the "
+        "layer below; skill: alone it does not fail, the skill's earlier steps cause it",
+        dir=str(out),
+    )
+    ledger(dict(step="attribution", iter=n, classes=classes, motor=[r["label"] for r in motor],
+                skill=[r["label"] for r in rows if r.get("verdict") == "skill"]))  # fmt: skip
+    return summary
+
+
+def record_escalations(inc: dict, n: int, motor: list[dict]) -> None:
+    """TODO 33.20: each `motor` attribution once per incumbent, as an escalation row (loop/escalations.jsonl, for the
+    people, rules.md 20) and a body-model constraint (body/constraints.jsonl, for the roles)."""
+    esc_f, con_f = STATE / "escalations.jsonl", LOOP.parent / "body" / "constraints.jsonl"
+    old = [json.loads(x) for x in esc_f.read_text().splitlines() if x.strip()] if esc_f.exists() else []
+    known = {(e.get("incumbent"), e.get("label")) for e in old}
+    for r in motor:
+        if (inc["hash"], r["label"]) in known:
+            continue
+        call = r.get("call") or {}
+        what = f"{call.get('name')}({', '.join(json.dumps(a) for a in call.get('args', []))})"
+        row = dict(t=now(), iter=n, incumbent=inc["hash"], label=r["label"], task=r.get("task"),
+                   failure_class=r["original"]["failure_class"], command=what, alone=r["isolated"]["call_why"],
+                   rule=20, layer="motor layer / controller")  # fmt: skip
+        with esc_f.open("a") as fh:
+            fh.write(json.dumps(row) + "\n")
+        con_f.parent.mkdir(parents=True, exist_ok=True)
+        with con_f.open("a") as fh:
+            fh.write(json.dumps(dict(row, kind="isolated_failure")) + "\n")
 
 
 def refresh_diag_pool(inc: dict, base: Path, n: int | None) -> dict | None:
@@ -1373,6 +1485,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     base = diag_incumbent(inc, it_dir)
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
+    attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
     digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
     digest.write_text(DG.build(base, FAMILY))
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
@@ -1380,6 +1493,11 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
                   TMP=role_tmp(), DIGEST=digest)  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
+    if attribution:
+        extra["attribution"] = attribution
+    prev = STATE / f"iter_{n - 1:02d}" / "designs.json"  # TODO 33.19: last iteration's design probes
+    if prev.exists():
+        extra["designs_last"] = jload(prev)
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
@@ -1445,6 +1563,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`)."""
     pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
     set_statuses(hyps, pr)  # TODO 33.17
+    records_statuses(hyps, pr, base)  # TODO 33.15.1
     jdump(it_dir / "hypotheses.json", hyps)
     jdump(it_dir / "probe.json", pr)
     ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr]))
@@ -1454,12 +1573,17 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     park(cr, claims, n)
     if STOP_AFTER == "probe":
         return "replay: stopped after the probe (--stop-after probe)"
+    designs = run_designs(hyps, inc, it_dir, n)  # TODO 33.19
     gaps = gap_candidates()
     jdump(STATE / "gap_candidates.json", gaps)
     ctx = it_dir / "manager_context.json"
     es = entries()
     may_reopen = reopen_allowed(es)
     lead = dict(recurring=recurring(es))  # TODO 33.14: first in the context
+    if extra.get("attribution"):  # TODO 33.20: which recurring failures are the motor layer's
+        lead["attribution"] = extra["attribution"]
+    if designs:  # TODO 33.19: how the factors the Reviewer asked about change the outcome (not evidence)
+        lead["designs"] = designs
     notes = repair_notes(es, base, n)  # TODO 33.17: after a rejection
     if notes:
         lead["repair_notes"] = notes
@@ -1983,6 +2107,55 @@ def set_statuses(hyps: dict, pr: list[dict]) -> None:
                 by[h["id"]]["status"] = h["status"]
 
 
+def records_statuses(hyps: dict, pr: list[dict], base: Path) -> None:
+    """TODO 33.15.1 (plan section 3.6): a hypothesis the probe left at `hypothesis` (its test needs code) that names a
+    `measure` gets its status from the record library (records.judge on the rounds the roles may see, this machine,
+    the incumbent's version by default): verified, refuted, or still a hypothesis when there are too few rounds. The
+    verdict and its counts go on the hypothesis and on its probe row (`records`), so statuses() and 33.17 read it."""
+    want = [h for h in hyps.get("hypotheses") or []
+            if isinstance(h, dict) and isinstance(h.get("measure"), dict) and h.get("status") == "hypothesis"]  # fmt: skip
+    if not want:
+        return
+    rows, version, host = RC.load(REPO, SCRATCH_ROOT), RC.version_of(base), RC.machine()
+    by = {r.get("id"): r for r in pr}
+    for h in want:
+        q = RC.judge(rows, h["measure"], version, host)
+        h["status"], h["records"] = q["verdict"], q
+        if h["id"] in by:
+            by[h["id"]].update(status=q["verdict"], records=q)
+
+
+def run_designs(hyps: dict, inc: dict, it_dir: Path, n: int) -> list[dict]:
+    """TODO 33.19 (plan section 1.3, D16): the hypotheses' design probes (design.py), at most DS.MAX_PROBES an
+    iteration and DS.MAX_ROUNDS rounds each, under the incumbent on the diagnostic pool's starts. Not evidence (rule 7):
+    the per-level outcome goes to this iteration's Manager (`lead`), the next Reviewer (`designs_last`), the ledger, and
+    the body model's measured curves (body/curves.jsonl)."""
+    specs = [(h["id"], h["design"]) for h in hyps.get("hypotheses") or []
+             if isinstance(h, dict) and isinstance(h.get("design"), dict)]  # fmt: skip
+    if not specs:
+        return []
+    tasks_all, params, out = list(F.load(FAMILY)["tasks"]), parameters_of(inc), []
+    for k, (hid, spec) in enumerate(specs):
+        why = (
+            "over the limit of design probes per iteration" if k >= DS.MAX_PROBES else DS.check(spec, tasks_all, params)
+        )
+        if why:
+            out.append(dict(hypothesis=hid, factor=spec.get("factor"), error=why))
+            continue
+        res = DS.run(spec, FAMILY, LOOP / "pool_diag", Path(inc["dir"]) / "skills", inc["set"], it_dir / f"design_{k}",
+                     PROCS, GPUS)  # fmt: skip
+        out.append(dict(hypothesis=hid, **res))
+    jdump(it_dir / "designs.json", out)
+    ledger(dict(step="design", iter=n, results=[{k: v for k, v in r.items() if k != "dir"} for r in out]))
+    curves = LOOP.parent / "body" / "curves.jsonl"
+    curves.parent.mkdir(parents=True, exist_ok=True)
+    with curves.open("a") as fh:
+        for r in out:
+            if "levels" in r:
+                fh.write(json.dumps(dict(t=now(), iter=n, incumbent=inc["hash"], family=FAMILY, **r)) + "\n")
+    return out
+
+
 def statuses(es: list[dict]) -> dict[str, str]:
     """`NN:id` -> status, from the ledger's probe rows (rows from before TODO 33.17 carry none)."""
     out = {}
@@ -2447,11 +2620,14 @@ def reprobe(n: int, stub: bool) -> str | None:
     base = diag_incumbent(inc, it_dir)
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
+    attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp())  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
+    if attribution:
+        extra["attribution"] = attribution
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
@@ -2460,13 +2636,25 @@ def wall_h(meta: dict) -> float:
     return (time.time() - meta["started_s"] - meta.get("paused_s", 0.0)) / 3600
 
 
+BOOKKEEPING_STEPS = ("stop", "settings", "diag_pool")  # rows a stopped run's ledger can gain without an iteration
+
+
 def resume(meta: dict) -> None:
     """A run started again after its own stop: the hours it stood stopped do not count against MAX_WALL_H (32.12
-    stood stopped for a day while the audit was fixed, TODO 32.13)."""
+    stood stopped for a day while the audit was fixed, TODO 32.13). The stop may be followed by bookkeeping rows --
+    a standalone `loop.py redraw` (33.23), a `settings` row, a wall-clock `stop` the resume itself wrote -- so the
+    pause runs from the first row of that trailing run (run C, 2026-10-23: a redraw row after the stop hid a 12 h
+    pause and the resumed run stopped at once on the wall clock); a `resume` row ends the walk back, its gap is
+    already counted."""
     es = entries()
-    if not es or es[-1].get("step") != "stop":
+    tail = []
+    for e in reversed(es):
+        if e.get("step") not in BOOKKEEPING_STEPS:
+            break
+        tail.append(e)
+    if not any(e.get("step") == "stop" for e in tail):
         return
-    t = calendar.timegm(time.strptime(es[-1]["t"], "%Y-%m-%dT%H:%M:%SZ"))
+    t = calendar.timegm(time.strptime(tail[-1]["t"], "%Y-%m-%dT%H:%M:%SZ"))
     if t < int(meta["started_s"]):  # a stop from before this run started (a replay's copied ledger); t is whole seconds
         return
     gap = time.time() - t

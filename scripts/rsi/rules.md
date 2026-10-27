@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 21, 2026-10-24)
+# Rules for the scene RSI loop (TODO 27, version 22, 2026-10-26)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -70,7 +70,13 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children. A `try.py`
     call of 30 starts takes about 2-5 minutes and is run in the foreground.
 20. Stop and write an escalation instead of acting when a step needs the scene, the controller or its training, the
-    motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget.
+    motor layer beyond a default-off switch, the predicates, the success rule, the frozen rules or the budget. When
+    the incumbent fails two or more diagnostic rounds of a recurring class (now: falls on the walk), the driver runs
+    each round's failing command alone from its start (`scripts/rsi/isolate.py`, the motor's call log) and gives the
+    verdict in the context (`attribution`): motor -- the command alone fails the same way, the motor layer's or the
+    controller's limit, written as an escalation and a body-model constraint; route around it (another first move,
+    another stance), never patch the layer below; skill -- alone it does not fail (code: loop.py attribute; TODO
+    33.20, D20) (version 20).
 
 ## Infeasibility (code; plan section 8, D13; version 3)
 
@@ -183,7 +189,14 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     iterations, given to no Engineer and not refuted takes one Engineer slot, unless the Manager's `skip` names the
     check that fails: interface_kept, safety_checks_kept, changed_code_reached or evidence_not_refuting. After a
     rejection the Manager reads the failure classes, the gate's per-class tally and a standing suggestion per class
-    (code: loop.py force_build, repair_notes; TODO 33.17, D14) (version 15).
+    (code: loop.py force_build, repair_notes; TODO 33.17, D14) (version 15). A hypothesis whose test needs code may
+    name a `measure` -- {feature, op, value, expect: fails | succeeds, tasks?, scope: incumbent | all} over a column of
+    the record library (`scripts/rsi/records.py features` lists them: start, events, each step's numbers) -- and the
+    driver sets its status from the library instead: verified when the rounds on the measure's side of the split fail
+    (or succeed) more, at least 3 a side and Fisher's p <= 0.05; refuted when at least 10 a side show no difference or
+    the opposite one; else it stays a hypothesis. Only rounds the roles may see, on this machine, under the incumbent's
+    own version unless scope is all. A correlation chooses what to build; the gate still decides what stays (rule 7)
+    (code: loop.py records_statuses, records.judge; TODO 33.15.1) (version 20).
 
 34. Preparatory actions (TODO 33.5; D2, D5, D9): when the chooser (rule 32) marks an object `needs_prep`, the skill
     asks `locomani.tasks.scene.prep` which goal would give it a standing stance -- turn the object about the vertical,
@@ -195,7 +208,16 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     pools hold the situations that need these actions; it changes no other family's pools (code: start.sample_start,
     family.draw; prompt) (version 19).
 
-35. Two-hand actions (TODO 38.4, D4; version 20): the motor layer has nine actions. `reach("both", (left, right), ...)`
+35. Design probes (TODO 33.19; D16): a hypothesis may ask for one, `design` {factor, levels, starts, tasks?, name?}:
+    one factor forced at a few levels on the same diagnostic starts, under the incumbent -- `param` (an overridable
+    parameter `name` set to each level), `spawn_bearing` (the object `level` degrees off the robot's heading at the
+    spawn), `spawn_distance` (the robot `level` metres from the object along the line to its spawn), `object_yaw` (the
+    object turned `level` degrees in place). At most 2 an iteration, at most 300 rounds each; a start the forcing
+    makes invalid is left out. The per-level outcome goes to the Manager, the next Reviewer and the body model's
+    curves; it says how the factor changes the outcome, never that a change should stay (rule 7) (code: design.py,
+    loop.py run_designs) (version 20).
+
+36. Two-hand actions (TODO 38.4, D4; version 21): the motor layer has nine actions. `reach("both", (left, right), ...)`
     moves the two jaw centres together; `grip("both")` / `release("both")` close and open the two jaws together;
     `squeeze(inward_m, seconds)` pushes the two jaw centres towards each other along the line between them and keeps
     pushing -- the offsets ride on each hand's servo reference in the pelvis frame through posture, hold and walk_to
@@ -208,7 +230,7 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     Graspability, the chooser, the body table and the preparatory layer (rules 32, 34) describe one jaw: on a bimanual
     family they say nothing about the two-hand hold, and a hypothesis may not cite them for it (prompt).
 
-36. Strict goals and judging windows (TODO 38.19, user 2026-10-24; version 21). `lifted(X, clearance_m, tilt_deg)`
+37. Strict goals and judging windows (TODO 38.19, user 2026-10-24; version 22). `lifted(X, clearance_m, tilt_deg)`
     holds when the lowest corner of X's box is `clearance_m` or more above the top of the surface the scene file
     rests X on, and X's bottom face is less than `tilt_deg` off level. A family may set `judge_s`: the goal is then
     checked every 0.1 s and must hold at every check over the round's last `judge_s` seconds -- the end of the plan
