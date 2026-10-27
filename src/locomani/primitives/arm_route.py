@@ -147,9 +147,11 @@ class ArmRouteClient:
         )
         return rep
 
-    def plan(self, start, goals, obstacles=()) -> Route:
-        """To any of the end-effector `goals` (x, y, z, qw, qx, qy, qz in the planning frame)."""
-        return self._plan(start, obstacles, goals=[[float(v) for v in g] for g in goals])
+    def plan(self, start, goals, obstacles=(), *, check_start_validity: bool = True) -> Route:
+        """To any of the end-effector `goals` (x, y, z, qw, qx, qy, qz in the planning frame); `check_start_validity`
+        as plan_to_joints."""
+        extra = {} if check_start_validity else {"check_start_validity": False}
+        return self._plan(start, obstacles, goals=[[float(v) for v in g] for g in goals], **extra)
 
     def plan_to_joints(self, start, goal, obstacles=(), *, check_start_validity: bool = True) -> Route:
         """To the joint vector `goal`, in the configured joint order (inside the configured limits). With

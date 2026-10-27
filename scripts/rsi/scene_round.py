@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -87,6 +88,10 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
     world = SceneWorld(fam["scene_dir"], policy, controller=controller)
     if B.motor_config().reach_compensation:  # TODO 33.1.4 (2): RSI_REACH_COMPENSATION=1
         world.compensate_reaches()
+    cfg = B.motor_config()
+    if cfg.reach_route:  # TODO 40: RSI_REACH_ROUTE=1; the route cache and failed-request dump directories
+        world.route_reaches(os.environ.get("RSI_ROUTE_CACHE") or None, os.environ.get("RSI_ROUTE_DUMP") or None,
+                            cfg.reach_route_scope, cfg.reach_route_pose_goal)  # fmt: skip
     return world
 
 

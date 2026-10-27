@@ -1,4 +1,4 @@
-# STATE — 2026-10-27 01:10 UTC（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep）
+# STATE — 2026-10-27 10:30 UTC（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`，最新提交见 `git log --oneline -5`（没推送）。
 
@@ -7,8 +7,7 @@
   `assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_*.md`、
   `run_engineer.out`、根目录的 `reports/`、`research_notes/`。`outputs/`、`third_party/`、`datasets/` 永不进仓库。只按路径 `git add`。
 - 提交前确认 `git config --get core.bare` 是 false、`user.name` 是 yijie21。提交钩子对代码改动跑全套 CPU 检查（几分钟、多核）。
-- **已确认（10-27 01:00）：`/workspace` 只剩 20 GB（99%）。** 10-26 新增约 33 GB：Kimodo venv 7 GB、Llama-3-8B 15 GB（HF 缓存）、
-  33.3 的 8 个重放沙盒约 11 GB。删不删待用户定（TODO 33.3.1、38.10.1.1）。
+- **已确认（10-27 08:20）：`/workspace` 可用 72 GB（93%）**，10-27 按用户要求删了 CHOIS、GMR、Kimodo（含 HF 缓存里的 Llama-3-8B）和 33.3 的 8 个重放沙盒，见 DECISIONS 10-27 删除一节。
 
 ## 另一个会话（已确认）
 - `locomanipulation-ea`：视觉 RSI 线，worktree `/workspace/code/locomanipulation-vision-rsi`，分支 `design/vision-rsi-20261023`，
@@ -26,11 +25,12 @@
 - 10-26 连着做完的 TODO：39.1（39.2 按停止条件不做）、36.9 两条修复、38.10.2、38.10.1、33.4、33.3（含重放）。数字见各项。
 - 38.10.1 的结论：Kimodo 生成 + ScaleBFM 跟踪，12 / 15 没摔，手离原局预抓点中位 12 cm；约束取自成功局（量的是复现能力）。
   文件 `outputs/scene_rsi_20261016/traj_prior_20261026/`（`README.md`、`track.jsonl`、`summary.json`）。
+- 10-27 TODO 40（CuRobo 路线开关，默认关）：40.2–40.4 都跑完，三个变体净 −2 / −3 / +1，开关保持关。
 
 ## 下一步（编号见 `TODO.md`）
 - 用户还没回答的：38.10.5（报告要不要加回“生成轨迹”一节、配 3 段 Unreal 视频）。
 - 等用户拍板后再做：比较方法（DECISIONS 10-26 38.2 收尾，“每种设置 ≥ 3 次”）、38.10.3（`follow` 原语接进循环）、33.2 / 37.6。
-- 其余待用户定的列在 DECISIONS 2026-10-26“连着做 TODO”一节的“未决”里（36.9 四条、39.3、33.6、33.21、33.22、33.7、36.10、29.5）。
+- 其余待用户定的列在 DECISIONS 10-26“连着做 TODO”（36.9 四条、39.3、33.6、33.21、33.22、33.7、36.10、29.5）和 10-27 TODO 40 两节的“未决”里。
 
 ## 未解决 / 卡点
 - 已确认：本机仿真确定（同代码同起点结局相同）；A800 和本机同设置 73 / 80 局相同，不配对。A800 只跑用户指定的实验。

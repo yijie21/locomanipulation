@@ -160,6 +160,8 @@ class SceneWorld:
         self.motor.reach_note = body.reach_note()
         if getattr(self.motor.cfg, "reach_compensation", False):  # TODO 33.1.4 (2): default off
             self.motor.reach_offset = body.reach_offset()
+        if getattr(self.motor.cfg, "reach_route", False):  # TODO 40: default off
+            self.route_reaches(scope=self.motor.cfg.reach_route_scope, pose_goal=self.motor.cfg.reach_route_pose_goal)
         m = self.sim.m
         self.free = {k: m.body(o["body"]).id for k, o in self.meta["objects"].items() if o.get("free")}
         self.occ, self.nav = build_navigation(self.meta, body_radius=BODY_RADIUS_M)
@@ -171,6 +173,21 @@ class SceneWorld:
         (scripts/rsi/scene_round.make_world under RSI_REACH_COMPENSATION=1)."""
         self.motor.cfg = dataclasses.replace(self.motor.cfg, reach_compensation=True)
         self.motor.reach_offset = body.reach_offset()
+
+    def route_reaches(self, cache_dir=None, dump_dir=None, scope: str = "via", pose_goal: bool = False) -> None:
+        """TODO 40: turn the motor's pregrasp route on (MotorConfig.reach_route, default off; `scope` and `pose_goal`:
+        reach_route_scope and reach_route_pose_goal, TODO 40.4) and install the CuRobo route around this scene
+        (tasks/scene/route.py) as its `reach_route` hook, its replies cached in `cache_dir` and its failed requests
+        written to `dump_dir` when given (scripts/rsi/scene_round.make_world under RSI_REACH_ROUTE=1; needs the route
+        services on TF_CUROBO_PORTS)."""
+        from locomani.tasks.scene.route import SceneRoute
+
+        self.motor.cfg = dataclasses.replace(
+            self.motor.cfg, reach_route=True, reach_route_scope=scope, reach_route_pose_goal=pose_goal
+        )
+        self.motor.reach_route = SceneRoute.connect(
+            self.sim, cache_dir, dump_dir, pose_goal=pose_goal, tool_offset=R.OFF if pose_goal else None
+        )
 
     def check(self, goal) -> callable:
         """compile_goal, cached per goal."""

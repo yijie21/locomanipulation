@@ -149,13 +149,17 @@ class Settings:
 class RoutePlanner:
     """One MotionGen per configuration, warmed up at the fixed batch."""
 
-    def __init__(self, robot_json: str, batch: int, work_dir: str, settings: Settings | None = None):
+    def __init__(self, robot_json: str, batch: int, work_dir: str, settings: Settings | None = None,
+                 cache: dict | None = None):  # fmt: skip
         with open(robot_json, "rb") as f:
             raw = f.read()
         self.robot = json.loads(raw)["robot_cfg"]
         self.robot_digest = hashlib.sha256(raw).hexdigest()[:16]
         self.settings = Settings() if settings is None else settings
         self.batch = int(batch)
+        # obstacles the world collision cache holds per kind; memory only, not part of the fingerprint (the scene route,
+        # TODO 40, sends up to ~380 boxes)
+        self.cache = {"obb": 10, "mesh": 10} if cache is None else dict(cache)
         if self.batch < 2:
             raise ValueError("the route service's batch must be at least 2 (CuRobo's batch of one, module doc)")
         self.work = work_dir
@@ -210,7 +214,9 @@ class RoutePlanner:
                     if self.settings.checker == "primitive"
                     else CollisionCheckerType.MESH
                 ),
-                collision_cache={"obb": 10} if self.settings.checker == "primitive" else {"obb": 10, "mesh": 10},
+                collision_cache=(
+                    {"obb": self.cache["obb"]} if self.settings.checker == "primitive" else dict(self.cache)
+                ),
                 collision_activation_distance=0.01,
                 ik_opt_iters=self.settings.ik_iters,
                 grad_trajopt_iters=self.settings.trajopt_iters,
@@ -395,12 +401,16 @@ def main(argv=None) -> int:
     ap.add_argument("--ik-iters", type=int, default=Settings.ik_iters)
     ap.add_argument("--trajopt-iters", type=int, default=Settings.trajopt_iters)
     ap.add_argument("--no-self-collision-opt", action="store_true", help="check, but do not optimise, self-collision")
+    ap.add_argument("--obb-cache", type=int, default=10, help="boxes the world collision cache holds")
+    ap.add_argument("--mesh-cache", type=int, default=10, help="meshes the world collision cache holds")
     args = ap.parse_args(argv)
     settings = Settings(
         args.cuda_graph, args.checker, args.ik_iters, args.trajopt_iters, not args.no_self_collision_opt
     )
     work = tempfile.mkdtemp(prefix="curobo_service_", dir=os.environ.get("TMPDIR"))
-    planner = RoutePlanner(args.robot_json, args.batch, work, settings)
+    planner = RoutePlanner(
+        args.robot_json, args.batch, work, settings, {"obb": args.obb_cache, "mesh": args.mesh_cache}
+    )
     sock = zmq.Context().socket(zmq.REP)
     sock.bind(f"tcp://127.0.0.1:{args.port}")
     print(f"[curobo_service] listening on :{args.port} batch {args.batch} protocol {PROTOCOL} {settings}", flush=True)

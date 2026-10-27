@@ -129,6 +129,20 @@ class MotorSignatureTest(unittest.TestCase):
             with mock.patch.dict(os.environ, {"RSI_REACH_COMPENSATION": env}):
                 self.assertEqual(B.motor_config().reach_compensation, on)
                 self.assertEqual(B.motor_signature() == base, not on)
+        # TODO 40: the pregrasp route, the same way (RSI_REACH_ROUTE=1)
+        self.assertEqual(base, B.motor_signature(motor_cfg=MotorConfig(reach_route=False)))
+        for env, on in (("", False), ("1", True)):
+            with mock.patch.dict(os.environ, {"RSI_REACH_ROUTE": env}):
+                self.assertEqual(B.motor_config().reach_route, on)
+                self.assertEqual(B.motor_signature() == base, not on)
+        # TODO 40.4: its variants, left out at their defaults
+        for env, value, field in (
+            ("RSI_ROUTE_SCOPE", "open", "reach_route_scope"),
+            ("RSI_ROUTE_POSE", "1", "reach_route_pose_goal"),
+        ):
+            self.assertEqual(B.motor_config().__getattribute__(field), MotorConfig().__getattribute__(field))
+            with mock.patch.dict(os.environ, {env: value}):
+                self.assertNotEqual(B.motor_signature(), base)
 
     def test_done_and_retire(self):
         sig = B.motor_signature()

@@ -43,6 +43,9 @@ FINGERS = {s: (f"{s}_dex1_finger_1_link", f"{s}_dex1_finger_2_link") for s in SI
 MODE_WALK, MODE_STAND = 2, 4
 JAW_OPEN = R.GRIP_OPEN
 FF_SPEEDS, FF_SHORT = (0.25, 0.35, 0.55), (0.045, 0.036, 0.016)  # plan program's stop shortfall per speed (24.7.1)
+ROUTE_JOINT_SPEED = (
+    0.8  # rad/s peak on the most moved joint along a reach_route path (warehouse visual.reach_route_speed)
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +61,16 @@ class MotorConfig:
     # On (RSI_REACH_COMPENSATION=1 for scripts/rsi's rounds, batch.motor_config): the open-floor grid's closed-loop
     # check halved the miss.
     reach_compensation: bool = False
+    # TODO 40: a reach with via points (the skills' pregrasp transits) follows a CuRobo route around the scene to its
+    # own straight solve's goal instead of the straight legs (the scene layer installs `reach_route`); off by default
+    # and left out of the motor signature while off. On: RSI_REACH_ROUTE=1 for scripts/rsi's rounds.
+    reach_route: bool = False
+    # TODO 40.4, with reach_route (both left out of the signature at these defaults): "open" also routes every reach
+    # whose side's jaw is open and empty (entry, descend, raise; the target object is no obstacle there); pose_goal
+    # lets a route to the goal fall back to the wrist pose, CuRobo choosing the arm, when the joint goal cannot be
+    # planned. RSI_ROUTE_SCOPE=open, RSI_ROUTE_POSE=1 for scripts/rsi's rounds.
+    reach_route_scope: str = "via"
+    reach_route_pose_goal: bool = False
     turn_rate: float = 0.8  # rad/s peak of an in-place turn
     face_travel_deg: float = 20.0  # a walk longer than face_travel_min_m first turns toward its goal past this
     face_travel_min_m: float = 0.30
@@ -272,6 +285,10 @@ class Motor:
         # TODO 33.1.4 (2): (side, jaw target, wrist rotation, pelvis position, pelvis quaternion wxyz, pelvis_z) -> the world
         # vector to take off the target, or None -- installed by the scene layer only when cfg.reach_compensation
         self.reach_offset = None
+        # TODO 40: (start joints, goal joints, pelvis position, pelvis quaternion wxyz) -> (T, 29) collision-free joint
+        # path from start to goal planned with the pelvis held there, or None; `last` holds the plan's facts --
+        # installed by the scene layer only when cfg.reach_route (tasks/scene/route.py)
+        self.reach_route = None
         self.calls: list[dict] = []  # TODO 33.20: the primitive calls of the current round (_logged), cleared by reset
         self._call_depth = 0
 
@@ -629,6 +646,56 @@ class Motor:
 
         return at, float(starts[-1])
 
+    def _routed(self, poses: list[Pose], durations: list[float], leg_ends: list[int], jaws=None, approach=False):
+        """TODO 40: (reference, duration, facts) for a reach under `reach_route`. The straight solve keeps its IK
+        poses; the route replaces the legs up to the goal's pose, or, when that plan fails (a pregrasp within the
+        planner's clearance of its support), up to the last via point, the last leg staying straight. The route is
+        retimed at ROUTE_JOINT_SPEED and never shorter than the legs it replaces; the pelvis and the joints the route
+        does not plan move min-jerk between its ends. No plan keeps the straight reference. `jaws[k]`: the side's jaw
+        centre (position, rotation, world) at the end of leg k, for the hook's pose goal and target (TODO 40.4); a
+        route the hook planned to a pose goal ends where its path ends (the arm is CuRobo's own)."""
+        from locomani.primitives.arm_route import retime_path, sample_path
+
+        tries = []
+        cuts = (len(leg_ends) - 1, len(leg_ends) - 2) if len(leg_ends) > 1 else (0,)
+        for k in cuts:
+            cut = leg_ends[k]
+            a, b = poses[0], poses[cut]
+            extra = {} if jaws is None else dict(jaw=jaws[k], approach=approach, pose_ok=k == len(leg_ends) - 1)
+            try:
+                path = self.reach_route(a.joints, b.joints, b.pos, b.quat, **extra)
+            except Exception as e:  # noqa: BLE001 -- a route that fails must never end a round
+                path = None
+                tries.append(dict(error=repr(e)[:160]))
+            else:
+                tries.append(dict(getattr(self.reach_route, "last", {})))
+            if path is not None:
+                break
+        if path is None:
+            at, total = self._blend(poses, durations)
+            return at, total, dict(to=None, tries=tries)
+        path, frac, route_total = retime_path(path, ROUTE_JOINT_SPEED, min_seconds=float(sum(durations[:cut])))
+        if cut == leg_ends[-1] and tries[-1].get("goal") == "pose":  # the arm is CuRobo's: stay where the path ends
+            end = Pose(b.pos, b.quat, np.asarray(path[-1], float).copy(), np.zeros(29))
+            tail, tail_total = (lambda t: end), 0.0
+        else:
+            tail, tail_total = self._blend(poses[cut:], durations[cut:])
+        qa, qb = a.quat, b.quat if float(np.dot(a.quat, b.quat)) >= 0 else -b.quat
+        t0 = self.t
+
+        def at(t):
+            tt = t - t0
+            if tt >= route_total:
+                return tail(t - route_total)
+            q, v = sample_path(path, frac, route_total, tt)
+            u = tt / route_total
+            s = 3 * u * u - 2 * u**3
+            quat = (1 - s) * qa + s * qb
+            return Pose(a.pos + s * (b.pos - a.pos), quat / np.linalg.norm(quat), q, v)
+
+        to = "goal" if cut == leg_ends[-1] else "last_via"
+        return at, route_total + tail_total, dict(to=to, seconds_s=round(route_total, 2), tries=tries)
+
     def _stand_up(self, seconds: float) -> Outcome:
         cfg = self.cfg
         start = self.ref(self.t)
@@ -762,7 +829,7 @@ class Motor:
             points[-1] = {s: goal_p[s] for s in sides}
         yaw = self.yaw()
         weights = tuple(1.0 if s in sides else 0.3 for s in SIDES)
-        poses, durations, errs = [self.ref(self.t)], [], []
+        poses, durations, errs, leg_ends = [self.ref(self.t)], [], [], []
         for leg, (a, b) in enumerate(zip(points[:-1], points[1:])):
             length = max(float(np.linalg.norm(b[s] - a[s])) for s in sides)
             n = max(1, int(np.ceil(length / cfg.reach_step_m)))
@@ -784,7 +851,17 @@ class Motor:
                 poses.append(self._pose_of(ik_pose, yaw))
                 durations.append(dur / n)
                 errs.append([float(e) for e in ik_pose.hand_errors])
-        at, total = self._blend(poses, durations)
+            leg_ends.append(len(poses) - 1)
+        routed = self.reach_route is not None and side != "both"
+        if routed and not via:  # TODO 40.4 "open": a reach whose jaw is open and holds nothing
+            routed = getattr(cfg, "reach_route_scope", "via") == "open"
+            routed = routed and abs(float(self.jaw[SIDES.index(side)]) - JAW_OPEN) < 1e-3
+            routed = routed and not self.between_fingers(side)
+        if routed:
+            jaws = [(points[k + 1][side], goal_R[side]) for k in range(len(leg_ends))]
+            at, total, pred["route"] = self._routed(poses, durations, leg_ends, jaws, approach=not via)
+        else:
+            at, total = self._blend(poses, durations)
         self._stand(poses[0])
         self.ref = at
         for s in sides:

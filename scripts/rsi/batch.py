@@ -50,16 +50,28 @@ class Job:
     controller: str = "scalebfm"  # scene_round --controller (TODO 28: "amo")
 
 
-OFF_SWITCHES = {"reach_compensation": False}  # MotorConfig switches left out of the signature while off: a new
-# default-off switch must not make every earlier record stale (TODO 33.1.4 (2), 2026-10-26)
+OFF_SWITCHES = {  # MotorConfig switches left out of the signature while off: a new default-off switch must not make
+    # every earlier record stale (TODO 33.1.4 (2), 2026-10-26; TODO 40, 40.4)
+    "reach_compensation": False,
+    "reach_route": False,
+    "reach_route_scope": "via",
+    "reach_route_pose_goal": False,
+}
 
 
 def motor_config():
     """TODO 33.1.4 (2): the MotorConfig a batch's rounds run under -- the defaults, with the reach compensation on when
-    RSI_REACH_COMPENSATION=1 (the workers inherit the environment; scene_round.make_world reads it the same way)."""
+    RSI_REACH_COMPENSATION=1 and the pregrasp route on when RSI_REACH_ROUTE=1 (TODO 40; its variants RSI_ROUTE_SCOPE and
+    RSI_ROUTE_POSE, 40.4) (the workers inherit the
+    environment; scene_round.make_world reads it the same way)."""
     from locomani.backends.scalebfm.motor import MotorConfig
 
-    return MotorConfig(reach_compensation=os.environ.get("RSI_REACH_COMPENSATION") == "1")
+    return MotorConfig(
+        reach_compensation=os.environ.get("RSI_REACH_COMPENSATION") == "1",
+        reach_route=os.environ.get("RSI_REACH_ROUTE") == "1",
+        reach_route_scope=os.environ.get("RSI_ROUTE_SCOPE") or "via",  # TODO 40.4: "open"
+        reach_route_pose_goal=os.environ.get("RSI_ROUTE_POSE") == "1",
+    )
 
 
 def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | None = None,
