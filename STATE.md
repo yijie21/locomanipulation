@@ -1,4 +1,4 @@
-# STATE — 2026-10-27 10:30 UTC（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep）
+# STATE — 2026-10-28（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep）
 
 工作目录 `/workspace/code/locomanipulation`，分支 `main`，最新提交见 `git log --oneline -5`（没推送）。
 
@@ -7,53 +7,52 @@
   `assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_*.md`、
   `run_engineer.out`、根目录的 `reports/`、`research_notes/`。`outputs/`、`third_party/`、`datasets/` 永不进仓库。只按路径 `git add`。
 - 提交前确认 `git config --get core.bare` 是 false、`user.name` 是 yijie21。提交钩子对代码改动跑全套 CPU 检查（几分钟、多核）。
-- **已确认（10-27 08:20）：`/workspace` 可用 72 GB（93%）**，10-27 按用户要求删了 CHOIS、GMR、Kimodo（含 HF 缓存里的 Llama-3-8B）和 33.3 的 8 个重放沙盒，见 DECISIONS 10-27 删除一节。
+- **已确认：10-27“连着做 TODO”的代码和文档改动都没提交**（`git diff --stat`：37 个文件 + 新文件 `scripts/scene_mesh_budget.py`、
+  `tests/test_scene_mesh_budget.py`），10-27 最后一次 `make check` 通过。用户说提交再提交，按 TODO 分组、按路径 add：
+  42.2 `start.py` + `test_scene_task_runner.py`；37.5.1 / 33.19.1 都改了 `scripts/rsi/loop.py`（一起提交）；4.7.8 `build_scene.sh`、
+  `adt_to_scene.py`、`scene_mesh_budget.py`；10.7 `crate/collect.py`；其余是文档和 warehouse 循环的提示词。
+- 已确认（10-27 08:20）：`/workspace` 可用 72 GB（93%）。Kimodo、CHOIS、GMR 已删（重装：`outputs/scene_rsi_20261016/traj_prior_20261026/install_kimodo.sh`）。
 
 ## 另一个会话（已确认）
-- `locomanipulation-ea`：视觉 RSI 线，worktree `/workspace/code/locomanipulation-vision-rsi`，分支 `design/vision-rsi-20261023`，
-  用户的 herdr 里叫 loco_real。它也编辑进展报告（同一个本地文件），改之前互相发消息。
-- 约定：主线开仿真 / RSI 运行 / Unreal 编辑器前先发消息；Unreal 编辑器开着时整机 CPU 不能打满（`editor_guard.sh` 到约 15 核就杀编辑器，
-  10-26 被杀过两次：一次它的 10 个进程，一次我的 ffmpeg 默认多线程——ffmpeg 要加 `-threads 2`）。
-- 视觉线现状（已确认，10-26 晚）：自主探索建图做完（L2 + 探索地图 28 / 50，L3d + 探索地图 19 / 50）；下一步是探索时的定位偏差、
-  台面碎片合并、物体身份。它那边没有在跑的任务。
+- `locomanipulation-ea`：视觉 RSI 线，worktree `/workspace/code/locomanipulation-vision-rsi`，分支 `design/vision-rsi-20261023`。
+  主线开仿真 / RSI / Unreal 前先发消息；Unreal 编辑器开着时整机 CPU 不能打满（`editor_guard.sh`，ffmpeg 加 `-threads 2`）。
+- 它的封存池和 `grasp_atomic_refs/pool_sealed` 逐字节相同（42.1、42.2 的替换它都照做了）；新地图上它的 L0 是 37 / 50
+  （没换的 37 个起点 30 → 30），它分支上的提交 e1325906、1c47a609。旧的视觉数字都是旧地图上的。
 
 ## 当前进度（已确认）
-- 主任务 grasp_atomic 现任仍是 run C 的 `5cba2fa49d31`，封存 38 / 50；grasp_prep 31 / 40。
-- 进展报告：https://claude.ai/artifact/5KrdvZBjGQikFjnEpj1oYY 第 13 版（本地 `outputs/scene_rsi_20261016/report/progress_20261026.html`），
-  分享设置是“知道链接的人都能看”。按 mentor 视角重写过；7 段视频全是 Unreal 渲染（脚本 `progress_media/render_unreal_report.py`、
-  `explore_unreal.py`）；视觉线建图一节有传感器 / 方法表和流程图，事实经视觉线核对。
-- 10-26 连着做完的 TODO：39.1（39.2 按停止条件不做）、36.9 两条修复、38.10.2、38.10.1、33.4、33.3（含重放）。数字见各项。
-- 38.10.1 的结论：Kimodo 生成 + ScaleBFM 跟踪，12 / 15 没摔，手离原局预抓点中位 12 cm；约束取自成功局（量的是复现能力）。
-  文件 `outputs/scene_rsi_20261016/traj_prior_20261026/`（`README.md`、`track.jsonl`、`summary.json`）。
-- 10-27 TODO 40（CuRobo 路线开关，默认关）：40.2–40.4 都跑完，三个变体净 −2 / −3 / +1，开关保持关。TODO 42：走路地图补进 15 个物理里静态的落地物体（`adt_to_scene.py walkmap`），换掉 comp_ab 15 / 120、校准 92 / 856 个起点；现任新地图 89 / 120、走路摔倒 7 → 1。
+- grasp_atomic 现任仍是 run C 的 `5cba2fa49d31`。新地图（TODO 42）上 120 个位置赢 88（旧图 86），走路摔倒 7 → 0
+  （`outputs/scene_rsi_20261016/walkmap_20261027/README.md`）。旧图上的封存 38 / 50 照旧算数，只是地图更准了（用户 10-27）。
+- 场景文件已改（42.1）：sha256 主场景 `abe78c1f…`、可移动变体 `3395c67c…`；旧文件 `outputs/scene_discovery/<场景>.bak_20261027_before_walkmap/`。
+  起点池里被换掉的原文件在 `<池>_replaced_20261027/`，映射记在各池 `_pool.json`。
+- TODO 40（CuRobo 路线开关）三个变体都不净涨，默认关。41.1 / 41.2 离线第一步做完，等用户定落点。
+- 25.9 控制器替换判定写在 `docs/handoff/controller-compare-20261013.md` §26：warehouse 重标后可以换，bottle 还不行，真机没法判。
+- 进展报告：https://claude.ai/artifact/5KrdvZBjGQikFjnEpj1oYY 第 13 版（没加 10-27 的内容）。
 
 ## 下一步（编号见 `TODO.md`）
-- 用户还没回答的：38.10.5（报告要不要加回“生成轨迹”一节、配 3 段 Unreal 视频）。
-- 等用户拍板后再做：比较方法（DECISIONS 10-26 38.2 收尾，“每种设置 ≥ 3 次”）、38.10.3（`follow` 原语接进循环）、33.2 / 37.6。
-- 其余待用户定的列在 DECISIONS 10-26“连着做 TODO”（36.9 四条、39.3、33.6、33.21、33.22、33.7、36.10、29.5）和 10-27 TODO 40 两节的“未决”里。
+- 41.2：用户定落点（建议库原语：进入后 < 3 cm、下降后 < 5 cm 才合爪，否则退回重来一次），定了就实现并跑一次真运行。
+- 41.1 / 33.2：用户定要不要采用“只算目标的账”（建议采用）。
+- 其余待定的都在 DECISIONS 10-27“连着做 TODO”一节的“暂停”里（A800 三项、37.6、36.9、36.10、39.3、38.5–38.10、23.4.3）。
 
 ## 未解决 / 卡点
-- 已确认：本机仿真确定（同代码同起点结局相同）；A800 和本机同设置 73 / 80 局相同，不配对。A800 只跑用户指定的实验。
-- 已确认：Kimodo `num_samples=4` 只返回 1 个样本，没查原因；文字编码器加载时报 LoRA “UNEXPECTED” 键（文字条件可能偏弱，待验证）。
-- 已确认：Mouse_1 在多数 Kimodo 跟踪局里挪了 2–6 cm，像是自己会滑（待验证：静止局里会不会动）。
-- 假设：33.3 的 S 方向假设能不能被 Manager 选中、过验收门——重放量不到，要真运行。
-- 规则：停进程用明确 PID 或进程组，不用 `pkill -f` / `pgrep -f` 匹配同一条命令里的文字；不改正在跑的 bash 脚本。
+- 已确认：本机仿真确定（同代码同起点结局相同）；A800 和本机同设置 73 / 80 局相同，不配对；A800 只跑用户指定的实验。
+- 已确认：`loop.session_usage` 只修了以后的账；10-27 以前账本里的 token 数会少记（花费 `total_cost_usd` 一直是对的），要准数读各轮 `*_raw.json` 的 `modelUsage`。
+- 已确认：0.41 m 出生规则去掉的多是离家具近、走得短的“容易”起点（两个技能包在换掉的 5 个封存起点上都是原 4 / 5 → 新 1 / 5），成功率小跌是选起点的效应。
+- 待验证：41.2 的“退回重来”能救回多少（离线只知道 18 局偏 ≥ 3 cm 合爪只赢 1；COAP 报重试救回 17%）。
+- 待验证：创新点提议（DECISIONS 10-27 讨论一节）没查重。
+- 规则：停进程用明确 PID 或进程组，不用 `pkill -f` / `pgrep -f`；CuRobo 服务按 `pgrep -f '[c]urobo_service'` 拿 PID 停；不改正在跑的 bash 脚本。
 
 ## 关键路径与命令
 ```bash
 cd /workspace/code/locomanipulation && . scripts/paths.sh && export TMPDIR=$LOCOMANI_TMP NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2 && PY=$VENV_SIM_PY
-# Unreal（默认工程 URLabSmoke，GPU 1）：开 / 关；渲染报告视频（bridge Python）
-bash scripts/start_unreal.sh --gpu 1 ; bash scripts/stop_unreal.sh
-PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" outputs/scene_rsi_20261016/report/progress_media/render_unreal_report.py [名字 ...]
-# Kimodo：生成（自己的 venv）与跟踪（仿真 venv）
-(cd third_party/kimodo && HF_HOME=/workspace/huggingface_cache .venv/bin/python ../../outputs/scene_rsi_20261016/traj_prior_20261026/kimodo_gen.py \
-   ../../outputs/scene_rsi_20261016/traj_prior_20261026/jobs.json ../../outputs/scene_rsi_20261016/traj_prior_20261026/gen)
-CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src $PY outputs/scene_rsi_20261016/traj_prior_20261026/kimodo_check.py track
-# 能力汇总与外环加权选择（33.4）
-python3 scripts/rsi/capabilities_wanted.py
-$PY scripts/rsi/outer.py select outputs/scene_rsi_20261016/outer/round2 --loops <沙盒...> --wanted outputs/scene_rsi_20261016/outer/capabilities_wanted.json --out /tmp/x.json
-# 重放对照（33.3 用过）
-python3 outputs/rsi_speed_20261021/ab/run_ab.py <plan.json> --jobs 4 ; python3 outputs/rsi_speed_20261021/ab/analyze.py <plan.json>
+# 走路地图：补静态落地物体（只改障碍物 / 出生区 / 站位边；--check 只打印）
+/venv/main/bin/python scripts/adt_to_scene.py walkmap --scene outputs/scene_discovery/adt_apartment_mars/scene_meta.json [--check]
+# 起点池：旧图 / 新图（或加出生净空规则）下逐个核对、替换
+W=outputs/scene_rsi_20261016/walkmap_20261027; $PY $W/pools.py scan --old <旧 scene_meta> --new <新 scene_meta> [--clear 0 0.41 --tag _422]
+# 现任在 120 个起点上（comp_ab 的三个池）重跑与对比
+$PY $W/run_incumbent.py run --procs 12; $PY $W/run_incumbent.py report
+# 设计探针单独跑一个原语（33.19.1）；建场景的网格闸门（4.7.8）
+$PY scripts/rsi/design.py grasp_atomic --pool /tmp --skills /tmp --out <dir> --factor primitive --name turn --levels 90 180
+python3 scripts/scene_mesh_budget.py outputs/scene/<名字>/scene_locomani.xml
 # 新运行：照 outputs/scene_rsi_20261016/grasp_prep_a/launch.sh（建沙盒、核对、loop、封存集），nohup setsid 后台跑
 ```
-- 场景 `outputs/scene_discovery/adt_apartment_mars/`；沙盒都在 `/workspace/code/rsi-scene/`；外环登记表 `outputs/scene_rsi_20261016/outer/registry.json`。
+- 场景 `outputs/scene_discovery/adt_apartment_mars/`；沙盒都在 `/workspace/code/rsi-scene/`；comp_ab 的池在 `outputs/scene_rsi_20261016/body/comp_ab_20261026/`。
