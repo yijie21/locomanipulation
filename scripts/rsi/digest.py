@@ -35,6 +35,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 from locomani.scene_discovery import lint  # noqa: E402
 from locomani.scene_discovery.predicates import parse  # noqa: E402
+from locomani.tasks.scene import past as PAST  # noqa: E402
 
 SIDE = {"left": 0, "right": 1}
 SKIP_STEPS = {"settle", "hold"}
@@ -42,6 +43,10 @@ MAX_FIELDS = 7  # scalar numbers shown per step
 KNOCK_CM = 1.0
 TOP_SEPARATORS = 6
 RELEASE_STEPS = ("release_fit", "release", "unload", "open", "set_down", "drop")  # the hand starts letting go
+PAST_MAX_LINES = 115  # TODO 39.4: the scene-graph section stays under a third of the 344-line digest of 2026-10-30
+PAST_TIMELINE_MAX = 6  # flips shown per failed round before folding
+PAST_TOP = 3  # first unexpected transitions listed per task
+QUIET_KINDS = ("none", "walk", "turn", "sidestep", "posture", "hold")  # steps left out of a timeline unless they failed
 
 
 def scalars(step: dict) -> dict:
@@ -197,6 +202,95 @@ def class_lines(rounds: list[dict]) -> list[str]:
     return out
 
 
+def _edge_text(edge: list) -> str:
+    s, r, o = edge
+    return f"{s} {r} {o}" if o is not None else f"{s} {r}"
+
+
+def _first_unexpected(recs: list[dict]) -> tuple | None:
+    """(kind, edge, expected, observed) of the first step whose expected transition did not hold."""
+    for r in recs:
+        if r.get("discrepancies"):
+            d = r["discrepancies"][0]
+            return r["kind"], tuple(d["edge"]), d.get("to"), d.get("observed")
+    return None
+
+
+def _b(v) -> str:
+    return "unknown" if v is None else str(v).lower()
+
+
+def past_lines(diag: Path, rounds: list[dict]) -> list[str]:
+    """TODO 39.4 (plan docs/handoff/past-scene-graph-plan-20261030.md section 4.8): per task, the first unexpected
+    transition of the failed rounds with the successes' value at the same kind of step; per failed round, the flip
+    timeline. Nothing when the directory has no `.past.jsonl` (an older sandbox)."""
+    recs_by = {}
+    for r in rounds:
+        p = diag / f"{r['label']}.past.jsonl"
+        if p.exists():
+            recs = [x for x in PAST.read(p) if "record_id" in x]
+            if recs:
+                recs_by[r["label"]] = recs
+    if not recs_by:
+        return []
+    out = ["## Scene-graph transitions (TODO 39: `past.py show <diag dir>/<label>` for a round, `compare <failed> "
+           "<successful>` for two; `expected` is a fixed table by primitive, not a judgement)", ""]  # fmt: skip
+    by_task = collections.defaultdict(list)
+    for r in rounds:
+        if r["label"] in recs_by:
+            by_task[r["task"]].append(r)
+    for task, rows in sorted(by_task.items()):
+        firsts = collections.Counter()
+        for r in rows:
+            if not r["ok"]:
+                f = _first_unexpected(recs_by[r["label"]])
+                if f:
+                    firsts[f] += 1
+        for (kind, edge, to, obs), n in firsts.most_common(PAST_TOP):
+            vals = []
+            for r in rows:
+                if not r["ok"]:
+                    continue
+                for x in recs_by[r["label"]]:
+                    if x["kind"] != kind:
+                        continue
+                    e = next(
+                        (e for e in x.get("G_after", {}).get("edges", []) if (e["s"], e["r"], e["o"]) == edge), None
+                    )
+                    if e is not None and e["v"] is not None:
+                        vals.append(bool(e["v"]) == to)
+            tail = f"; successes: {sum(vals)}/{len(vals)} {_b(to)} at the same kind" if vals else ""
+            out.append(f"- {task}: {n} x {kind}: {_edge_text(list(edge))} expected {_b(to)}, observed {_b(obs)}{tail}")
+    out += ["", "Failed rounds, flips from the first manipulation step (t  step.kind  edge from->to; * = unexpected):"]
+    for r in rounds:
+        if r["ok"] or r["label"] not in recs_by:
+            continue
+        lines = []
+        for x in recs_by[r["label"]]:
+            if x["kind"] in QUIET_KINDS and not x.get("discrepancies"):
+                continue
+            bad = {tuple(d["edge"]) for d in x.get("discrepancies") or []}
+            for e in x.get("events") or []:
+                mark = " *" if tuple(e["edge"]) in bad else ""
+                lines.append(
+                    f"  {e['t']:.1f}  {x['step']}.{x['kind']}  {_edge_text(e['edge'])} {_b(e['from'])}->{_b(e['to'])}{mark}"
+                )
+            t1 = (x.get("action") or {}).get("t1", 0.0)
+            for d in x.get("discrepancies") or []:
+                lines.append(f"  {t1:.1f}  {x['step']}.{x['kind']}  {_edge_text(d['edge'])} expected {_b(d['to'])}, "
+                             f"observed {_b(d.get('observed'))} *")  # fmt: skip
+        if len(lines) > PAST_TIMELINE_MAX:
+            lines = lines[:PAST_TIMELINE_MAX] + [
+                f"  ... {len(lines) - PAST_TIMELINE_MAX} more: past.py show {diag / r['label']}"
+            ]
+        if len(out) + len(lines) + 2 > PAST_MAX_LINES:
+            out.append("- ... more failed rounds: `past.py show` each")
+            break
+        out += [f"- {r['label']}"] + lines
+    out.append("")
+    return out
+
+
 def build(diag: Path, family: str) -> str:
     import family as F
 
@@ -213,6 +307,7 @@ def build(diag: Path, family: str) -> str:
            f"{sum(bool(r.get('dropped')) for r in rounds)}. Built by digest.py from the round files in {diag} and "
            "the scene file; open a round's .json / .npz for anything not here.", ""]  # fmt: skip
     out += class_lines(rounds)
+    out += past_lines(diag, rounds)  # TODO 39.4
     for task, rows in sorted(by_task.items()):
         goal = fam["rows"][task]["goal"] if task in fam["rows"] else []
         movables = list(F.task(fam, task).objects) if task in fam["rows"] else []
