@@ -35,6 +35,7 @@ import family as F  # noqa: E402
 
 from locomani.backends.scalebfm import runtime as R  # noqa: E402
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
+from locomani.tasks.scene import past as PAST  # noqa: E402  (TODO 39: the per-step scene-graph records)
 from locomani.tasks.scene.episode import HOLD_S, run_episode  # noqa: E402
 from locomani.tasks.scene.start import Start  # noqa: E402
 from locomani.tasks.scene.world import SceneWorld  # noqa: E402
@@ -146,6 +147,10 @@ def run_round(
         controller=controller,
         motor=motor,
     )
+    try:  # TODO 39.3: the PAST records beside the round (<label>.past.jsonl); a recorder bug never costs a round
+        PAST.write(out, label, PAST.build(rec, arrays, world.meta, task) if arrays is not None else [])
+    except Exception as e:
+        PAST.write(out, label, [PAST.error_line(label, f"{type(e).__name__}: {e}")])
     tmp = f.with_suffix(".tmp")
     tmp.write_text(json.dumps(rec, indent=1, default=float))
     tmp.rename(f)  # a killed process never leaves a half-written round

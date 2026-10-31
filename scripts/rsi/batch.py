@@ -122,7 +122,7 @@ def retire(f: Path) -> None:
         return
     rec = json.loads(f.read_text())
     tag = f"rule{rec.get('rule', 1)}" if rec.get("rule", 1) != SUCCESS_RULE else f"motor{rec.get('motor') or 'none'}"
-    for p in (f, f.with_suffix(".npz")):
+    for p in (f, f.with_suffix(".npz"), f.with_name(f"{f.stem}.past.jsonl")):  # TODO 39: the scene-graph side file
         if p.exists():
             p.rename(p.with_name(f"_{tag}_{p.name}"))
 
