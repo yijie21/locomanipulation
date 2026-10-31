@@ -46,6 +46,15 @@ SIDES = ("left", "right")
 WRIST = {s: f"{s}_wrist_yaw_link" for s in SIDES}
 ANKLE = {s: f"{s}_ankle_roll_link" for s in SIDES}
 FINGERS = {s: (f"{s}_dex1_finger_1_link", f"{s}_dex1_finger_2_link") for s in SIDES}
+# TODO 39.1: the arm and hand links whose contacts the trace records for the PAST recorder (tasks/scene/past.py)
+ARM_LINKS = {
+    s: tuple(
+        f"{s}_{n}_link"
+        for n in ("shoulder_pitch", "shoulder_roll", "shoulder_yaw", "elbow", "wrist_roll", "wrist_pitch", "wrist_yaw",
+                  "dex1_finger_1", "dex1_finger_2")
+    )
+    for s in SIDES
+}  # fmt: skip
 MODE_WALK, MODE_STAND = 2, 4
 JAW_OPEN = R.GRIP_OPEN
 FF_SPEEDS, FF_SHORT = (0.25, 0.35, 0.55), (0.045, 0.036, 0.016)  # plan program's stop shortfall per speed (24.7.1)
@@ -252,6 +261,7 @@ class Motor:
         self.track = {n: sim.m.body(n).id for n in track}
         self.foot_bodies = {sim.m.body(ANKLE[s]).id for s in SIDES}
         self.fingers = {s: tuple(sim.m.body(n).id for n in FINGERS[s]) for s in SIDES}
+        self.arm_bodies = {sim.m.body(n).id for s in SIDES for n in ARM_LINKS[s]}
         self.k = 0
         self.mode: int | None = None  # set (and sent to the policy) by the first primitive
         self.ref = None  # callable t -> Pose
@@ -324,6 +334,19 @@ class Motor:
                 if body in pair and any(f in pair for f in self.fingers[s]):
                     out.add(s)
         return out
+
+    def contacts(self) -> list[tuple[int, int]]:
+        """TODO 39.1: body pairs in contact this tick with one side a tracked object or an arm / hand link and the other
+        not the world body (the floor). Recording only; sorted, no duplicates."""
+        m, d = self.sim.m, self.sim.d
+        watched = set(self.track.values()) | self.arm_bodies
+        out = set()
+        for i in range(d.ncon):
+            b1, b2 = int(m.geom_bodyid[d.contact[i].geom1]), int(m.geom_bodyid[d.contact[i].geom2])
+            if b1 == b2 or 0 in (b1, b2) or not (b1 in watched or b2 in watched):
+                continue
+            out.add((min(b1, b2), max(b1, b2)))
+        return sorted(out)
 
     # -- reset ------------------------------------------------------------------------------------------------------
     def reset(self, xy, yaw: float, *, warm_up: int = 3) -> None:
@@ -458,6 +481,7 @@ class Motor:
                 jaw=self.jaw.copy(),
                 fingers=sim.d.qpos[sim.gq].copy(),
                 objects={n: np.r_[sim.d.xpos[b], sim.d.xquat[b]] for n, b in self.track.items()},
+                contacts=self.contacts(),
             )
         )
         sim.step(self.pol(sim.state(), fut))
@@ -949,7 +973,8 @@ class Motor:
         """The trace as arrays (npz-ready): t, mode, robot (pelvis xyz + quat), joints, ref_pelvis, ref_wrists, wrists,
         jaw (the gripper command: past the finger joints' -0.02 limit while gripping), fingers (the four finger joints as
         measured, left 1, 2, right 1, 2: what a replay draws, TODO 27.14), primitive (index into `primitives`), one array
-        per tracked object (xyz + quat)."""
+        per tracked object (xyz + quat), and the contact channel (TODO 39.1): contact_k (tick index), contact_a,
+        contact_b (body ids, a < b) as flat int32 columns, plus `bodies`, the body-name table indexed by body id."""
         rows = self.trace
         names = sorted({r["primitive"] for r in rows})
         out = {
@@ -960,4 +985,9 @@ class Motor:
         out["primitives"] = np.array(names)
         for n in self.track:
             out[f"obj_{n}"] = np.array([r["objects"][n] for r in rows], dtype=np.float32)
+        pairs = [(i, p) for i, r in enumerate(rows) for p in r.get("contacts", ())]
+        out["contact_k"] = np.array([i for i, _ in pairs], dtype=np.int32)
+        out["contact_a"] = np.array([p[0] for _, p in pairs], dtype=np.int32)
+        out["contact_b"] = np.array([p[1] for _, p in pairs], dtype=np.int32)
+        out["bodies"] = np.array([self.sim.m.body(i).name for i in range(self.sim.m.nbody)])
         return out

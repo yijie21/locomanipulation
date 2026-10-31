@@ -191,3 +191,35 @@ class BothHandsAndSqueeze(unittest.TestCase):
         m.squeeze(0.02, seconds=0.1)
         m.reset((-1.5, 0.0), 0.0, warm_up=0)
         self.assertEqual(m.squeeze_offset, {})
+
+
+class ContactChannel(unittest.TestCase):
+    """TODO 39.1: the per-tick contact pairs for the PAST recorder (recording only)."""
+
+    def test_rows_carry_contacts_and_arrays_export_them(self):
+        meta = json.loads(Path(R.META).read_text())
+        sim = R.Sim(meta, backend=ScaleBfmBackendConfig(scene_dir=str(DIRECTORY)))
+        m = Motor(sim, StandInPolicy(meta), MotorConfig(), model_xml=str(DIRECTORY / "scene_locomani.xml"),
+                  track=("water_bottle_object",))  # fmt: skip
+        m.reset((-1.5, 0.0), 0.0, warm_up=0)
+        for _ in range(3):
+            self.assertTrue(m.tick())
+        self.assertTrue(all("contacts" in r for r in m.trace))
+        out = m.arrays()
+        for k in ("contact_k", "contact_a", "contact_b"):
+            self.assertEqual(out[k].dtype, np.int32)
+        self.assertEqual(len(out["contact_k"]), len(out["contact_a"]))
+        self.assertEqual(len(out["bodies"]), m.sim.m.nbody)
+        self.assertEqual(str(out["bodies"][0]), "world")
+        watched = set(m.track.values()) | m.arm_bodies
+        for a, b in zip(out["contact_a"], out["contact_b"]):
+            self.assertLess(a, b)
+            self.assertNotEqual(a, 0)  # the floor (body 0) is never recorded
+            self.assertTrue(a in watched or b in watched)
+
+    def test_arm_bodies_are_the_eighteen_arm_and_finger_links(self):
+        m = motor()
+        names = {m.sim.m.body(i).name for i in m.arm_bodies}
+        self.assertEqual(len(names), 18)
+        self.assertIn("left_elbow_link", names)
+        self.assertIn("right_dex1_finger_2_link", names)
