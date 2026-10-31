@@ -3011,6 +3011,7 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 记录器不是技能也不是原子动作：接触通道在 `motor.py` 的轨迹里，构造器在 `src/locomani/tasks/scene/past.py`，都是 Engineer 不能改的层；只写不读；技能不许读它（规则第 23 版，引用即作废）。
 - 采集只多记每拍的接触对；记录在局结束后由纯函数构造，没有接触通道的旧局接触边记 `unknown`（回填脚本第二阶段）。
 - 边：`predicates.py` 的谓词 + 原始 `touching` + 推出的 `supported_by`，来源分 observed / predicate / derived；按原语的小表给 `expected`，差异只是差异，不是因果。
+- 补充（同日，用户指出第一稿比原文窄）：实体按相关性选，不按接触选——邻居（目标 0.30 m 内或走廊里的可动物体）、站位足迹里的家具、目标上方 0.5 m 内的面、站位 / 走廊 / 预抓点 / 放置区四种区域；关系补空间类（`above`、`beside`、`near_edge`、`blocking`、`dist`）和相对位姿类（`rel_pose`、`reach_vec`、`approach`、`facing`），只记一端是角色或区域的对；属性补质心、速度、手臂关节、脚。`reach` 的期待加"走廊里没有 `blocking`、邻居不动"，`walk` 加"足迹里没有 `blocking`"。
 - 角色从步骤内的原语调用推断，不要求技能声明；步骤名不参与推断。
 - 每局一个 `<label>.past.jsonl`，三个池一律生成；侧文件不进验收门、哨兵和回归的判定。
 - 第一版只做单次运行内的诊断：摘要新增一节、`past.py show` / `compare`、只改 `reviewer.md`（读法：摘要 → `.past.jsonl` → NPZ 最后手段）。

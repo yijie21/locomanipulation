@@ -31,7 +31,8 @@
 | Q2 | 代码放哪层 | 冻结层：接触通道在 `motor.py` 轨迹，构造器在 `src/locomani/tasks/scene/past.py`；不是技能，也不是原子动作 |
 | Q3 | 采集方式 | 运行时只多记接触通道；局结束后用纯函数从步骤日志、调用日志、轨迹和场景文件构造记录 |
 | Q4 | 关系集合 | `predicates.py` 的谓词 + 原始接触 `touching` + 由接触推出的 `supported_by` |
-| Q5 / Q10 | 范围 | 操作步骤的初始范围按第 4.4 节；走路、转身、姿态步骤也记录，范围只有骨盆和脚、目标物体、碰到的刚体 |
+| Q5 / Q10 | 范围 | 操作步骤的初始范围按第 4.4 节；走路、转身、姿态步骤也记录，范围是机器人、目标物体、站位足迹和路径上的障碍、碰到的刚体 |
+| 补充（同日） | 实体、关系、属性按原文补全 | 实体按相关性选（邻居 0.30 m、站位足迹、走廊、上方净空 0.5 m、区域），不按接触选；关系五类（接触、支撑、持握、空间、相对位姿）加谓词，以角色为中心；属性加质心、速度、手臂关节、脚 |
 | Q6 | 存放 | 每局一个侧文件 `<label>.past.jsonl`，三个池一律生成 |
 | Q7 | 第一版范围 | 单次运行内的诊断：采集、构造、摘要新增、查看工具、提示词和规则 |
 | Q8 / Q19 | 验证有用 | 不做 A/B 重放；开一次新运行和上一次运行对照（第 6 节） |
@@ -90,25 +91,56 @@
     "calls": [{"name": "reach", "side": "right", "t0": 12.4, "t1": 15.1, "args": {...}, "ok": true}],
     "check": {"jaw_err_cm": 1.3}
   },
-  "roles": {"target": "Canister_1", "effector": "right_hand", "support": "ApartmentEnv__0", "goal_surface": null, "container": null},
-  "scope": {"initial": ["Canister_1", "right_hand", "left_hand", "ApartmentEnv__0"],
-            "added": [{"id": "Mug_2", "t": 13.7, "why": "touched by right_hand"}]},
+  "roles": {"target": "Canister_1", "effector": "right_hand", "support": "ApartmentEnv__0", "goal_surface": null, "container": null,
+            "stance": "region:stance", "corridor": "region:corridor", "pregrasp": "region:pregrasp_target"},
+  "scope": {"initial": ["Canister_1", "right_hand", "left_hand", "robot", "ApartmentEnv__0", "ApartmentEnv", "Mug_2", "Shelf_3",
+                        "region:stance", "region:corridor", "region:pregrasp_target"],
+            "initial_why": {"Mug_2": "neighbour 0.18 m", "Shelf_3": "above target 0.31 m", "ApartmentEnv": "furniture of support"},
+            "added": [{"id": "BarStool_1", "t": 13.7, "why": "touched by robot"}]},
   "entities": {
-    "Canister_1": {"type": "object", "body": "Canister_1", "mass_kg": 0.8, "half_extent_m": [0.05, 0.05, 0.11], "movable": true, "container": false},
-    "right_hand": {"type": "effector", "bodies": ["right_wrist_yaw_link", "right_dex1_finger_1_link", "right_dex1_finger_2_link"]},
-    "ApartmentEnv__0": {"type": "surface", "top_m": 0.4182, "half_extent_m": [0.335, 0.18], "fixed": true},
-    "robot": {"type": "robot"}
+    "Canister_1": {"type": "object", "body": "Canister_1", "mass_kg": 0.8, "half_extent_m": [0.05, 0.05, 0.11], "com_m": [0, 0, 0.01],
+                   "movable": true, "container": false, "upright_axis": [0, 0, 1]},
+    "Mug_2": {"type": "object", "...": "..."},
+    "right_hand": {"type": "effector", "bodies": ["right_wrist_yaw_link", "right_dex1_finger_1_link", "right_dex1_finger_2_link"], "jaw_max_m": 0.095},
+    "ApartmentEnv__0": {"type": "surface", "of": "ApartmentEnv", "top_m": 0.4182, "half_extent_m": [0.335, 0.18], "yaw": -1.5708,
+                        "approach_edges": ["-x"], "fixed": true},
+    "ApartmentEnv": {"type": "furniture", "box_m": {"half_extent": [...], "centre": [...]}, "fixed": true},
+    "Shelf_3": {"type": "surface", "...": "..."},
+    "robot": {"type": "robot"},
+    "region:stance": {"type": "region", "shape": "disc", "centre": [..], "radius_m": 0.35},
+    "region:corridor": {"type": "region", "shape": "segment", "a": [..], "b": [..], "half_width_m": 0.08},
+    "region:pregrasp_target": {"type": "region", "shape": "point", "p": [..], "wrist_att": "level"}
   },
   "G_before": {"t": 12.4,
-    "states": {"Canister_1": {"p": [..], "q": [..]}, "right_hand": {"p": [..], "jaw_m": 0.09}, "robot": {"pelvis_p": [..], "yaw": 1.2}},
-    "edges": [{"s": "Canister_1", "r": "supported_by", "o": "ApartmentEnv__0", "v": true, "src": "derived"},
-              {"s": "Canister_1", "r": "touching", "o": "right_hand", "v": false, "src": "observed"},
-              {"s": "Canister_1", "r": "held", "o": "right_hand", "v": false, "src": "predicate"},
-              {"s": "Canister_1", "r": "upright", "o": null, "v": true, "src": "predicate"}]},
-  "events": [{"t": 13.7, "edge": ["Canister_1", "touching", "right_hand"], "from": false, "to": true, "src": "observed"},
+    "states": {
+      "Canister_1": {"p": [..], "q": [..], "v_mps": 0.0, "w_radps": 0.0, "bottom_z_m": 0.418, "yaw": 0.3},
+      "Mug_2": {"p": [..], "q": [..], "v_mps": 0.0},
+      "right_hand": {"p": [..], "q": [..], "jaw_m": 0.09, "att": "level", "arm_q": [7 个关节角], "ref_err_cm": 0.0},
+      "left_hand": {"p": [..], "q": [..], "jaw_m": 0.09},
+      "robot": {"pelvis_p": [..], "pelvis_z_m": 0.74, "yaw": 1.2, "feet_p": [[..], [..]], "fell": false, "primitive": "reach", "mode": 2}
+    },
+    "edges": [
+      {"s": "Canister_1", "r": "supported_by", "o": "ApartmentEnv__0", "v": true, "src": "derived"},
+      {"s": "Canister_1", "r": "touching", "o": "right_hand", "v": false, "src": "observed"},
+      {"s": "Canister_1", "r": "held", "o": "right_hand", "v": false, "src": "predicate"},
+      {"s": "Canister_1", "r": "upright", "o": null, "v": true, "src": "predicate"},
+      {"s": "Shelf_3", "r": "above", "o": "Canister_1", "v": true, "gap_m": 0.31, "src": "derived"},
+      {"s": "Mug_2", "r": "beside", "o": "Canister_1", "v": true, "gap_m": 0.07, "side": "+y", "src": "derived"},
+      {"s": "Canister_1", "r": "near_edge", "o": "ApartmentEnv__0", "v": true, "dist_m": 0.12, "edge": "-x", "src": "derived"},
+      {"s": "BarStool_1", "r": "blocking", "o": "region:stance", "v": null, "src": "unknown"},
+      {"s": "Mug_2", "r": "blocking", "o": "region:corridor", "v": false, "src": "derived"},
+      {"s": "robot", "r": "dist", "o": "Canister_1", "v": 0.62, "bearing_deg": 8.0, "src": "derived"},
+      {"s": "robot", "r": "facing", "o": "Canister_1", "v": 8.0, "src": "derived"},
+      {"s": "right_hand", "r": "reach_vec", "o": "region:pregrasp_target", "v": [0.48, 0.21, 0.52], "src": "derived"},
+      {"s": "right_hand", "r": "approach", "o": "Canister_1", "v": "-x", "wrist_att": "level", "src": "derived"},
+      {"s": "Canister_1", "r": "rel_pose", "o": "right_hand", "v": null, "src": "derived"}
+    ]},
+  "events": [{"t": 13.7, "edge": ["BarStool_1", "touching", "robot"], "from": false, "to": true, "src": "observed"},
              {"t": 13.9, "edge": ["Canister_1", "moved", null], "from": false, "to": true, "cm": 3.2, "src": "derived"}],
   "G_after": {"t": 15.1, "states": {...}, "edges": [...]},
-  "expected": [{"edge": ["right_hand", "at", "pregrasp_target"], "to": true, "tol_cm": 3.0}],
+  "expected": [{"edge": ["right_hand", "at", "region:pregrasp_target"], "to": true, "tol_cm": 3.0},
+               {"edge": ["Canister_1", "moved", null], "to": false},
+               {"edge": ["*", "blocking", "region:corridor"], "to": false}],
   "discrepancies": [],
   "outcome": {"step_ok": true, "round_ok": false, "round_why": "...", "failure_class": "knocked"},
   "evidence": {"npz": "canister_pickup_s100000.npz", "k0": 620, "k1": 755, "json_step": 3}
@@ -116,8 +148,10 @@
 ```
 
 约定：
-- **三种来源分开**（原文"观测事实、派生谓词、因果假设分开"）：`src` 为 `observed`（接触、位姿）、`predicate`（`predicates.py` 算的）或 `derived`（`supported_by`、`moved`、`slipped`）。记录里没有因果判断；`discrepancies` 只是 `expected` 和 `G_after` 的差。
-- **未知不是假**：没有接触通道的旧局，所有 `touching` 边和依赖它的 `supported_by` 记 `"v": null, "src": "unknown"`。
+- **三种来源分开**（原文"观测事实、派生谓词、因果假设分开"）：`src` 为 `observed`（接触、位姿）、`predicate`（`predicates.py` 算的）或 `derived`（支撑、空间、相对位姿、`moved`、`slipped`，都是从位姿和包围盒算的几何量）。记录里没有因果判断；`discrepancies` 只是 `expected` 和 `G_after` 的差。
+- **未知不是假**：没有接触通道的旧局，所有 `touching` 边和依赖它的 `supported_by`、`blocking`（按接触判的部分）记 `"v": null, "src": "unknown"`；几何边照算。
+- **边以角色为中心**：只记一端是 `target`、`effector`、`robot` 或某个 `region` 的对，不记全对全；邻居之间的关系不记。每条记录一两百条边、一局几十 KB。
+- **实体属性**（原文的 geometry、mass / CoM、pose / velocity、joint states）：物体有质量、半尺寸、质心（`meta.objects[*].box.centre`）、竖直轴，状态里有位姿、线速度和角速度（相邻两拍差分）、底面高度、偏航；手有组成刚体和夹爪最大开口，状态里有位姿、开口、腕姿态档（水平 / 俯 / 竖直，和 `body.reach()` 同一分法）、肩 3 + 肘 1 + 腕 3 的关节角、相对参考的误差；机器人有骨盆位姿和高度、偏航、两脚位置、是否摔倒、当前原语和模式；面有顶高、半尺寸、偏航、可接近的边、所属家具；区域有形状和参数。
 - **一步一条、重试各一条**：`record_id` 是 `<label>/<step_index>.<attempt>`；`stage()` 的多次尝试在步骤日志里是同名多行，按 `attempt` 分开。
 - **`kind`** 是步骤内主导原语的种类（`reach`、`grip`、`release`、`walk`、`turn`、`sidestep`、`posture`、`hold`、`squeeze`、`mixed`、`none`），由第 4.5 节的规则定；步骤名 `step` 原样保留但不参与任何推断。
 - **`expected`** 来自第 4.5 节的表；查不到的 `kind` 为空列表。
@@ -125,11 +159,33 @@
 
 ### 4.4 范围规则
 
-操作步骤（`kind` 不是 `walk` / `turn` / `sidestep` / `posture` / `hold`）：
-- **初始范围**（只用步骤开始前能知道的）：任务物体（`task.objects`）、两只手、每个任务物体当前的支撑面（`G_before` 时刻按第 4.6 节的 `supported_by` 推出，推不出就用 `meta.objects[k].surface`）、目标谓词点名的台面或容器（`on(X, S)` 的 S、`in(X, C)` 的 C）、这一步原语参数点名的东西（`walk_to` 的站位点作为 `region` 实体，`reach` 的目标点作为 `pregrasp_target` 区域）。
-- **执行中加入**：这一步里和机器人手臂 / 手部或任务物体发生接触的其他刚体，带首次接触时间和原因；家具按 `meta.surfaces[*].of_object` 映射回它所属的物体，当作 `surface` 或 `furniture` 实体；地面不加。
+范围按**相关性**选，不按接触选（用户 2026-10-30：按接触加入会漏掉占住站位的凳子、物体上方的隔板、挡住走廊的邻居——报告里最常见的几类失败原因，失败前都没被碰到）。初始范围只用步骤开始时能知道的，全部从 `scene_meta` 的包围盒和当前状态算；每个实体记 `initial_why`。
 
-走路类步骤：`robot`（骨盆位姿、偏航、脚的高度）、任务物体、执行中机器人碰到的刚体；`G_before` / `G_after` 另记机器人到目标物体的水平距离和方位角，`expected` 是 `walk_to` 的停位误差（`stop_err_cm`，动作层本来就返回）。
+操作步骤（`kind` 不是 `walk` / `turn` / `sidestep` / `posture` / `hold`）：
+- **角色实体**：任务物体（`task.objects`）、两只手、`robot`、每个任务物体当前的支撑面（`G_before` 时刻按第 4.6 节的 `supported_by` 推出，推不出就用 `meta.objects[k].surface`）和它所属的家具（`meta.surfaces[*].of_object`）、目标谓词点名的台面或容器（`on(X, S)` 的 S、`in(X, C)` 的 C）。
+- **邻居物体**：和目标物体水平距离 ≤ NEIGHBOUR_M（0.30 m）的可动物体；包围盒和接近走廊相交的可动物体。
+- **家具 / 障碍**：包围盒和站位足迹相交的家具或碰撞体；目标正上方 OVERHANG_M（0.5 m）内有东西的面或家具（隔板、上层台面）。
+- **区域**：站位足迹（`walk_to` 的目标点，半径 STANCE_M 0.35 m 的圆盘）、接近走廊（预抓点到目标的线段向两侧各扩 CORRIDOR_HALF_M 0.08 m）、预抓目标点（`reach` 的目标和腕姿态）、放置区（目标台面的放置面或容器的内腔）。这一步没有对应原语时区域不出现。
+- **执行中加入**：这一步里和机器人任何部位或任务物体发生接触、又不在初始范围里的刚体，带首次接触时间和原因；地面不加。
+
+走路类步骤：`robot`、任务物体、站位足迹区域、和足迹或机器人到站位的路径（线段扩 0.35 m）相交的家具 / 碰撞体 / 可动物体，执行中碰到的刚体；`expected` 是停位误差在阈值内（`stop_err_cm`，动作层本来就返回）和足迹里没有 `blocking`。
+
+四个常数（NEIGHBOUR_M、OVERHANG_M、STANCE_M、CORRIDOR_HALF_M）是按夹爪和手臂尺寸估的，写在 `past.py` 顶部，记录的 `scope.selector` 带它们的值，改了能分辨。
+
+### 4.4.1 关系（边）
+
+五类，和原文的 spatial、contact、support、holding、relative-pose 对应。只记一端是角色实体或区域的对（第 4.3 节"以角色为中心"）：
+
+| 类 | 边 | 值 | 怎么算 |
+|---|---|---|---|
+| 接触 | `touching(a, b)` | 真 / 假 / 未知 | 接触通道 |
+| 支撑 | `supported_by(X, S)`、`in(X, C)` | 真 / 假 | 接触 + X 底面在 S 顶 ±2 cm + 未被持；容器内腔包含 |
+| 持握 | `held(X, hand)`、`between_fingers(X, hand)` | 真 / 假 | 两指都接触（`predicates._held` 的定义）；在两指之间 |
+| 空间 | `above(S, X)` 带 `gap_m`（上方净空）；`beside(N, X)` 带 `gap_m`、`side`（邻居在目标的哪一侧、缝多宽）；`near_edge(X, S)` 带 `dist_m`、`edge`（离哪条台沿多远）；`blocking(B, region)` 带 `depth_m`（刚体和区域相交多深）；`dist(robot, X)` 带 `bearing_deg` | 真 / 假 + 数值 | 包围盒几何（物体用 `box` 的半尺寸和当前位姿，面用 `half_extent` 和 `yaw`，机器人用骨盆位置） |
+| 相对位姿 | `rel_pose(X in hand)`（物体在夹爪坐标系的位置和姿态，抓住后才有值）；`reach_vec(hand → 目标点 in pelvis)`（前伸、外侧、高度——和 `body.reach()` 的表同一坐标）；`approach(hand → X)` 带 `wrist_att`（从物体的哪一面接近、腕姿态档）；`facing(robot → X)`（机器人朝向和目标方位的夹角） | 数值 | 位姿换算 |
+| 谓词 | `upright(X)`、`lifted(X, …)`、`near(X, Y)` | 真 / 假 | `predicates.py` 原样 |
+
+空间边里 `blocking` 和 `above` 的真值有一半靠接触通道（刚体是不是真顶住了），没有接触通道时按几何给值、`src` 标 `approx`。
 
 ### 4.5 角色推断与期待表
 
@@ -137,9 +193,9 @@
 
 | 步骤内的原语 | `kind` | 角色 | `expected` |
 |---|---|---|---|
-| 只有 `walk_to`（可含嵌套 `turn`） | `walk` | `robot` → 站位 `region` | 机器人到站位 ≤ 停位阈值（取 `walk_to` 返回的 `stop_err_cm` 和参数里的容差） |
+| 只有 `walk_to`（可含嵌套 `turn`） | `walk` | `robot` → 站位 `region` | 机器人到站位 ≤ 停位阈值（取 `walk_to` 返回的 `stop_err_cm` 和参数里的容差）；站位足迹里没有 `blocking` |
 | `turn` / `sidestep` / `posture` / `hold` 单独 | 同名 | `robot` | 无 |
-| `reach(side)`，夹爪开着 | `reach` | `effector` = 那只手，`target` = 离目标点最近的任务物体 | 手到目标 ≤ 3 cm（和 `pred_p_miss` 的 3 cm 一致）；`target` 不动（`moved` 保持假） |
+| `reach(side)`，夹爪开着 | `reach` | `effector` = 那只手，`target` = 离目标点最近的任务物体 | 手到目标 ≤ 3 cm（和 `pred_p_miss` 的 3 cm 一致）；`target` 不动（`moved` 保持假）；走廊里没有 `blocking`；邻居不动 |
 | `grip(side)` | `grip` | `effector`、`target` = 两指之间的物体，没有则离夹爪最近的任务物体 | `held(target, effector)` 变真 |
 | `reach(side)`，夹爪闭着且 `held` 为真 | `reach` | 同上，另有 `carried` = 被持物体 | `held` 保持真；若目标高于起点 2 cm 以上，`supported_by` 变假（抬起） |
 | `release(side)` | `release` | `effector`、`target` = 松手前被持的物体 | `held` 变假；若目标谓词有 `on(X, S)` 或 `in(X, C)` 且这是 `X`，`supported_by S` / `in C` 变真 |
@@ -155,9 +211,9 @@
 
 1. 把 `steps` 按 `(t0, t1)` 切成区间；同名多行按 `attempt` 分开；`calls` 按时间归到区间（嵌套的只算外层）。
 2. 每个区间按第 4.5 节定 `kind`、角色、`expected`。
-3. 按第 4.4 节定初始范围；扫这一区间的接触通道，加入新碰到的刚体。
-4. 在 `t0` 和 `t1` 那两拍算 `G_before` / `G_after`：实体状态来自 NPZ（物体位姿、手腕、夹爪、骨盆）；`touching` 来自接触通道；谓词调用 `predicates.compile_goal` 对范围内的实体对逐个算（`held` 直接复用 `gripping` 的定义：两指都接触）；`supported_by(X, S)` 为真当且仅当 X 和 S 的刚体接触、X 的底面在 S 的 `top` 上下 2 cm 内、且 X 不被任何手持。
-5. 区间内每隔 1 拍重算 `touching`、每 5 拍（0.1 s，和 `JUDGE_DT` 一样）重算谓词和派生边，边的真值一变就记一条 `events`；物体位移超过 2 cm 记 `moved`，被持物体和手腕距离变化超过 1 cm 记 `slipped`（和 `digest.py` 现有的 knocked / slip 口径一致）。
+3. 按第 4.4 节在 `t0` 那一拍的状态上选初始范围（邻居、障碍、上方净空、区域都用包围盒算，记 `initial_why`）；扫这一区间的接触通道，加入新碰到的刚体。
+4. 在 `t0` 和 `t1` 那两拍算 `G_before` / `G_after`：实体状态来自 NPZ（物体位姿和差分速度、手腕、手臂关节、夹爪、骨盆、脚）；`touching` 来自接触通道；谓词调用 `predicates.compile_goal` 对范围内的实体对逐个算（`held` 直接复用 `gripping` 的定义：两指都接触）；`supported_by(X, S)` 为真当且仅当 X 和 S 的刚体接触、X 的底面在 S 的 `top` 上下 2 cm 内、且 X 不被任何手持；空间边和相对位姿边按第 4.4.1 节的几何算。
+5. 区间内每隔 1 拍重算 `touching`、每 5 拍（0.1 s，和 `JUDGE_DT` 一样）重算谓词、支撑边和 `blocking`，边的真值一变就记一条 `events`（数值边只在 `G_before` / `G_after` 记，不记每次变化）；物体位移超过 2 cm 记 `moved`（邻居也算），被持物体和手腕距离变化超过 1 cm 记 `slipped`（和 `digest.py` 现有的 knocked / slip 口径一致）。
 6. `discrepancies` = `expected` 里在 `G_after` 没成立的项。
 7. 填 `outcome`、`evidence`，排序，返回。
 
@@ -246,5 +302,7 @@
 - 非配对比较（第 6 节）。
 - `expected` 表只覆盖现有原语的常见用法；技能发明的新组合只有观测没有期待。
 - `supported_by` 靠接触和高度推，物体悬在容器壁上、或被两件家具同时托着时可能推错；记录里标了 `derived`，Reviewer 能回到 `touching` 看原始接触。
+- 空间边用包围盒算：圆的、斜放的物体缝宽偏小，`blocking` 的相交深度是包围盒的，不是网格的；这些是解释性的量，不是判定。
+- 第 4.4 节的四个常数是估的；邻居半径取小了漏实体，取大了记录变长。改了常数记录的 `scope.selector` 不同，跨运行比较时要看。
 - 碰倒旁边物体现在不进成败判定（TODO 27.13）；记录会记下这些 `touching` 和 `moved` 事件，但它们和成败的关系要 Reviewer 自己判断。
 - 只有仿真里的特权信息；原文的约束"部署策略不能依赖真值"这里天然满足——技能不读记录（规则第 23 版）。

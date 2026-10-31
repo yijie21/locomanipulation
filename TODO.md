@@ -1308,7 +1308,7 @@
 每局运行时记接触通道，局结束后用纯函数把每个步骤、每次重试构造成一条局部场景图记录（`<label>.past.jsonl`），Reviewer 读它诊断。记录器在冻结层，只写不读，不改结局，侧文件不进任何判定。第一版只验证单次运行内的诊断效率；跨任务检索、回填、图形页放第二阶段（方案第 8 节）。每步 `make check` 后提交。
 
 - [ ] 39.1 接触通道：`motor.py` 的 `trace` 每拍记追踪物体或手臂 / 手部刚体与非地面刚体的接触对，`arrays()` 导出 `contact_k` / `contact_a` / `contact_b` 和刚体名表 `bodies`；`tests/test_scalebfm_motor.py`。
-- [ ] 39.2 构造器 `src/locomani/tasks/scene/past.py`：`build(rec, arrays, meta, task)`，按原语推 `kind`、角色、`expected`（方案 4.5），范围按 4.4，边分 `observed` / `predicate` / `derived`，没有接触通道时记 `unknown`；`tests/test_scene_past.py`。
+- [ ] 39.2 构造器 `src/locomani/tasks/scene/past.py`：`build(rec, arrays, meta, task)`，按原语推 `kind`、角色、`expected`（方案 4.5）；范围按相关性选（邻居 0.30 m、站位足迹、接近走廊、上方净空 0.5 m、区域；方案 4.4），不按接触选；边五类（接触、支撑、持握、空间 `above` / `beside` / `near_edge` / `blocking` / `dist`、相对位姿 `rel_pose` / `reach_vec` / `approach` / `facing`）加谓词，以角色为中心（4.4.1）；属性含质心、速度、手臂关节、脚；边分 `observed` / `predicate` / `derived`，没有接触通道时记 `unknown` / `approx`；`tests/test_scene_past.py`。
 - [ ] 39.3 写出：`scene_round.py` 每局写 `<label>.past.jsonl`（构造器异常写错误行，不花一局）；`diag_pool.py` 退役改名带上它；`pick-repro` 现任诊断池 50 局开着接触通道重跑，`ok` / `why` / `fell` / `dropped` / `t_end` 逐局全同，结果记方案第 7 节。
 - [ ] 39.4 Reviewer 入口：`digest.py` 新增一节（每任务第一个不期待转移的计数和成功局对照；每失败局的翻转时间线；≤ 115 行）；`scripts/rsi/past.py show` / `compare`；`reviewer.md` 读法改为摘要 → `.past.jsonl` → NPZ；`rules.md` 第 23 版（技能不读不改记录，引用即作废）；`rsi_design.md` 第 5 节一段；runbook 一条命令。
 - [ ] 39.5 新运行：沙盒 `pick-past-a` 跑 `pick_single`，从 `pick-repro` 的种子版起，开关照抄它的 `meta.json`；`scripts/rsi/report/past_monitor.py` 算主指标（探针“已验证”比例、净救回局数）和次指标（Reviewer 用时、费用、工具调用数、开 NPZ 和用 `past.py` 的次数），和 `pick-repro` 7 轮对照（非配对，只说方向）；结果进方案第 7 节和 STATE。
