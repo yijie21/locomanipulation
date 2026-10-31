@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 22, 2026-10-26)
+# Rules for the scene RSI loop (TODO 27, version 23, 2026-10-30)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -240,3 +240,18 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     with `judge_s` 5 and `hold_s` 2; its failure classes add low_lift, tilted and dropped_hold (code: predicates.py,
     episode.judge_window, failure_class.py). Its seed is the first run's incumbent, not an empty package, so rule 27
     does not apply to it: change the pick that is there rather than writing a new one (prompt).
+
+38. Scene-graph records (TODO 39, version 23; plan docs/handoff/past-scene-graph-plan-20261030.md). The runner writes
+    `<label>.past.jsonl` beside every round: one record per skill step and retry, built after the round from the step
+    log, the primitive calls, the trace with its contact channel and the scene file (`locomani.tasks.scene.past`). It
+    is a measuring instrument: the skills package may not import it, read a `.past.jsonl` or call
+    `scripts/rsi/past.py` -- a draft whose skills code names `past.jsonl`, `scene.past`, `scene import past` or
+    `rsi/past.py` is void, like rule 30's object names (code: loop.py named_objects / the draft check). The records
+    never enter the gate, the sentinel or the regression; they are data for the Reviewer (prompt: the digest's
+    "Scene-graph transitions" section, `past.py show` / `compare`). Their `expected` transitions are a fixed table by
+    primitive (walk lands and nothing blocks the stance; reach lands within 3 cm, the target and its neighbours do not
+    move, nothing blocks the corridor; grip -> gripped by both fingers; a rising reach while gripping -> held and off
+    its support; release -> not gripped and, when the goal names it, on the goal surface or in the container), not
+    evidence that a change should stay (rule 7). Entities enter a record by relevance (roles, neighbours within
+    0.30 m, furniture in the stance footprint or the approach corridor, surfaces within 0.5 m above the target,
+    regions), not by contact; a value the recorder could not compute is `unknown`, never false.

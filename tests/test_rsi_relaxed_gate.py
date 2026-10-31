@@ -275,6 +275,21 @@ class NameLint(_LoopCase):
         names = {"Mug_2", "Mug_2_object", "Mug"}
         self.assertEqual(self.lp.named_objects(sk, names), ["recipes/cup.py:2 'Mug_2'", "recipes/stem.py:2 'Mug'"])
 
+    def test_reading_the_recorder_voids_the_draft(self):
+        """TODO 39 (rules.md 38): importing the PAST builder or naming its files is as void as an object name."""
+        sk = self.root / "sk2"
+        sk.mkdir(parents=True)
+        (sk / "__init__.py").write_text(
+            "from locomani.tasks.scene import past\nimport locomani.tasks.scene.past as p2\n"
+            'def f(label):\n    return open(f"{label}.past.jsonl")\n'
+        )
+        (sk / "clean.py").write_text('def g():\n    return "the past is another country"\n')
+        hits = self.lp.named_objects(sk, set())
+        self.assertEqual(len(hits), 3, hits)
+        self.assertTrue(all(h.endswith(self.lp.RECORDER_TAG) for h in hits))
+        self.assertTrue(any("import locomani.tasks.scene" in h for h in hits))
+        self.assertTrue(any("past.jsonl" in h for h in hits))
+
     def test_object_names_keep_semantic_stems_allowed(self):
         from unittest import mock
 

@@ -2300,16 +2300,36 @@ def named_objects(skills: Path, names: set[str] | None = None) -> list[str]:
                 first = body[0]
                 if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
                     docs.add(id(first.value))
+        rel = f.relative_to(skills).as_posix()
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
                 if node.value in names:
-                    hits.append(f"{f.relative_to(skills).as_posix()}:{node.lineno} {node.value!r}")
+                    hits.append(f"{rel}:{node.lineno} {node.value!r}")
+                elif any(tok in node.value for tok in RECORDER_TOKENS):
+                    hits.append(f"{rel}:{node.lineno} {node.value!r} {RECORDER_TAG}")
+            # TODO 39 (rules.md 38): the skills may not import the recorder
+            elif (
+                isinstance(node, ast.ImportFrom)
+                and node.module
+                and (
+                    node.module.endswith("scene.past")
+                    or (node.module.endswith("tasks.scene") and any(a.name == "past" for a in node.names))
+                )
+            ):
+                hits.append(f"{rel}:{node.lineno} import {node.module} {RECORDER_TAG}")
+            elif isinstance(node, ast.Import) and any(a.name.endswith("scene.past") for a in node.names):
+                hits.append(f"{rel}:{node.lineno} import locomani.tasks.scene.past {RECORDER_TAG}")
     return hits
 
 
+RECORDER_TOKENS = ("past.jsonl", "rsi/past.py", "scene.past")  # strings a skill has no business holding (rules.md 38)
+RECORDER_TAG = "(rules.md 38)"
+
+
 def named_void(n: int, named: list[str], what: str) -> None:
+    rules = "rules.md 30" if not any(RECORDER_TAG in x for x in named) else "rules.md 30 / 38"
     ledger(dict(step="gate", iter=n, accepted=False, void=True, named_objects=named,
-                reason=f"{what} branches on object names (rules.md 30): {', '.join(named[:6])}"))  # fmt: skip
+                reason=f"{what} branches on object names or reads the recorder ({rules}): {', '.join(named[:6])}"))  # fmt: skip
 
 
 def early_diag(k: int, w: Path, eng: dict, inc: dict, it_dir: Path) -> None:

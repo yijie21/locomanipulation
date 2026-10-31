@@ -276,8 +276,9 @@
 4. 摘要、`past.py`、`reviewer.md`、`rules.md` 第 23 版、`rsi_design.md` 第 5 节一段、runbook 一条命令；TODO 39 勾选。
 5. 新运行 `pick-past-a`，`past_monitor.py`，结果进本页和 STATE。
 
-记录（每步做完后按日期填在这里；截至 2026-10-30 只有方案，代码未动）：
-- 2026-10-30：方案、TODO 39、DECISIONS 条目。
+记录（每步做完后按日期填在这里）：
+- 2026-10-30：方案、TODO 39、DECISIONS 条目；实现计划 `docs/superpowers/plans/2026-10-30-past-scene-graph.md`。
+- 2026-10-30：39.1–39.4 的代码和测试提交到 `henry-dev`（接触通道 `315d1d33`；构造器 `d20b5c11`、`53ffa221`；写出 `cbc8c4b3`；摘要和 CLI `016a531f`；规则第 23 版和文档见下一个提交）。实现和方案的两处偏差：(1) 持握类分成 `gripped`（两指都碰到，observed）和 `held`（谓词，gripped 且离开所有台面），grip 步骤期待 `gripped`、抬起期待 `held`——因为 `predicates._held` 在抬起前永远为假；(2) 手的腕姿态档 `att` 暂时恒为 `level`：轨迹里只有手腕位置，没有姿态，加姿态要动轨迹格式，留到有需要时。另外发现 `_held` 把同一足迹里任何台面顶 2 cm 以内（含物体上方的隔板，差值为负）都算 resting，物体在隔板下时 `held` 永远为假——不在本次范围，记在这里待查。50 局不变性重跑（39.3）和新运行（39.5）等用户批准。
 
 ## 8. 第二阶段（不在本次）
 
