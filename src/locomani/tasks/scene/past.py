@@ -481,13 +481,13 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
             side = h.split("_")[0]
             t = None if not frame.has_contacts else side in frame.touching(o)
             edges.append(_edge(o, "touching", h, t, "observed" if t is not None else "unknown"))
-            held = (
-                None
-                if not frame.has_contacts
-                else bool(PR._held(scene, o, st)[0] and side in st["objects"][o]["gripped"])
-            )
+            # gripped: both fingers on it (what a grip step is for); held: the goal predicate, gripped and off every
+            # surface (what a lift is for)
+            gripped = None if not frame.has_contacts else side in st["objects"][o]["gripped"]
+            edges.append(_edge(o, "gripped", h, gripped, "observed" if gripped is not None else "unknown"))
+            held = None if not frame.has_contacts else bool(PR._held(scene, o, st)[0] and gripped)
             edges.append(_edge(o, "held", h, held, "predicate" if held is not None else "unknown"))
-            rel = [round(float(x), 4) for x in frame.hand_pos(side) - frame.obj_pose(o)[0]] if held else None
+            rel = [round(float(x), 4) for x in frame.hand_pos(side) - frame.obj_pose(o)[0]] if gripped else None
             edges.append(_edge(o, "rel_pose", h, rel, "derived"))
         sup, src = support_of(frame, o, meta)
         for cand in surfaces_in:
@@ -571,3 +571,226 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
             edges.append(_edge(eff, "approach", tgt, _side_of(tp[:2], hp[:2], _yaw(tq)), "derived",
                                wrist_att=states.get(eff, {}).get("att")))  # fmt: skip
     return dict(t=round(frame.t, 3), states=states, edges=edges)
+
+
+# -- expected transitions, events, discrepancies -------------------------------------------------------------------------
+def expected_of(kind: str, roles: dict, task: dict, g_before: dict, *, rising: bool = False) -> list[dict]:
+    """Spec section 4.5: the transitions the primitive kind is for -- by primitive, never by object or step name. A
+    fixed table, not a judgement (rules.md 38)."""
+    tgt, eff, carried = roles.get("target"), roles.get("effector"), roles.get("carried")
+    g_surface, g_container = _goal_targets(task.get("goal") or [])
+    out: list[dict] = []
+    support_now = [e["o"] for e in g_before.get("edges", []) if e["r"] == "supported_by" and e["s"] == tgt and e["v"]]
+    if kind == "walk":
+        out.append(dict(edge=["robot", "at", "region:stance"], to=True))
+        out.append(dict(edge=["*", "blocking", "region:stance"], to=False))
+    elif kind == "reach" and eff:
+        if carried and tgt == carried:
+            out.append(dict(edge=[tgt, "held" if rising else "gripped", eff], to=True))
+            if rising:
+                out += [dict(edge=[tgt, "supported_by", s], to=False) for s in support_now]
+        else:
+            out.append(dict(edge=[eff, "at", "region:pregrasp_target"], to=True, tol_cm=REACH_TOL_CM))
+            if tgt:
+                out.append(dict(edge=[tgt, "moved", None], to=False))
+            out.append(dict(edge=["*", "blocking", "region:corridor"], to=False))
+            out.append({"edge": ["*", "moved", None], "to": False, "scope": "neighbours", "except": tgt})
+    elif kind in ("grip", "squeeze") and eff and tgt:
+        hands = [HAND[s] for s in SIDES] if eff == "both_hands" else [eff]
+        out += [dict(edge=[tgt, "gripped", h], to=True) for h in hands]
+    elif kind == "release" and eff and tgt:
+        hands = [HAND[s] for s in SIDES] if eff == "both_hands" else [eff]
+        out += [dict(edge=[tgt, "gripped", h], to=False) for h in hands]
+        if g_surface:
+            out.append(dict(edge=[tgt, "supported_by", g_surface], to=True))
+        if g_container:
+            out.append(dict(edge=[tgt, "in", g_container], to=True))
+    return out
+
+
+def _edge_key(e: dict) -> tuple:
+    return (e["s"], e["r"], e["o"])
+
+
+def _bool_edges(g: dict) -> dict:
+    return {_edge_key(e): e["v"] for e in g["edges"] if isinstance(e["v"], bool) or e["v"] is None}
+
+
+def events_of(arrays: dict, meta: dict, k0: int, k1: int, entities: dict, roles: dict, task: dict) -> tuple[list, list]:
+    """Spec section 4.6 step 5: boolean edge flips between ticks k0 and k1 (touching and gripped every tick, the rest
+    every PREDICATE_DT_TICKS), moved / slipped, and the bodies that joined the scope by contact (added in place)."""
+    events, added = [], []
+    f0 = Frame(arrays, meta, k0)
+    prev = _bool_edges(graph_of(f0, entities, roles, meta))
+    p0 = {o: f0.obj_pose(o)[0] for o, e in entities.items() if e["type"] == "object"}
+    moved = {o: False for o in p0}
+    hands = [e for e, ent in entities.items() if ent["type"] == "effector" and e != "both_hands"]
+    carried, eff = roles.get("carried"), roles.get("effector")
+    d0 = None
+    if carried in p0 and eff in hands:
+        d0 = float(np.linalg.norm(f0.hand_pos(eff.split("_")[0]) - f0.obj_pose(carried)[0]))
+    slipped = False
+    body_to_key = {o.get("body"): k for k, o in meta["objects"].items() if o.get("body")}
+    mine = {meta["objects"][o]["body"] for o in task.get("objects", ()) if meta["objects"][o].get("body")}
+    mine |= {"pelvis", *(f for s in SIDES for f in FINGER[s]), *WRIST.values()}
+    for k in range(k0 + 1, k1 + 1):
+        f = Frame(arrays, meta, k)
+        if f.has_contacts:
+            for a, b in f.contacts():
+                if (a in mine or a.startswith(SIDES)) and b not in mine:
+                    key = body_to_key.get(b)
+                    if key and key not in entities:
+                        entities[key] = (_entity_object if meta["objects"][key].get("free") else _entity_furniture)(
+                            meta, key
+                        )
+                        added.append(dict(id=key, t=round(f.t, 3), why=f"touched by {a}"))
+        full = (k - k0) % PREDICATE_DT_TICKS == 0 or k == k1
+        g = graph_of(f, entities, roles, meta)
+        srcs = {_edge_key(e): e["src"] for e in g["edges"]}
+        for key, v in _bool_edges(g).items():
+            if key[1] not in ("touching", "gripped") and not full:
+                continue
+            was = prev.get(key)
+            if was is not None and v is not None and was != v:
+                events.append({"t": round(f.t, 3), "edge": list(key), "from": was, "to": v, "src": srcs[key]})
+            prev[key] = v
+        for o in p0:
+            if not moved[o] and o != carried:
+                cm = float(np.linalg.norm(f.obj_pose(o)[0] - p0[o])) * 100
+                if cm > MOVED_CM:
+                    moved[o] = True
+                    events.append({"t": round(f.t, 3), "edge": [o, "moved", None], "from": False, "to": True,
+                                   "cm": round(cm, 1), "src": "derived"})  # fmt: skip
+        if d0 is not None and not slipped:
+            d = float(np.linalg.norm(f.hand_pos(eff.split("_")[0]) - f.obj_pose(carried)[0]))
+            if abs(d - d0) * 100 > SLIP_CM:
+                slipped = True
+                events.append({"t": round(f.t, 3), "edge": [carried, "slipped", eff], "from": False, "to": True,
+                               "cm": round((d - d0) * 100, 1), "src": "derived"})  # fmt: skip
+    return events, added
+
+
+def discrepancies_of(expected: list[dict], g_after: dict, events: list[dict]) -> list[dict]:
+    """The expected transitions that did not hold at the step's end (or, for moved / slipped, that happened)."""
+    after = {_edge_key(e): e for e in g_after["edges"]}
+    out = []
+    for ex in expected:
+        s, r, o = ex["edge"]
+        if r in ("moved", "slipped"):
+            if s == "*":
+                hit = [e for e in events if e["edge"][1] == r and e["edge"][0] != ex.get("except")]
+            else:
+                hit = [e for e in events if e["edge"][1] == r and e["edge"][0] == s]
+            if bool(hit) != ex["to"]:
+                out.append(dict(ex, observed=bool(hit)))
+            continue
+        if s == "*":
+            vals = [e["v"] for e in g_after["edges"] if e["r"] == r and e["o"] == o and e["v"] is not None]
+            observed = any(vals) if vals else None
+        else:
+            e = after.get((s, r, o))
+            observed = None if e is None else e["v"]
+        if observed is not None and observed != ex["to"]:
+            out.append(dict(ex, observed=observed))
+    return out
+
+
+# -- the round -> records ----------------------------------------------------------------------------------------------
+def _tick_of(arrays: dict, t: float, last: bool = False) -> int:
+    ts = np.asarray(arrays["t"], float)
+    k = int(np.searchsorted(ts, t - 1e-6, side="left"))
+    k = min(max(k, 0), len(ts) - 1)
+    if last and k > 0 and ts[k] > t + 1e-6:
+        k -= 1
+    return k
+
+
+def _task_dict(task) -> dict:
+    if isinstance(task, dict):
+        return dict(id=task.get("id"), objects=list(task.get("objects") or []), goal=list(task.get("goal") or []))
+    return dict(id=getattr(task, "id", None), objects=list(getattr(task, "objects", ()) or ()),
+                goal=list(getattr(task, "goal", ()) or ()))  # fmt: skip
+
+
+def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
+    """One record per step row of `rec` (spec section 4.6). No arrays (the plan was refused before the world moved):
+    no records."""
+    if arrays is None or "t" not in arrays or len(arrays["t"]) == 0:
+        return []
+    task = _task_dict(task)
+    steps, calls = rec.get("steps") or [], rec.get("calls") or []
+    label = str(rec.get("label", ""))
+    g_surface, g_container = _goal_targets(task["goal"])
+    held_state: dict = {o: None for o in task["objects"]}
+    out = []
+    for iv in intervals(steps):
+        k0 = _tick_of(arrays, iv.t0)
+        k1 = max(k0, _tick_of(arrays, iv.t1, last=True))
+        cs = calls_in(calls, iv.t0, iv.t1)  # an empty interval holds no call
+        kind = kind_of(cs)
+        f0, f1 = Frame(arrays, meta, k0), Frame(arrays, meta, k1)
+        positions = {o: f0.obj_pose(o)[0] for o in task["objects"] if o in meta["objects"]}
+        roles = roles_of(kind, cs, task["objects"], held_before=held_state, positions=positions)
+        entities, scope = scope_of(f0, roles, kind, task, meta, cs)
+        g_before = graph_of(f0, entities, roles, meta)
+        rising = False
+        if kind == "reach" and roles.get("carried") and roles.get("effector") in HAND.values():
+            goal = _reach_goal(cs)
+            rising = goal is not None and float(goal[2]) > float(f0.hand_pos(roles["effector"].split("_")[0])[2]) + 0.02
+        expected = expected_of(kind, roles, task, g_before, rising=rising)
+        events, added = events_of(arrays, meta, k0, k1, entities, roles, task)
+        scope["added"] = added
+        g_after = graph_of(f1, entities, roles, meta)
+        sup = support_of(f0, roles["target"], meta)[0] if roles.get("target") in meta["objects"] else None
+        roles_out = dict(roles, support=sup, goal_surface=g_surface, container=g_container,
+                         stance="region:stance" if "region:stance" in entities else None,
+                         corridor="region:corridor" if "region:corridor" in entities else None,
+                         pregrasp="region:pregrasp_target" if "region:pregrasp_target" in entities else None)  # fmt: skip
+        row = iv.row
+        skip = ("step", "ok", "why", "t0", "t1", "check", "attempt")
+        action = dict(t0=iv.t0, t1=iv.t1, ok=bool(row.get("ok")), why=str(row.get("why", "")), calls=cs,
+                      check=row.get("check") or {}, info={k: v for k, v in row.items() if k not in skip})  # fmt: skip
+        out.append(dict(
+            schema=SCHEMA, record_id=f"{label}/{iv.index}.{iv.attempt}", label=label, task=task["id"],
+            step_index=iv.index, attempt=iv.attempt, step=iv.step, kind=kind,
+            skills=rec.get("skills"), set=rec.get("set") or {}, predicate_version="predicates.py",
+            action=action, roles=roles_out, scope=scope, entities=entities,
+            G_before=g_before, events=events, G_after=g_after, expected=expected,
+            discrepancies=discrepancies_of(expected, g_after, events),
+            outcome=dict(step_ok=bool(row.get("ok")), round_ok=bool(rec.get("ok")), round_why=rec.get("why", ""),
+                         failure_class=rec.get("failure_class")),
+            evidence=dict(npz=f"{label}.npz", k0=k0, k1=k1, json_step=iv.index),
+        ))  # fmt: skip
+        for o in task["objects"]:  # who holds what at the end of this step feeds the next step's roles
+            g = f1.gripped(o) if f1.has_contacts else set()
+            held_state[o] = HAND[next(iter(g))] if len(g) == 1 else ("both_hands" if len(g) == 2 else None)
+    return out
+
+
+def error_line(label: str, err: str) -> dict:
+    return dict(schema=SCHEMA, label=label, error=str(err)[:300])
+
+
+def _json_default(x):
+    if isinstance(x, np.ndarray):
+        return x.round(5).tolist()
+    if isinstance(x, (np.floating, np.integer)):
+        return x.item()
+    if isinstance(x, np.bool_):
+        return bool(x)
+    if isinstance(x, (set, tuple)):
+        return list(x)
+    return str(x)
+
+
+def write(out_dir: Path, label: str, records: list[dict]) -> Path:
+    """`<label>.past.jsonl`, one JSON object per line, written whole (tmp + rename) like the round's .json."""
+    p = Path(out_dir) / f"{label}.past.jsonl"
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text("".join(json.dumps(r, default=_json_default) + "\n" for r in records))
+    tmp.rename(p)
+    return p
+
+
+def read(path: Path) -> list[dict]:
+    return [json.loads(line) for line in Path(path).read_text().splitlines() if line.strip()]

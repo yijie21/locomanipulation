@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -121,6 +123,11 @@ META = {
 }  # fmt: skip
 META_T = json.loads(json.dumps(META))
 META_T["objects"]["Table"]["body"] = "Table"
+META_T["surfaces"].pop(
+    "Shelf"
+)  # any surface whose footprint holds the mug makes held() "resting" (predicates.RESTING_GAP_M)
+META_G = json.loads(json.dumps(META))  # the graph test keeps the shelf and gives the table a body
+META_G["objects"]["Table"]["body"] = "Table"
 TASK = dict(id="pick_Mug", objects=["Mug"], goal=["held(Mug)"])
 
 
@@ -198,9 +205,9 @@ class Graph(unittest.TestCase):
 
     def test_graph_edges_before_the_grasp(self):
         objects, hands = mug_round()
-        f = P.Frame(arrays_for(20, objects, hands, contacts=[(0, "Mug", "Table")]), META_T, 0)
-        entities, _ = P.scope_of(f, ROLES, "reach", TASK, META_T, REACH)
-        g = P.graph_of(f, entities, ROLES, META_T)
+        f = P.Frame(arrays_for(20, objects, hands, contacts=[(0, "Mug", "Table")]), META_G, 0)
+        entities, _ = P.scope_of(f, ROLES, "reach", TASK, META_G, REACH)
+        g = P.graph_of(f, entities, ROLES, META_G)
         self.assertEqual([(e["o"], e["v"], e["src"]) for e in self.edges(g, "supported_by", "Mug") if e["o"] == "T"],
                          [("T", True, "derived")])  # fmt: skip
         held = [e for e in self.edges(g, "held", "Mug") if e["o"] == "right_hand"][0]
@@ -229,3 +236,104 @@ class Graph(unittest.TestCase):
         self.assertEqual((touching["v"], touching["src"]), (None, "unknown"))
         sup = [e for e in self.edges(g, "supported_by", "Mug") if e["o"] == "T"][0]
         self.assertEqual((sup["v"], sup["src"]), (True, "approx"))
+
+
+# -- a whole round: reach (ticks 0-19), grip (20-29), lift (30-39) -------------------------------------------------------
+def grasp_round_arrays(n=40, close_both=True):
+    """Finger 1 touches the mug at tick 22, finger 2 (when `close_both`) at 24; the mug leaves the table at 32."""
+    mug = np.vstack([still([1.0, 0.0, 0.75], 32),
+                     np.hstack([np.tile([1.0, 0.0], (8, 1)), np.linspace(0.75, 0.85, 8)[:, None], np.tile([1, 0, 0, 0], (8, 1))])])  # fmt: skip
+    right = np.vstack([np.linspace([0.3, -0.1, 0.9], [0.85, 0.0, 0.78], 20), np.tile([0.85, 0.0, 0.78], (12, 1)),
+                       np.hstack([np.tile([0.85, 0.0], (8, 1)), np.linspace(0.78, 0.88, 8)[:, None]])])  # fmt: skip
+    contacts = [(k, "Mug", "Table") for k in range(0, 32)]
+    contacts += [(k, "Mug", "right_dex1_finger_1_link") for k in range(22, n)]
+    if close_both:
+        contacts += [(k, "Mug", "right_dex1_finger_2_link") for k in range(24, n)]
+    objects = {"Mug": mug, "Can": still([1.0, 0.10, 0.76], n), "Far": still([1.0, 0.39, 0.73], n)}
+    return arrays_for(n, objects, {"left": np.tile([0.2, 0.2, 0.9], (n, 1)), "right": right}, contacts=contacts)
+
+
+def grasp_round_rec(ok=True):
+    return dict(label="pick_Mug_s1", task="pick_Mug", ok=ok, why="" if ok else "[goal] held(Mug): no hand touches it",
+                fell=False, dropped=False, plan_ok=ok, plan_why="", error="", skills="abc123", set={"X": 1},
+                failure_class="" if ok else "slip", events={},
+                steps=[step("settle", 0.0, 0.0), step("pregrasp", 0.0, 0.40),
+                       step("grip", 0.40, 0.60, ok=ok, check={"opening_cm": 6.1}, attempt=1), step("lift", 0.60, 0.78)],
+                calls=[call("reach", 0.0, 0.38, "right", [0.85, 0.0, 0.78]), call("grip", 0.40, 0.58, "right"),
+                       call("reach", 0.60, 0.78, "right", [0.85, 0.0, 0.88])])  # fmt: skip
+
+
+class Expected(unittest.TestCase):
+    def test_grip_expects_gripped_and_reach_expects_landing_and_no_blocking(self):
+        ex = P.expected_of("grip", ROLES, TASK, dict(edges=[]))
+        self.assertIn({"edge": ["Mug", "gripped", "right_hand"], "to": True}, ex)
+        ex = P.expected_of("reach", ROLES, TASK, dict(edges=[]))
+        self.assertIn({"edge": ["right_hand", "at", "region:pregrasp_target"], "to": True, "tol_cm": 3.0}, ex)
+        self.assertIn({"edge": ["*", "blocking", "region:corridor"], "to": False}, ex)
+        self.assertIn({"edge": ["Mug", "moved", None], "to": False}, ex)
+
+    def test_rising_reach_while_holding_expects_held_and_support_to_drop(self):
+        roles = dict(target="Mug", effector="right_hand", carried="Mug")
+        g = dict(edges=[dict(s="Mug", r="supported_by", o="T", v=True, src="derived")])
+        ex = P.expected_of("reach", roles, TASK, g, rising=True)
+        self.assertIn({"edge": ["Mug", "supported_by", "T"], "to": False}, ex)
+        self.assertIn({"edge": ["Mug", "held", "right_hand"], "to": True}, ex)
+
+    def test_release_toward_the_goal_surface(self):
+        task = dict(id="put", objects=["Mug"], goal=["on(Mug, T)"])
+        roles = dict(target="Mug", effector="right_hand", carried="Mug")
+        ex = P.expected_of("release", roles, task, dict(edges=[]))
+        self.assertIn({"edge": ["Mug", "gripped", "right_hand"], "to": False}, ex)
+        self.assertIn({"edge": ["Mug", "supported_by", "T"], "to": True}, ex)
+
+    def test_walk(self):
+        ex = P.expected_of("walk", dict(target="Mug", effector=None, carried=None), TASK, dict(edges=[]))
+        self.assertEqual([e["edge"][1] for e in ex], ["at", "blocking"])
+
+
+class Build(unittest.TestCase):
+    def test_one_record_per_step_with_events_and_no_discrepancy_on_a_clean_grasp(self):
+        recs = P.build(grasp_round_rec(ok=True), grasp_round_arrays(), META_T, TASK)
+        self.assertEqual([r["step"] for r in recs], ["settle", "pregrasp", "grip", "lift"])
+        self.assertEqual([r["kind"] for r in recs], ["none", "reach", "grip", "reach"])
+        self.assertTrue(all(r["schema"] == P.SCHEMA for r in recs))
+        self.assertEqual(recs[2]["record_id"], "pick_Mug_s1/2.1")
+        grip, lift = recs[2], recs[3]
+        flips = [(e["edge"], e["to"]) for e in grip["events"]]
+        self.assertIn((["Mug", "touching", "right_hand"], True), flips)
+        self.assertIn((["Mug", "gripped", "right_hand"], True), flips)
+        self.assertEqual(grip["discrepancies"], [])
+        self.assertEqual(grip["roles"]["effector"], "right_hand")
+        self.assertEqual(grip["action"]["check"], {"opening_cm": 6.1})
+        self.assertEqual(lift["roles"]["carried"], "Mug")
+        self.assertIn((["Mug", "supported_by", "T"], False), [(e["edge"], e["to"]) for e in lift["events"]])
+        self.assertIn((["Mug", "held", "right_hand"], True), [(e["edge"], e["to"]) for e in lift["events"]])
+        self.assertEqual(lift["discrepancies"], [])
+        self.assertEqual(lift["outcome"]["round_ok"], True)
+        self.assertEqual(
+            (lift["evidence"]["npz"], lift["evidence"]["k0"], lift["evidence"]["k1"]), ("pick_Mug_s1.npz", 30, 39)
+        )
+
+    def test_a_grip_that_closes_one_finger_only_shows_the_discrepancy(self):
+        recs = P.build(grasp_round_rec(ok=False), grasp_round_arrays(close_both=False), META_T, TASK)
+        grip = recs[2]
+        self.assertEqual([d["edge"] for d in grip["discrepancies"]], [["Mug", "gripped", "right_hand"]])
+        self.assertEqual(grip["discrepancies"][0]["observed"], False)
+        self.assertEqual(grip["outcome"]["failure_class"], "slip")
+        self.assertIsNone(recs[3]["roles"]["carried"])  # one finger is not a grip: nothing is carried into the lift
+
+    def test_no_arrays_means_no_records_and_the_error_line_shape(self):
+        self.assertEqual(P.build(dict(label="x", steps=[], calls=[]), None, META_T, TASK), [])
+        e = P.error_line("x", "boom")
+        self.assertEqual((e["schema"], e["label"], e["error"]), (P.SCHEMA, "x", "boom"))
+
+    def test_write_and_read_roundtrip(self):
+        recs = P.build(grasp_round_rec(), grasp_round_arrays(), META_T, TASK)
+        with tempfile.TemporaryDirectory() as d:
+            p = P.write(Path(d), "pick_Mug_s1", recs)
+            self.assertEqual(p.name, "pick_Mug_s1.past.jsonl")
+            self.assertEqual(sorted(x.name for x in Path(d).iterdir()), ["pick_Mug_s1.past.jsonl"])
+            back = P.read(p)
+        self.assertEqual(len(back), len(recs))
+        self.assertEqual(back[1]["record_id"], recs[1]["record_id"])
+        json.dumps(back)  # plain JSON all the way down
