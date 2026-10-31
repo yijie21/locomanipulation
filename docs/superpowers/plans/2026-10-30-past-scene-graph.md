@@ -71,8 +71,13 @@ class ContactChannel(unittest.TestCase):
     def test_rows_carry_contacts_and_arrays_export_them(self):
         meta = json.loads(Path(R.META).read_text())
         sim = R.Sim(meta, backend=ScaleBfmBackendConfig(scene_dir=str(DIRECTORY)))
-        m = Motor(sim, StandInPolicy(meta), MotorConfig(), model_xml=str(DIRECTORY / "scene_locomani.xml"),
-                  track=("water_bottle_object",))
+        m = Motor(
+            sim,
+            StandInPolicy(meta),
+            MotorConfig(),
+            model_xml=str(DIRECTORY / "scene_locomani.xml"),
+            track=("water_bottle_object",),
+        )
         m.reset((-1.5, 0.0), 0.0, warm_up=0)
         for _ in range(3):
             self.assertTrue(m.tick())
@@ -213,16 +218,26 @@ def call(name, t0, t1, *args, ok=True, **kwargs):
 
 class Intervals(unittest.TestCase):
     def test_steps_become_intervals_and_retries_keep_their_attempt(self):
-        steps = [step("settle", 0.0, 1.0), step("walk", 1.0, 5.0), step("pregrasp", 5.0, 7.0, ok=False, attempt=1),
-                 step("pregrasp", 7.0, 9.0, attempt=2), step("grip", 9.0, 10.0)]
+        steps = [
+            step("settle", 0.0, 1.0),
+            step("walk", 1.0, 5.0),
+            step("pregrasp", 5.0, 7.0, ok=False, attempt=1),
+            step("pregrasp", 7.0, 9.0, attempt=2),
+            step("grip", 9.0, 10.0),
+        ]
         iv = P.intervals(steps)
-        self.assertEqual([(i.step, i.attempt) for i in iv],
-                         [("settle", 1), ("walk", 1), ("pregrasp", 1), ("pregrasp", 2), ("grip", 1)])
+        self.assertEqual(
+            [(i.step, i.attempt) for i in iv],
+            [("settle", 1), ("walk", 1), ("pregrasp", 1), ("pregrasp", 2), ("grip", 1)],
+        )
         self.assertEqual([i.index for i in iv], [0, 1, 2, 3, 4])
 
     def test_calls_belong_to_the_interval_holding_their_start(self):
-        calls = [call("walk_to", 1.0, 4.8, [1.0, 0.0]), call("reach", 5.1, 6.9, "right", [1.0, 0.1, 0.9]),
-                 call("grip", 9.0, 9.8, "right")]
+        calls = [
+            call("walk_to", 1.0, 4.8, [1.0, 0.0]),
+            call("reach", 5.1, 6.9, "right", [1.0, 0.1, 0.9]),
+            call("grip", 9.0, 9.8, "right"),
+        ]
         self.assertEqual([c["name"] for c in P.calls_in(calls, 5.0, 7.0)], ["reach"])
         self.assertEqual(P.calls_in(calls, 7.0, 9.0), [])
 
@@ -245,8 +260,13 @@ class Kinds(unittest.TestCase):
 class Roles(unittest.TestCase):
     def test_reach_binds_effector_and_nearest_object_as_target(self):
         calls = [call("reach", 0, 1, "right", [1.0, 0.0, 0.9])]
-        r = P.roles_of("reach", calls, ["Mug", "Can"], held_before={"Mug": None, "Can": None},
-                       positions={"Mug": [1.0, 0.05, 0.9], "Can": [2.0, 0.0, 0.9]})
+        r = P.roles_of(
+            "reach",
+            calls,
+            ["Mug", "Can"],
+            held_before={"Mug": None, "Can": None},
+            positions={"Mug": [1.0, 0.05, 0.9], "Can": [2.0, 0.0, 0.9]},
+        )
         self.assertEqual(r["effector"], "right_hand")
         self.assertEqual(r["target"], "Mug")
         self.assertIsNone(r["carried"])
@@ -258,8 +278,13 @@ class Roles(unittest.TestCase):
         self.assertEqual(r["carried"], "Mug")
 
     def test_walk_has_no_effector(self):
-        r = P.roles_of("walk", [call("walk_to", 0, 1, [1.0, 2.0])], ["Mug"], held_before={"Mug": None},
-                       positions={"Mug": [0, 0, 0]})
+        r = P.roles_of(
+            "walk",
+            [call("walk_to", 0, 1, [1.0, 2.0])],
+            ["Mug"],
+            held_before={"Mug": None},
+            positions={"Mug": [0, 0, 0]},
+        )
         self.assertIsNone(r["effector"])
         self.assertEqual(r["target"], "Mug")
 ```
@@ -365,7 +390,9 @@ def roles_of(kind: str, calls: list[dict], task_objects: list[str], *, held_befo
     if target is None and kind == "reach":
         goal = next((c.get("args") or [None, None])[1] for c in calls if c.get("name") == "reach")
         if goal is not None and task_objects:
-            target = min(task_objects, key=lambda o: float(np.linalg.norm(np.asarray(positions[o][:3]) - np.asarray(goal[:3]))))
+            target = min(
+                task_objects, key=lambda o: float(np.linalg.norm(np.asarray(positions[o][:3]) - np.asarray(goal[:3])))
+            )
     if target is None and task_objects:
         target = task_objects[0]
     return dict(target=target, effector=effector, carried=carried)
@@ -411,14 +438,34 @@ import numpy as np
 def arrays_for(n, objects, hands, contacts=(), bodies=None, dt=0.02):
     """A trace of n ticks. objects: {body_name: (n,7) poses}; hands: {side: (n,3) wrist pos}; contacts: [(k, a, b)]
     with body names; bodies: body-name table (index = id)."""
-    bodies = list(bodies or ["world", "pelvis", "left_wrist_yaw_link", "right_wrist_yaw_link",
-                             "left_dex1_finger_1_link", "left_dex1_finger_2_link",
-                             "right_dex1_finger_1_link", "right_dex1_finger_2_link", *objects])
-    out = dict(t=np.arange(n) * dt, mode=np.full(n, 2), robot=np.tile([0, 0, 0.79, 1, 0, 0, 0], (n, 1)).astype(float),
-               ref_pelvis=np.zeros((n, 3)), ref_wrists=np.zeros((n, 2, 3)),
-               wrists=np.stack([np.stack([hands["left"], hands["right"]], 1)]).reshape(n, 2, 3),
-               jaw=np.full((n, 2), 0.0245), fingers=np.zeros((n, 4)), joints=np.zeros((n, 29)),
-               primitive=np.zeros(n, dtype=np.int16), primitives=np.array(["reach"]), bodies=np.array(bodies))
+    bodies = list(
+        bodies
+        or [
+            "world",
+            "pelvis",
+            "left_wrist_yaw_link",
+            "right_wrist_yaw_link",
+            "left_dex1_finger_1_link",
+            "left_dex1_finger_2_link",
+            "right_dex1_finger_1_link",
+            "right_dex1_finger_2_link",
+            *objects,
+        ]
+    )
+    out = dict(
+        t=np.arange(n) * dt,
+        mode=np.full(n, 2),
+        robot=np.tile([0, 0, 0.79, 1, 0, 0, 0], (n, 1)).astype(float),
+        ref_pelvis=np.zeros((n, 3)),
+        ref_wrists=np.zeros((n, 2, 3)),
+        wrists=np.stack([np.stack([hands["left"], hands["right"]], 1)]).reshape(n, 2, 3),
+        jaw=np.full((n, 2), 0.0245),
+        fingers=np.zeros((n, 4)),
+        joints=np.zeros((n, 29)),
+        primitive=np.zeros(n, dtype=np.int16),
+        primitives=np.array(["reach"]),
+        bodies=np.array(bodies),
+    )
     for name, poses in objects.items():
         out[f"obj_{name}"] = np.asarray(poses, dtype=float)
     ids = {b: i for i, b in enumerate(bodies)}
@@ -430,20 +477,47 @@ def arrays_for(n, objects, hands, contacts=(), bodies=None, dt=0.02):
 
 META = {
     "objects": {
-        "Mug": {"surface": "T", "free": True, "body": "Mug", "container": False,
-                "box": {"half_extent": [0.04, 0.04, 0.05], "centre": [0, 0, 0]},
-                "semantic": {"mass_kg": 0.3, "movable": True, "upright_axis": [0, 0, 1]}},
-        "Can": {"surface": "T", "free": True, "body": "Can", "container": False,
-                "box": {"half_extent": [0.03, 0.03, 0.06], "centre": [0, 0, 0]},
-                "semantic": {"mass_kg": 0.4, "movable": True, "upright_axis": [0, 0, 1]}},
-        "Far": {"surface": "T", "free": True, "body": "Far", "container": False,
-                "box": {"half_extent": [0.03, 0.03, 0.03], "centre": [0, 0, 0]},
-                "semantic": {"mass_kg": 0.1, "movable": True, "upright_axis": [0, 0, 1]}},
-        "Table": {"free": False, "body": None, "container": False, "semantic": {"movable": False},
-                  "box": {"half_extent": [0.6, 0.4, 0.35], "centre": [1.0, 0.0, 0.35]}},
+        "Mug": {
+            "surface": "T",
+            "free": True,
+            "body": "Mug",
+            "container": False,
+            "box": {"half_extent": [0.04, 0.04, 0.05], "centre": [0, 0, 0]},
+            "semantic": {"mass_kg": 0.3, "movable": True, "upright_axis": [0, 0, 1]},
+        },
+        "Can": {
+            "surface": "T",
+            "free": True,
+            "body": "Can",
+            "container": False,
+            "box": {"half_extent": [0.03, 0.03, 0.06], "centre": [0, 0, 0]},
+            "semantic": {"mass_kg": 0.4, "movable": True, "upright_axis": [0, 0, 1]},
+        },
+        "Far": {
+            "surface": "T",
+            "free": True,
+            "body": "Far",
+            "container": False,
+            "box": {"half_extent": [0.03, 0.03, 0.03], "centre": [0, 0, 0]},
+            "semantic": {"mass_kg": 0.1, "movable": True, "upright_axis": [0, 0, 1]},
+        },
+        "Table": {
+            "free": False,
+            "body": None,
+            "container": False,
+            "semantic": {"movable": False},
+            "box": {"half_extent": [0.6, 0.4, 0.35], "centre": [1.0, 0.0, 0.35]},
+        },
     },
     "surfaces": {
-        "T": {"xy": [1.0, 0.0], "top": 0.70, "half_extent": [0.6, 0.4], "yaw": 0.0, "of_object": "Table", "approach_edges": ["-x"]},
+        "T": {
+            "xy": [1.0, 0.0],
+            "top": 0.70,
+            "half_extent": [0.6, 0.4],
+            "yaw": 0.0,
+            "of_object": "Table",
+            "approach_edges": ["-x"],
+        },
         "Shelf": {"xy": [1.0, 0.0], "top": 1.05, "half_extent": [0.6, 0.4], "yaw": 0.0, "of_object": "Table"},
     },
 }
@@ -459,8 +533,12 @@ def mug_round(n=20):
 class Frames(unittest.TestCase):
     def test_frame_reads_poses_contacts_and_touching(self):
         objects, hands = mug_round()
-        arr = arrays_for(20, objects, hands, contacts=[(19, "Mug", "right_dex1_finger_1_link"),
-                                                       (19, "Mug", "right_dex1_finger_2_link")])
+        arr = arrays_for(
+            20,
+            objects,
+            hands,
+            contacts=[(19, "Mug", "right_dex1_finger_1_link"), (19, "Mug", "right_dex1_finger_2_link")],
+        )
         f = P.Frame(arr, META, 19)
         self.assertTrue(f.has_contacts)
         np.testing.assert_allclose(f.obj_pose("Mug")[0], [1.0, 0.0, 0.75])
@@ -490,7 +568,18 @@ class Scope(unittest.TestCase):
         task = dict(objects=["Mug"], goal=["held(Mug)"])
         entities, scope = P.scope_of(f, roles, "reach", task, META, calls)
         ids = set(scope["initial"])
-        for want in ("Mug", "right_hand", "left_hand", "robot", "T", "Table", "Can", "Shelf", "region:corridor", "region:pregrasp_target"):
+        for want in (
+            "Mug",
+            "right_hand",
+            "left_hand",
+            "robot",
+            "T",
+            "Table",
+            "Can",
+            "Shelf",
+            "region:corridor",
+            "region:pregrasp_target",
+        ):
             self.assertIn(want, ids, want)
         self.assertNotIn("Far", ids)  # 0.39 m away: outside NEIGHBOUR_M and the corridor
         self.assertEqual(scope["initial_why"]["Can"], "neighbour 0.10 m")
@@ -504,8 +593,9 @@ class Scope(unittest.TestCase):
         objects, hands = mug_round()
         f = P.Frame(arrays_for(20, objects, hands), META, 0)
         roles = dict(target="Mug", effector=None, carried=None)
-        entities, scope = P.scope_of(f, roles, "walk", dict(objects=["Mug"], goal=["held(Mug)"]), META,
-                                     [call("walk_to", 0.0, 0.38, [0.4, 0.0])])
+        entities, scope = P.scope_of(
+            f, roles, "walk", dict(objects=["Mug"], goal=["held(Mug)"]), META, [call("walk_to", 0.0, 0.38, [0.4, 0.0])]
+        )
         self.assertIn("region:stance", scope["initial"])
         self.assertNotIn("right_hand", scope["initial"])
         self.assertEqual(entities["region:stance"]["radius_m"], 0.35)
@@ -517,10 +607,26 @@ class Graph(unittest.TestCase):
 
     def test_graph_edges_before_the_grasp(self):
         objects, hands = mug_round()
-        arr = arrays_for(20, objects, hands, contacts=[(0, "Mug", "Table")],
-                         bodies=["world", "pelvis", "left_wrist_yaw_link", "right_wrist_yaw_link",
-                                 "left_dex1_finger_1_link", "left_dex1_finger_2_link",
-                                 "right_dex1_finger_1_link", "right_dex1_finger_2_link", "Mug", "Can", "Far", "Table"])
+        arr = arrays_for(
+            20,
+            objects,
+            hands,
+            contacts=[(0, "Mug", "Table")],
+            bodies=[
+                "world",
+                "pelvis",
+                "left_wrist_yaw_link",
+                "right_wrist_yaw_link",
+                "left_dex1_finger_1_link",
+                "left_dex1_finger_2_link",
+                "right_dex1_finger_1_link",
+                "right_dex1_finger_2_link",
+                "Mug",
+                "Can",
+                "Far",
+                "Table",
+            ],
+        )
         meta = json.loads(json.dumps(META))
         meta["objects"]["Table"]["body"] = "Table"
         f = P.Frame(arr, meta, 0)
@@ -529,7 +635,9 @@ class Graph(unittest.TestCase):
         entities, scope = P.scope_of(f, roles, "reach", dict(objects=["Mug"], goal=["held(Mug)"]), meta, calls)
         g = P.graph_of(f, entities, roles, meta)
         sup = self.edges(g, "supported_by")
-        self.assertEqual([(e["s"], e["o"], e["v"], e["src"]) for e in sup if e["s"] == "Mug"], [("Mug", "T", True, "derived")])
+        self.assertEqual(
+            [(e["s"], e["o"], e["v"], e["src"]) for e in sup if e["s"] == "Mug"], [("Mug", "T", True, "derived")]
+        )
         held = [e for e in self.edges(g, "held") if e["s"] == "Mug" and e["o"] == "right_hand"]
         self.assertEqual(held[0]["v"], False)
         self.assertEqual(held[0]["src"], "predicate")
@@ -540,7 +648,9 @@ class Graph(unittest.TestCase):
         self.assertAlmostEqual(beside[0]["gap_m"], 0.10 - 0.04 - 0.03, places=3)
         self.assertEqual(beside[0]["side"], "+y")
         edge = [e for e in self.edges(g, "near_edge") if e["s"] == "Mug"][0]
-        self.assertEqual(edge["edge"], "+y")  # the mug sits at y 0 on a 0.4 m half-width table: 0.40 to +y and -y, 0.60 to x
+        self.assertEqual(
+            edge["edge"], "+y"
+        )  # the mug sits at y 0 on a 0.4 m half-width table: 0.40 to +y and -y, 0.60 to x
         reach = [e for e in self.edges(g, "reach_vec")][0]
         self.assertEqual(len(reach["v"]), 3)
         self.assertEqual(g["states"]["right_hand"]["att"], "level")
@@ -554,8 +664,14 @@ class Graph(unittest.TestCase):
             del arr[k]
         f = P.Frame(arr, META, 0)
         roles = dict(target="Mug", effector="right_hand", carried=None)
-        entities, _ = P.scope_of(f, roles, "reach", dict(objects=["Mug"], goal=["held(Mug)"]), META,
-                                 [call("reach", 0.0, 0.38, "right", [0.85, 0.0, 0.78])])
+        entities, _ = P.scope_of(
+            f,
+            roles,
+            "reach",
+            dict(objects=["Mug"], goal=["held(Mug)"]),
+            META,
+            [call("reach", 0.0, 0.38, "right", [0.85, 0.0, 0.78])],
+        )
         g = P.graph_of(f, entities, roles, META)
         touching = [e for e in g["edges"] if e["r"] == "touching" and e["s"] == "Mug" and e["o"] == "right_hand"][0]
         self.assertIsNone(touching["v"])
@@ -586,11 +702,13 @@ ARM_JOINTS = {s: [f"{s}_{n}_joint" for n in ("shoulder_pitch", "shoulder_roll", 
 
 def _quat_to_mat(q) -> np.ndarray:
     w, x, y, z = (float(v) for v in q)
-    return np.array([
-        [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-        [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-        [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-    ])
+    return np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
 
 
 def _yaw(q) -> float:
@@ -653,10 +771,14 @@ class Frame:
         return np.asarray(self.a["wrists"][self.k][SIDES.index(side)], float), None
 
     def jaw_m(self, side: str) -> float:
-        return float(2 * (np.mean(self.a["fingers"][self.k][2 * SIDES.index(side): 2 * SIDES.index(side) + 2]) + 0.023))
+        return float(
+            2 * (np.mean(self.a["fingers"][self.k][2 * SIDES.index(side) : 2 * SIDES.index(side) + 2]) + 0.023)
+        )
 
     def arm_q(self, side: str):
-        return None if not self._arm_idx else [round(float(v), 4) for v in self.a["joints"][self.k][self._arm_idx[side]]]
+        return (
+            None if not self._arm_idx else [round(float(v), 4) for v in self.a["joints"][self.k][self._arm_idx[side]]]
+        )
 
     def pelvis(self):
         r = self.a["robot"][self.k]
@@ -672,14 +794,19 @@ class Frame:
             if self.has_contacts:
                 ks = self.a["contact_k"]
                 for i in np.nonzero(ks == self.k)[0]:
-                    self._contacts.add((self._bodies[int(self.a["contact_a"][i])], self._bodies[int(self.a["contact_b"][i])]))
+                    self._contacts.add(
+                        (self._bodies[int(self.a["contact_a"][i])], self._bodies[int(self.a["contact_b"][i])])
+                    )
         return self._contacts
 
     def touches(self, body_a: str, body_b: str) -> bool | None:
         if not self.has_contacts:
             return None
-        return (min(body_a, body_b), max(body_a, body_b)) in self.contacts() or (body_a, body_b) in self.contacts() \
+        return (
+            (min(body_a, body_b), max(body_a, body_b)) in self.contacts()
+            or (body_a, body_b) in self.contacts()
             or (body_b, body_a) in self.contacts()
+        )
 
     def touching(self, key: str) -> set:
         b = self.body_name(key)
@@ -833,7 +960,9 @@ def scope_of(frame: Frame, roles: dict, kind: str, task: dict, meta: dict, calls
             d = _xy_dist(p, tpos)
             if d <= NEIGHBOUR_M:
                 add(o, _entity_object(meta, o), f"neighbour {d:.2f} m")
-            elif reach_goal is not None and _in_corridor(p, reach_goal, tpos, CORRIDOR_HALF_M + max(od["box"]["half_extent"][:2])):
+            elif reach_goal is not None and _in_corridor(
+                p, reach_goal, tpos, CORRIDOR_HALF_M + max(od["box"]["half_extent"][:2])
+            ):
                 add(o, _entity_object(meta, o), "in corridor")
         top_t = float(tpos[2] + objs[tgt]["box"]["centre"][2] + objs[tgt]["box"]["half_extent"][2])
         for s, surf in meta["surfaces"].items():
@@ -843,7 +972,11 @@ def scope_of(frame: Frame, roles: dict, kind: str, task: dict, meta: dict, calls
             if 0.0 < gap <= OVERHANG_M and _footprint(tpos[:2], surf):
                 add(s, _entity_surface(meta, s), f"above target {gap:.2f} m")
     if walk_goal is not None:
-        add("region:stance", dict(type="region", shape="disc", centre=[float(v) for v in walk_goal], radius_m=STANCE_M), "walk_to goal")
+        add(
+            "region:stance",
+            dict(type="region", shape="disc", centre=[float(v) for v in walk_goal], radius_m=STANCE_M),
+            "walk_to goal",
+        )
         ppos = frame.pelvis()[0]
         for key, od in objs.items():
             if key in entities or od.get("free") or not od.get("box"):
@@ -978,12 +1111,26 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
         for s in surfaces_in:
             surf = meta["surfaces"][s]
             gap = float(surf["top"]) - top_t
-            edges.append(_edge(s, "above", tgt, 0.0 < gap <= OVERHANG_M and _footprint(tp[:2], surf), "derived", gap_m=round(gap, 3)))
+            edges.append(
+                _edge(
+                    s,
+                    "above",
+                    tgt,
+                    0.0 < gap <= OVERHANG_M and _footprint(tp[:2], surf),
+                    "derived",
+                    gap_m=round(gap, 3),
+                )
+            )
             sup, _ = support_of(frame, tgt, meta)
             if s == sup:
                 local = PR.to_surface_frame(tp[:2], surf)
                 half = np.asarray(surf["half_extent"], float)[:2]
-                dists = {"+x": half[0] - local[0], "-x": half[0] + local[0], "+y": half[1] - local[1], "-y": half[1] + local[1]}
+                dists = {
+                    "+x": half[0] - local[0],
+                    "-x": half[0] + local[0],
+                    "+y": half[1] - local[1],
+                    "-y": half[1] + local[1],
+                }
                 e = min(dists, key=dists.get)
                 edges.append(_edge(tgt, "near_edge", s, True, "derived", dist_m=round(float(dists[e]), 3), edge=e))
         for o in objects_in:
@@ -993,7 +1140,17 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
             ohalf = np.asarray(objs[o]["box"]["half_extent"], float)
             d = _xy_dist(op, tp)
             gap = d - float(max(thalf[:2])) - float(max(ohalf[:2]))
-            edges.append(_edge(o, "beside", tgt, d <= NEIGHBOUR_M, "derived", gap_m=round(gap, 3), side=_side_of(tp[:2], op[:2], _yaw(frame.obj_pose(tgt)[1]))))
+            edges.append(
+                _edge(
+                    o,
+                    "beside",
+                    tgt,
+                    d <= NEIGHBOUR_M,
+                    "derived",
+                    gap_m=round(gap, 3),
+                    side=_side_of(tp[:2], op[:2], _yaw(frame.obj_pose(tgt)[1])),
+                )
+            )
         d = _xy_dist(ppos, tp)
         bearing = math.degrees(math.atan2(tp[1] - ppos[1], tp[0] - ppos[0]) - yaw)
         bearing = (bearing + 180) % 360 - 180
@@ -1017,7 +1174,15 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
         c, s = math.cos(-yaw), math.sin(-yaw)
         fwd, left = c * rel[0] - s * rel[1], s * rel[0] + c * rel[1]
         out = -left if eff.startswith("right") else left
-        edges.append(_edge(eff, "reach_vec", "region:pregrasp_target", [round(float(fwd), 3), round(float(out), 3), round(float(goal[2] - ppos[2]), 3)], "derived"))
+        edges.append(
+            _edge(
+                eff,
+                "reach_vec",
+                "region:pregrasp_target",
+                [round(float(fwd), 3), round(float(out), 3), round(float(goal[2] - ppos[2]), 3)],
+                "derived",
+            )
+        )
         edges.append(_edge(eff, "at", "region:pregrasp_target", float(np.linalg.norm(hp - goal)) * 100 <= REACH_TOL_CM, "derived",
                            err_cm=round(float(np.linalg.norm(hp - goal)) * 100, 2)))  # fmt: skip
         if tgt in objects_in:
@@ -1073,29 +1238,77 @@ from pathlib import Path
 def grasp_round_arrays(n=40):
     """Reach (ticks 0-19), grip (20-29), lift (30-39): the mug is touched at 22, gripped from 24, leaves the table at 32."""
     still = lambda p, m: np.tile([*p, 1, 0, 0, 0], (m, 1))  # noqa: E731
-    mug = np.vstack([still([1.0, 0.0, 0.75], 32), np.hstack([np.tile([1.0, 0.0], (8, 1)), np.linspace(0.75, 0.85, 8)[:, None], np.tile([1, 0, 0, 0], (8, 1))])])
+    mug = np.vstack(
+        [
+            still([1.0, 0.0, 0.75], 32),
+            np.hstack(
+                [np.tile([1.0, 0.0], (8, 1)), np.linspace(0.75, 0.85, 8)[:, None], np.tile([1, 0, 0, 0], (8, 1))]
+            ),
+        ]
+    )
     can = still([1.0, 0.10, 0.76], n)
-    right = np.vstack([np.linspace([0.3, -0.1, 0.9], [0.85, 0.0, 0.78], 20), np.tile([0.85, 0.0, 0.78], (12, 1)),
-                       np.hstack([np.tile([0.85, 0.0], (8, 1)), np.linspace(0.78, 0.88, 8)[:, None]])])
+    right = np.vstack(
+        [
+            np.linspace([0.3, -0.1, 0.9], [0.85, 0.0, 0.78], 20),
+            np.tile([0.85, 0.0, 0.78], (12, 1)),
+            np.hstack([np.tile([0.85, 0.0], (8, 1)), np.linspace(0.78, 0.88, 8)[:, None]]),
+        ]
+    )
     left = np.tile([0.2, 0.2, 0.9], (n, 1))
-    bodies = ["world", "pelvis", "left_wrist_yaw_link", "right_wrist_yaw_link", "left_dex1_finger_1_link",
-              "left_dex1_finger_2_link", "right_dex1_finger_1_link", "right_dex1_finger_2_link", "Mug", "Can", "Far", "Table"]
+    bodies = [
+        "world",
+        "pelvis",
+        "left_wrist_yaw_link",
+        "right_wrist_yaw_link",
+        "left_dex1_finger_1_link",
+        "left_dex1_finger_2_link",
+        "right_dex1_finger_1_link",
+        "right_dex1_finger_2_link",
+        "Mug",
+        "Can",
+        "Far",
+        "Table",
+    ]
     contacts = [(k, "Mug", "Table") for k in range(0, 32)]
     contacts += [(k, "Mug", "right_dex1_finger_1_link") for k in range(22, n)]
     contacts += [(k, "Mug", "right_dex1_finger_2_link") for k in range(24, n)]
-    arr = arrays_for(n, {"Mug": mug, "Can": can, "Far": still([1.0, 0.39, 0.73], n)}, {"left": left, "right": right},
-                     contacts=contacts, bodies=bodies)
+    arr = arrays_for(
+        n,
+        {"Mug": mug, "Can": can, "Far": still([1.0, 0.39, 0.73], n)},
+        {"left": left, "right": right},
+        contacts=contacts,
+        bodies=bodies,
+    )
     return arr
 
 
 def grasp_round_rec(ok=True):
-    return dict(label="pick_Mug_s1", task="pick_Mug", ok=ok, why="" if ok else "[goal] held(Mug): no hand touches it",
-                fell=False, dropped=False, plan_ok=ok, plan_why="", error="", skills="abc123", set={"X": 1},
-                failure_class="" if ok else "slip", events={},
-                steps=[step("settle", 0.0, 0.0), step("pregrasp", 0.0, 0.40), step("grip", 0.40, 0.60, check={"opening_cm": 6.1}, attempt=1),
-                       step("lift", 0.60, 0.78)],
-                calls=[call("reach", 0.0, 0.38, "right", [0.85, 0.0, 0.78]), call("grip", 0.40, 0.58, "right"),
-                       call("reach", 0.60, 0.78, "right", [0.85, 0.0, 0.88])])
+    return dict(
+        label="pick_Mug_s1",
+        task="pick_Mug",
+        ok=ok,
+        why="" if ok else "[goal] held(Mug): no hand touches it",
+        fell=False,
+        dropped=False,
+        plan_ok=ok,
+        plan_why="",
+        error="",
+        skills="abc123",
+        set={"X": 1},
+        failure_class="" if ok else "slip",
+        events={},
+        steps=[
+            step("settle", 0.0, 0.0),
+            step("pregrasp", 0.0, 0.40),
+            step("grip", 0.40, 0.60, check={"opening_cm": 6.1}, attempt=1),
+            step("lift", 0.60, 0.78),
+        ],
+        calls=[
+            call("reach", 0.0, 0.38, "right", [0.85, 0.0, 0.78]),
+            call("grip", 0.40, 0.58, "right"),
+            call("reach", 0.60, 0.78, "right", [0.85, 0.0, 0.88]),
+        ],
+    )
 
 
 META_T = json.loads(json.dumps(META))
@@ -1250,11 +1463,17 @@ def events_of(arrays: dict, meta: dict, k0: int, k1: int, entities: dict, roles:
         if f.has_contacts:
             for a, b in f.contacts():
                 for mine, other in ((a, b), (b, a)):
-                    if (mine in watched or any(mine.startswith(s) for s in SIDES) or mine == "pelvis") and other not in watched:
+                    if (
+                        mine in watched or any(mine.startswith(s) for s in SIDES) or mine == "pelvis"
+                    ) and other not in watched:
                         key = body_to_key.get(other, other)
                         if key not in known and key in meta["objects"]:
                             known.add(key)
-                            entities[key] = _entity_object(meta, key) if meta["objects"][key].get("free") else _entity_furniture(meta, key)
+                            entities[key] = (
+                                _entity_object(meta, key)
+                                if meta["objects"][key].get("free")
+                                else _entity_furniture(meta, key)
+                            )
                             added.append(dict(id=key, t=round(f.t, 3), why=f"touched by {mine}"))
         full = (k - k0) % PREDICATE_DT_TICKS == 0 or k == k1
         g = graph_of(f, entities, roles, meta)
@@ -1271,12 +1490,30 @@ def events_of(arrays: dict, meta: dict, k0: int, k1: int, entities: dict, roles:
                 cm = float(np.linalg.norm(f.obj_pose(o)[0] - p0[o])) * 100
                 if cm > MOVED_CM and not (o == carried):
                     moved[o] = True
-                    events.append(dict(t=round(f.t, 3), edge=[o, "moved", None], **{"from": False}, to=True, cm=round(cm, 1), src="derived"))
+                    events.append(
+                        dict(
+                            t=round(f.t, 3),
+                            edge=[o, "moved", None],
+                            **{"from": False},
+                            to=True,
+                            cm=round(cm, 1),
+                            src="derived",
+                        )
+                    )
         if d0 is not None and not slipped:
             d = float(np.linalg.norm(f.hand_pose(eff.split("_")[0])[0] - f.obj_pose(carried)[0]))
             if abs(d - d0) * 100 > SLIP_CM:
                 slipped = True
-                events.append(dict(t=round(f.t, 3), edge=[carried, "slipped", eff], **{"from": False}, to=True, cm=round((d - d0) * 100, 1), src="derived"))
+                events.append(
+                    dict(
+                        t=round(f.t, 3),
+                        edge=[carried, "slipped", eff],
+                        **{"from": False},
+                        to=True,
+                        cm=round((d - d0) * 100, 1),
+                        src="derived",
+                    )
+                )
     return events, added
 
 
@@ -1313,7 +1550,11 @@ def _tick_of(arrays: dict, t: float, last: bool = False) -> int:
 def _task_dict(task) -> dict:
     if isinstance(task, dict):
         return dict(id=task.get("id"), objects=list(task.get("objects") or []), goal=list(task.get("goal") or []))
-    return dict(id=getattr(task, "id", None), objects=list(getattr(task, "objects", ()) or ()), goal=list(getattr(task, "goal", ()) or ()))
+    return dict(
+        id=getattr(task, "id", None),
+        objects=list(getattr(task, "objects", ()) or ()),
+        goal=list(getattr(task, "goal", ()) or ()),
+    )
 
 
 def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
@@ -1339,7 +1580,9 @@ def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
         rising = False
         if kind == "reach" and roles.get("carried"):
             goal = _reach_goal(cs)
-            rising = goal is not None and float(goal[2]) > float(f0.hand_pose(roles["effector"].split("_")[0])[0][2]) + 0.02
+            rising = (
+                goal is not None and float(goal[2]) > float(f0.hand_pose(roles["effector"].split("_")[0])[0][2]) + 0.02
+            )
         expected = expected_of(kind, roles, task, g_before, rising=rising)
         events, added = events_of(arrays, meta, k0, k1, entities, roles, task)
         scope["added"] = added
@@ -1404,10 +1647,12 @@ def read(path: Path) -> list[dict]:
 Also in Task 3's `graph_of`, make sure `held` for `both_hands` and the `at` edge are covered: the `at` edge is emitted only when `region:pregrasp_target` is in scope (done above); for `walk`, emit in `graph_of` when `region:stance` is in `regions`:
 
 ```python
-    if "region:stance" in regions:
-        c = np.asarray(regions["region:stance"]["centre"], float)
-        err = _xy_dist(ppos, c) * 100
-        edges.append(_edge("robot", "at", "region:stance", err <= 5.0, "derived", err_cm=round(err, 1)))  # failure_class.WALK_OFF_CM
+if "region:stance" in regions:
+    c = np.asarray(regions["region:stance"]["centre"], float)
+    err = _xy_dist(ppos, c) * 100
+    edges.append(
+        _edge("robot", "at", "region:stance", err <= 5.0, "derived", err_cm=round(err, 1))
+    )  # failure_class.WALK_OFF_CM
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1540,9 +1785,20 @@ import digest as DG  # noqa: E402
 
 
 def past_record(label, step, kind, disc, events=(), ok=False):
-    return dict(schema="PAST-locomani-0.1", record_id=f"{label}/1.1", label=label, task=label.rsplit("_s", 1)[0],
-                step_index=1, attempt=1, step=step, kind=kind, events=list(events), expected=[], discrepancies=disc,
-                outcome=dict(step_ok=not disc, round_ok=ok, round_why="", failure_class=None))
+    return dict(
+        schema="PAST-locomani-0.1",
+        record_id=f"{label}/1.1",
+        label=label,
+        task=label.rsplit("_s", 1)[0],
+        step_index=1,
+        attempt=1,
+        step=step,
+        kind=kind,
+        events=list(events),
+        expected=[],
+        discrepancies=disc,
+        outcome=dict(step_ok=not disc, round_ok=ok, round_why="", failure_class=None),
+    )
 
 
 class DigestSection(unittest.TestCase):
@@ -1556,7 +1812,10 @@ class DigestSection(unittest.TestCase):
                 (diag / f"{label}.json").write_text(json.dumps(rounds[-1]))
                 disc = [] if ok else [dict(edge=["Mug", "held", "right_hand"], to=True, observed=False)]
                 ev = [dict(t=9.1, edge=["Mug", "touching", "right_hand"], **{"from": False}, to=True, src="observed")]
-                recs = [past_record(label, "pregrasp", "reach", [], ok=ok), past_record(label, "grip", "grip", disc, ev, ok=ok)]
+                recs = [
+                    past_record(label, "pregrasp", "reach", [], ok=ok),
+                    past_record(label, "grip", "grip", disc, ev, ok=ok),
+                ]
                 (diag / f"{label}.past.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
             lines = DG.past_lines(diag, rounds)
         text = "\n".join(lines)
@@ -1614,7 +1873,10 @@ def past_lines(diag: Path, rounds: list[dict]) -> list[str]:
                 recs_by[r["label"]] = recs
     if not recs_by:
         return []
-    out = ["## Scene-graph transitions (TODO 39; `past.py show <round>` for a record, `compare <fail> <ok>` for two)", ""]
+    out = [
+        "## Scene-graph transitions (TODO 39; `past.py show <round>` for a record, `compare <fail> <ok>` for two)",
+        "",
+    ]
     by_task = collections.defaultdict(list)
     for r in rounds:
         if r["label"] in recs_by:
@@ -1630,11 +1892,21 @@ def past_lines(diag: Path, rounds: list[dict]) -> list[str]:
             same = [x for r in rows if r["ok"] for x in recs_by[r["label"]] if x["kind"] == kind]
             vals = []
             for x in same:
-                e = next((e for e in x["G_after"]["edges"] if tuple((e["s"], e["r"], e["o"])) == edge), None) if "G_after" in x else None
+                e = (
+                    next((e for e in x["G_after"]["edges"] if tuple((e["s"], e["r"], e["o"])) == edge), None)
+                    if "G_after" in x
+                    else None
+                )
                 if e is not None and e["v"] is not None:
                     vals.append(bool(e["v"]))
-            tail = f"; successes: {sum(v == to for v in vals)}/{len(vals)} {str(to).lower()} at the same kind" if vals or same else ""
-            out.append(f"- {task}: {n} x {kind}: {_edge_text(list(edge))} expected {str(to).lower()}, observed {str(obs).lower()}{tail}")
+            tail = (
+                f"; successes: {sum(v == to for v in vals)}/{len(vals)} {str(to).lower()} at the same kind"
+                if vals or same
+                else ""
+            )
+            out.append(
+                f"- {task}: {n} x {kind}: {_edge_text(list(edge))} expected {str(to).lower()}, observed {str(obs).lower()}{tail}"
+            )
     out.append("")
     out.append("Failed rounds, flips from the first manipulation step (t  step.kind  edge from->to [unexpected *]):")
     for r in rounds:
@@ -1647,11 +1919,17 @@ def past_lines(diag: Path, rounds: list[dict]) -> list[str]:
             bad = {tuple(d["edge"]) for d in x.get("discrepancies") or []}
             for e in x.get("events") or []:
                 mark = " *" if tuple(e["edge"]) in bad else ""
-                lines.append(f"  {e['t']:.1f}  {x['step']}.{x['kind']}  {_edge_text(e['edge'])} {str(e['from']).lower()}->{str(e['to']).lower()}{mark}")
+                lines.append(
+                    f"  {e['t']:.1f}  {x['step']}.{x['kind']}  {_edge_text(e['edge'])} {str(e['from']).lower()}->{str(e['to']).lower()}{mark}"
+                )
             for d in x.get("discrepancies") or []:
-                lines.append(f"  {x['action']['t1'] if 'action' in x else '':>5}  {x['step']}.{x['kind']}  {_edge_text(d['edge'])} expected {str(d['to']).lower()} *")
+                lines.append(
+                    f"  {x['action']['t1'] if 'action' in x else '':>5}  {x['step']}.{x['kind']}  {_edge_text(d['edge'])} expected {str(d['to']).lower()} *"
+                )
         if len(lines) > PAST_TIMELINE_MAX:
-            lines = lines[:PAST_TIMELINE_MAX] + [f"  ... {len(lines) - PAST_TIMELINE_MAX} more: past.py show {diag / r['label']}"]
+            lines = lines[:PAST_TIMELINE_MAX] + [
+                f"  ... {len(lines) - PAST_TIMELINE_MAX} more: past.py show {diag / r['label']}"
+            ]
         out += [f"- {r['label']}"] + lines
         if len(out) >= PAST_MAX_LINES - 2:
             out.append(f"- ... more failed rounds; `past.py show`")
@@ -1712,22 +1990,68 @@ and the tests:
 ```python
 class Cli(unittest.TestCase):
     def records(self, label, ok):
-        g0 = dict(t=9.0, states={}, edges=[dict(s="Mug", r="held", o="right_hand", v=False, src="predicate"),
-                                            dict(s="Mug", r="supported_by", o="T", v=True, src="derived")])
-        g1 = dict(t=9.6, states={}, edges=[dict(s="Mug", r="held", o="right_hand", v=ok, src="predicate"),
-                                            dict(s="Mug", r="supported_by", o="T", v=True, src="derived")])
+        g0 = dict(
+            t=9.0,
+            states={},
+            edges=[
+                dict(s="Mug", r="held", o="right_hand", v=False, src="predicate"),
+                dict(s="Mug", r="supported_by", o="T", v=True, src="derived"),
+            ],
+        )
+        g1 = dict(
+            t=9.6,
+            states={},
+            edges=[
+                dict(s="Mug", r="held", o="right_hand", v=ok, src="predicate"),
+                dict(s="Mug", r="supported_by", o="T", v=True, src="derived"),
+            ],
+        )
         ev = [dict(t=9.2, edge=["Mug", "touching", "right_hand"], **{"from": False}, to=True, src="observed")]
         disc = [] if ok else [dict(edge=["Mug", "held", "right_hand"], to=True, observed=False)]
-        return [dict(schema="PAST-locomani-0.1", record_id=f"{label}/0.1", label=label, task="pick_Mug", step_index=0,
-                     attempt=1, step="pregrasp", kind="reach", action=dict(t0=8.0, t1=9.0, ok=True, why="", calls=[], check={}),
-                     roles=dict(target="Mug", effector="right_hand"), scope=dict(initial=["Mug"], added=[]), entities={},
-                     G_before=g0, events=[], G_after=g0, expected=[], discrepancies=[],
-                     outcome=dict(step_ok=True, round_ok=ok), evidence=dict(npz=f"{label}.npz", k0=400, k1=450)),
-                dict(schema="PAST-locomani-0.1", record_id=f"{label}/1.1", label=label, task="pick_Mug", step_index=1,
-                     attempt=1, step="grip", kind="grip", action=dict(t0=9.0, t1=9.6, ok=ok, why="", calls=[], check={"opening_cm": 6.1}),
-                     roles=dict(target="Mug", effector="right_hand"), scope=dict(initial=["Mug"], added=[]), entities={},
-                     G_before=g0, events=ev, G_after=g1, expected=[dict(edge=["Mug", "held", "right_hand"], to=True)],
-                     discrepancies=disc, outcome=dict(step_ok=ok, round_ok=ok), evidence=dict(npz=f"{label}.npz", k0=450, k1=480))]
+        return [
+            dict(
+                schema="PAST-locomani-0.1",
+                record_id=f"{label}/0.1",
+                label=label,
+                task="pick_Mug",
+                step_index=0,
+                attempt=1,
+                step="pregrasp",
+                kind="reach",
+                action=dict(t0=8.0, t1=9.0, ok=True, why="", calls=[], check={}),
+                roles=dict(target="Mug", effector="right_hand"),
+                scope=dict(initial=["Mug"], added=[]),
+                entities={},
+                G_before=g0,
+                events=[],
+                G_after=g0,
+                expected=[],
+                discrepancies=[],
+                outcome=dict(step_ok=True, round_ok=ok),
+                evidence=dict(npz=f"{label}.npz", k0=400, k1=450),
+            ),
+            dict(
+                schema="PAST-locomani-0.1",
+                record_id=f"{label}/1.1",
+                label=label,
+                task="pick_Mug",
+                step_index=1,
+                attempt=1,
+                step="grip",
+                kind="grip",
+                action=dict(t0=9.0, t1=9.6, ok=ok, why="", calls=[], check={"opening_cm": 6.1}),
+                roles=dict(target="Mug", effector="right_hand"),
+                scope=dict(initial=["Mug"], added=[]),
+                entities={},
+                G_before=g0,
+                events=ev,
+                G_after=g1,
+                expected=[dict(edge=["Mug", "held", "right_hand"], to=True)],
+                discrepancies=disc,
+                outcome=dict(step_ok=ok, round_ok=ok),
+                evidence=dict(npz=f"{label}.npz", k0=450, k1=480),
+            ),
+        ]
 
     def write(self, d, label, ok):
         (Path(d) / f"{label}.past.jsonl").write_text("".join(json.dumps(r) + "\n" for r in self.records(label, ok)))
@@ -1843,12 +2167,16 @@ def record_lines(r: dict) -> list[str]:
         out.append(line)
     for d in r.get("discrepancies") or []:
         if tuple(d["edge"]) not in before and tuple(d["edge"]) not in after:
-            out.append(f"  {d['edge'][0]} —{d['edge'][1]}→ {d['edge'][2]}  expected {_b(d['to'])}, observed {_b(d.get('observed'))} ✗")
+            out.append(
+                f"  {d['edge'][0]} —{d['edge'][1]}→ {d['edge'][2]}  expected {_b(d['to'])}, observed {_b(d.get('observed'))} ✗"
+            )
     if r.get("events"):
         out.append("  events:")
         for e in r["events"]:
             extra = "".join(f"  {k} {v}" for k, v in e.items() if k not in ("t", "edge", "from", "to", "src"))
-            out.append(f"    {e['t']:.1f}  {e['edge'][0]} —{e['edge'][1]}→ {e['edge'][2]}  {_b(e['from'])}→{_b(e['to'])}{extra}")
+            out.append(
+                f"    {e['t']:.1f}  {e['edge'][0]} —{e['edge'][1]}→ {e['edge'][2]}  {_b(e['from'])}→{_b(e['to'])}{extra}"
+            )
     added = (r.get("scope") or {}).get("added") or []
     if added:
         out.append("  joined: " + ", ".join(f"{x['id']} at {x['t']:.1f} s ({x['why']})" for x in added))
@@ -1865,7 +2193,9 @@ def show(path: Path, step: int | None = None, as_json: bool = False) -> str:
         return "\n".join(json.dumps(r, indent=1) for r in recs)
     if not recs:
         return "no records"
-    out = [f"{recs[0]['label']}  task {recs[0]['task']}  round {'OK' if recs[0]['outcome'].get('round_ok') else 'FAIL'}"]
+    out = [
+        f"{recs[0]['label']}  task {recs[0]['task']}  round {'OK' if recs[0]['outcome'].get('round_ok') else 'FAIL'}"
+    ]
     for r in recs:
         out += [""] + record_lines(r)
     return "\n".join(out)
@@ -1900,7 +2230,9 @@ def compare(a: Path, b: Path) -> str:
     for i, j in _lcs([r["kind"] for r in ra], [r["kind"] for r in rb]):
         left = f"{ra[i]['step']} [{ra[i]['kind']}]" if i is not None else "-"
         right = f"{rb[j]['step']} [{rb[j]['kind']}]" if j is not None else "-"
-        out.append(f"\n{ra[i]['kind'] if i is not None else rb[j]['kind']} | {rb[j]['kind'] if j is not None else '-'}   A {left}   B {right}")
+        out.append(
+            f"\n{ra[i]['kind'] if i is not None else rb[j]['kind']} | {rb[j]['kind'] if j is not None else '-'}   A {left}   B {right}"
+        )
         if i is None or j is None:
             continue
         ea = {_key(e): e for e in ra[i]["G_after"]["edges"]}
