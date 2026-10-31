@@ -1302,3 +1302,13 @@
 - [x] 38.22 人工定义的夹壁抓法进探针（用户 10-24：“参考 logistics room 之前 human 定义的双臂抓箱子方案，是把两个 gripper 放到纸箱子两侧……速度保持之前的 0.25m/s”）：`probe_box_skills` 的 `MODE` 默认 `"wall"`（壁内 8 mm、箱沿下 1 cm、俯 60°、预抓上方 9 cm 后退 4 cm、两手合爪、抬 32 cm 站直），`box_bimanual` 去掉 `motor` 块回到 0.25 m/s。严格判据探针 3 / 10（长边 3 / 5、短边 0 / 5）；俯 45°、站近更差。视频 `outputs/scene_rsi_20261016/box_probe_wall_20261024/`。待用户定：先解决短边朝外，还是带着 3 / 10 开循环。
 - [x] 38.23 倾斜上限 30° → 60°（用户 10-24：“30 度过于严格，改为 60 度”）：任务文件、方案页、规则第 36 条、runbook、测试同步。夹壁探针重跑仍 3 / 10（长边 3 / 5、短边 0 / 5），7 局失败全是手离开箱子，不是倾斜。
 - [x] 38.24 严格判据下第一次内环（用户 10-24 开、`--max-iters 3`，沙盒 `box-b`）：1 轮就到停止线（验收池 34 / 40），约 1 小时、20.47 USD；采用 `hug_judged_while_rising`（夹紧、抬高、站近、按判据等稳）；封存集 41 / 50（长边 25 / 25、短边 16 / 25），种子 0 / 50。记录在方案页 5.2、runbook 现状。
+
+## 39. PAST：动作条件局部场景图记录器（用户 2026-10-30：“设计一个 action-conditioned local scene graph 的方法，来增强 cross-task 的 RSI 进化效率……机器人运行的时候保存 simulation 中的 privileged 信息……用于 reviewer 来分析失败原因，提出假设”；分支 `henry-dev`；方案 [past-scene-graph-plan-20261030](docs/handoff/past-scene-graph-plan-20261030.md)；DECISIONS 2026-10-30 TODO 39）
+
+每局运行时记接触通道，局结束后用纯函数把每个步骤、每次重试构造成一条局部场景图记录（`<label>.past.jsonl`），Reviewer 读它诊断。记录器在冻结层，只写不读，不改结局，侧文件不进任何判定。第一版只验证单次运行内的诊断效率；跨任务检索、回填、图形页放第二阶段（方案第 8 节）。每步 `make check` 后提交。
+
+- [ ] 39.1 接触通道：`motor.py` 的 `trace` 每拍记追踪物体或手臂 / 手部刚体与非地面刚体的接触对，`arrays()` 导出 `contact_k` / `contact_a` / `contact_b` 和刚体名表 `bodies`；`tests/test_scalebfm_motor.py`。
+- [ ] 39.2 构造器 `src/locomani/tasks/scene/past.py`：`build(rec, arrays, meta, task)`，按原语推 `kind`、角色、`expected`（方案 4.5），范围按 4.4，边分 `observed` / `predicate` / `derived`，没有接触通道时记 `unknown`；`tests/test_scene_past.py`。
+- [ ] 39.3 写出：`scene_round.py` 每局写 `<label>.past.jsonl`（构造器异常写错误行，不花一局）；`diag_pool.py` 退役改名带上它；`pick-repro` 现任诊断池 50 局开着接触通道重跑，`ok` / `why` / `fell` / `dropped` / `t_end` 逐局全同，结果记方案第 7 节。
+- [ ] 39.4 Reviewer 入口：`digest.py` 新增一节（每任务第一个不期待转移的计数和成功局对照；每失败局的翻转时间线；≤ 115 行）；`scripts/rsi/past.py show` / `compare`；`reviewer.md` 读法改为摘要 → `.past.jsonl` → NPZ；`rules.md` 第 23 版（技能不读不改记录，引用即作废）；`rsi_design.md` 第 5 节一段；runbook 一条命令。
+- [ ] 39.5 新运行：沙盒 `pick-past-a` 跑 `pick_single`，从 `pick-repro` 的种子版起，开关照抄它的 `meta.json`；`scripts/rsi/report/past_monitor.py` 算主指标（探针“已验证”比例、净救回局数）和次指标（Reviewer 用时、费用、工具调用数、开 NPZ 和用 `past.py` 的次数），和 `pick-repro` 7 轮对照（非配对，只说方向）；结果进方案第 7 节和 STATE。
