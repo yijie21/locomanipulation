@@ -59,7 +59,7 @@ CUDA_VISIBLE_DEVICES=0 $PY scripts/rsi/scene_round.py pick_single --pool $P \
 ```
 
 做什么：用仓库里现在的技能目录，从拿起遥控器的一个起点跑一局：机器人走到茶几旁，拿起遥控器。
-得到什么：`outputs/rsi_smoke/one/tv_remote_pickup_s300005.json`，`"ok": true`；同名 `.npz` 是 50 Hz 轨迹。约 2 分钟，大半是加载。
+得到什么：`outputs/rsi_smoke/one/tv_remote_pickup_s300005.json`，`"ok": true`；同名 `.npz` 是 50 Hz 轨迹（含接触通道 `contact_k` / `contact_a` / `contact_b` 和刚体名表 `bodies`）；同名 `.past.jsonl` 是场景图记录，每个技能步骤一行（TODO 39），`PYTHONPATH=src $PY scripts/rsi/past.py show outputs/rsi_smoke/one/tv_remote_pickup_s300005` 按步骤打印实体、前后关系、翻转事件和期待与差异——里面若只有一行 `"error"`，是记录器出错，局本身不受影响，把那一行报给维护者。约 2 分钟，大半是加载。
 
 ### 3.2 用假的角色走一遍内环
 
@@ -70,7 +70,7 @@ cd $S && $PY scripts/rsi/loop.py run pick_single --stub --max-iters 1; cd -
 ```
 
 做什么：第一条建一个沙盒：把当前提交的代码导出到 `$S`，再在里面抽诊断池（50 个起点）和验收池（60 个）。第二条在沙盒里跑一次迭代，角色的回答是写死的，不调用 Claude：现任在诊断池上跑 50 局，跑探针，验收门只做静态检查。
-得到什么：`$S/outputs/scene_rsi_20261016/pick_single/loop/iter_00/` 下有 `hypotheses.json`、`probe.json`、`gate.json`，账本 `loop/ledger.jsonl` 里这一条的 `"void": true`。约 15 分钟。看完删掉 `$S`。
+得到什么：`$S/outputs/scene_rsi_20261016/pick_single/loop/iter_00/` 下有 `diag_digest.md`（Reviewer 读的摘要，含 "Scene-graph transitions" 一节）、`hypotheses.json`、`probe.json`、`gate.json`，现任的 50 局在 `…/pick_single/diag/incumbent_<hash>/`（每局 `.json`、`.npz`、`.past.jsonl`），账本 `loop/ledger.jsonl` 里这一条的 `"void": true`。约 15 分钟。看完删掉 `$S`。沙盒是 `git archive HEAD`，没提交的改动进不去；本机只有一张卡时按第 0 节设 `RSI_GPUS` / `RSI_PROCS` / `RSI_SIM_SLOTS`。
 
 ## 4. 核对已记录的结果
 
@@ -239,7 +239,7 @@ bash scripts/stop_unreal.sh
 
 - `scene_lint.py` 报 error：不要开跑循环。先看 `lint.json` 里是哪一类（物体掉下去、目标开局就成立、竖直轴不对），多半是场景没按第 2 节的顺序建，或者少了面板、碰撞盒。
 - 内环一开始就停，`loop.log` 里说缺 `pool_diag`：沙盒没建完，重新跑 `sandbox.py`。
-- 账本里某次迭代或草稿标 `void`：角色读了验收池或沙盒外的文件，或者 Engineer 改了技能目录以外的文件。三个 Engineer 中一份草稿越界，只作废这一份，这一轮接着走；Reviewer、Manager、Composer 或唯一的 Engineer 越界，这一轮作废（账本记 `void_iter`），现任不变，进下一轮；连续两轮作废，内环停下，`loop.py` 退出码 3，查完用 `--reprobe N` 续跑（TODO 36.7）。验收门调用标 `void` 是有起点缺了局，这次不算数；草稿或候选标 `named_objects` 是技能代码里写了物体名字（规则第 30 条），作废。
+- 账本里某次迭代或草稿标 `void`：角色读了验收池或沙盒外的文件，或者 Engineer 改了技能目录以外的文件。三个 Engineer 中一份草稿越界，只作废这一份，这一轮接着走；Reviewer、Manager、Composer 或唯一的 Engineer 越界，这一轮作废（账本记 `void_iter`），现任不变，进下一轮；连续两轮作废，内环停下，`loop.py` 退出码 3，查完用 `--reprobe N` 续跑（TODO 36.7）。验收门调用标 `void` 是有起点缺了局，这次不算数；草稿或候选标 `named_objects` 是技能代码里写了物体名字（规则第 30 条）或读了场景图记录器——import `locomani.tasks.scene.past`、字符串含 `past.jsonl` / `rsi/past.py`（规则第 38 条），作废。某局的 `.past.jsonl` 只有一行 `"error"`：记录器在这一局上出错，局的结局和 `.json` / `.npz` 不受影响，摘要里这一局就没有场景图时间线；把错误行报给维护者。
 - 验收门从规则第 14 版起按“多赢 − 少赢 ≥ 3 且少赢 ≤ 多赢 / 3”判，不再要求 p ≤ 0.05（TODO 33.8）；被拒但多赢多于少赢的最好 2 个候选在 `loop/candidates_pool.json`，账本 `pool` 行记进出。Manager 决定里的 `base` 是从候补接着改，Composer 的 `adopted_pool` 是把候补原样再送；旧规则拒过的候选可以再判。
 - 回归打印 `worse at p <= 0.05`：有任务族变差，登记表不推进。先查最近改了什么，再决定是否接受。
 - 仿真很慢、结局和记录差很多：确认 `OMP_NUM_THREADS=2`，并且机器上没有别的仿真在跑（所有批次共用 12 个仿真槽）。
