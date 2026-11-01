@@ -23,6 +23,17 @@ PY=$VENV_SIM_PY
 做什么：设置路径变量，把 `src/` 加进 `PYTHONPATH`；后两行固定临时目录和线程数（`OMP_NUM_THREADS` 改成 1 会改变仿真结局），`$PY` 是仿真用的 Python。下面的命令都在仓库根目录执行。沙盒、仿真槽、角色的临时目录和 ScaleBFM 权重都在 `$LOCOMANI_WORKSPACE` 下（默认 `/workspace`）；没有 `/workspace` 写权限的机器在第一条之前 `export LOCOMANI_WORKSPACE=<可写目录>`（[安装](setup.md)第 1 节），后面的命令照抄。只有一张卡的机器再 `export RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`：内环、验收门、封存集和回归默认把 12 个仿真进程轮流放到 0、1 两张卡上，这三个变量改默认值，下面带 `CUDA_VISIBLE_DEVICES=1` 或 `MUJOCO_EGL_DEVICE_ID=1` 的命令也改成 0。
 前提：[安装](setup.md)里“场景 RSI”一列要求的步骤都已完成，包括 ADT 数据、ScaleBFM 权重和 Claude CLI。
 
+一张卡、没有 `/workspace` 的机器（SRA0889 这类），第 0 节合起来是：
+
+```bash
+cd ~/workspace/locomanipulation
+export LOCOMANI_WORKSPACE=$HOME/workspace
+. scripts/paths.sh
+export TMPDIR=$LOCOMANI_TMP NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2
+export RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6 MUJOCO_EGL_DEVICE_ID=0
+PY=$VENV_SIM_PY
+```
+
 ## 1. 恢复复现材料（每台机器一次）
 
 ```bash
@@ -135,22 +146,34 @@ cd $S && $PY scripts/rsi/loop.py status grasp_atomic_past; cd -
 
 做什么：打印进度：第几次迭代、每次验收的结论、现任在验收池上的成绩、已花的时间和模型费。随时可以看。
 
-看 Reviewer 看到的东西（都在沙盒里跑，只读）：
+第 0 轮的 Reviewer 结束后（账本里出现 `"step": "review"`，约 20–40 分钟），确认记录器和角色的权限都在工作：
 
 ```bash
 cd $S
-cat outputs/scene_rsi_20261016/grasp_atomic_past/loop/iter_00/diag_digest.md | sed -n '/Scene-graph transitions/,/^## /p'
-D=outputs/scene_rsi_20261016/grasp_atomic_past/diag/$(ls outputs/scene_rsi_20261016/grasp_atomic_past/diag | grep incumbent | tail -1)
+F=outputs/scene_rsi_20261016/grasp_atomic_past
+ls $F/diag/incumbent_*/ | head                                                 # 每局有 .json .npz .past.jsonl
+sed -n '/Scene-graph transitions/,/^## /p' $F/loop/iter_00/diag_digest.md     # 场景图一节 + 末尾的图列清单
+grep '"step": "review"' $F/loop/ledger.jsonl | tail -1                         # "void": false，seconds，cost_usd
+grep -c "requires approval" $F/loop/iter_00/reviewer_raw.json                  # 应为 0：Bash 放行了
+cd -
+```
+
+得到什么：三个文件都在、摘要有那一节、`void` 为 false、计数为 0，就可以放着跑。空种子的现任一局都不动（`plan_for` 返回 None），第 0 轮每局只有 `settle` / `hold` 两步，图列也只有 `hold.dist_m` 这类；`reach.*` / `grip.*` 列要到第一个被接受的候选之后才出现。计数不为 0 说明这台机器的 `claude -p` 没放行 Bash（`loop.py` 的 `--allowedTools`，TODO 39.6），Reviewer 什么工具都跑不了，停掉查。
+
+之后要看 Reviewer 看到的东西（都在沙盒里跑，只读）：
+
+```bash
+cd $S
+D=$F/diag/$(ls $F/diag | grep incumbent | tail -1)
 PYTHONPATH=src $PY scripts/rsi/past.py show $D/<label>                       # 一局：每步的实体、前后关系、翻转事件、期待与差异
 PYTHONPATH=src $PY scripts/rsi/past.py compare $D/<失败局> $D/<成功局>        # 两局按步骤种类对齐，只列值不同的边
 PYTHONPATH=src $PY scripts/rsi/records.py features --task pick_Mug_2         # 记录库的列（含场景图列 reach.beside.gap_m 等）和范围
 PYTHONPATH=src $PY scripts/rsi/records.py query reach.beside.gap_m "<" 0.03 --task pick_Mug_2 --expect fails   # 一个 measure 的分组结果
-grep '"step": "review"' outputs/scene_rsi_20261016/grasp_atomic_past/loop/ledger.jsonl | tail -3                # 每轮 Reviewer 的用时和费用
-python3 -c "import json;[print(h['id'],h.get('status'),h.get('measure')) for h in json.load(open('outputs/scene_rsi_20261016/grasp_atomic_past/loop/iter_00/hypotheses.json'))['hypotheses']]"
+python3 -c "import json;[print(h['id'],h.get('status'),h.get('measure')) for h in json.load(open('$F/loop/iter_00/hypotheses.json'))['hypotheses']]"
 cd -
 ```
 
-做什么：摘要末尾那一节列出失败局第一个不期待的转移、翻转时间线和本轮可用的图列；`show` / `compare` 看单局和对照；`features` / `query` 是 Reviewer 写 `measure` 前后用的同一套命令；账本的 `review` 行有每轮的 `seconds`、`cost_usd`；`hypotheses.json` 里 `status` 由探针或 `measure` 定（已验证 / 已否定 / 仍是假设）。要量改动有没有用，就看这几项随轮次的变化和 Reviewer 调用里打开 `.npz`、自己写脚本的次数（会话记录在 `$LOCOMANI_TMP/rsi_scene_ga-past-a/`）。
+做什么：`show` / `compare` 看单局和对照；`features` / `query` 是 Reviewer 写 `measure` 前后用的同一套命令；`hypotheses.json` 里 `status` 由探针或 `measure` 定（已验证 / 已否定 / 仍是假设）。要量改动有没有用，就看账本 `review` 行的用时费用、用了 `measure` 的假设数随轮次的变化，和 Reviewer 调用里打开 `.npz`、自己写脚本的次数（会话记录在 `$LOCOMANI_TMP/rsi_scene_ga-past-a/`）。
 
 ### 5.3 封存集、写回、登记
 
