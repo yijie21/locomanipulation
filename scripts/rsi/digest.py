@@ -33,6 +33,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+import records as RC  # noqa: E402
+
 from locomani.scene_discovery import lint  # noqa: E402
 from locomani.scene_discovery.predicates import parse  # noqa: E402
 from locomani.tasks.scene import past as PAST  # noqa: E402
@@ -287,6 +289,12 @@ def past_lines(diag: Path, rounds: list[dict]) -> list[str]:
             out.append("- ... more failed rounds: `past.py show` each")
             break
         out += [f"- {r['label']}"] + lines
+    # TODO 39.6: the record-library columns these records add, for a hypothesis's `measure`
+    cols = sorted({k for recs in recs_by.values() for k in RC.graph_columns(recs)})
+    if cols:
+        out += ["", f"Record-library columns from these records ({len(cols)}, keyed by step kind; a hypothesis's "
+                    f"`measure` can split the rounds on any of them): {', '.join(cols)}",
+                "  e.g. \"measure\": {\"feature\": \"reach.beside.gap_m\", \"op\": \"<\", \"value\": 0.03, \"expect\": \"fails\"}"]  # fmt: skip
     out.append("")
     return out
 

@@ -114,3 +114,98 @@ class Cli(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             write_round(d, "pick_Mug_s0", False)
             self.assertEqual(past_cli.main(["show", str(Path(d) / "pick_Mug_s0")]), 0)
+
+
+import records as RC  # noqa: E402
+
+
+def rich_records(label, ok):
+    """Two steps with the spatial, relative-pose and event content graph_columns reads."""
+    recs = two_step_records(label, ok)
+    reach, grip = recs
+    reach["roles"]["carried"] = None
+    reach["G_before"]["edges"] += [
+        dict(s="Can", r="beside", o="Mug", v=True, src="derived", gap_m=0.02, side="+y"),
+        dict(s="Far", r="beside", o="Mug", v=False, src="derived", gap_m=0.31, side="-x"),
+        dict(s="Stool", r="blocking", o="region:corridor", v=True, src="derived", depth_m=0.04),
+        dict(s="Shelf", r="above", o="Mug", v=True, src="derived", gap_m=0.25),
+        dict(s="Mug", r="near_edge", o="T", v=True, src="derived", dist_m=0.12, edge="-x"),
+        dict(s="robot", r="dist", o="Mug", v=0.64, src="derived", bearing_deg=8.0),
+        dict(s="robot", r="facing", o="Mug", v=8.0, src="derived"),
+    ]
+    reach["G_after"]["edges"] += [
+        dict(s="right_hand", r="reach_vec", o="region:pregrasp_target", v=[0.48, 0.21, 0.52], src="derived"),
+        dict(s="right_hand", r="at", o="region:pregrasp_target", v=True, src="derived", err_cm=1.3),
+        dict(s="right_hand", r="approach", o="Mug", v="-x", src="derived", wrist_att="level"),
+    ]
+    grip["events"] = [
+        {"t": 9.1, "edge": ["Mug", "moved", None], "from": False, "to": True, "cm": 2.4, "src": "derived"},
+        {"t": 9.2, "edge": ["Mug", "touching", "right_hand"], "from": False, "to": True, "src": "observed"},
+    ] + (
+        [{"t": 9.4, "edge": ["Mug", "gripped", "right_hand"], "from": False, "to": True, "src": "observed"}]
+        if ok
+        else []
+    )
+    return recs
+
+
+class GraphColumns(unittest.TestCase):
+    def test_columns_keyed_by_kind_with_the_first_discrepant_step(self):
+        cols = RC.graph_columns(rich_records("pick_Mug_s0", ok=False))
+        self.assertEqual(
+            (cols["first_bad.kind"], cols["first_bad.edge"], cols["n_unexpected"]),
+            ("grip", "Mug gripped right_hand", 1.0),
+        )
+        self.assertEqual(
+            (cols["reach.beside.gap_m"], cols["reach.beside.side"], cols["reach.beside.n"]), (0.02, "+y", 1.0)
+        )
+        self.assertEqual((cols["reach.blocking.depth_m"], cols["reach.blocking.what"]), (0.04, "Stool"))
+        self.assertEqual(cols["reach.above.gap_m"], 0.25)
+        self.assertEqual((cols["reach.near_edge.dist_m"], cols["reach.near_edge.edge"]), (0.12, "-x"))
+        self.assertEqual((cols["reach.dist_m"], cols["reach.facing_deg"]), (0.64, 8.0))
+        self.assertEqual(
+            (cols["reach.reach_vec.fwd"], cols["reach.reach_vec.out"], cols["reach.reach_vec.z"]), (0.48, 0.21, 0.52)
+        )
+        self.assertEqual((cols["reach.at.err_cm"], cols["reach.approach.side"]), (1.3, "-x"))
+        self.assertEqual(cols["grip.moved_before_grip"], 1)  # moved at 9.1, never gripped
+        self.assertNotIn("grip.t_touch_to_grip_s", cols)
+
+    def test_a_clean_grasp_has_no_first_bad_and_a_touch_to_grip_time(self):
+        cols = RC.graph_columns(rich_records("pick_Mug_s1", ok=True))
+        self.assertEqual(cols["n_unexpected"], 0.0)
+        self.assertNotIn("first_bad.kind", cols)
+        self.assertEqual(cols["grip.moved_before_grip"], 1)  # moved at 9.1 before the grip at 9.4
+        self.assertAlmostEqual(cols["grip.t_touch_to_grip_s"], 0.2)
+
+    def test_scan_reads_the_side_file_and_a_round_without_one_has_no_graph_columns(self):
+        with tempfile.TemporaryDirectory() as d:
+            write_round(d, "pick_Mug_s0", False)
+            (Path(d) / "pick_Mug_s0.past.jsonl").write_text(
+                "".join(json.dumps(r) + "\n" for r in rich_records("pick_Mug_s0", ok=False))
+            )
+            (Path(d) / "pick_Mug_s9.json").write_text(
+                json.dumps(dict(label="pick_Mug_s9", task="pick_Mug", ok=True, steps=[]))
+            )
+            rows = {r["label"]: r for r in RC.scan([(Path(d), "fam")], "host")}
+        self.assertEqual(rows["pick_Mug_s0"]["reach.beside.gap_m"], 0.02)
+        self.assertEqual(rows["pick_Mug_s0"]["first_bad.kind"], "grip")
+        self.assertNotIn("reach.beside.gap_m", rows["pick_Mug_s9"])
+
+    def test_judge_splits_on_a_graph_column(self):
+        rows = [dict(task="pick_Mug", ok=0, machine="h", **{"reach.beside.gap_m": g}) for g in (0.01, 0.02, 0.025)]
+        rows += [dict(task="pick_Mug", ok=1, machine="h", **{"reach.beside.gap_m": g}) for g in (0.08, 0.10, 0.12, 0.2)]
+        q = RC.judge(rows, dict(feature="reach.beside.gap_m", op="<", value=0.03, expect="fails"), None, "h")
+        self.assertEqual((q["verdict"], q["n_in"], q["ok_in"], q["n_out"], q["ok_out"]), ("verified", 3, 0, 4, 4))
+
+
+class DigestColumns(unittest.TestCase):
+    def test_the_section_ends_with_the_available_columns(self):
+        with tempfile.TemporaryDirectory() as d:
+            rounds = [write_round(d, "pick_Mug_s0", False)]
+            (Path(d) / "pick_Mug_s0.past.jsonl").write_text(
+                "".join(json.dumps(r) + "\n" for r in rich_records("pick_Mug_s0", ok=False))
+            )
+            text = "\n".join(DG.past_lines(Path(d), rounds))
+        self.assertIn("Record-library columns from these records", text)
+        self.assertIn("reach.beside.gap_m", text)
+        self.assertIn('"measure"', text)

@@ -256,11 +256,11 @@
 
 ## 6. 新运行与指标
 
-不做 A/B 重放（Q19）。记录器和提示词就位后，新沙盒 `pick-past-a` 跑 `pick_single`（`sandbox.py ~/workspace/code/rsi-scene/pick-past-a pick_single`，然后 `loop.py run`），现任从 `pick-repro` 的种子版起，规则第 23 版，别的开关和 `pick-repro` 一样（候选数、步速、停止线从它的 `meta.json` 抄）。
+不做 A/B 重放（Q19）。**2026-11-01 用户改定起点**：不是从 `pick_single` 的种子技能目录接着改，而是从原子动作从头长——任务族 `grasp_atomic_past`（`scripts/rsi/families/grasp_atomic_past.json`：和 `grasp_atomic` 同样的 10 个 `pick_*` 任务、空种子 `seeds/atomic`、同起点种子段；沙盒 `keep` 加 `scripts/rsi/past.py`，`library_exclude` 列全部 9 条经验库，纯从头），沙盒 `ga-past-a`，用户按 [runbook 第 5 节](../rsi.md) 手动运行；不回填旧局、不碰旧沙盒。规则第 23 版，候选数 3、停止线 0.7、墙钟 6 h、Reviewer high（默认值）。
 
-对照是 `pick-repro` 的 7 轮（同机、同场景、同诊断种子）。**这是非配对比较**：大模型写的代码和假设每次都不同，两次运行的差里有运行间噪声（TODO 32.11 的重放就是为了去掉它）。结论只能说方向，不能说显著；要下结论还得做重放 A/B，留在第二阶段。
+对照是 `grasp_atomic` 从空种子的第一次运行（远端机器，2 次采纳，封存集 0 → 31 / 50）。**这是非配对比较**：机器、运行时的规则版本（第 11 → 23 版）和大模型的随机性都不同，结论只能说方向；要下结论还得做重放 A/B，留在第二阶段。
 
-指标（Q20），都从账本和 `iter_NN/` 里算，脚本放 `scripts/rsi/report/past_monitor.py`：
+指标（Q20），都从账本和 `iter_NN/` 里算（`past_monitor.py` 等有账本再写）：
 - 主：每轮假设里探针判"已验证"的比例；探针净救回局数（`probe.json`）。
 - 次：Reviewer 每轮的用时、费用（账本 `review` 行）、工具调用数、其中打开 `.npz` 或自己写分析脚本的次数（从会话记录数）、打开 `.past.jsonl` / 调用 `past.py` 的次数。
 
@@ -280,13 +280,17 @@
 - 2026-10-30：方案、TODO 39、DECISIONS 条目；实现计划 `docs/superpowers/plans/2026-10-30-past-scene-graph.md`。
 - 2026-10-30：39.1–39.4 的代码和测试提交到 `henry-dev`（接触通道 `315d1d33`；构造器 `d20b5c11`、`53ffa221`；写出 `cbc8c4b3`；摘要和 CLI `016a531f`；规则第 23 版和文档见下一个提交）。实现和方案的两处偏差：(1) 持握类分成 `gripped`（两指都碰到，observed）和 `held`（谓词，gripped 且离开所有台面），grip 步骤期待 `gripped`、抬起期待 `held`——因为 `predicates._held` 在抬起前永远为假；(2) 手的腕姿态档 `att` 暂时恒为 `level`：轨迹里只有手腕位置，没有姿态，加姿态要动轨迹格式，留到有需要时。另外发现 `_held` 把同一足迹里任何台面顶 2 cm 以内（含物体上方的隔板，差值为负）都算 resting，物体在隔板下时 `held` 永远为假——不在本次范围，记在这里待查。50 局不变性重跑（39.3）和新运行（39.5）等用户批准。
 
-## 8. 第二阶段（不在本次）
+## 8. 第二阶段：用记录提速和跨任务迁移（2026-11-01 用户定方向，最小改动先做改动 1）
 
-- 跨任务检索 `past.py query`：按 `kind`、角色关系和物理条件（物体尺寸、支撑面高度、手）匹配本次运行和经验库里已完成运行的记录，比较事件模式；需要先建跨运行的索引（和 `records.py build` 同一种做法，排除隐藏池的种子段）。
-- 回填脚本：对旧沙盒的 `.json` / `.npz` 生成 `.past.jsonl`，接触边 `unknown`。
-- `past.py html`：每步前后两张小图排一页，放 `outputs/` 下。
-- Engineer / Manager 提示词点名；记录和验收门账本的链接（修复复用、条件修正）。
-- 重放 A/B（`replay.py setup` + `loop.py run --max-iters 1 --stop-after probe`，有 / 无 PAST 各若干次）给 H1 一个配对的结论。
+两个改动，都只动驱动程序和 Reviewer 的输入：驱动程序先把图里能机械算的算完，Reviewer 只做判断；跨任务靠"转移签名"匹配，不靠物体名和自然语言。
+
+**改动 1（已做，TODO 39.6）：图特征进记录库，`measure` 自动验证。** `records.py` 读每局旁的 `.past.jsonl`，按步骤种类加列（`reach.beside.gap_m`、`walk.blocking.depth_m`、`reach.at.err_cm`、`grip.moved_before_grip`、`first_bad.kind` 等，完整清单在 TODO 39.6）；Reviewer 写 `measure: reach.beside.gap_m < 0.03 → fails`，驱动程序在现任的局上分组、Fisher 检验、定状态（规则 33 的机制，判定阈值不变）。好处：Reviewer 不再自己写脚本翻局算相关性（之前一轮约 30 次工具调用在重建同样的视图），假设的证据从目测变成统计量，被探针否定的比例应下降。没有侧文件的旧局列缺着；不回填。
+
+**改动 2（未做）：转移签名索引 + 先例。** 给每条记录算签名 `(kind, 角色关系结构, 物理条件分桶)`，不含物体名；跨运行建索引（排除隐藏池种子段），每轮开头对本运行每类第一偏离查索引，把别的族里同签名转移的出现次数、修好它的假设 / 候选和封存集变化写进上下文 `precedents`；机制表标 `same_as_cross`。它替代的是自然语言经验库（监控显示 Reviewer 引用它时用词不像原文、假设数没少）。用户 11-01 定：不回填旧沙盒，所以索引里只有新运行自己的局，跨族先例要等第二个从头跑的族。
+
+**之后**：被接受候选在别族同签名局上的复验（负迁移可见）；先例带补丁给 Engineer（非空种子族才给，规则 27）；`past.py html` 图形页；Engineer / Manager 提示词点名；重放 A/B 给 H1 配对结论。
+
+衡量：H1 看 Reviewer 每轮用时 / 费用 / 工具调用、探针"已验证"比例、`measure` 自动判定的假设占比；H2 看引用先例的假设占比及其探针命中率 vs 未引用的、到停止线的轮数；H3 看复验的负迁移率。
 
 ## 9. 被否决的方案（及原因）
 

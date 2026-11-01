@@ -91,7 +91,91 @@ def start_features(start: dict, task: str) -> dict:
             "start.obj_yaw_deg": round(math.degrees(_yaw(q)), 1), "start.seed": float(s.get("seed", -1))}  # fmt: skip
 
 
-def row(rec: dict, start: dict | None, where: str, host: str, family: str) -> dict:
+def _first_edge(edges: list[dict], r: str, s: str | None = None) -> dict | None:
+    return next((e for e in edges if e.get("r") == r and (s is None or e.get("s") == s)), None)
+
+
+def graph_columns(records: list[dict]) -> dict:
+    """TODO 39.6 (PAST plan section 8, change 1): the scene-graph records of a round (`<label>.past.jsonl`) as columns.
+    Keyed by the step's primitive kind, not its skill-given name, so a `measure` survives a change of skills: for each
+    kind the first step with a discrepancy, else the first step of that kind. From G_before: the nearest neighbour's gap
+    and side and how many neighbours (`beside`), the deepest intrusion into the stance / corridor and by what
+    (`blocking`), the lowest overhang (`above`), the target's distance to its nearest table edge (`near_edge`), the
+    robot's distance and facing to the target. From G_after: the reach vector in the pelvis frame, the landing error
+    (`at`), the approach face. From the events: whether the object moved before it was gripped, how long from the first
+    touch to the grip, whether it slipped. Round-level: the first unexpected transition and how many steps had one."""
+    out: dict = {}
+    recs = [r for r in records if isinstance(r, dict) and "record_id" in r]
+    if not recs:
+        return out
+    bad = [r for r in recs if r.get("discrepancies")]
+    out["n_unexpected"] = float(len(bad))
+    if bad:
+        d = bad[0]["discrepancies"][0]
+        out["first_bad.kind"] = str(bad[0].get("kind"))
+        out["first_bad.edge"] = " ".join(str(x) for x in d["edge"] if x is not None)[:40]
+    by_kind: dict = {}
+    for r in recs:
+        k = r.get("kind")
+        if not k or k == "none":
+            continue
+        cur = by_kind.get(k)
+        if cur is None or (r.get("discrepancies") and not cur.get("discrepancies")):
+            by_kind[k] = r
+    for kind, r in by_kind.items():
+        p, cols = f"{kind}.", {}
+        tgt = (r.get("roles") or {}).get("target")
+        eb, ea = (r.get("G_before") or {}).get("edges") or [], (r.get("G_after") or {}).get("edges") or []
+        beside = [e for e in eb if e.get("r") == "beside" and isinstance(e.get("gap_m"), (int, float))]
+        if beside:
+            m = min(beside, key=lambda e: e["gap_m"])
+            cols.update(
+                {
+                    "beside.gap_m": m["gap_m"],
+                    "beside.side": m.get("side"),
+                    "beside.n": sum(bool(e.get("v")) for e in beside),
+                }
+            )
+        blocking = [e for e in eb if e.get("r") == "blocking"]
+        if blocking:
+            hits = [e for e in blocking if e.get("v")]
+            cols["blocking.depth_m"] = max((float(e.get("depth_m") or 0.0) for e in hits), default=0.0)
+            if hits:
+                cols["blocking.what"] = max(hits, key=lambda e: float(e.get("depth_m") or 0.0))["s"]
+        above = [e for e in eb if e.get("r") == "above" and e.get("v") and isinstance(e.get("gap_m"), (int, float))]
+        if above:
+            cols["above.gap_m"] = min(e["gap_m"] for e in above)
+        ne = _first_edge(eb, "near_edge", tgt)
+        if ne:
+            cols.update({"near_edge.dist_m": ne.get("dist_m"), "near_edge.edge": ne.get("edge")})
+        for name, col in (("dist", "dist_m"), ("facing", "facing_deg")):
+            e = _first_edge(eb, name, "robot")
+            if e and isinstance(e.get("v"), (int, float)):
+                cols[col] = e["v"]
+        rv = _first_edge(ea, "reach_vec")
+        if rv and isinstance(rv.get("v"), list) and len(rv["v"]) == 3:
+            cols.update(dict(zip(("reach_vec.fwd", "reach_vec.out", "reach_vec.z"), rv["v"], strict=True)))
+        at = _first_edge(ea, "at")
+        if at and isinstance(at.get("err_cm"), (int, float)):
+            cols["at.err_cm"] = at["err_cm"]
+        ap = _first_edge(ea, "approach")
+        if ap and isinstance(ap.get("v"), str):
+            cols["approach.side"] = ap["v"]
+        ev = r.get("events") or []
+        t_touch = next((e["t"] for e in ev if e["edge"][1] == "touching" and e.get("to") is True), None)
+        t_grip = next((e["t"] for e in ev if e["edge"][1] == "gripped" and e.get("to") is True), None)
+        t_moved = next((e["t"] for e in ev if e["edge"][1] == "moved"), None)
+        if kind in ("grip", "reach", "squeeze"):
+            cols["moved_before_grip"] = t_moved is not None and (t_grip is None or t_moved < t_grip)
+        if t_touch is not None and t_grip is not None:
+            cols["t_touch_to_grip_s"] = round(t_grip - t_touch, 2)
+        if (r.get("roles") or {}).get("carried") or any(e["edge"][1] == "slipped" for e in ev):
+            cols["slipped"] = any(e["edge"][1] == "slipped" for e in ev)
+        _flat(p, {k: v for k, v in cols.items() if v is not None}, out)
+    return out
+
+
+def row(rec: dict, start: dict | None, where: str, host: str, family: str, graph: list[dict] | None = None) -> dict:
     out = {"label": rec["label"], "task": rec["task"], "family": family, "ok": int(bool(rec["ok"])),
            "failure_class": rec.get("failure_class"), "skills": rec.get("skills"),
            "set": json.dumps(rec.get("set") or {}, sort_keys=True), "motor": rec.get("motor"),
@@ -106,7 +190,20 @@ def row(rec: dict, start: dict | None, where: str, host: str, family: str) -> di
             seen.add(s["step"])
             out[f"{s['step']}.ok"] = int(bool(s.get("ok")))
             _flat(f"{s['step']}.", {k: v for k, v in s.items() if k not in META_KEYS}, out)
+    if graph:
+        out.update(graph_columns(graph))
     return out
+
+
+def side_records(f: Path) -> list[dict]:
+    """The round's `<label>.past.jsonl` beside its .json (TODO 39), or nothing for a round recorded without one."""
+    p = f.with_name(f"{f.stem}.past.jsonl")
+    if not p.exists():
+        return []
+    try:
+        return [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+    except (ValueError, OSError, UnicodeDecodeError):
+        return []
 
 
 def scan(dirs: list[tuple[Path, str]], host: str) -> list[dict]:
@@ -125,10 +222,10 @@ def scan(dirs: list[tuple[Path, str]], host: str) -> list[dict]:
             if not isinstance(j, dict):
                 continue
             if all(k in j for k in ROUND_KEYS):
-                recs.append((j, str(f.parent), family))
+                recs.append((j, str(f.parent), family, side_records(f)))
             elif "start" in j and "task" in j:
                 starts.setdefault(f.stem, j)
-    return dedupe([row(j, starts.get(j["label"]), where, host, fam) for j, where, fam in recs])
+    return dedupe([row(j, starts.get(j["label"]), where, host, fam, graph) for j, where, fam, graph in recs])
 
 
 def dedupe(rows: list[dict]) -> list[dict]:

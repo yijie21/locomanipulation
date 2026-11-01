@@ -40,7 +40,7 @@ GUIDES = {
     # 2026-10-20 (user): the scene RSI line is the main line; its runbook (four levels, the check of recorded results)
     # and its design page. The VLA pages above are archived in place.
     "docs/rsi_logistics_room.md": 200,  # 2026-10-24: the logistics-room runbook (TODO 38)
-    "docs/rsi.md": 245,  # 2026-10-23: + section 8 (both video scripts) and section 9 (Unreal assets once, then renders)
+    "docs/rsi.md": 400,  # 2026-11-01 (user): 245 -> 400 for section 5.1 (two seeds) and the from-scratch run commands; before: + sections 8 and 9 (2026-10-23)
     "docs/rsi_design.md": 150,
     "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,

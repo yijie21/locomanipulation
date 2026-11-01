@@ -854,7 +854,11 @@ def claude(
     cmd = [
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
-        "--permission-mode", "bypassPermissions", "--allowedTools", "Bash", "--disallowedTools", tools,
+        # --allowedTools: an org policy on some hosts makes bypassPermissions deny every tool call in -p mode (the
+        # roles of pick-repro's iterations 1-5 ran with Bash refused, 2026-10-23); listing the tools lets them run,
+        # and --disallowedTools still wins, so a role's write ban holds (user 2026-11-01)
+        "--permission-mode", "bypassPermissions", "--allowedTools", "Bash(*),Read,Write,Edit,Glob,Grep",
+        "--disallowedTools", tools,
         *(["--effort", EFFORT.get(role) or EFFORT[role.split("_")[0]]] if (role in EFFORT or role.split("_")[0] in EFFORT) else []),
         *(["--add-dir", *allowed_dirs()] if allowed_dirs() else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),

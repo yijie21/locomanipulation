@@ -90,28 +90,35 @@ $PY scripts/rsi/successes.py
 
 ## 5. L1：一个任务族的内环
 
-以 pick_single（拿起 8 种物体）为例，从种子技能目录开始，这也是原来的第一个任务族。
+### 5.1 选起点：空种子，还是种子技能目录
 
-### 5.1 换成种子技能目录
+两种起点，由任务族文件决定，不用改代码：
+
+**(a) 空种子——从动作层长出技能**（任务族文件带 `sandbox` 块：`grasp_atomic`、`grasp_atomic_past`、`grasp_prep`、`box_bimanual`）。技能目录只有一个 `__init__.py`，`plan_for()` 对所有目标返回 None，种子一局也做不成；抓取从零由循环写出。`sandbox.py` 建沙盒时把 `sandbox.seed`（`scripts/rsi/seeds/atomic`）复制覆盖到沙盒的 `skills/`，并只保留 `sandbox.keep` 列的文件和 `closure` 追出的 import 闭包，经验库去掉所有代码补丁（规则 27）——角色找不到旧技能和旧记录。主仓库的技能目录不动，不用切分支。最终现任**写不回**主仓库（新文件和同名文件冲突，[详解](rsi_design.md)第 10 节），结果以封存集为准。10-20 以后的运行（grasp_atomic 四次、grasp_prep、box_bimanual）都是这种。
+
+**(b) 种子技能目录——接着已有技能改**（`pick_single` 和两轮外环的所有族）。技能目录是第一次写回之前的那一版：动作层加两个移植来的抓取程序，种子已经偶尔能抓。要先换掉主仓库的技能目录并提交到一个分支（沙盒 `git archive HEAD`，只导出已提交的代码；干净环境里提交前先 `git config user.name` 和 `user.email`）：
 
 ```bash
 git switch -c rsi-repro
-python3 scripts/rsi/kit.py seed
+python3 scripts/rsi/kit.py seed          # skills/ 只剩 __init__.py、grasp_program.py、pick.py，打印 the seed catalog
 git commit -qam "scene RSI: seed skills catalog"
 ```
 
-做什么：开一个分支，把技能目录换成第一次写回之前的那一版（动作层加两个移植来的抓取程序），提交。沙盒只导出已提交的代码，所以必须提交；干净环境里提交之前先 `git config user.name` 和 `user.email`。
-得到什么：`src/locomani/tasks/scene/skills/` 只剩 3 个文件（`__init__.py`、`grasp_program.py`、`pick.py`），打印 `the seed catalog`。
+最终现任能三方合并写回主仓库（5.3）。
+
+下面以 (a) 的 `grasp_atomic_past` 为例：ADT 公寓里 10 个 `pick_*` 任务（橙子、咖啡罐、洗洁精、马克杯、遥控器、木勺、蜡烛、小花瓶、盆栽、狼摆件），和 `grasp_atomic` 同样的任务、空种子和起点种子段，区别是沙盒带 `scripts/rsi/past.py`、不带经验库（`library_exclude` 列全部条目，纯从头），用来验证场景图记录和它的记录库列（TODO 39.6）。(b) 的命令把任务族名换成 `pick_single`、沙盒名换成 `pick-repro` 即可；原来 pick_single 跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
 
 ### 5.2 建沙盒、跑内环
 
 ```bash
-S=$LOCOMANI_WORKSPACE/code/rsi-scene/pick-repro
-python3 scripts/rsi/sandbox.py $S pick_single
-cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
+git status --short                        # 任务族文件和代码都要已提交：沙盒只导出 HEAD
+S=$LOCOMANI_WORKSPACE/code/rsi-scene/ga-past-a
+python3 scripts/rsi/sandbox.py $S grasp_atomic_past
+cd $S && nohup setsid $PY scripts/rsi/loop.py run grasp_atomic_past > loop.log 2>&1 &
+cd -
 ```
 
-做什么：建沙盒并抽池，然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数并给假设标状态，Manager 选至多 3 条（提过两轮以上、没做过、没被否定的机制会被驱动程序强制占一个名额），3 个 Engineer 并行写代码，Composer 合成一个候选，验收门判（`--candidates 1` 只用一个 Engineer、没有 Composer）。沙盒里带经验库，不含这个任务族自己的那条。每局记录带失败类型和关键事件，验收结论按类型给多赢少赢（TODO 33.15–33.17）。现任在验收池上已经超过 70% 时接着跑，要加 `--stop-rate`（比如 `--stop-rate 0.85`），否则一开跑就停；续跑沿用上次记下的值。
+做什么：建沙盒并抽池（诊断池 30、验收池 40，空种子族的池比 `pick_single` 小），然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。一张卡的机器先按第 0 节设 `RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6`；本机没有 `/workspace` 时 `export LOCOMANI_WORKSPACE=$HOME/workspace` 要在 `. scripts/paths.sh` 之前。建沙盒打印 `sandbox spec: seed scripts/rsi/seeds/atomic, N src modules kept`，几十秒。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数并给假设标状态，Manager 选至多 3 条（提过两轮以上、没做过、没被否定的机制会被驱动程序强制占一个名额），3 个 Engineer 并行写代码，Composer 合成一个候选，验收门判（`--candidates 1` 只用一个 Engineer、没有 Composer）。沙盒里带经验库，不含这个任务族自己的那条。每局记录带失败类型和关键事件，验收结论按类型给多赢少赢（TODO 33.15–33.17）。现任在验收池上已经超过 70% 时接着跑，要加 `--stop-rate`（比如 `--stop-rate 0.85`），否则一开跑就停；续跑沿用上次记下的值。
 角色在沙盒里能用的命令（规则第 18、32 条；都是人写的，循环只调用）：
 - `scripts/rsi/try.py`：点名几个起点、用一份技能目录跑，走 12 进程队列并行，返回逐局结果和对现任的翻转；每次至多 40 局、每个角色每轮至多 240 局（TODO 37.1）。
 - `PYTHONPATH=src $PY scripts/rsi/body.py reach --x 0.45 --y-out 0.05 --z 0.9 --att level --hand right`：身体模型——这个伸手目标（骨盆朝向系：前伸、朝手外侧、离地高度，加手腕姿态）控制器送不送得到、差多少。表在 `outputs/scene_rsi_20261016/body/`，建沙盒时复制进去（TODO 33.1.4）。
@@ -120,24 +127,49 @@ cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 - 假设里写 `design`，驱动程序在探针之后跑设计探针：一个因素分几档，强制在同一批诊断起点上（`scripts/rsi/design.py`；单独试可以 `PYTHONPATH=src $PY scripts/rsi/design.py grasp_atomic --pool <起点目录> --skills <技能目录> --out <目录> --factor spawn_bearing --levels 0 180 --starts 2`，TODO 33.19）。
 - `PYTHONPATH=src $PY scripts/rsi/prep.py outputs/scene_discovery/adt_apartment_mars DishSoap_1 --start <起点文件> --skills <技能目录>`：挑选器没有站位时，转、拉、挪邻居哪种目标能换来站位，技能包里有没有实现（TODO 33.5；任务族 `grasp_prep` 用起点的 `placement` 选项专抽这类局面）。
 驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；同一类失败（走路摔倒）有 2 局以上时，驱动程序把每局失败那一刻的命令从同一起点单独再跑一遍，判是动作层还是技能的毛病，动作层的写进 `loop/escalations.jsonl`（`scripts/rsi/isolate.py`，TODO 33.20）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`；角色的推理档位 `--effort 角色=档位`（默认 Reviewer high，其余 xhigh，TODO 37.5）。
-得到什么：账本在 `$S/outputs/scene_rsi_20261016/pick_single/loop/`。原来这一族跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
+得到什么：账本在 `$S/outputs/scene_rsi_20261016/grasp_atomic_past/loop/`，每轮一个 `iter_NN/`；现任的诊断局在 `…/grasp_atomic_past/diag/incumbent_<hash>/`，每局 `.json`、`.npz`、`.past.jsonl`。`grasp_atomic` 从空种子的第一次运行是 2 次采纳、封存集 0 → 31 / 50（[记录](handoff/grasp-atomic-line-20261023.md)）。
 
 ```bash
-cd $S && $PY scripts/rsi/loop.py status pick_single; cd -
+cd $S && $PY scripts/rsi/loop.py status grasp_atomic_past; cd -
 ```
 
 做什么：打印进度：第几次迭代、每次验收的结论、现任在验收池上的成绩、已花的时间和模型费。随时可以看。
 
+看 Reviewer 看到的东西（都在沙盒里跑，只读）：
+
+```bash
+cd $S
+cat outputs/scene_rsi_20261016/grasp_atomic_past/loop/iter_00/diag_digest.md | sed -n '/Scene-graph transitions/,/^## /p'
+D=outputs/scene_rsi_20261016/grasp_atomic_past/diag/$(ls outputs/scene_rsi_20261016/grasp_atomic_past/diag | grep incumbent | tail -1)
+PYTHONPATH=src $PY scripts/rsi/past.py show $D/<label>                       # 一局：每步的实体、前后关系、翻转事件、期待与差异
+PYTHONPATH=src $PY scripts/rsi/past.py compare $D/<失败局> $D/<成功局>        # 两局按步骤种类对齐，只列值不同的边
+PYTHONPATH=src $PY scripts/rsi/records.py features --task pick_Mug_2         # 记录库的列（含场景图列 reach.beside.gap_m 等）和范围
+PYTHONPATH=src $PY scripts/rsi/records.py query reach.beside.gap_m "<" 0.03 --task pick_Mug_2 --expect fails   # 一个 measure 的分组结果
+grep '"step": "review"' outputs/scene_rsi_20261016/grasp_atomic_past/loop/ledger.jsonl | tail -3                # 每轮 Reviewer 的用时和费用
+python3 -c "import json;[print(h['id'],h.get('status'),h.get('measure')) for h in json.load(open('outputs/scene_rsi_20261016/grasp_atomic_past/loop/iter_00/hypotheses.json'))['hypotheses']]"
+cd -
+```
+
+做什么：摘要末尾那一节列出失败局第一个不期待的转移、翻转时间线和本轮可用的图列；`show` / `compare` 看单局和对照；`features` / `query` 是 Reviewer 写 `measure` 前后用的同一套命令；账本的 `review` 行有每轮的 `seconds`、`cost_usd`；`hypotheses.json` 里 `status` 由探针或 `measure` 定（已验证 / 已否定 / 仍是假设）。要量改动有没有用，就看这几项随轮次的变化和 Reviewer 调用里打开 `.npz`、自己写脚本的次数（会话记录在 `$LOCOMANI_TMP/rsi_scene_ga-past-a/`）。
+
 ### 5.3 封存集、写回、登记
 
 ```bash
-cd $S && $PY scripts/rsi/sealed.py pick_single; cd -
-SUM=$S/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
+cd $S && $PY scripts/rsi/sealed.py grasp_atomic_past; cd -
+SUM=$S/outputs/scene_rsi_20261016_hidden/grasp_atomic_past/sealed/summary.json
+python3 -c "import json,sys; s=json.load(open(sys.argv[1])); print(s['final'], s['versions'])" $SUM
+```
+
+做什么：在封存集（50 局）上跑种子和每一版被接受的现任，`versions` 是各版本的成功数、`final` 是最终版本的名字。空种子的族到这里为止：写不回主仓库，结果以 `summary.json` 为准，记进方案页和 STATE。
+
+(b) 种子技能目录的族（`pick_single`）还要写回和登记：
+
+```bash
 python3 scripts/rsi/writeback.py $S pick_single
 $PY scripts/rsi/regress.py add pick_single $S pick --last $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['final'])" $SUM)
 ```
 
-做什么：第一条在封存集上跑种子和最终的现任；第二条把最终现任合并进主仓库的技能目录；第三条把这个任务族登记进回归，记录取最终现任在封存集上的那一批，以后每次写回或改场景都和它比。
+做什么：第一条把最终现任三方合并进主仓库的技能目录；第二条把这个任务族登记进回归，记录取最终现任在封存集上的那一批，以后每次写回或改场景都和它比。
 得到什么：`$SUM` 里 `versions` 列出种子和最终版本各自的成功数，`final` 是最终版本的名字；`prediction` 是每个版本上身体模型的预测对实送的比较：空手伸手的 AUC、预计误差对实送误差、失败局里出手前就被判"多半够不到"的有几局（TODO 33.1.2）。有经验库的运行再跑 `python3 scripts/rsi/report/library_monitor.py run $S --out $S/library.json`：假设里点名经验库的比例和点了哪几条、用词接近原文的比例、每轮假设数、Manager 认定的旧机制数（TODO 33.11，只读记录，几秒钟）。原来种子 0 / 80，最终 41 / 80（当时的场景）。写回改动了 `src/locomani/tasks/scene/skills/`，跑 `make test` 通过后提交。
 
 ## 6. L2：一轮外环
