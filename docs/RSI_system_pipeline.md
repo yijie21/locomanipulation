@@ -157,7 +157,36 @@ digest.past_lines ◀───────────────────�
 loop.named_objects：skills/ 里引用记录器 → 草稿作废（规则 38）
 ```
 
-一条记录对应一个技能步骤（或一次重试），含动作上下文、角色绑定、按相关性选的实体（目标、两手、支撑面、目标台面 / 容器、0.30 m 内的邻居、站位足迹和走廊里的家具、上方 0.5 m 内的面、区域）、前后两张局部图（状态 + 五类边：接触、持握、支撑、空间、相对位姿，加谓词）、中间的翻转事件、按原语的期待转移和差异、结果和 NPZ 证据区间。它只写不读，不改任何一局的结局（50 局重跑待做），不进验收门、哨兵和回归。
+一条记录对应一个技能步骤（或一次重试）。它只写不读，不改任何一局的结局（50 局重跑待做），不进验收门、哨兵和回归。
+
+### 4.1 怎么保存
+
+- **时机**：一局跑完、`scene_round.py` 写 `<label>.json` 之前，`past.build()` 从四个来源构造，`past.write()` 落盘。运行中不构造图；动作层每拍只多记一个 `contacts` 字段。
+- **来源**：步骤日志 `steps`（哪一步、起止、成败、检查值、第几次重试）、原语调用日志 `calls`（走、伸手、合爪各自的参数和起止）、轨迹 NPZ（50 Hz 的位姿、关节、夹爪、物体、接触对）、场景文件 `scene_meta.json`（包围盒、质量、台面顶高、所属家具）。
+- **格式与位置**：每局一个 `<label>.past.jsonl`，和 `.json` / `.npz` 同目录，一行一条记录；三个池都生成。真实一局 5 步约 24 KB。先写 `.tmp` 再改名；构造器出错只写一行 `{"error": …}`，不影响局的成败。
+- **旧局**：10-23 之前建的沙盒没有接触通道和调用日志，记录照样能造——接触类的边记 `unknown`，步骤种类改从轨迹的原语标签推（`kind_src: "primitive"`，`show` 里显示 `reach?`），这时推不出用哪只手，`expected` 为空。
+
+### 4.2 一条记录里有什么（schema `PAST-locomani-0.1`）
+
+以 `pick-repro` 真实一局 `jam_pickup_s100047` 的第 3 步为例：
+
+| 块 | 字段 | 内容 | 这一步里 |
+|---|---|---|---|
+| 动作上下文 | `step` `step_index` `attempt` `kind` `kind_src` `skills` `set` `action{t0,t1,ok,why,calls,check,info}` | 步骤名和序号、第几次重试、原语种类（walk / turn / sidestep / posture / hold / reach / grip / release / squeeze / mixed / none）及其来源、技能版本 hash、参数覆盖、起止时间、成败、原语调用、`stage()` 的检查值 | `grasp [reach] 21.2–28.2 s OK` |
+| 角色 | `roles{target, effector, carried, support, goal_surface, container, stance, corridor, pregrasp}` | 从原语调用推出的目标物体、用的哪只手、拿着什么、当前支撑面、目标谓词点名的台面 / 容器、三种区域 | target=Jam_Anon, support=KitchIsland__0 |
+| 范围 | `scope{selector, initial, initial_why, added}` | 四个常数、初始实体列表、每个为什么进来、执行中碰到才加入的（带时间和原因） | 任务物体、机器人、支撑面、所属家具、邻居 WoodenSpoon（"neighbour 0.05 m"） |
+| 实体静态属性 | `entities{id: {type, …}}` | 物体：刚体名、质量、半尺寸、质心、能否移动、是否容器、竖直轴；面：顶高、半尺寸、偏航、可接近边、所属家具；手：组成刚体、最大开口；机器人；区域：形状和参数（圆盘 / 线段 / 点 / 矩形） | Jam_Anon 0.5 kg，半尺寸 [0.03, 0.04, 0.09] |
+| 前后状态 | `G_before.states` `G_after.states` | 物体：位置、四元数、线速度、角速度、底面高、偏航；手：位置、开口、相对参考的误差、腕姿态档、手臂 7 关节角；机器人：骨盆位置和高度、偏航、是否摔倒、当前原语和模式 | |
+| 前后的边 | `G_before.edges` `G_after.edges`，每条 `{s, r, o, v, src, …数值}` | 接触 `touching`；持握 `gripped`（两指都碰到）`held`（谓词：夹住且离开所有台面）`rel_pose`（物体在手里的偏置）；支撑 `supported_by` `in`；空间 `above`（上方净空 `gap_m`）`beside`（邻居的缝 `gap_m`、在目标哪一侧 `side`）`near_edge`（离哪条台沿多远）`blocking`（和站位 / 走廊相交多深）`dist`（机器人到目标，带方位角）`facing`；相对位姿 `reach_vec`（目标点在骨盆系的前伸 / 外侧 / 高度）`approach`（从物体哪一面接近、腕姿态）`at`（手或机器人到没到目标点，带误差）；谓词 `upright`。只记一端是角色或区域的对。`src` ∈ observed / predicate / derived / approx / unknown | `supported_by KitchIsland__0 true→false`；`beside WoodenSpoon gap 0.052 +x`；`near_edge -x 0.127` |
+| 事件 | `events[{t, edge, from, to, src, cm?}]` | 区间内布尔边的每次翻转（接触和夹持逐拍查，其余每 0.1 s）、`moved`（物体位移 > 2 cm）、`slipped`（被持物体和手腕距离变化 > 1 cm） | 25.2 s `moved 2.3 cm`；25.3 s 离开台面 |
+| 期待与差异 | `expected[{edge, to, …}]` `discrepancies[{…, observed}]` | 按原语的固定表：walk → 到站位、足迹无阻挡；reach → 手到目标 3 cm 内、目标和邻居不动、走廊无阻挡；grip → `gripped`；拿着往上伸 → `held` 且离开支撑；release → 松开，目标谓词点名时落到台面 / 进容器。`discrepancies` 是期待里没成立的项，只是差异，不是因果判断 | |
+| 结果与证据 | `outcome{step_ok, round_ok, round_why, failure_class}` `evidence{npz, k0, k1, json_step}` | 步骤和整局的成败、失败类型；NPZ 文件名和拍区间 | ticks 1058–1409 |
+
+### 4.3 谁怎么读
+
+- **Reviewer**（提示词规定的顺序）：先看摘要 `diag_digest.md` 里的 "Scene-graph transitions" 一节（≤ 115 行：每个任务失败局里第一个不期待的转移计数，对照成功局同类步骤的值；每个失败局从第一个操作步骤起的翻转时间线，不期待的标 `*`）；再 `scripts/rsi/past.py show <局>` 按步骤看，或 `compare <失败局> <成功局>` 按原语种类对齐两局、只列值不同的边；最后才按 `evidence` 的拍区间读 NPZ。Manager / Engineer 第一版不读它。
+- **人**：`.past.jsonl` 本身是可读 JSON；`show` / `compare` 的文本输出和摘要那一节给人看也够用；`--json` 导出单条。节点—边的图形页（`past.py html`）是第二阶段。
+- **技能**：不许读。技能代码里 import `locomani.tasks.scene.past`、或字符串含 `past.jsonl` / `rsi/past.py`，草稿作废（规则第 38 条，`loop.named_objects`）。
 
 ## 5. 薄弱处（2026-11-01 的观察，未动）
 
