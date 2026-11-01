@@ -2731,11 +2731,13 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
         return cli if cli is not None else (meta[key] if resuming and key in meta else default)
 
     env_wall = os.environ.get("RSI_MAX_WALL_H")
+    # a family file may set its own `stop_rate` (grasp_atomic_past 0.85, user 2026-11-01); the command line still wins
+    fam_stop = (family_spec().get("stop_rate") if FAMILY else None) or STOP_RATE_DEFAULT
     return dict(
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", WALL_DEFAULT_H)),
-        stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", STOP_RATE_DEFAULT)),
+        stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", fam_stop)),
         engineer_late_min=float(
             pick(getattr(a, "engineer_late_min", None), "engineer_late_min", ENGINEER_LATE_MIN_DEFAULT)
         ),  # fmt: skip

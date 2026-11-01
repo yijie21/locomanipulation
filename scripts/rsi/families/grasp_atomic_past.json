@@ -24,6 +24,7 @@
    "n": 50
   }
  },
+ "stop_rate": 0.85,
  "plan": "scripts/rsi/plans/grasp_atomic.md",
  "skills_note": "the incumbent's skills; the seed was empty (`__init__.py`: plan_for covers no goal), everything else in it the loop wrote",
  "library_exclude": [
