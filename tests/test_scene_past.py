@@ -326,6 +326,9 @@ class Build(unittest.TestCase):
         self.assertEqual(P.build(dict(label="x", steps=[], calls=[]), None, META_T, TASK), [])
         e = P.error_line("x", "boom")
         self.assertEqual((e["schema"], e["label"], e["error"]), (P.SCHEMA, "x", "boom"))
+        n = P.note_line("x", "no records: no skill covers this goal")
+        self.assertEqual((n["schema"], n["label"], n["note"]), (P.SCHEMA, "x", "no records: no skill covers this goal"))
+        self.assertNotIn("record_id", n)
 
     def test_write_and_read_roundtrip(self):
         recs = P.build(grasp_round_rec(), grasp_round_arrays(), META_T, TASK)

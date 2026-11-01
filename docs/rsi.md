@@ -158,7 +158,7 @@ grep -c "requires approval" $F/loop/iter_00/reviewer_raw.json                  #
 cd -
 ```
 
-得到什么：三个文件都在、摘要有那一节、`void` 为 false、计数为 0，就可以放着跑。空种子的现任一局都不动（`plan_for` 返回 None），第 0 轮每局只有 `settle` / `hold` 两步，图列也只有 `hold.dist_m` 这类；`reach.*` / `grip.*` 列要到第一个被接受的候选之后才出现。计数不为 0 说明这台机器的 `claude -p` 没放行 Bash（`loop.py` 的 `--allowedTools`，TODO 39.6），Reviewer 什么工具都跑不了，停掉查。
+得到什么：三个文件都在、摘要有那一节、`void` 为 false、计数为 0，就可以放着跑。空种子的现任一局都不动（`plan_for` 返回 None，记录 `why` 是 `no skill covers this goal`），这种局不加载世界、不跑仿真，`.past.jsonl` 只有一行 `note`（2026-11-01 之前建的沙盒里是 0 字节的空文件，意思相同）；第一个候选开始动以后，每局才有按步骤的记录，一开始图列也只有 `hold.dist_m` 这类；`reach.*` / `grip.*` 列要到第一个被接受的候选之后才出现。计数不为 0 说明这台机器的 `claude -p` 没放行 Bash（`loop.py` 的 `--allowedTools`，TODO 39.6），Reviewer 什么工具都跑不了，停掉查。
 
 之后要看 Reviewer 看到的东西（都在沙盒里跑，只读）：
 

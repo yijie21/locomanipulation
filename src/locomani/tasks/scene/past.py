@@ -788,6 +788,11 @@ def error_line(label: str, err: str) -> dict:
     return dict(schema=SCHEMA, label=label, error=str(err)[:300])
 
 
+def note_line(label: str, note: str) -> dict:
+    """A round with no records and nothing wrong: the plan was refused before the world moved."""
+    return dict(schema=SCHEMA, label=label, note=str(note)[:300])
+
+
 def _json_default(x):
     if isinstance(x, np.ndarray):
         return x.round(5).tolist()

@@ -148,7 +148,13 @@ def run_round(
         motor=motor,
     )
     try:  # TODO 39.3: the PAST records beside the round (<label>.past.jsonl); a recorder bug never costs a round
-        PAST.write(out, label, PAST.build(rec, arrays, world.meta, task) if arrays is not None else [])
+        if (
+            arrays is None
+        ):  # the plan was refused before the world moved (an empty seed's rounds): say so, not a 0-byte file
+            records = [PAST.note_line(label, f"no records: {rec.get('why') or 'the world never moved'}")]
+        else:
+            records = PAST.build(rec, arrays, world.meta, task)
+        PAST.write(out, label, records)
     except Exception as e:
         PAST.write(out, label, [PAST.error_line(label, f"{type(e).__name__}: {e}")])
     tmp = f.with_suffix(".tmp")

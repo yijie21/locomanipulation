@@ -209,3 +209,17 @@ class DigestColumns(unittest.TestCase):
         self.assertIn("Record-library columns from these records", text)
         self.assertIn("reach.beside.gap_m", text)
         self.assertIn('"measure"', text)
+
+
+class NoPlanRound(unittest.TestCase):
+    def test_show_reports_the_note_of_a_round_that_never_moved(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "pick_s1.past.jsonl").write_text(
+                json.dumps(
+                    dict(schema="PAST-locomani-0.1", label="pick_s1", note="no records: no skill covers this goal")
+                )
+                + "\n"
+            )
+            self.assertEqual(past_cli.show(Path(d) / "pick_s1"), "no records: no skill covers this goal")
+            (Path(d) / "pick_s2.past.jsonl").write_text("")
+            self.assertEqual(past_cli.show(Path(d) / "pick_s2"), "no records")

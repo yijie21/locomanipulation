@@ -99,13 +99,15 @@ def record_lines(r: dict) -> list[str]:
 
 
 def show(path: Path, step: int | None = None, as_json: bool = False) -> str:
-    recs = records(path)
+    lines = PAST.read(side_file(path))
+    recs = [r for r in lines if "record_id" in r]
     if step is not None:
         recs = [r for r in recs if r["step_index"] == step]
     if as_json:
         return "\n".join(json.dumps(r, indent=1) for r in recs)
     if not recs:
-        return "no records"
+        notes = [x.get("note") or f"error: {x['error']}" for x in lines if x.get("note") or x.get("error")]
+        return "; ".join(notes) if notes else "no records"
     ok = recs[0].get("outcome", {}).get("round_ok")
     out = [f"{recs[0]['label']}  task {recs[0]['task']}  round {'OK' if ok else 'FAIL'}"]
     for r in recs:
