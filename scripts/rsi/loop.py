@@ -835,12 +835,27 @@ def undo_commits(head0: str) -> dict | None:
     return dict(was=head0, moved_to=head1)
 
 
+BODY_TABLE = REPO / "outputs" / "scene_rsi_20261016" / "body" / "reach_knn_envelope.npz"
+BODY_MISSING = (
+    "\n\nThe body model's reach table (outputs/scene_rsi_20261016/body/) is not on this machine, so `body.py reach`, "
+    "`choose.py` and `prep.py` cannot run and the round records carry no `pred_*` prediction. Do not look for the "
+    "table (a `find` that names the hidden directory to exclude it voided the first Reviewer of ga-past-a, "
+    "2026-11-01); reason from the records, the digest and graspability.py instead.\n"
+)
+
+
+def body_note() -> str:
+    """TODO 39.6: tell every role when the body table is absent, so none goes looking for it (the table is runtime
+    data from the A800 probe, not in git; sandbox.py copies it only when the origin has it)."""
+    return "" if BODY_TABLE.exists() else BODY_MISSING
+
+
 def claude(
     role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None, stop: threading.Event | None = None
 ) -> tuple[dict, dict]:
     """One role call. `stop` (TODO 37.3): an event the driver sets to give the role up; run_role then kills the
     session and raises RoleLate."""
-    prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role))
+    prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role)) + body_note()
     (it_dir / f"{role}_prompt.md").write_text(prompt)
     if stub is not None:
         return stub, dict(cost_usd=0.0, session=None, seconds=0.0)
