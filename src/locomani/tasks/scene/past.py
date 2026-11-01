@@ -64,13 +64,28 @@ def calls_in(calls: list[dict], t0: float, t1: float) -> list[dict]:
     return [c for c in calls if t0 <= float(c.get("t0", -1)) < t1]
 
 
-def kind_of(calls: list[dict]) -> str:
-    kinds = {KIND_OF_CALL.get(c.get("name"), "mixed") for c in calls}
+def _one_kind(kinds: set) -> str:
     if not kinds:
         return "none"
     if len(kinds) == 1:
         return kinds.pop()
     return "mixed"
+
+
+def kind_of(calls: list[dict]) -> str:
+    return _one_kind({KIND_OF_CALL.get(c.get("name"), "mixed") for c in calls})
+
+
+def kind_from_primitives(arrays: dict, k0: int, k1: int) -> str:
+    """The step's kind from the trace's per-tick primitive labels (Motor.primitive) over ticks k0..k1: the fallback
+    for rounds recorded before the call log existed. No side comes with it, so the effector stays unknown."""
+    if "primitive" not in arrays or "primitives" not in arrays:
+        return "none"
+    names = {
+        str(arrays["primitives"][int(i)]) for i in np.asarray(arrays["primitive"][k0 : max(k1, k0 + 1)])
+    }  # k1 is the next step's first tick
+    names.discard("")
+    return _one_kind({KIND_OF_CALL.get(n, "mixed") for n in names})
 
 
 def side_of(call: dict) -> str | None:
@@ -95,7 +110,7 @@ def roles_of(kind: str, calls: list[dict], task_objects: list[str], *, held_befo
     if kind in ("release", "squeeze") or (kind == "reach" and carried):
         target = carried
     if target is None and kind == "reach":
-        goal = next(((c.get("args") or [None, None]) + [None])[1] for c in calls if c.get("name") == "reach")
+        goal = next((((c.get("args") or [None, None]) + [None])[1] for c in calls if c.get("name") == "reach"), None)
         if goal is not None and task_objects:
             target = min(
                 task_objects,
@@ -727,7 +742,9 @@ def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
         k0 = _tick_of(arrays, iv.t0)
         k1 = max(k0, _tick_of(arrays, iv.t1, last=True))
         cs = calls_in(calls, iv.t0, iv.t1)  # an empty interval holds no call
-        kind = kind_of(cs)
+        kind, kind_src = kind_of(cs), "calls"
+        if not cs and iv.t1 > iv.t0:  # a round from before the call log (TODO 33.20): the trace's primitive labels
+            kind, kind_src = kind_from_primitives(arrays, k0, k1), "primitive"
         f0, f1 = Frame(arrays, meta, k0), Frame(arrays, meta, k1)
         positions = {o: f0.obj_pose(o)[0] for o in task["objects"] if o in meta["objects"]}
         roles = roles_of(kind, cs, task["objects"], held_before=held_state, positions=positions)
@@ -752,7 +769,7 @@ def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
                       check=row.get("check") or {}, info={k: v for k, v in row.items() if k not in skip})  # fmt: skip
         out.append(dict(
             schema=SCHEMA, record_id=f"{label}/{iv.index}.{iv.attempt}", label=label, task=task["id"],
-            step_index=iv.index, attempt=iv.attempt, step=iv.step, kind=kind,
+            step_index=iv.index, attempt=iv.attempt, step=iv.step, kind=kind, kind_src=kind_src,
             skills=rec.get("skills"), set=rec.get("set") or {}, predicate_version="predicates.py",
             action=action, roles=roles_out, scope=scope, entities=entities,
             G_before=g_before, events=events, G_after=g_after, expected=expected,

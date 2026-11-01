@@ -57,7 +57,8 @@ def _key(e: dict) -> tuple:
 
 def record_lines(r: dict) -> list[str]:
     a = r.get("action") or {}
-    head = (f"{r['step_index']}.{r['attempt']} {r['step']} [{r['kind']}] {a.get('t0', 0):.1f}-{a.get('t1', 0):.1f} s "
+    kind = r["kind"] + ("?" if r.get("kind_src") == "primitive" else "")  # '?': from the trace, no call log
+    head = (f"{r['step_index']}.{r['attempt']} {r['step']} [{kind}] {a.get('t0', 0):.1f}-{a.get('t1', 0):.1f} s "
             f"{'OK' if a.get('ok') else 'FAIL'}")  # fmt: skip
     if a.get("why"):
         head += f"  {a['why']}"
@@ -74,7 +75,7 @@ def record_lines(r: dict) -> list[str]:
     for k in sorted(set(before) | set(after), key=lambda k: (k[1], str(k[0]), str(k[2]))):
         b, f = before.get(k), after.get(k)
         e = f or b
-        line = f"  {_edge(*k)}  {_b(b['v'] if b else None)}→{_b(f['v'] if f else None)}"
+        line = f"  {_edge(*k)}  {_b(b['v']) if b else '-'}→{_b(f['v']) if f else '-'}"  # '-': no such edge then
         nums = ", ".join(f"{kk} {vv}" for kk, vv in e.items() if kk not in SKIP_IN_NUMS)
         if nums:
             line += f"  ({nums})"
@@ -150,8 +151,9 @@ def compare(a: Path, b: Path) -> str:
         eb = {_key(e): e for e in rb[j]["G_after"]["edges"]}
         for k in sorted(set(ea) | set(eb), key=lambda k: (k[1], str(k[0]), str(k[2]))):
             va, vb = (ea.get(k) or {}).get("v"), (eb.get(k) or {}).get("v")
-            if va != vb:
-                out.append(f"  {_edge(*k)}  A {_b(va)}  B {_b(vb)}  <-- differs")
+            if va != vb or (k in ea) != (k in eb):
+                sa, sb = (_b(va) if k in ea else "-"), (_b(vb) if k in eb else "-")  # '-': no such edge in that round
+                out.append(f"  {_edge(*k)}  A {sa}  B {sb}  <-- differs")
         fa = [(e["edge"][1], e["to"]) for e in ra[i].get("events") or []]
         fb = [(e["edge"][1], e["to"]) for e in rb[j].get("events") or []]
         if fa != fb:

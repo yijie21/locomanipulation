@@ -337,3 +337,17 @@ class Build(unittest.TestCase):
         self.assertEqual(len(back), len(recs))
         self.assertEqual(back[1]["record_id"], recs[1]["record_id"])
         json.dumps(back)  # plain JSON all the way down
+
+
+class OldRounds(unittest.TestCase):
+    def test_without_a_call_log_the_kind_comes_from_the_trace_primitives(self):
+        arr = grasp_round_arrays()
+        arr["primitives"] = np.array(["reach", "grip", "hold"])
+        arr["primitive"] = np.array([0] * 20 + [1] * 10 + [0] * 10, dtype=np.int16)
+        rec = grasp_round_rec()
+        rec["calls"] = []
+        recs = P.build(rec, arr, META_T, TASK)
+        self.assertEqual([r["kind"] for r in recs], ["none", "reach", "grip", "reach"])
+        self.assertEqual([r["kind_src"] for r in recs], ["calls", "primitive", "primitive", "primitive"])
+        self.assertIsNone(recs[2]["roles"]["effector"])  # the trace carries no side
+        self.assertEqual(recs[2]["expected"], [])
