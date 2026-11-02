@@ -195,6 +195,17 @@ $PY scripts/rsi/regress.py add pick_single $S pick --last $(python3 -c "import j
 做什么：第一条把最终现任三方合并进主仓库的技能目录；第二条把这个任务族登记进回归，记录取最终现任在封存集上的那一批，以后每次写回或改场景都和它比。
 得到什么：`$SUM` 里 `versions` 列出种子和最终版本各自的成功数，`final` 是最终版本的名字；`prediction` 是每个版本上身体模型的预测对实送的比较：空手伸手的 AUC、预计误差对实送误差、失败局里出手前就被判"多半够不到"的有几局（TODO 33.1.2）。有经验库的运行再跑 `python3 scripts/rsi/report/library_monitor.py run $S --out $S/library.json`：假设里点名经验库的比例和点了哪几条、用词接近原文的比例、每轮假设数、Manager 认定的旧机制数（TODO 33.11，只读记录，几秒钟）。原来种子 0 / 80，最终 41 / 80（当时的场景）。写回改动了 `src/locomani/tasks/scene/skills/`，跑 `make test` 通过后提交。
 
+
+### 5.4 Recorded Files for Human and Reviewer 
+```bash
+~/workspace/code/rsi-scene/ga-past-b/outputs/scene_rsi_20261016/grasp_atomic_past/
+├── diag/
+│   ├── incumbent_<hash>/<任务>_s<seed>.past.jsonl   现任在诊断池上每一局的记录（和 .json / .npz 同目录）
+│   └── candidate_<hash>/<任务>_s<seed>.past.jsonl   每份 Engineer 草稿、Composer 候选在诊断池上的记录
+└── loop/iter_NN/diag_digest.md                      每轮给 Reviewer 的摘要，含 "Scene-graph transitions" 一节
+```
+
+
 ## 6. L2：一轮外环
 
 ```bash
