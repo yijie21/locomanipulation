@@ -131,3 +131,39 @@ class Page(unittest.TestCase):
             out = Path(d) / "page.html"
             self.assertEqual(PV.main([str(src), "--scene", str(scene), "--out", str(out)]), 0)
             self.assertGreater(out.stat().st_size, 2000)
+
+
+class English(unittest.TestCase):
+    def tearDown(self):
+        PV.set_lang("zh")
+
+    def test_the_english_page_has_no_chinese_text(self):
+        PV.set_lang("en")
+        with tempfile.TemporaryDirectory() as d:
+            a = write(d, "pick_Mug_s1", walk_and_grip("pick_Mug_s1", ok=False))
+            b = write(d, "pick_Mug_s2", walk_and_grip("pick_Mug_s2", ok=True))
+            pages = [PV.single(a, META), PV.compare(a, b, META)]
+        for text in pages:
+            self.assertIn("<html lang='en'>", text)
+            cjk = [ch for ch in text if "一" <= ch <= "鿿"]
+            self.assertEqual(cjk, [], "".join(cjk[:40]))
+        self.assertIn("expected true ✗", pages[0])
+        self.assertIn("Zoom to this step", pages[0])
+        self.assertIn("round failed", pages[0])
+        self.assertIn("(flickered 3 times)", PV.events_html(dict(events=walk_and_grip("x", True)[1]["events"])))
+        self.assertIn(" · 1 differ", pages[1])
+
+    def test_the_english_entry_point_writes_a_dot_en_page(self):
+        spec = importlib.util.spec_from_file_location(
+            "past_view_en", REPO / "scripts" / "rsi" / "report" / "past_view_en.py"
+        )
+        EN = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(EN)
+        with tempfile.TemporaryDirectory() as d:
+            src = write(d, "pick_Mug_s1", walk_and_grip("pick_Mug_s1", ok=True))
+            scene = Path(d) / "scene"
+            scene.mkdir()
+            (scene / "scene_meta.json").write_text(json.dumps(META))
+            out = Path(d) / "page.html"
+            self.assertEqual(EN.main([str(src), "--scene", str(scene), "--out", str(out)]), 0)
+            self.assertIn("<html lang='en'>", out.read_text())

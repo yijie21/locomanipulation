@@ -39,38 +39,203 @@ OUT = REPO / "outputs" / "scene_rsi_20261016" / "past_view"
 PAD_M = 0.3
 FRAME_SIZE = (640, 480)
 
-# relation -> (class, Chinese gloss); classes colour the edges and group the list
-REL = {
-    "touching": ("contact", "接触：两个刚体在这一刻有接触点（MuJoCo 接触）"),
-    "gripped": ("holding", "两指夹住：这只手的两根手指都碰到物体"),
-    "held": ("holding", "持握（谓词）：夹住且离开所有台面"),
-    "rel_pose": ("holding", "物体在手里的偏置（手腕减物体位置，m）"),
-    "supported_by": ("support", "支撑：物体底面在台面顶 ±2 cm 且在台面足迹内、未被持"),
-    "in": ("support", "在容器内（谓词）"),
-    "above": ("spatial", "上方净空：目标正上方 0.5 m 内的面，gap 是到目标顶面的距离"),
-    "beside": ("spatial", "邻居：0.30 m 内的物体，gap 是两个包围盒之间的缝，side 是在目标的哪一侧"),
-    "near_edge": ("spatial", "离台沿：目标到最近一条台沿的距离"),
-    "blocking": ("spatial", "阻挡：包围盒和站位圆盘或接近走廊相交，depth 是相交深度"),
-    "dist": ("spatial", "机器人骨盆到目标的水平距离，bearing 是目标相对朝向的方位角"),
-    "facing": ("spatial", "机器人朝向和目标方位的夹角（度）"),
-    "reach_vec": ("relpose", "伸手目标点在骨盆系的前伸 / 朝手外侧 / 高度（m）"),
-    "approach": ("relpose", "手从物体的哪一面接近"),
-    "at": ("relpose", "到位：手（夹爪中心）或机器人到目标点的误差"),
-    "upright": ("predicate", "竖直（谓词）：物体竖直轴偏离不超过 15°"),
-    "moved": ("event", "物体位移超过 2 cm"),
-    "slipped": ("event", "被持物体和手腕的距离变化超过 1 cm"),
+# relation -> class; classes colour the edges and group the list
+REL = {"touching": "contact", "gripped": "holding", "held": "holding", "rel_pose": "holding", "supported_by": "support",
+       "in": "support", "above": "spatial", "beside": "spatial", "near_edge": "spatial", "blocking": "spatial",
+       "dist": "spatial", "facing": "spatial", "reach_vec": "relpose", "approach": "relpose", "at": "relpose",
+       "upright": "predicate", "moved": "event", "slipped": "event"}  # fmt: skip
+CLASSES = ("contact", "holding", "support", "spatial", "relpose", "predicate", "event")
+TYPES = ("object", "effector", "robot", "surface", "furniture", "region")
+
+# every word the page shows, per language (`--lang`; past_view_en.py is the English entry point)
+LANG = {
+    "zh": dict(
+        html_lang="zh",
+        gloss={
+            "touching": "接触：两个刚体在这一刻有接触点（MuJoCo 接触）",
+            "gripped": "两指夹住：这只手的两根手指都碰到物体",
+            "held": "持握（谓词）：夹住且离开所有台面",
+            "rel_pose": "物体在手里的偏置（手腕减物体位置，m）",
+            "supported_by": "支撑：物体底面在台面顶 ±2 cm 且在台面足迹内、未被持",
+            "in": "在容器内（谓词）",
+            "above": "上方净空：目标正上方 0.5 m 内的面，gap 是到目标顶面的距离",
+            "beside": "邻居：0.30 m 内的物体，gap 是两个包围盒之间的缝，side 是在目标的哪一侧",
+            "near_edge": "离台沿：目标到最近一条台沿的距离",
+            "blocking": "阻挡：包围盒和站位圆盘或接近走廊相交，depth 是相交深度",
+            "dist": "机器人骨盆到目标的水平距离，bearing 是目标相对朝向的方位角",
+            "facing": "机器人朝向和目标方位的夹角（度）",
+            "reach_vec": "伸手目标点在骨盆系的前伸 / 朝手外侧 / 高度（m）",
+            "approach": "手从物体的哪一面接近",
+            "at": "到位：手（夹爪中心）或机器人到目标点的误差",
+            "upright": "竖直（谓词）：物体竖直轴偏离不超过 15°",
+            "moved": "物体位移超过 2 cm",
+            "slipped": "被持物体和手腕的距离变化超过 1 cm",
+        },
+        cls={
+            "contact": "接触",
+            "holding": "持握",
+            "support": "支撑",
+            "spatial": "空间",
+            "relpose": "相对位姿",
+            "predicate": "谓词",
+            "event": "事件",
+        },  # fmt: skip
+        type={
+            "object": "物体",
+            "effector": "手",
+            "robot": "机器人",
+            "surface": "台面",
+            "furniture": "家具",
+            "region": "区域",
+        },
+        src={"observed": "观测", "predicate": "谓词", "derived": "几何推导", "approx": "近似", "unknown": "未知"},
+        unknown="未知",
+        sep="，",
+        colon="：",
+        lp="（",
+        rp="）",
+        gap="　",
+        semi="；",
+        zoom_in="放大到这一步",
+        zoom_out="整局视野",
+        only="只看翻转 / 差异",
+        theme="切换深浅色",
+        legend_ent="实体",
+        legend_rel="关系",
+        leg_dash="虚线 = 未知",
+        leg_bold="加粗 = 这一步翻转",
+        leg_red="红 = 期待没成立",
+        leg_faint="淡色 = 步骤开始时的位置",
+        at_start="开始时",
+        above="上方 {gap:.2f} m：{s}",
+        expect="期待",
+        observed="观测",
+        no_rel="这一步没有关系。",
+        head=("主体", "关系", "客体", "前 → 后", "数值", "来源", "期待"),
+        no_ev="这一步中途没有翻转。",
+        chatter="（抖动 {n} 次）",
+        joined="{id} 加入范围（{why}）",
+        events="中途事件",
+        ok="成功",
+        fail="失败",
+        roles="角色",
+        check="检查值",
+        evidence="证据：{npz} 拍 {k0}–{k1}",
+        task="任务",
+        round_ok="整局 成功",
+        round_fail="整局 失败",
+        no_records="没有记录",
+        no_pair="这一局没有对应的步骤。",
+        one_side="（单边）",
+        n_diff=" ·差 {n}",
+        cmp_note="步骤按原语种类对齐（最长公共子序列）；两边值不同的边标黄。",
+        f_start="开始",
+        f_end="结束",
+        f_cap="{step} {which}（拍 {k}）",
+    ),
+    "en": dict(
+        html_lang="en",
+        gloss={
+            "touching": "contact: the two bodies touch at this instant (MuJoCo contact)",
+            "gripped": "gripped: both fingers of this hand touch the object",
+            "held": "held (predicate): gripped and off every surface",
+            "rel_pose": "the object's offset in the hand (wrist minus object position, m)",
+            "supported_by": "support: the object's underside within ±2 cm of the surface top, inside its footprint, not held",
+            "in": "inside the container (predicate)",
+            "above": "overhang: a surface within 0.5 m above the target; gap is the clearance to the target's top",
+            "beside": "neighbour: an object within 0.30 m; gap is the space between the boxes, side is which side of the target",
+            "near_edge": "edge distance: from the target to the nearest edge of its surface",
+            "blocking": "blocking: the box intersects the stance disc or the approach corridor; depth is how far",
+            "dist": "horizontal distance from the pelvis to the target; bearing is the target's angle off the heading",
+            "facing": "angle between the robot's heading and the target's bearing (deg)",
+            "reach_vec": "reach target in the pelvis frame: forward / outward of the hand / height (m)",
+            "approach": "the face of the object the hand comes from",
+            "at": "landing: the hand's (jaw centre's) or the robot's error to its target point",
+            "upright": "upright (predicate): the object's vertical axis within 15°",
+            "moved": "the object moved more than 2 cm",
+            "slipped": "the held object's distance to the wrist changed by more than 1 cm",
+        },
+        cls={
+            "contact": "contact",
+            "holding": "holding",
+            "support": "support",
+            "spatial": "spatial",
+            "relpose": "relative pose",
+            "predicate": "predicate",
+            "event": "event",
+        },  # fmt: skip
+        type={
+            "object": "object",
+            "effector": "hand",
+            "robot": "robot",
+            "surface": "surface",
+            "furniture": "furniture",
+            "region": "region",
+        },  # fmt: skip
+        src={
+            "observed": "observed",
+            "predicate": "predicate",
+            "derived": "geometry",
+            "approx": "approximate",
+            "unknown": "unknown",
+        },  # fmt: skip
+        unknown="unknown",
+        sep=", ",
+        colon=": ",
+        lp=" (",
+        rp=")",
+        gap="  ",
+        semi="; ",
+        zoom_in="Zoom to this step",
+        zoom_out="Whole round",
+        only="Only flips / misses",
+        theme="Light / dark",
+        legend_ent="Entities",
+        legend_rel="Relations",
+        leg_dash="dashed = unknown",
+        leg_bold="bold = flipped in this step",
+        leg_red="red = expectation not met",
+        leg_faint="faint = where it was when the step began",
+        at_start="at the step's start",
+        above="{gap:.2f} m above: {s}",
+        expect="expected",
+        observed="observed",
+        no_rel="No relations in this step.",
+        head=("subject", "relation", "object", "before → after", "values", "source", "expected"),
+        no_ev="Nothing flipped during this step.",
+        chatter=" (flickered {n} times)",
+        joined="{id} joined the scope ({why})",
+        events="Events during the step",
+        ok="OK",
+        fail="FAILED",
+        roles="Roles",
+        check="Checks",
+        evidence="Evidence: {npz}, ticks {k0}–{k1}",
+        task="Task",
+        round_ok="round succeeded",
+        round_fail="round failed",
+        no_records="no records",
+        no_pair="No matching step in this round.",
+        one_side=" (one side only)",
+        n_diff=" · {n} differ",
+        cmp_note="Steps aligned by primitive kind (longest common subsequence); edges whose values differ are marked yellow.",
+        f_start="start",
+        f_end="end",
+        f_cap="{step} {which} (tick {k})",
+    ),
 }
-CLASS_ZH = {"contact": "接触", "holding": "持握", "support": "支撑", "spatial": "空间", "relpose": "相对位姿",
-            "predicate": "谓词", "event": "事件"}  # fmt: skip
-TYPE_ZH = {
-    "object": "物体",
-    "effector": "手",
-    "robot": "机器人",
-    "surface": "台面",
-    "furniture": "家具",
-    "region": "区域",
-}
-SRC_ZH = {"observed": "观测", "predicate": "谓词", "derived": "几何推导", "approx": "近似", "unknown": "未知"}
+T = LANG["zh"]
+
+
+def set_lang(lang: str) -> None:
+    global T
+    T = LANG[lang]
+
+
+def gloss(r: str) -> str:
+    return T["gloss"].get(r, r)
+
+
 DRAWN = {"touching", "gripped", "held", "supported_by", "in", "beside", "blocking", "approach"}  # between two entities
 FROM_PELVIS = {"dist", "facing", "reach_vec", "at"}  # arrows from the robot or the hand
 
@@ -104,7 +269,7 @@ JS = """
 function show(sec, i){document.querySelectorAll('#'+sec+' .step').forEach((s,k)=>s.classList.toggle('on',k==i));
 document.querySelectorAll('#'+sec+' .bar.steps button').forEach((b,k)=>b.classList.toggle('on',k==i));}
 function zoom(btn){const svg=btn.closest('.step').querySelector('svg.map');const z=svg.dataset.zoomed=='1';
-svg.setAttribute('viewBox',z?svg.dataset.round:svg.dataset.step);svg.dataset.zoomed=z?'0':'1';btn.textContent=z?'放大到这一步':'整局视野';}
+svg.setAttribute('viewBox',z?svg.dataset.round:svg.dataset.step);svg.dataset.zoomed=z?'0':'1';btn.textContent=z?btn.dataset.in:btn.dataset.out;}
 function only(btn){document.body.classList.toggle('hideplain');btn.classList.toggle('on');}
 window.addEventListener('DOMContentLoaded',()=>{const m=location.hash.match(/^#(\d+)$/);
 const sec=document.querySelector('section');if(m&&sec)show(sec.id,+m[1]);});
@@ -287,7 +452,7 @@ STYLE_NODES = {"object": "fill:var(--object);fill-opacity:.85;stroke:var(--objec
 
 def edge_classes(e: dict, flips: set, bad: set, diff: set) -> str:
     k = edge_key(e)
-    tags = ["e", REL.get(e["r"], ("predicate",))[0]]
+    tags = ["e", REL.get(e["r"], "predicate")]
     hot = False
     if k in flips:
         tags.append("flip")
@@ -322,10 +487,10 @@ def step_svg(rec: dict, meta: dict, vb_round: str, diff: set) -> str:
                 continue
             after[eid] = a
             shapes_step.append(a)
-            name = f"{eid}（{TYPE_ZH.get(typ, typ)}）"
+            name = f"{eid}{T['lp']}{T['type'].get(typ, typ)}{T['rp']}"
             moving = typ in ("object", "effector", "robot")
             if moving and b and math.dist(centre(a), centre(b)) > 0.01:
-                parts.append(svg_shape(b, typ, name + " 开始时", True))
+                parts.append(svg_shape(b, typ, f"{name} {T['at_start']}", True))
                 (x0, y0), (x1, y1) = centre(b), centre(a)
                 parts.append(
                     f'<line class="move" x1="{x0:.3f}" y1="{-y0:.3f}" x2="{x1:.3f}" y2="{-y1:.3f}" marker-end="url(#arr)"/>'
@@ -344,7 +509,7 @@ def step_svg(rec: dict, meta: dict, vb_round: str, diff: set) -> str:
     for e in rec["G_after"]["edges"]:
         r, s, o = e["r"], e["s"], e.get("o")
         cls = edge_classes(e, flips, bad, diff)
-        tip = f"<title>{esc(s)} —{esc(r)}→ {esc(o)}：{esc(fmt_v(e))}（{esc(REL.get(r, ('', r))[1])}）</title>"
+        tip = f"<title>{esc(s)} —{esc(r)}→ {esc(o)}{T['colon']}{esc(fmt_v(e))}{T['lp']}{esc(gloss(r))}{T['rp']}</title>"
         if r in DRAWN and s in after and o in after and (e.get("v") or e.get("v") is None):
             (x0, y0), (x1, y1) = centre(after[s]), centre(after[o])
             lines.append(f'<line class="{cls}" x1="{x0:.3f}" y1="{-y0:.3f}" x2="{x1:.3f}" y2="{-y1:.3f}">{tip}</line>')
@@ -356,7 +521,7 @@ def step_svg(rec: dict, meta: dict, vb_round: str, diff: set) -> str:
         elif r == "above" and e.get("v") and tgt in after:
             cx, cy = centre(after[tgt])
             labels.append(
-                f'<text class="{cls}" x="{cx + 0.05:.3f}" y="{-cy + 0.12:.3f}">上方 {e.get("gap_m", 0):.2f} m：{esc(s)}{tip}</text>'
+                f'<text class="{cls}" x="{cx + 0.05:.3f}" y="{-cy + 0.12:.3f}">{esc(T["above"].format(gap=e.get("gap_m", 0), s=s))}{tip}</text>'
             )
     vb_step = view_box(shapes_step)
     defs = ('<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto">'
@@ -367,7 +532,7 @@ def step_svg(rec: dict, meta: dict, vb_round: str, diff: set) -> str:
               ".e{stroke-width:.018;fill:none}.e.unk{stroke-dasharray:.03 .02;stroke:var(--predicate)!important}"
               ".e.flip{stroke-width:.04}.e.disc{stroke:var(--warn)!important;stroke-width:.028}.e.diff{stroke:var(--diff)!important}"
               ".arrow{color:currentColor}"
-              + "".join(f".e.{c}{{stroke:var(--{c});color:var(--{c})}}text.e.{c}{{fill:var(--{c});stroke:var(--bg)}}" for c in CLASS_ZH))  # fmt: skip
+              + "".join(f".e.{c}{{stroke:var(--{c});color:var(--{c})}}text.e.{c}{{fill:var(--{c});stroke:var(--bg)}}" for c in CLASSES))  # fmt: skip
     return (
         f'<svg class="map" viewBox="{vb_round}" data-round="{vb_round}" data-step="{vb_step}" '
         f'xmlns="http://www.w3.org/2000/svg"><style>{style}</style>{defs}'
@@ -384,14 +549,14 @@ def fmt_v(e: dict | None) -> str:
         return "-"
     v = e.get("v")
     if v is None:
-        return "未知"
+        return T["unknown"]
     if isinstance(v, bool):
         return "true" if v else "false"
     return json.dumps(v, ensure_ascii=False)
 
 
 def nums(e: dict) -> str:
-    return "，".join(f"{k} {v}" for k, v in e.items() if k not in ("s", "r", "o", "v", "src"))
+    return T["sep"].join(f"{k} {v}" for k, v in e.items() if k not in ("s", "r", "o", "v", "src"))
 
 
 def relation_table(rec: dict, diff: set) -> str:
@@ -404,33 +569,33 @@ def relation_table(rec: dict, diff: set) -> str:
     for k in set(before) | set(after):
         b, a = before.get(k), after.get(k)
         e = a or b
-        cls = REL.get(k[1], ("predicate",))[0]
+        cls = REL.get(k[1], "predicate")
         mark = ""
         if k in exp:
-            mark = f'<span class="mark {"bad" if k in bad else "ok"}">期待 {fmt_v(dict(v=exp[k]["to"]))} {"✗" if k in bad else "✓"}</span>'
+            mark = f'<span class="mark {"bad" if k in bad else "ok"}">{T["expect"]} {fmt_v(dict(v=exp[k]["to"]))} {"✗" if k in bad else "✓"}</span>'
         hot = k in bad or k in flips or k in diff
         rc = " ".join(x for x in ("disc" if k in bad else "", "diff" if k in diff else "", "" if hot else "plain") if x)
-        gloss = REL.get(k[1], ("", k[1]))[1]
+        gl = gloss(k[1])
         rows.setdefault(cls, []).append(
-            f'<tr class="{rc}"><td>{esc(k[0])}</td><td><abbr title="{esc(gloss)}">{esc(k[1])}</abbr></td><td>{esc(k[2] or "")}</td>'
+            f'<tr class="{rc}"><td>{esc(k[0])}</td><td><abbr title="{esc(gl)}">{esc(k[1])}</abbr></td><td>{esc(k[2] or "")}</td>'
             f"<td>{esc(fmt_v(b))} → {esc(fmt_v(a))}</td><td class='wrap'>{esc(nums(e))}</td>"
-            f'<td>{esc(SRC_ZH.get(e.get("src"), e.get("src")))}</td><td>{mark}</td></tr>'
+            f'<td>{esc(T["src"].get(e.get("src"), e.get("src")))}</td><td>{mark}</td></tr>'
         )  # fmt: skip
     for d in rec.get("discrepancies") or []:
         if tuple(d["edge"]) not in before and tuple(d["edge"]) not in after:
             s, r, o = d["edge"]
-            rows.setdefault(REL.get(r, ("predicate",))[0], []).append(
-                f'<tr class="disc"><td>{esc(s)}</td><td>{esc(r)}</td><td>{esc(o or "")}</td><td colspan="3">观测 {esc(fmt_v(dict(v=d.get("observed"))))}</td>'
-                f'<td><span class="mark bad">期待 {fmt_v(dict(v=d["to"]))} ✗</span></td></tr>'
+            rows.setdefault(REL.get(r, "predicate"), []).append(
+                f'<tr class="disc"><td>{esc(s)}</td><td>{esc(r)}</td><td>{esc(o or "")}</td><td colspan="3">{T["observed"]} {esc(fmt_v(dict(v=d.get("observed"))))}</td>'
+                f'<td><span class="mark bad">{T["expect"]} {fmt_v(dict(v=d["to"]))} ✗</span></td></tr>'
             )  # fmt: skip
-    head = "<tr><th>主体</th><th>关系</th><th>客体</th><th>前 → 后</th><th>数值</th><th>来源</th><th>期待</th></tr>"
+    head = "<tr>" + "".join(f"<th>{h}</th>" for h in T["head"]) + "</tr>"
     out = []
-    for cls in CLASS_ZH:
+    for cls in CLASSES:
         if cls in rows:
             out.append(
-                f'<h3 class="dim" style="font-size:13px;margin:10px 0 2px">{CLASS_ZH[cls]}</h3><div class="tw"><table>{head}{"".join(sorted(rows[cls]))}</table></div>'
+                f'<h3 class="dim" style="font-size:13px;margin:10px 0 2px">{T["cls"][cls]}</h3><div class="tw"><table>{head}{"".join(sorted(rows[cls]))}</table></div>'
             )
-    return "".join(out) or '<p class="dim">这一步没有关系。</p>'
+    return "".join(out) or f'<p class="dim">{T["no_rel"]}</p>'
 
 
 CHATTER_S = 0.3  # flips of one edge this close together are drawn as one line (contacts chatter while a jaw closes)
@@ -452,15 +617,15 @@ def events_html(rec: dict) -> str:
     ev = merged_events(rec.get("events") or [])
     joined = (rec.get("scope") or {}).get("added") or []
     if not ev and not joined:
-        return '<p class="dim">这一步中途没有翻转。</p>'
+        return f'<p class="dim">{T["no_ev"]}</p>'
     items = []
     for e in ev:
         when = f"{e['t']:.1f} s" if e["n"] == 1 else f"{e['t']:.1f}–{e['t_end']:.1f} s"
-        flick = f"（抖动 {e['n']} 次）" if e["n"] > 1 else ""
-        cm = f"（{e['cm']} cm）" if "cm" in e else ""
-        items.append(f"<li>{when}　{esc(e['edge'][0])} —{esc(e['edge'][1])}→ {esc(e['edge'][2] or '')}　"
+        flick = T["chatter"].format(n=e["n"]) if e["n"] > 1 else ""
+        cm = f"{T['lp']}{e['cm']} cm{T['rp']}" if "cm" in e else ""
+        items.append(f"<li>{when}{T['gap']}{esc(e['edge'][0])} —{esc(e['edge'][1])}→ {esc(e['edge'][2] or '')}{T['gap']}"
                      f"{esc(fmt_v(dict(v=e['from'])))} → {esc(fmt_v(dict(v=e['to'])))}{cm}{flick}</li>")  # fmt: skip
-    items += [f"<li>{x['t']:.1f} s　{esc(x['id'])} 加入范围（{esc(x['why'])}）</li>" for x in joined]
+    items += [f"<li>{x['t']:.1f} s{T['gap']}{esc(T['joined'].format(id=x['id'], why=x['why']))}</li>" for x in joined]
     return f'<ul class="ev">{"".join(items)}</ul>'
 
 
@@ -476,33 +641,39 @@ def frames_html(fr: dict | None) -> str:
 def step_head(r: dict) -> str:
     a = r.get("action") or {}
     k = r["kind"] + ("?" if r.get("kind_src") == "primitive" else "")
-    roles = "，".join(f"{k2}={v}" for k2, v in (r.get("roles") or {}).items() if v)
-    why = f"　<span class='bad'>{esc(a['why'])}</span>" if a.get("why") else ""
-    chk = f"<div class='dim'>检查值 {esc(json.dumps(a['check'], ensure_ascii=False))}</div>" if a.get("check") else ""
-    return (f"<h2>{r['step_index']}.{r['attempt']} {esc(r['step'])} [{esc(k)}]　{a.get('t0', 0):.1f}–{a.get('t1', 0):.1f} s　"
-            f"{'成功' if a.get('ok') else '<span class=bad>失败</span>'}{why}</h2><div class='dim'>角色：{esc(roles)}</div>{chk}")  # fmt: skip
+    roles = T["sep"].join(f"{k2}={v}" for k2, v in (r.get("roles") or {}).items() if v)
+    why = f"{T['gap']}<span class='bad'>{esc(a['why'])}</span>" if a.get("why") else ""
+    chk = (
+        f"<div class='dim'>{T['check']} {esc(json.dumps(a['check'], ensure_ascii=False))}</div>"
+        if a.get("check")
+        else ""
+    )
+    g = T["gap"]
+    verdict = T["ok"] if a.get("ok") else f"<span class=bad>{T['fail']}</span>"
+    return (f"<h2>{r['step_index']}.{r['attempt']} {esc(r['step'])} [{esc(k)}]{g}{a.get('t0', 0):.1f}–{a.get('t1', 0):.1f} s{g}"
+            f"{verdict}{why}</h2><div class='dim'>{T['roles']}{T['colon']}{esc(roles)}</div>{chk}")  # fmt: skip
 
 
 def step_block(r: dict, meta: dict, vb: str, diff: set, fr) -> str:
     return (f"{step_head(r)}<div class='grid'><div class='card'>{step_svg(r, meta, vb, diff)}"
-            f"<div class='bar'><button onclick='zoom(this)'>放大到这一步</button></div>"
-            f"<h3 class='dim' style='font-size:13px;margin:6px 0 2px'>中途事件</h3>{events_html(r)}{frames_html(fr)}</div>"
+            f"<div class='bar'><button onclick='zoom(this)' data-in='{T['zoom_in']}' data-out='{T['zoom_out']}'>{T['zoom_in']}</button></div>"
+            f"<h3 class='dim' style='font-size:13px;margin:6px 0 2px'>{T['events']}</h3>{events_html(r)}{frames_html(fr)}</div>"
             f"<div class='card'>{relation_table(r, diff)}</div></div>"
-            f"<div class='dim' style='margin-top:6px'>证据：{esc(r['evidence'].get('npz'))} 拍 {r['evidence'].get('k0')}–{r['evidence'].get('k1')}</div>")  # fmt: skip
+            f"<div class='dim' style='margin-top:6px'>{esc(T['evidence'].format(npz=r['evidence'].get('npz'), k0=r['evidence'].get('k0'), k1=r['evidence'].get('k1')))}</div>")  # fmt: skip
 
 
 def legend() -> str:
-    nodes = "".join(f"<span><i class='sw' style='background:var(--{k})'></i>{v}</span>" for k, v in TYPE_ZH.items())
-    edges = "".join(f"<span><i class='sw' style='background:var(--{k})'></i>{v}</span>" for k, v in CLASS_ZH.items())
-    return (f"<div class='legend dim'>实体：{nodes}</div><div class='legend dim'>关系：{edges}"
-            "<span>虚线 = 未知</span><span>加粗 = 这一步翻转</span><span style='color:var(--warn)'>红 = 期待没成立</span>"
-            "<span>淡色 = 步骤开始时的位置</span></div>")  # fmt: skip
+    nodes = "".join(f"<span><i class='sw' style='background:var(--{k})'></i>{T['type'][k]}</span>" for k in TYPES)
+    edges = "".join(f"<span><i class='sw' style='background:var(--{k})'></i>{T['cls'][k]}</span>" for k in CLASSES)
+    return (f"<div class='legend dim'>{T['legend_ent']}{T['colon']}{nodes}</div><div class='legend dim'>{T['legend_rel']}{T['colon']}{edges}"
+            f"<span>{T['leg_dash']}</span><span>{T['leg_bold']}</span><span style='color:var(--warn)'>{T['leg_red']}</span>"
+            f"<span>{T['leg_faint']}</span></div>")  # fmt: skip
 
 
 def page(title: str, sub: str, body: str) -> str:
-    return (f"<!doctype html><html lang='zh'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
+    return (f"<!doctype html><html lang='{T['html_lang']}'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>{esc(title)}</title><style>{CSS}</style></head><body><h1>{esc(title)}</h1><div class='dim'>{sub}</div>"
-            f"<div class='bar'><button onclick='only(this)'>只看翻转 / 差异</button><button onclick='theme(this)'>切换深浅色</button></div>"
+            f"<div class='bar'><button onclick='only(this)'>{T['only']}</button><button onclick='theme(this)'>{T['theme']}</button></div>"
             f"{legend()}{body}<script>{JS}</script></body></html>")  # fmt: skip
 
 
@@ -511,15 +682,14 @@ def outcome_line(recs: list[dict]) -> str:
     ok = o.get("round_ok")
     why = o.get("round_why") or ""
     fc = o.get("failure_class") or ""
-    return f"任务 {esc(recs[0]['task'] if recs else '')}　整局 {'成功' if ok else '失败'}" + (
-        f"（{esc(fc)}：{esc(why)}）" if not ok else ""
-    )
+    head = f"{T['task']} {esc(recs[0]['task'] if recs else '')}{T['gap']}{T['round_ok'] if ok else T['round_fail']}"
+    return head + (f"{T['lp']}{esc(fc)}{T['colon']}{esc(why)}{T['rp']}" if not ok else "")
 
 
 def single(path: Path, meta: dict, frames: dict | None = None) -> str:
     recs, notes = load(path)
     if not recs:
-        msg = "；".join(x.get("note") or f"error: {x.get('error')}" for x in notes) or "没有记录"
+        msg = T["semi"].join(x.get("note") or f"error: {x.get('error')}" for x in notes) or T["no_records"]
         return page(Path(path).name, esc(msg), "")
     recs = [clean(r, meta) for r in recs]
     vb = view_box(round_shapes(recs, meta))
@@ -570,16 +740,14 @@ def compare(a: Path, b: Path, meta: dict, frames: dict | None = None) -> str:
         x, y = (ra[i] if i is not None else None), (rb[j] if j is not None else None)
         diff = differing(x, y) if x and y else set()
         cell = lambda r, vb: (step_block(r, meta, vb, diff, (frames or {}).get(r["record_id"])) if r  # noqa: E731
-                              else "<p class='dim'>这一局没有对应的步骤。</p>")  # fmt: skip
+                              else f"<p class='dim'>{T['no_pair']}</p>")  # fmt: skip
         kind = (x or y)["kind"]
         bar.append(
-            f"<button onclick=\"show('c',{n})\">{n + 1}. {esc(kind)}{'' if x and y else '（单边）'}{' ·差 ' + str(len(diff)) if diff else ''}</button>"
+            f"<button onclick=\"show('c',{n})\">{n + 1}. {esc(kind)}{'' if x and y else T['one_side']}{T['n_diff'].format(n=len(diff)) if diff else ''}</button>"
         )
-        blocks.append(f"<div class='step{' on' if n == 0 else ''}'><div class='pair'><div><h2 class='dim'>A　{esc(ra[0]['label'] if ra else a)}</h2>{cell(x, va)}</div>"
-                      f"<div><h2 class='dim'>B　{esc(rb[0]['label'] if rb else b)}</h2>{cell(y, vbb)}</div></div></div>")  # fmt: skip
-    sub = (
-        f"A：{outcome_line(ra)}<br>B：{outcome_line(rb)}<br>步骤按原语种类对齐（最长公共子序列）；两边值不同的边标黄。"
-    )
+        blocks.append(f"<div class='step{' on' if n == 0 else ''}'><div class='pair'><div><h2 class='dim'>A{T['gap']}{esc(ra[0]['label'] if ra else a)}</h2>{cell(x, va)}</div>"
+                      f"<div><h2 class='dim'>B{T['gap']}{esc(rb[0]['label'] if rb else b)}</h2>{cell(y, vbb)}</div></div></div>")  # fmt: skip
+    sub = f"A{T['colon']}{outcome_line(ra)}<br>B{T['colon']}{outcome_line(rb)}<br>{T['cmp_note']}"
     return page(
         f"{ra[0]['label'] if ra else a} vs {rb[0]['label'] if rb else b}",
         sub,
@@ -612,7 +780,7 @@ def render_frames(paths: list[Path], scene_dir: Path) -> dict:
         rr.z, rr.key = z, keys[0] if keys else None
         for r in recs:
             figs = []
-            for cap, k in (("开始", r["evidence"]["k0"]), ("结束", r["evidence"]["k1"])):
+            for cap, k in ((T["f_start"], r["evidence"]["k0"]), (T["f_end"], r["evidence"]["k1"])):
                 k = int(min(k, len(z["t"]) - 1))
                 if rr.key:
                     sc.set(rr, k)
@@ -625,7 +793,9 @@ def render_frames(paths: list[Path], scene_dir: Path) -> dict:
                                 size=FRAME_SIZE)  # fmt: skip
                 buf = io.BytesIO()
                 Image.fromarray(img).save(buf, "JPEG", quality=68)
-                figs.append((f"{r['step']} {cap}（拍 {k}）", base64.b64encode(buf.getvalue()).decode()))
+                figs.append(
+                    (T["f_cap"].format(step=r["step"], which=cap, k=k), base64.b64encode(buf.getvalue()).decode())
+                )
             out[r["record_id"]] = figs
     return out
 
@@ -636,8 +806,12 @@ def main(argv=None) -> int:
     ap.add_argument("--compare", type=Path, help="a second round, aligned step by step")
     ap.add_argument("--frames", action="store_true", help="add a MuJoCo frame of each step's start and end (EGL)")
     ap.add_argument("--scene", type=Path, default=SCENE, help="the scene directory (scene_meta.json)")
-    ap.add_argument("--out", type=Path, help=f"default {OUT.relative_to(REPO)}/<label>.html")
+    ap.add_argument(
+        "--out", type=Path, help=f"default {OUT.relative_to(REPO)}/<label>.html (<label>.en.html in English)"
+    )
+    ap.add_argument("--lang", choices=sorted(LANG), default="zh", help="the page's language (past_view_en.py: en)")
     a = ap.parse_args(argv)
+    set_lang(a.lang)
     meta = json.loads((a.scene / "scene_meta.json").read_text())
     paths = [a.round] + ([a.compare] if a.compare else [])
     frames = render_frames(paths, a.scene) if a.frames else None
@@ -645,7 +819,7 @@ def main(argv=None) -> int:
     label = side_file(a.round).name.replace(".past.jsonl", "")
     if a.compare:
         label += "__vs__" + side_file(a.compare).name.replace(".past.jsonl", "")
-    out = a.out or OUT / f"{label}.html"
+    out = a.out or OUT / f"{label}{'' if a.lang == 'zh' else '.' + a.lang}.html"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text)
     print(f"{out} ({len(text) // 1024} KB)")
