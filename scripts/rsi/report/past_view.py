@@ -756,6 +756,31 @@ def compare(a: Path, b: Path, meta: dict, frames: dict | None = None) -> str:
 
 
 # -- MuJoCo frames (optional) ------------------------------------------------------------------------------------------
+CAM_DIST_M = 2.2  # the camera's distance from the target when nothing is in the way
+CAM_MIN_M = 0.8  # never closer than this (the view is then mostly the object)
+# (azimuth offset from the robot->target bearing, elevation), in preference order: side views first, then from behind
+# the robot's shoulder, then steeper; the first that backs off CAM_DIST_M unobstructed wins
+CAM_VIEWS = [(off, el) for el in (-28, -45, -65) for off in (90, -90, 135, -135, 45, -45, 180, 0)]
+CAM_RAYS = ((0, 0), (15, 0), (-15, 0), (0, 10), (0, -8))  # the view's centre and four points towards its edges (deg)
+STEEP_EL = -45  # at or below this elevation the apartment's shell (its ceiling) is hidden
+
+
+def pick_view(sc, lookat, bearing: float) -> dict:
+    """A free camera on `lookat` that walls and furniture do not cover (ga-past-b, 2026-11-03: a fixed side view at
+    2.2 m sat inside the wall behind DishSoap, DisplayWolf and VaseSmall and showed only what touched the lens). A view
+    is as clear as the shortest of a few rays from the target back towards the camera (Scene.clear_distance)."""
+    best = None
+    for off, el in CAM_VIEWS:
+        az = bearing + off
+        clear = min(sc.clear_distance(lookat, az + da, el + de) for da, de in CAM_RAYS)
+        if clear >= CAM_DIST_M:
+            return dict(lookat=list(lookat), distance=CAM_DIST_M, azimuth=az, elevation=el)
+        if best is None or clear > best[0]:
+            best = (clear, az, el)
+    clear, az, el = best
+    return dict(lookat=list(lookat), distance=max(CAM_MIN_M, min(CAM_DIST_M, clear - 0.1)), azimuth=az, elevation=el)
+
+
 def render_frames(paths: list[Path], scene_dir: Path) -> dict:
     """{record_id: [(caption, base64 jpg), ...]}: each step's first and last tick, a camera behind the robot looking at
     the target. Needs mujoco and EGL."""
@@ -779,18 +804,19 @@ def render_frames(paths: list[Path], scene_dir: Path) -> dict:
         rr = R()
         rr.z, rr.key = z, keys[0] if keys else None
         for r in recs:
-            figs = []
+            figs, cam = [], None
             for cap, k in ((T["f_start"], r["evidence"]["k0"]), (T["f_end"], r["evidence"]["k1"])):
                 k = int(min(k, len(z["t"]) - 1))
                 if rr.key:
                     sc.set(rr, k)
-                pel = z["robot"][k][:3]
-                tgt = (r["G_after"]["states"].get((r.get("roles") or {}).get("target") or "", {}) or {}).get("p") or pel
-                az = (
-                    math.degrees(math.atan2(tgt[1] - pel[1], tgt[0] - pel[0])) + 90
-                )  # from the side: the robot and the target both in view
-                img = sc.render(dict(lookat=[tgt[0], tgt[1], max(float(tgt[2]) - 0.1, 0.5)], distance=2.2, azimuth=az, elevation=-28),
-                                size=FRAME_SIZE)  # fmt: skip
+                if cam is None:  # one view per step, chosen at its start, so the two frames compare
+                    pel = z["robot"][k][:3]
+                    tgt = (r["G_after"]["states"].get((r.get("roles") or {}).get("target") or "", {}) or {}).get(
+                        "p"
+                    ) or pel
+                    cam = pick_view(sc, [tgt[0], tgt[1], max(float(tgt[2]) - 0.1, 0.5)],
+                                    math.degrees(math.atan2(tgt[1] - pel[1], tgt[0] - pel[0])))  # fmt: skip
+                img = sc.render(cam, size=FRAME_SIZE, top_down=cam["elevation"] <= STEEP_EL)
                 buf = io.BytesIO()
                 Image.fromarray(img).save(buf, "JPEG", quality=68)
                 figs.append(

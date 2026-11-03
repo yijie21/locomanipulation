@@ -194,3 +194,27 @@ class Batch(unittest.TestCase):
             self.assertIn("1 / 2 rounds succeeded", index)
             self.assertIn('href="pick_Mug_s1.en.html"', index)
             self.assertIn("<html lang='en'>", (out / "pick_Mug_s2.en.html").read_text())
+
+
+class Camera(unittest.TestCase):
+    class FakeScene:
+        """Walls everywhere but towards azimuths near `open_az` (deg)."""
+
+        def __init__(self, open_az=None, best=1.4):
+            self.open_az, self.best = open_az, best
+
+        def clear_distance(self, lookat, az, el):
+            if self.open_az is not None and abs((az - self.open_az + 180) % 360 - 180) <= 20:
+                return 99.0
+            return self.best if abs((az - 135 + 180) % 360 - 180) <= 20 else 0.6
+
+    def test_the_first_unobstructed_view_in_preference_order_wins(self):
+        cam = PV.pick_view(self.FakeScene(open_az=-90), [1, 0, 0.8], bearing=0.0)  # +90 is walled, -90 is open
+        self.assertEqual((cam["azimuth"], cam["elevation"], cam["distance"]), (-90.0, -28, PV.CAM_DIST_M))
+
+    def test_when_every_view_is_walled_the_clearest_one_comes_closer(self):
+        cam = PV.pick_view(self.FakeScene(open_az=None, best=1.4), [1, 0, 0.8], bearing=0.0)
+        self.assertEqual(cam["azimuth"], 135.0)
+        self.assertAlmostEqual(cam["distance"], 1.3)
+        cam = PV.pick_view(self.FakeScene(open_az=None, best=0.6), [1, 0, 0.8], bearing=0.0)
+        self.assertEqual(cam["distance"], PV.CAM_MIN_M)
