@@ -378,3 +378,22 @@ class BlockingExemptions(unittest.TestCase):
         self.assertIn("Stool", blockers)
         self.assertNotIn("Table", blockers)
         self.assertNotIn("Room", blockers)
+
+
+class ReachLanding(unittest.TestCase):
+    def test_at_uses_the_motors_jaw_error_when_the_step_logged_one(self):
+        g = dict(edges=[dict(s="right_hand", r="at", o="region:pregrasp_target", v=False, src="approx", err_cm=14.9)])
+        P.measured_at(g, dict(step="pregrasp", jaw_err_cm=0.98))
+        self.assertEqual((g["edges"][0]["v"], g["edges"][0]["src"], g["edges"][0]["err_cm"]), (True, "observed", 0.98))
+        g2 = dict(edges=[dict(s="right_hand", r="at", o="region:pregrasp_target", v=False, src="approx", err_cm=14.9)])
+        P.measured_at(g2, dict(step="pregrasp", check={"jaw_err_cm": 4.2}))
+        self.assertEqual((g2["edges"][0]["v"], g2["edges"][0]["err_cm"]), (False, 4.2))
+
+    def test_without_a_measured_error_the_wrist_to_jaw_offset_is_taken_off(self):
+        objects, hands = mug_round()
+        hands["right"] = np.tile([0.85 - P.JAW_OFF_M, 0.0, 0.78], (20, 1))  # the wrist one jaw offset behind the target
+        f = P.Frame(arrays_for(20, objects, hands), META, 19)
+        entities, _ = P.scope_of(f, ROLES, "reach", TASK, META, REACH)
+        at = [e for e in P.graph_of(f, entities, ROLES, META)["edges"] if e["r"] == "at"][0]
+        self.assertEqual((at["v"], at["src"]), (True, "approx"))
+        self.assertLess(at["err_cm"], 0.5)

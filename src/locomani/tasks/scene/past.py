@@ -30,6 +30,7 @@ SLIP_CM = 1.0  # a held object this much farther from the wrist slipped (digest.
 SUPPORT_BAND_M = 0.02  # an underside this close to a surface's top may rest on it
 REACH_TOL_CM = 3.0  # a reach lands when the jaw centre is this close to its target (body.reach's miss)
 WALK_TOL_CM = 5.0  # a walk lands when the pelvis is this close to the stance (failure_class.WALK_OFF_CM)
+JAW_OFF_M = 0.1515  # runtime.OFF: wrist frame -> jaw (pad) centre; the trace records the wrist, a reach targets the jaw
 PREDICATE_DT_TICKS = 5  # predicates and derived edges are re-evaluated every 0.1 s (episode.JUDGE_DT)
 SIDES = ("left", "right")
 HAND = {s: f"{s}_hand" for s in SIDES}
@@ -598,11 +599,14 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
         c, s = math.cos(-yaw), math.sin(-yaw)
         fwd, left = c * rel[0] - s * rel[1], s * rel[0] + c * rel[1]
         out = -left if side == "right" else left
-        err = float(np.linalg.norm(hp - goal)) * 100
+        # the trace holds the wrist, the reach target is the jaw centre JAW_OFF_M ahead of it along a wrist axis the
+        # trace does not carry: the jaw is somewhere on that sphere, so this is a lower bound of the miss (`approx`);
+        # build() replaces it with the motor's measured jaw error when the step logged one
+        err = abs(float(np.linalg.norm(hp - goal)) - JAW_OFF_M) * 100
         edges.append(_edge(eff, "reach_vec", "region:pregrasp_target",
                            [round(float(fwd), 3), round(float(out), 3), round(float(goal[2] - ppos[2]), 3)], "derived"))  # fmt: skip
         edges.append(
-            _edge(eff, "at", "region:pregrasp_target", bool(err <= REACH_TOL_CM), "derived", err_cm=round(err, 2))
+            _edge(eff, "at", "region:pregrasp_target", bool(err <= REACH_TOL_CM), "approx", err_cm=round(err, 2))
         )
         if tgt in objects_in:
             tp, tq = frame.obj_pose(tgt)
@@ -734,6 +738,17 @@ def discrepancies_of(expected: list[dict], g_after: dict, events: list[dict]) ->
 
 
 # -- the round -> records ----------------------------------------------------------------------------------------------
+def measured_at(g: dict, row: dict) -> None:
+    """The hand's `at` edge from the motor's own jaw-centre error when the step logged one (`jaw_err_cm`, in the step
+    row or its stage() check): observed, where the trace-only value is a lower bound."""
+    err = row.get("jaw_err_cm", (row.get("check") or {}).get("jaw_err_cm"))
+    if not isinstance(err, (int, float)):
+        return
+    for e in g["edges"]:
+        if e["r"] == "at" and e["o"] == "region:pregrasp_target":
+            e.update(v=bool(err <= REACH_TOL_CM), src="observed", err_cm=round(float(err), 2))
+
+
 def _tick_of(arrays: dict, t: float, last: bool = False) -> int:
     ts = np.asarray(arrays["t"], float)
     k = int(np.searchsorted(ts, t - 1e-6, side="left"))
@@ -781,6 +796,7 @@ def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
         events, added = events_of(arrays, meta, k0, k1, entities, roles, task)
         scope["added"] = added
         g_after = graph_of(f1, entities, roles, meta)
+        measured_at(g_after, iv.row)
         sup = support_of(f0, roles["target"], meta)[0] if roles.get("target") in meta["objects"] else None
         roles_out = dict(roles, support=sup, goal_surface=g_surface, container=g_container,
                          stance="region:stance" if "region:stance" in entities else None,
