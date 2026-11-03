@@ -167,3 +167,30 @@ class English(unittest.TestCase):
             out = Path(d) / "page.html"
             self.assertEqual(EN.main([str(src), "--scene", str(scene), "--out", str(out)]), 0)
             self.assertIn("<html lang='en'>", out.read_text())
+
+
+class Batch(unittest.TestCase):
+    def test_the_folder_script_writes_every_page_and_an_index(self):
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "diag"
+            src.mkdir()
+            for lab, ok in (("pick_Mug_s1", False), ("pick_Mug_s2", True), ("_retired_pick_Mug_s0", True)):
+                write(src, lab, walk_and_grip(lab, ok=ok))
+                (src / f"{lab}.json").write_text(
+                    json.dumps(dict(label=lab, task="pick_Mug", ok=ok, failure_class=None if ok else "other"))
+                )
+            scene = Path(d) / "scene"
+            scene.mkdir()
+            (scene / "scene_meta.json").write_text(json.dumps(META))
+            out = Path(d) / "pages"
+            r = subprocess.run(["bash", str(REPO / "scripts/rsi/report/past_view_all.sh"), str(src), "--out", str(out),
+                                "--no-frames", "--scene", str(scene)], capture_output=True, text=True)  # fmt: skip
+            self.assertEqual(r.returncode, 0, r.stderr)
+            names = sorted(p.name for p in out.iterdir())
+            self.assertEqual(names, ["index.html", "pick_Mug_s1.en.html", "pick_Mug_s2.en.html"])  # retired left out
+            index = (out / "index.html").read_text()
+            self.assertIn("1 / 2 rounds succeeded", index)
+            self.assertIn('href="pick_Mug_s1.en.html"', index)
+            self.assertIn("<html lang='en'>", (out / "pick_Mug_s2.en.html").read_text())
