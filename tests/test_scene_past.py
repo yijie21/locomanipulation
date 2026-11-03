@@ -354,3 +354,27 @@ class OldRounds(unittest.TestCase):
         self.assertEqual([r["kind_src"] for r in recs], ["calls", "primitive", "primitive", "primitive"])
         self.assertIsNone(recs[2]["roles"]["effector"])  # the trace carries no side
         self.assertEqual(recs[2]["expected"], [])
+
+
+class BlockingExemptions(unittest.TestCase):
+    def test_the_room_shell_and_the_support_furniture_never_block_the_stance(self):
+        meta = json.loads(json.dumps(META_G))
+        meta["objects"]["Room"] = {"free": False, "body": None, "container": False, "init_pos": [0, 0, 0],
+                                   "semantic": {"movable": False},
+                                   "box": {"half_extent": [6.5, 4.9, 4.2], "centre": [1.0, 0.0, 2.0]}}  # fmt: skip
+        meta["objects"]["Stool"] = {"free": False, "body": None, "container": False, "init_pos": [0, 0, 0],
+                                    "semantic": {"movable": False},
+                                    "box": {"half_extent": [0.15, 0.15, 0.35], "centre": [0.45, 0.0, 0.35]}}  # fmt: skip
+        self.assertTrue(P.is_shell(meta, "Room"))
+        self.assertFalse(P.is_shell(meta, "Table"))
+        objects, hands = mug_round()
+        f = P.Frame(arrays_for(20, objects, hands), meta, 0)
+        roles = dict(target="Mug", effector=None, carried=None)
+        entities, scope = P.scope_of(f, roles, "walk", TASK, meta, [call("walk_to", 0.0, 0.38, [0.4, 0.0])])
+        self.assertNotIn("Room", scope["initial"])
+        self.assertEqual(P.support_furniture(f, "Mug", meta), {"Table"})
+        g = P.graph_of(f, entities, roles, meta)
+        blockers = {e["s"] for e in g["edges"] if e["r"] == "blocking" and e["v"]}
+        self.assertIn("Stool", blockers)
+        self.assertNotIn("Table", blockers)
+        self.assertNotIn("Room", blockers)

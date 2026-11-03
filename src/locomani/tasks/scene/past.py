@@ -397,7 +397,7 @@ def scope_of(frame: Frame, roles: dict, kind: str, task: dict, meta: dict, calls
             "walk_to goal")  # fmt: skip
         ppos = frame.pelvis()[0]
         for key, od in objs.items():
-            if key in entities or od.get("free") or not od.get("box"):
+            if key in entities or od.get("free") or not od.get("box") or is_shell(meta, key):
                 continue
             r = float(np.hypot(*od["box"]["half_extent"][:2]))
             if _in_corridor(_static_xy(meta, key), ppos, walk_goal, STANCE_M + r):
@@ -420,6 +420,27 @@ def scope_of(frame: Frame, roles: dict, kind: str, task: dict, meta: dict, calls
 # -- the graph at one tick -------------------------------------------------------------------------------------------------
 def _edge(s, r, o, v, src, **num) -> dict:
     return dict(s=s, r=r, o=o, v=v, src=src, **num)
+
+
+SHELL_HALF_M = (
+    3.0  # a fixed object whose box is this wide (half extent) is the room's shell (ApartmentEnv), not furniture
+)
+
+
+def is_shell(meta: dict, key: str) -> bool:
+    """The scene's room shell: a fixed object whose box spans the room. It contains every stance, so it never blocks."""
+    o = (meta.get("objects") or {}).get(key) or {}
+    half = (o.get("box") or {}).get("half_extent") or (0, 0)
+    return not o.get("free") and max(float(h) for h in half[:2]) >= SHELL_HALF_M
+
+
+def support_furniture(frame: Frame, key: str | None, meta: dict) -> set[str]:
+    """The furniture `key` rests on (its support surface's `of_object`): the robot stands at it by design."""
+    if not key or key not in (meta.get("objects") or {}):
+        return set()
+    s = support_of(frame, key, meta)[0] or meta["objects"][key].get("surface")
+    of = (meta.get("surfaces") or {}).get(s, {}).get("of_object") if s else None
+    return {of} if of else set()
 
 
 def _blocking(frame: Frame, eid: str, ent: dict, region: dict, meta: dict) -> tuple[bool | None, float]:
@@ -551,12 +572,14 @@ def graph_of(frame: Frame, entities: dict, roles: dict, meta: dict) -> dict:
         bearing = (math.degrees(math.atan2(tp[1] - ppos[1], tp[0] - ppos[0]) - yaw) + 180) % 360 - 180
         edges.append(_edge("robot", "dist", tgt, round(d, 3), "derived", bearing_deg=round(bearing, 1)))
         edges.append(_edge("robot", "facing", tgt, round(abs(bearing), 1), "derived"))
-    # blocking: anything but the target and the robot against the stance and the corridor
+    # blocking: anything but the target, the robot, the room's shell and the furniture the target stands on (the robot
+    # stands at that furniture by design; ga-past-b showed both as blocking every stance, 2026-11-02)
+    exempt = {tgt, carried, "robot"} | support_furniture(frame, tgt, meta)
     for rid, region in regions.items():
         if region["shape"] not in ("disc", "segment"):
             continue
         for eid, ent in entities.items():
-            if eid in (tgt, carried, "robot") or ent["type"] not in ("object", "furniture"):
+            if eid in exempt or ent["type"] not in ("object", "furniture") or is_shell(meta, eid):
                 continue
             v, depth = _blocking(frame, eid, ent, region, meta)
             if v is not None:
