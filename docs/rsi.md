@@ -233,12 +233,48 @@ PYTHONPATH=src $PY scripts/rsi/report/past_view.py $D/<label>                   
 PYTHONPATH=src $PY scripts/rsi/report/past_view.py $D/<失败局> --compare $D/<成功局>     # 两局按步骤种类对齐
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 PYTHONPATH=src $PY scripts/rsi/report/past_view.py $D/<label> --frames   # 加每步前后两帧 MuJoCo 画面
 PYTHONPATH=src $PY scripts/rsi/report/past_view_en.py $D/<label>                       # 英文版（参数相同），写到 <label>.en.html
-bash scripts/rsi/report/past_view_all.sh $D                                              # 整个目录：英文版、带帧，外加 index.html
 ```
 
-`past_view_all.sh` 把一个目录里每一局都生成一页，默认英文、带 MuJoCo 帧（`--lang zh` 中文，`--no-frames` 不渲染、快得多，`--retired` 连重抽换下的局，`--gpu N` 帧用的 EGL 设备，默认 0），写到 `outputs/scene_rsi_20261016/past_view/<沙盒>__<目录名>/`（`--out` 改），再写一个 `index.html` 列出每局的结果、失败类型、步骤数和页面链接。`ga-past-b` 一个诊断目录 22 局带帧约 3.5 分钟、8 MB；某一局出错只在索引里标出来、接着做别的局，最后退出码 1。
+一个目录全部生成见 5.5。
 
 得到什么：`outputs/scene_rsi_20261016/past_view/<label>.html`（`--out` 改），一个自包含的 HTML，浏览器直接打开；不带帧约 50 KB，带帧约 0.5 MB。每一步左边是俯视图（世界 xy：台面、家具、站位圆盘、接近走廊按真实大小，物体是方块、手是点、机器人带朝向；步骤开始时淡色、结束时实色，位移画箭头；接触、持握、支撑、邻居、阻挡、接近画在两个实体之间，到位和伸手向量画成箭头，上方净空是标注），右边是按类分组的关系清单（前 → 后、数值、来源、期待 ✓ / ✗），图下是中途事件（同一条边 0.3 秒内的反复翻转合成一行"抖动 N 次"）。整局一个固定视野，"放大到这一步"按钮切换；"只看翻转 / 差异"只留这一步变了的和没成立的；悬停在关系名上看中文释义；URL 加 `#N` 直接打开第 N 步。对照页两局的每一对步骤占一行，值不同的边标黄。
+
+### 5.5 一个目录的场景图页全部生成（`past_view_all.sh`）
+
+把一个目录里每一局都生成一页，再写一个索引页。默认英文版、带 MuJoCo 帧。在主仓库根目录执行：
+
+```bash
+# 1. 环境（新终端；第 0 节已设过就跳过）
+cd ~/workspace/locomanipulation
+export LOCOMANI_WORKSPACE=$HOME/workspace
+. scripts/paths.sh
+
+# 2. 选目录：一个版本在诊断池上的全部局（diag/ 下有哪些版本先 ls 看）
+S=$LOCOMANI_WORKSPACE/code/rsi-scene/ga-past-b
+ls $S/outputs/scene_rsi_20261016/grasp_atomic_past/diag/
+D=$S/outputs/scene_rsi_20261016/grasp_atomic_past/diag/incumbent_0fa018936751
+
+# 3. 生成
+bash scripts/rsi/report/past_view_all.sh $D                 # 默认：英文、带帧
+bash scripts/rsi/report/past_view_all.sh $D --no-frames     # 只要图和关系清单，每局几秒
+bash scripts/rsi/report/past_view_all.sh $D --lang zh       # 中文版
+
+# 4. 看：浏览器打开索引页，逐局点进去
+xdg-open outputs/scene_rsi_20261016/past_view/ga-past-b__incumbent_0fa018936751/index.html
+```
+
+参数：
+
+| 参数 | 作用 | 默认 |
+|---|---|---|
+| `--lang en\|zh` | 页面语言 | `en` |
+| `--no-frames` | 不渲染 MuJoCo 帧（不需要 GPU） | 带帧 |
+| `--retired` | 连诊断池重抽时换下的 `_retired_*` 局一起生成 | 跳过 |
+| `--gpu N` | 帧用的 EGL 设备（`MUJOCO_EGL_DEVICE_ID`）；SRA0889 的设备 1 是核显，必须用 0 | `0` |
+| `--out DIR` | 输出目录 | `outputs/scene_rsi_20261016/past_view/<沙盒>__<目录名>/` |
+| `--scene DIR` | 场景目录（`scene_meta.json`） | `outputs/scene_discovery/adt_apartment_mars` |
+
+得到什么：输出目录里每局一页 `<label>.en.html`（中文版是 `<label>.html`），和一个 `index.html`——每局一行：局名、任务、结果、失败类型、步骤数、页面链接，上方是总成功数。终端逐局打印 `[i/N] <label>`，最后打印索引页路径和成功数。带帧时每局要重新加载一次 MuJoCo 场景，约 10 秒；`ga-past-b` 一个诊断目录 22 局约 3.5 分钟、8 MB，不带帧约 30 秒。某一局生成失败时，终端打印 `FAILED` 和日志位置（输出目录下的 `.log_<label>`），索引里那一行标 `page failed`，其余局照做，最后退出码 1。也可以对验收池或封存集的目录用（隐藏目录 `…_hidden/<任务族>/gate/<NN_hash>/candidate/`、`sealed/<版本>/`），只是那里的局只给人看。
 
 
 ## 6. L2：一轮外环
