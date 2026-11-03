@@ -224,7 +224,17 @@ sed -n '/Scene-graph transitions/,/^## /p' $S/outputs/scene_rsi_20261016/grasp_a
 
 关系有五类，再加谓词：接触 `touching`；持握 `gripped`（两指都碰到）、`held`（谓词：夹住且离开所有台面）、`rel_pose`（物体在手里的偏置）；支撑 `supported_by`、`in`；空间 `above`（上方净空）、`beside`（邻居的缝和方位）、`near_edge`（离哪条台沿多远）、`blocking`（和站位或接近走廊相交多深）、`dist` / `facing`（机器人到目标）；相对位姿 `reach_vec`（目标点在骨盆系的前伸 / 外侧 / 高度）、`approach`（从物体哪一面接近）、`at`（手或机器人到没到目标点）；谓词 `upright`。`expected` 是按原语的固定表（伸手要到位、目标和邻居不动、走廊无阻挡；合爪要两指夹住；拿着往上伸要离开支撑……），`discrepancies` 是没成立的期待——只是差异，不是因果。完整字段见[代码结构与流水线](RSI_system_pipeline.md)第 4.2 节。
 
-自己写分析时直接读 JSON：`head -1 $D/<label>.past.jsonl | python3 -m json.tool`；字段有 `kind`、`roles`、`scope`（范围和每个实体为什么进来）、`entities`、`G_before` / `G_after`（`states`、`edges`）、`events`、`expected`、`discrepancies`、`outcome`、`evidence`。记录库按步骤种类把它们展开成列（`reach.beside.gap_m`、`grip.moved_before_grip`、`first_bad.kind` 等），`scripts/rsi/records.py features` 列出来（5.2）。还没有图形页：节点—边的 `past.py html` 是第二阶段；已知一处误报：走路步骤的 `blocking` 会把整个公寓（`ApartmentEnv`）和目标所在的家具算成挡住站位，期待"站位无阻挡"因此总是 ✗，读的时候忽略这两条。
+自己写分析时直接读 JSON：`head -1 $D/<label>.past.jsonl | python3 -m json.tool`；字段有 `kind`、`roles`、`scope`（范围和每个实体为什么进来）、`entities`、`G_before` / `G_after`（`states`、`edges`）、`events`、`expected`、`discrepancies`、`outcome`、`evidence`。记录库按步骤种类把它们展开成列（`reach.beside.gap_m`、`grip.moved_before_grip`、`first_bad.kind` 等），`scripts/rsi/records.py features` 列出来（5.2）。2026-11-02 之前的记录有两处误报，记录器已修（TODO 39.7）：走路步骤的 `blocking` 把整个公寓（`ApartmentEnv`）和目标所在的家具算成挡住站位，伸手的 `at` 拿手腕而不是夹爪中心去比、总差约 15 cm；读旧记录时忽略这两类 ✗（下面的页面自动去掉第一类）。
+
+给人看的图形页（不进沙盒，TODO 39.7）：
+
+```bash
+PYTHONPATH=src $PY scripts/rsi/report/past_view.py $D/<label>                          # 一局一页
+PYTHONPATH=src $PY scripts/rsi/report/past_view.py $D/<失败局> --compare $D/<成功局>     # 两局按步骤种类对齐
+MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 PYTHONPATH=src $PY scripts/rsi/report/past_view.py $D/<label> --frames   # 加每步前后两帧 MuJoCo 画面
+```
+
+得到什么：`outputs/scene_rsi_20261016/past_view/<label>.html`（`--out` 改），一个自包含的 HTML，浏览器直接打开；不带帧约 50 KB，带帧约 0.5 MB。每一步左边是俯视图（世界 xy：台面、家具、站位圆盘、接近走廊按真实大小，物体是方块、手是点、机器人带朝向；步骤开始时淡色、结束时实色，位移画箭头；接触、持握、支撑、邻居、阻挡、接近画在两个实体之间，到位和伸手向量画成箭头，上方净空是标注），右边是按类分组的关系清单（前 → 后、数值、来源、期待 ✓ / ✗），图下是中途事件（同一条边 0.3 秒内的反复翻转合成一行"抖动 N 次"）。整局一个固定视野，"放大到这一步"按钮切换；"只看翻转 / 差异"只留这一步变了的和没成立的；悬停在关系名上看中文释义；URL 加 `#N` 直接打开第 N 步。对照页两局的每一对步骤占一行，值不同的边标黄。
 
 
 ## 6. L2：一轮外环
