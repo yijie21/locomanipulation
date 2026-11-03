@@ -196,14 +196,35 @@ $PY scripts/rsi/regress.py add pick_single $S pick --last $(python3 -c "import j
 得到什么：`$SUM` 里 `versions` 列出种子和最终版本各自的成功数，`final` 是最终版本的名字；`prediction` 是每个版本上身体模型的预测对实送的比较：空手伸手的 AUC、预计误差对实送误差、失败局里出手前就被判"多半够不到"的有几局（TODO 33.1.2）。有经验库的运行再跑 `python3 scripts/rsi/report/library_monitor.py run $S --out $S/library.json`：假设里点名经验库的比例和点了哪几条、用词接近原文的比例、每轮假设数、Manager 认定的旧机制数（TODO 33.11，只读记录，几秒钟）。原来种子 0 / 80，最终 41 / 80（当时的场景）。写回改动了 `src/locomani/tasks/scene/skills/`，跑 `make test` 通过后提交。
 
 
-### 5.4 Recorded Files for Human and Reviewer 
-```bash
-~/workspace/code/rsi-scene/ga-past-b/outputs/scene_rsi_20261016/grasp_atomic_past/
-├── diag/
-│   ├── incumbent_<hash>/<任务>_s<seed>.past.jsonl   现任在诊断池上每一局的记录（和 .json / .npz 同目录）
-│   └── candidate_<hash>/<任务>_s<seed>.past.jsonl   每份 Engineer 草稿、Composer 候选在诊断池上的记录
-└── loop/iter_NN/diag_digest.md                      每轮给 Reviewer 的摘要，含 "Scene-graph transitions" 一节
+### 5.4 看场景图记录（`.past.jsonl`）
+
+每局跑完，运行器在 `.json` / `.npz` 旁边写一份 `<任务>_s<seed>.past.jsonl`（TODO 39）：每行一条记录，对应一个技能步骤或一次重试，一局几十 KB。给 Reviewer 和给人看的是同一份。位置（以 `ga-past-b` 为例）：
+
 ```
+$S/outputs/scene_rsi_20261016/grasp_atomic_past/
+├── diag/incumbent_<hash>/<任务>_s<seed>.past.jsonl   现任在诊断池上每一局的记录
+├── diag/candidate_<hash>/<任务>_s<seed>.past.jsonl   每份草稿、Composer 候选在诊断池上的记录（被接受后改名成 incumbent_）
+└── loop/iter_NN/diag_digest.md                      每轮给 Reviewer 的摘要，含 "Scene-graph transitions" 一节
+$S/outputs/scene_rsi_20261016_hidden/grasp_atomic_past/
+└── gate/<NN_hash>/candidate/、sealed/<版本>/         验收池和封存集的局，人能看，角色不能
+```
+
+`_retired_` 开头的是诊断池重抽时换下来的起点，可以不看。在主仓库根目录读（`past.py` 不改任何文件）：
+
+```bash
+D=$S/outputs/scene_rsi_20261016/grasp_atomic_past/diag/incumbent_<hash>
+for f in $D/pick_*.json; do python3 -c "import json,sys; r=json.load(open(sys.argv[1])); print(r['label'], r['ok'], r.get('failure_class'))" $f; done | column -t   # 哪些局成、哪些败
+PYTHONPATH=src $PY scripts/rsi/past.py show $D/pick_Mug_2_s410023                 # 一局，按步骤展开
+PYTHONPATH=src $PY scripts/rsi/past.py show $D/pick_Mug_2_s410023 --step 2 --json # 某一步的原始 JSON
+PYTHONPATH=src $PY scripts/rsi/past.py compare $D/<失败局> $D/<成功局>             # 两局按步骤种类对齐，只列值不同的边
+sed -n '/Scene-graph transitions/,/^## /p' $S/outputs/scene_rsi_20261016/grasp_atomic_past/loop/iter_03/diag_digest.md  # 一轮的汇总
+```
+
+`show` 每一步的输出：标题行 `序号.重试 步骤名 [原语种类] 起止时间 成败`（种类后带 `?` 是从轨迹的原语标签推的、没有调用日志）；`roles`（目标、哪只手、支撑面、站位等）；`check`（动作层的检查值）；每条边一行 `主体 —关系→ 客体  前→后 （数值） （期待 ✓/✗）`；`events` 中途的翻转和时刻；`joined` 执行中才碰到的实体；最后一行是这一步在 `.npz` 里的拍区间。值的写法：`true` / `false`；`unknown` 是算不出（旧局没有接触通道）；`-` 是那一刻没有这条边。空种子没动的局只有一行 `no records: no skill covers this goal`。
+
+关系有五类，再加谓词：接触 `touching`；持握 `gripped`（两指都碰到）、`held`（谓词：夹住且离开所有台面）、`rel_pose`（物体在手里的偏置）；支撑 `supported_by`、`in`；空间 `above`（上方净空）、`beside`（邻居的缝和方位）、`near_edge`（离哪条台沿多远）、`blocking`（和站位或接近走廊相交多深）、`dist` / `facing`（机器人到目标）；相对位姿 `reach_vec`（目标点在骨盆系的前伸 / 外侧 / 高度）、`approach`（从物体哪一面接近）、`at`（手或机器人到没到目标点）；谓词 `upright`。`expected` 是按原语的固定表（伸手要到位、目标和邻居不动、走廊无阻挡；合爪要两指夹住；拿着往上伸要离开支撑……），`discrepancies` 是没成立的期待——只是差异，不是因果。完整字段见[代码结构与流水线](RSI_system_pipeline.md)第 4.2 节。
+
+自己写分析时直接读 JSON：`head -1 $D/<label>.past.jsonl | python3 -m json.tool`；字段有 `kind`、`roles`、`scope`（范围和每个实体为什么进来）、`entities`、`G_before` / `G_after`（`states`、`edges`）、`events`、`expected`、`discrepancies`、`outcome`、`evidence`。记录库按步骤种类把它们展开成列（`reach.beside.gap_m`、`grip.moved_before_grip`、`first_bad.kind` 等），`scripts/rsi/records.py features` 列出来（5.2）。还没有图形页：节点—边的 `past.py html` 是第二阶段；已知一处误报：走路步骤的 `blocking` 会把整个公寓（`ApartmentEnv`）和目标所在的家具算成挡住站位，期待"站位无阻挡"因此总是 ✗，读的时候忽略这两条。
 
 
 ## 6. L2：一轮外环
