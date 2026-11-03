@@ -274,7 +274,7 @@ xdg-open outputs/scene_rsi_20261016/past_view/ga-past-b__incumbent_0fa018936751/
 | `--out DIR` | 输出目录 | `outputs/scene_rsi_20261016/past_view/<沙盒>__<目录名>/` |
 | `--scene DIR` | 场景目录（`scene_meta.json`） | `outputs/scene_discovery/adt_apartment_mars` |
 
-得到什么：输出目录里每局一页 `<label>.en.html`（中文版是 `<label>.html`），和一个 `index.html`——每局一行：局名、任务、结果、失败类型、步骤数、页面链接，上方是总成功数。终端逐局打印 `[i/N] <label>`，最后打印索引页路径和成功数。带帧时每局要重新加载一次 MuJoCo 场景，约 10 秒；`ga-past-b` 一个诊断目录 22 局约 3.5 分钟、8 MB，不带帧约 30 秒。某一局生成失败时，终端打印 `FAILED` 和日志位置（输出目录下的 `.log_<label>`），索引里那一行标 `page failed`，其余局照做，最后退出码 1。也可以对验收池或封存集的目录用（隐藏目录 `…_hidden/<任务族>/gate/<NN_hash>/candidate/`、`sealed/<版本>/`），只是那里的局只给人看。
+得到什么：输出目录里每局一页 `<label>.en.html`（中文版是 `<label>.html`），和一个 `index.html`——每局一行：局名、任务、结果、失败类型、步骤数、页面链接，上方是总成功数。终端逐局打印 `[i/N] <label>`，最后打印索引页路径和成功数。带帧时每局要重新加载一次 MuJoCo 场景，约 10 秒；`ga-past-b` 一个诊断目录 22 局约 3.5 分钟、8 MB，不带帧约 5 秒、2 MB。某一局生成失败时，终端打印 `FAILED` 和日志位置（输出目录下的 `.log_<label>`），索引里那一行标 `page failed`，其余局照做，最后退出码 1。也可以对验收池或封存集的目录用（隐藏目录 `…_hidden/<任务族>/gate/<NN_hash>/candidate/`、`sealed/<版本>/`），只是那里的局只给人看。
 
 
 ## 6. L2：一轮外环
