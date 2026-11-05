@@ -1329,3 +1329,4 @@
 - [ ] 40.10 `scene_feasibility.py` 对 s0 的 11 个任务只报 1 个 `beyond the hand's reach from the edge`（提示，不挡）；能力表是单手的，双手任务的 `grasp_bimanual.*` 缺口要等第一次运行
 - [x] 40.11 鞋类不进物流间（用户 11-04）：`scripts/gso_categories.py` 从 Gazebo Fuel 取数据集类别写 `categories.json`；目录把 `--exclude-categories`（默认 `Shoe`，254 件）记 `none`；s0–s4、任务族、预览图、s0 关卡重建（目录现在单手 334 / 双手 135 / none 561）
 - [x] 40.12 五个实例的 Unreal 图（用户 11-04）：`scripts/gso_preview_unreal.py --seeds 5 --build`（关卡缺或过期先建；第三视角机位摆到俯视 / 房间远角各拍一帧）→ `outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png`；s1–s4 的关卡也建了
+- [x] 40.13 物体图库（用户 11-05）：`scripts/gso_gallery.py` 把 1030 件逐件用 MuJoCo 画出来，写本地网页 `outputs/gso_gallery/index.html`（搜索、按种类 / 类别 / 划分 / 排除筛选、排序、点开看全部字段）

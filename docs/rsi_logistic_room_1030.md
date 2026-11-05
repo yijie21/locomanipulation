@@ -11,6 +11,7 @@
 | 装物体库（2 GB，一次） | 看网速 |
 | 取类别标签（Gazebo Fuel，一次） | 几秒 |
 | 建目录（1030 件，含每件 24 s 的静置测试） | 8 s |
+| 物体图库网页（1030 张图） | 54 s |
 | 一个实例：建场景 + 沉降 + 落地测试 + lint + 任务族 + 预览图 | 10–15 s |
 | 一个实例的 Unreal 关卡 | 41–88 s |
 | 一个实例的 Unreal 预览图（两个视角） | 20–29 s |
@@ -38,6 +39,15 @@ $PY scripts/gso_catalog.py
 
 做什么：第一条把 1030 件物体的网格装到 `assets/mujoco_scanned_objects/models/`（git 忽略；仓库只跟踪 `catalog.json`、`categories.json`、LICENSE、README、VERSION），已经装好就什么都不做。第二条从数据集在 Gazebo Fuel 上的条目取每件物体的官方类别（Shoe 254、Consumer Goods 248、Toys 150、Bottles and Cans and Cups 53、Bag 28……216 件没有标签；kevinzakka 的 MuJoCo 版没带这些标签）写成 `categories.json`。第三条按每件物体的网格算尺寸、V-HACD 壳体体积、质量（体积 × 300 kg/m³，截到 0.05–1.5 kg）、预计抓取高度、24 s 落地静置测试，判成单手 / 双手 / 不能抓，并按名字哈希留出 10% 作评测集；类别在 `--exclude-categories`（默认 `Shoe`，用户 2026-11-04：鞋子不进物流间）里的一律记 `none`，`why` 写 `category Shoe`；阈值都是参数（`--jaw 0.095`、`--bimanual-width 0.20 0.45`、`--bimanual-min-height 0.10`、`--density 300`、`--held-out 0.10` 等，见 `--help`），写进文件。`catalog.json` 已在仓库里，和模型一样就不用重建；重建得到同一个文件。
 得到什么：终端打印 `counts`（`single 334, bimanual 135, none 561, held_out 96, excluded 254`）、阈值和秒数；字段说明在 `assets/mujoco_scanned_objects/README.md`。
+
+看全部物体长什么样（用户 2026-11-05）：
+
+```bash
+$PY scripts/gso_gallery.py               # --force 全部重画；--size 384；--workers 8
+```
+
+做什么：用 MuJoCo 离屏把目录里每件物体单独画一张（扫描网格和贴图、浅色地面、同一个斜上方视角、按包围盒取景），再写一个本地网页：卡片上是图、短语、键、质量、尺寸和单手 / 双手 / none、类别、是否排除的标签；可以按名字搜索，按种类、类别、划分、是否排除筛选，按质量或最长边排序；点卡片看大图和目录里的全部字段（含 `why`）。已画的图默认保留，网页每次重写。
+得到什么：`outputs/gso_gallery/index.html`（浏览器直接打开）和 `img/<键>.jpg` 1030 张，共约 18 MB，约 1 分钟。
 
 ## 2. 建场景实例、出预览图
 
@@ -73,7 +83,7 @@ PYTHONPATH=src $PY scripts/rsi/gso_family.py $SC
 ## 3. 检查代码
 
 ```bash
-make test TESTS="tests/test_gso_catalog.py tests/test_gso_family.py tests/test_unreal_export_film.py tests/test_run_context.py tests/test_image_source.py"; echo "exit $?"
+make test TESTS="tests/test_gso_catalog.py tests/test_gso_family.py tests/test_gso_gallery.py tests/test_unreal_export_film.py tests/test_run_context.py tests/test_image_source.py"; echo "exit $?"
 make test TESTS="tests/test_gso_preview.py"; echo "exit $?"
 ```
 
