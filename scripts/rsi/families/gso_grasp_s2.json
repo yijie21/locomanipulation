@@ -1,16 +1,16 @@
 {
  "name": "gso_grasp_s2",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 2 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0100 = brother ink cartridge magenta lc75m, gso_0267 = epson labelworks lc4wbn9 tape reel labels 047 x 295 roll black on white, gso_0297 = frozen scrabble jr, gso_0379 = justified the complete fourth season 3 discs dvd, gso_0660 = pinwheel pencil case, gso_0669 = polar herring fillets smoked peppered 705 oz total",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 2 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0102 = brother printing cartridge pc501, gso_0266 = epson ink cartridge black 200, gso_0292 = folic acid, gso_0376 = just for men shampooin haircolor jet black 60, gso_0655 = phillips caplets size 24, gso_0657 = phillips milk of magnesia saline laxative liquid original",
  "scene": "outputs/scene_discovery/logistics_room_1030_s2",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s2_tasks.jsonl",
  "tasks": [
-  "pick_gso_0100",
-  "pick_gso_0267",
-  "pick_gso_0297",
-  "pick_gso_0379",
-  "pick_gso_0660",
-  "pick_gso_0669"
+  "pick_gso_0102",
+  "pick_gso_0266",
+  "pick_gso_0292",
+  "pick_gso_0376",
+  "pick_gso_0655",
+  "pick_gso_0657"
  ],
  "spawn": {
   "rooms": "all",

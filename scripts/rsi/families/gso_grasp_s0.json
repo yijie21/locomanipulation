@@ -1,16 +1,16 @@
 {
  "name": "gso_grasp_s0",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 0 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0049 = asus m5a99fx pro r20 motherboard atx socket am3, gso_0270 = epson ultrachrome t0543 ink cartridge magenta 1pack, gso_0307 = grandfather doll, gso_0447 = mattel skip bo card game, gso_0553 = office depot dell series 11 remanufactured ink cartridge tricolor, gso_0689 = quercetin 500",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 0 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0051 = asus sabertooth z97 mark 1 motherboard atx lga1150 socket, gso_0268 = epson labelworks lc5wbn9 tape reel labels 071 x 295 roll black on white, gso_0298 = fruity friends, gso_0456 = melissa doug traffic signs and vehicles, gso_0558 = office depot dell series 9 ink cartridge black mk992, gso_0660 = pinwheel pencil case",
  "scene": "outputs/scene_discovery/logistics_room_1030_s0",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s0_tasks.jsonl",
  "tasks": [
-  "pick_gso_0049",
-  "pick_gso_0270",
-  "pick_gso_0307",
-  "pick_gso_0447",
-  "pick_gso_0553",
-  "pick_gso_0689"
+  "pick_gso_0051",
+  "pick_gso_0268",
+  "pick_gso_0298",
+  "pick_gso_0456",
+  "pick_gso_0558",
+  "pick_gso_0660"
  ],
  "spawn": {
   "rooms": "all",

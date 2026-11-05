@@ -1,5 +1,5 @@
 {
- "version": 1,
+ "version": 2,
  "source": {
   "dataset": "Google Scanned Objects (Downs et al. 2022, CC-BY 4.0), MJCF by kevinzakka/mujoco_scanned_objects (MIT)",
   "models_version": "0.0.1",
@@ -22,17 +22,35 @@
    1.5
   ],
   "held_out_fraction": 0.1,
-  "excluded_categories": [
-   "Shoe"
+  "used_categories": [
+   "Consumer Goods",
+   "Bottles and Cans and Cups",
+   "Bag",
+   "Board Games",
+   "Headphones",
+   "Camera",
+   "(none)"
   ]
  },
+ "not_used_categories": [
+  "Action Figures",
+  "Car Seat",
+  "Hat",
+  "Keyboard",
+  "Legos",
+  "Media Cases",
+  "Mouse",
+  "Shoe",
+  "Stuffed Toys",
+  "Toys"
+ ],
  "counts": {
   "objects": 1030,
-  "single": 334,
-  "bimanual": 135,
-  "none": 561,
+  "single": 270,
+  "bimanual": 90,
+  "none": 670,
   "held_out": 96,
-  "excluded": 254
+  "excluded": 463
  },
  "objects": {
   "gso_0000": {
@@ -67,7 +85,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0001": {
@@ -136,8 +154,8 @@
     "dz_mm": -2.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.9 cm between two hands (0.2-0.45 m), 20.7 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0003": {
@@ -206,8 +224,8 @@
     "dz_mm": -1.5,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.7 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0005": {
@@ -241,8 +259,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0006": {
@@ -276,8 +294,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0007": {
@@ -311,8 +329,8 @@
     "dz_mm": -2.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.7 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0008": {
@@ -347,7 +365,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 9.5 cm > jaw; wide side 10.5 cm, 9.2 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0009": {
@@ -382,7 +400,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 9.0 cm fits the jaw but the grasp point 0.400 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0010": {
@@ -521,8 +539,8 @@
     "dz_mm": -2.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 35.6 cm between two hands (0.2-0.45 m), 11.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0014": {
@@ -591,8 +609,8 @@
     "dz_mm": -3.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 34.4 cm between two hands (0.2-0.45 m), 22.5 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0016": {
@@ -662,7 +680,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.3 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0018": {
@@ -697,7 +715,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.1 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0019": {
@@ -732,7 +750,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0020": {
@@ -767,7 +785,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0021": {
@@ -802,7 +820,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0022": {
@@ -837,7 +855,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0023": {
@@ -872,7 +890,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0024": {
@@ -907,7 +925,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0025": {
@@ -942,7 +960,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0026": {
@@ -977,7 +995,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0027": {
@@ -1012,7 +1030,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0028": {
@@ -1047,7 +1065,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0029": {
@@ -1082,7 +1100,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0030": {
@@ -1117,7 +1135,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0031": {
@@ -1152,7 +1170,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0032": {
@@ -1187,7 +1205,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0033": {
@@ -1222,7 +1240,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 13.5 cm > jaw; wide side 23.0 cm, 7.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0034": {
@@ -1257,7 +1275,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0035": {
@@ -1292,7 +1310,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0036": {
@@ -1502,7 +1520,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "does not stand at rest on a plane: tilted 3.91 deg, slid 0.0 mm",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0042": {
@@ -1537,7 +1555,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.5 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0043": {
@@ -1571,8 +1589,8 @@
     "dz_mm": -2.0,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 40.2 cm between two hands (0.2-0.45 m), 20.0 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0044": {
@@ -2026,8 +2044,8 @@
     "dz_mm": -2.4,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 36.0 cm between two hands (0.2-0.45 m), 18.4 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0057": {
@@ -2061,8 +2079,8 @@
     "dz_mm": -2.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 28.3 cm between two hands (0.2-0.45 m), 13.3 cm tall",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0058": {
@@ -2097,7 +2115,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0059": {
@@ -2131,8 +2149,8 @@
     "dz_mm": -2.0,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0060": {
@@ -2167,7 +2185,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 13.2 cm > jaw; wide side 13.4 cm, 3.3 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0061": {
@@ -2202,7 +2220,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 25.4 cm > jaw; wide side 32.6 cm, 3.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0062": {
@@ -2236,8 +2254,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.4 cm between two hands (0.2-0.45 m), 21.7 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0063": {
@@ -2272,7 +2290,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.6 cm > jaw; wide side 18.5 cm, 15.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0064": {
@@ -2306,8 +2324,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 21.0 cm between two hands (0.2-0.45 m), 14.9 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0065": {
@@ -2341,8 +2359,8 @@
     "dz_mm": -2.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 31.5 cm between two hands (0.2-0.45 m), 15.4 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0066": {
@@ -2376,8 +2394,8 @@
     "dz_mm": -2.5,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.3 cm between two hands (0.2-0.45 m), 17.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0067": {
@@ -2481,8 +2499,8 @@
     "dz_mm": -2.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0070": {
@@ -2517,7 +2535,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "2.4 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0071": {
@@ -2552,7 +2570,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.2 cm > jaw; wide side 25.3 cm, 7.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0072": {
@@ -2586,8 +2604,8 @@
     "dz_mm": -2.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 29.3 cm between two hands (0.2-0.45 m), 13.3 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0073": {
@@ -2621,8 +2639,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 2.2 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0074": {
@@ -2656,8 +2674,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0075": {
@@ -2691,8 +2709,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0076": {
@@ -3392,7 +3410,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.7 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0096": {
@@ -3672,7 +3690,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "2.7 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0104": {
@@ -3707,7 +3725,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 3.8 cm fits the jaw but the grasp point 0.397 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0105": {
@@ -3741,8 +3759,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 30.2 cm between two hands (0.2-0.45 m), 14.2 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0106": {
@@ -3777,7 +3795,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 14.2 cm > jaw; wide side 14.2 cm, 19.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0107": {
@@ -3811,8 +3829,8 @@
     "dz_mm": -2.0,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0108": {
@@ -3846,8 +3864,8 @@
     "dz_mm": -1.5,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 20.2 cm between two hands (0.2-0.45 m), 14.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0109": {
@@ -3881,8 +3899,8 @@
     "dz_mm": -1.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 22.5 cm between two hands (0.2-0.45 m), 12.5 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0110": {
@@ -3917,7 +3935,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "2.8 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0111": {
@@ -3952,7 +3970,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0112": {
@@ -3986,8 +4004,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.6 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0113": {
@@ -4021,8 +4039,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 27.0 cm between two hands (0.2-0.45 m), 11.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0114": {
@@ -4056,8 +4074,8 @@
     "dz_mm": -3.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 39.1 cm between two hands (0.2-0.45 m), 13.5 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0115": {
@@ -4091,8 +4109,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 28.2 cm between two hands (0.2-0.45 m), 19.3 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0116": {
@@ -4127,7 +4145,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0117": {
@@ -4477,7 +4495,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0127": {
@@ -4617,7 +4635,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0131": {
@@ -4652,7 +4670,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0132": {
@@ -4687,7 +4705,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0133": {
@@ -4757,7 +4775,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0135": {
@@ -5772,7 +5790,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0164": {
@@ -5912,7 +5930,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0168": {
@@ -5982,7 +6000,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0170": {
@@ -6367,7 +6385,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0181": {
@@ -6402,7 +6420,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0182": {
@@ -6437,7 +6455,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0183": {
@@ -6472,7 +6490,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0184": {
@@ -6647,7 +6665,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 9.6 cm > jaw; wide side 32.2 cm, 8.7 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0189": {
@@ -6716,8 +6734,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 23.5 cm between two hands (0.2-0.45 m), 15.3 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0191": {
@@ -6751,8 +6769,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 22.8 cm between two hands (0.2-0.45 m), 15.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0192": {
@@ -6787,7 +6805,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.9 cm > jaw; wide side 19.1 cm, 9.8 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0193": {
@@ -6821,8 +6839,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 9.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0194": {
@@ -6856,8 +6874,8 @@
     "dz_mm": -4.4,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 35.4 cm between two hands (0.2-0.45 m), 14.3 cm tall",
+   "graspable": "none",
+   "why": "category Hat: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0195": {
@@ -6926,8 +6944,8 @@
     "dz_mm": -3.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 40.4 cm between two hands (0.2-0.45 m), 17.2 cm tall",
+   "graspable": "none",
+   "why": "category Hat: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0197": {
@@ -6962,7 +6980,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0198": {
@@ -6997,7 +7015,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0199": {
@@ -7032,7 +7050,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0200": {
@@ -7067,7 +7085,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0201": {
@@ -7102,7 +7120,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0202": {
@@ -7416,8 +7434,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.9 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0211": {
@@ -7451,8 +7469,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 5.9 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0212": {
@@ -7486,8 +7504,8 @@
     "dz_mm": -2.0,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0213": {
@@ -7732,7 +7750,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0220": {
@@ -9587,7 +9605,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0273": {
@@ -9622,7 +9640,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0274": {
@@ -9657,7 +9675,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0275": {
@@ -9691,8 +9709,8 @@
     "dz_mm": -2.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.5 cm between two hands (0.2-0.45 m), 22.3 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0276": {
@@ -9727,7 +9745,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.4 cm > jaw; wide side 17.6 cm, 9.2 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0277": {
@@ -9761,8 +9779,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 3.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0278": {
@@ -9796,8 +9814,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.0 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0279": {
@@ -9832,7 +9850,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "does not stand at rest on a plane: tilted 3.12 deg, slid 0.0 mm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0280": {
@@ -9866,8 +9884,8 @@
     "dz_mm": -1.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.7 cm between two hands (0.2-0.45 m), 12.0 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0281": {
@@ -9902,7 +9920,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.5 cm > jaw; wide side 18.9 cm, 4.4 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0282": {
@@ -9937,7 +9955,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 27.1 cm > jaw; wide side 34.8 cm, 5.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0283": {
@@ -9972,7 +9990,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "2.3 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0284": {
@@ -10007,7 +10025,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0285": {
@@ -10042,7 +10060,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0286": {
@@ -10112,7 +10130,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "does not stand at rest on a plane: tilted 91.07 deg, slid 0.0 mm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0288": {
@@ -10602,7 +10620,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 10.8 cm > jaw; wide side 16.6 cm, 16.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0302": {
@@ -10637,7 +10655,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 16.1 cm > jaw; wide side 31.1 cm, 4.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0303": {
@@ -10672,7 +10690,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.4 cm > jaw; wide side 17.5 cm, 8.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0304": {
@@ -10707,7 +10725,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.4 cm > jaw; wide side 17.5 cm, 6.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0305": {
@@ -10742,7 +10760,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.5 cm > jaw; wide side 36.2 cm, 6.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0306": {
@@ -10777,7 +10795,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0307": {
@@ -10811,8 +10829,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 3.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0308": {
@@ -10846,8 +10864,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 3.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0309": {
@@ -10917,7 +10935,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0311": {
@@ -10952,7 +10970,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0312": {
@@ -10987,7 +11005,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0313": {
@@ -11127,7 +11145,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0317": {
@@ -11162,7 +11180,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0318": {
@@ -11267,7 +11285,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0321": {
@@ -11442,7 +11460,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0326": {
@@ -11477,7 +11495,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0327": {
@@ -11512,7 +11530,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0328": {
@@ -11547,7 +11565,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0329": {
@@ -11651,8 +11669,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 5.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0332": {
@@ -11686,8 +11704,8 @@
     "dz_mm": -2.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 28.4 cm between two hands (0.2-0.45 m), 12.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0333": {
@@ -11722,7 +11740,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.6 cm > jaw; wide side 25.2 cm, 8.9 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0334": {
@@ -11757,7 +11775,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 20.3 cm > jaw; wide side 27.0 cm, 7.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0335": {
@@ -11791,8 +11809,8 @@
     "dz_mm": -2.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0336": {
@@ -12212,7 +12230,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0348": {
@@ -12386,8 +12404,8 @@
     "dz_mm": -2.2,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 2.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0353": {
@@ -12561,8 +12579,8 @@
     "dz_mm": -3.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 39.6 cm between two hands (0.2-0.45 m), 23.7 cm tall",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0358": {
@@ -12807,7 +12825,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0365": {
@@ -12842,7 +12860,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.2 cm > jaw; wide side 28.7 cm, 7.8 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0366": {
@@ -12877,7 +12895,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 27.0 cm > jaw; wide side 37.3 cm, 3.3 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0367": {
@@ -13331,8 +13349,8 @@
     "dz_mm": -2.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 2.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0380": {
@@ -13367,7 +13385,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 12.6 cm > jaw; wide side 23.4 cm, 9.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0381": {
@@ -13402,7 +13420,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 14.4 cm > jaw; wide side 18.0 cm, 10.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0382": {
@@ -13437,7 +13455,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 16.7 cm > jaw; wide side 18.5 cm, 15.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0383": {
@@ -13507,7 +13525,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "2.4 cm tall: flatter than 3 cm",
+   "why": "category Keyboard: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0385": {
@@ -13541,8 +13559,8 @@
     "dz_mm": -1.4,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 3.2 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0386": {
@@ -13786,8 +13804,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0393": {
@@ -13822,7 +13840,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 5.7 cm fits the jaw but the grasp point 0.386 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0394": {
@@ -13857,7 +13875,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 34.7 cm > jaw; wide side 45.2 cm, 26.2 cm tall: outside the two-hand range",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0395": {
@@ -13891,8 +13909,8 @@
     "dz_mm": -2.9,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 38.1 cm between two hands (0.2-0.45 m), 28.4 cm tall",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0396": {
@@ -13926,8 +13944,8 @@
     "dz_mm": -3.0,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.2 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0397": {
@@ -14031,8 +14049,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 44.0 cm between two hands (0.2-0.45 m), 21.7 cm tall",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0400": {
@@ -14066,8 +14084,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 38.9 cm between two hands (0.2-0.45 m), 16.0 cm tall",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0401": {
@@ -14136,8 +14154,8 @@
     "dz_mm": -3.0,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.7 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0403": {
@@ -14172,7 +14190,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0404": {
@@ -14276,8 +14294,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.9 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0407": {
@@ -14312,7 +14330,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0408": {
@@ -14381,8 +14399,8 @@
     "dz_mm": -2.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0410": {
@@ -14416,8 +14434,8 @@
     "dz_mm": -1.4,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 9.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0411": {
@@ -14626,8 +14644,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 2.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0417": {
@@ -14696,8 +14714,8 @@
     "dz_mm": -4.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 37.1 cm between two hands (0.2-0.45 m), 12.4 cm tall",
+   "graspable": "none",
+   "why": "category Stuffed Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0419": {
@@ -14732,7 +14750,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0420": {
@@ -14767,7 +14785,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.6 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0421": {
@@ -14837,7 +14855,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0423": {
@@ -14872,7 +14890,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 16.3 cm > jaw; wide side 25.7 cm, 4.0 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0424": {
@@ -14906,8 +14924,8 @@
     "dz_mm": -2.5,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.6 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0425": {
@@ -14942,7 +14960,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 11.4 cm > jaw; wide side 15.6 cm, 17.7 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0426": {
@@ -14976,8 +14994,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0427": {
@@ -15011,8 +15029,8 @@
     "dz_mm": -2.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 29.3 cm between two hands (0.2-0.45 m), 16.8 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0428": {
@@ -15081,8 +15099,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 21.2 cm between two hands (0.2-0.45 m), 13.2 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0430": {
@@ -15116,8 +15134,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 32.4 cm between two hands (0.2-0.45 m), 17.4 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0431": {
@@ -15152,7 +15170,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.9 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0432": {
@@ -15187,7 +15205,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 15.8 cm > jaw; wide side 17.8 cm, 3.4 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0433": {
@@ -15222,7 +15240,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "2.2 cm tall: flatter than 3 cm",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0434": {
@@ -15467,7 +15485,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.6 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0441": {
@@ -15502,7 +15520,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.7 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0442": {
@@ -15606,8 +15624,8 @@
     "dz_mm": -2.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.0 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0445": {
@@ -15677,7 +15695,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0447": {
@@ -15852,7 +15870,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 29.2 cm > jaw; wide side 29.5 cm, 4.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0452": {
@@ -16062,7 +16080,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0458": {
@@ -16097,7 +16115,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0459": {
@@ -16132,7 +16150,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0460": {
@@ -16167,7 +16185,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0461": {
@@ -16202,7 +16220,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0462": {
@@ -16237,7 +16255,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0463": {
@@ -16272,7 +16290,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0464": {
@@ -16307,7 +16325,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0465": {
@@ -16342,7 +16360,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0466": {
@@ -16377,7 +16395,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0467": {
@@ -16412,7 +16430,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0468": {
@@ -16447,7 +16465,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0469": {
@@ -16482,7 +16500,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0470": {
@@ -16517,7 +16535,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0471": {
@@ -16552,7 +16570,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0472": {
@@ -16587,7 +16605,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0473": {
@@ -16622,7 +16640,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0474": {
@@ -16657,7 +16675,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0475": {
@@ -16692,7 +16710,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0476": {
@@ -16727,7 +16745,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0477": {
@@ -16762,7 +16780,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0478": {
@@ -16797,7 +16815,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0479": {
@@ -16832,7 +16850,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0480": {
@@ -16867,7 +16885,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0481": {
@@ -16902,7 +16920,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0482": {
@@ -16937,7 +16955,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0483": {
@@ -16972,7 +16990,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0484": {
@@ -17007,7 +17025,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0485": {
@@ -17042,7 +17060,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0486": {
@@ -17077,7 +17095,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0487": {
@@ -17112,7 +17130,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0488": {
@@ -17147,7 +17165,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0489": {
@@ -17182,7 +17200,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0490": {
@@ -17252,7 +17270,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 26.6 cm > jaw; wide side 35.3 cm, 8.3 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0492": {
@@ -17286,8 +17304,8 @@
     "dz_mm": -2.4,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 5.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0493": {
@@ -17321,8 +17339,8 @@
     "dz_mm": -2.4,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.7 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0494": {
@@ -17356,8 +17374,8 @@
     "dz_mm": -2.2,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 22.4 cm between two hands (0.2-0.45 m), 23.2 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0495": {
@@ -17427,7 +17445,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0497": {
@@ -17497,7 +17515,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.2 cm > jaw; wide side 18.0 cm, 12.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0499": {
@@ -18197,7 +18215,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.7 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0519": {
@@ -18231,8 +18249,8 @@
     "dz_mm": -1.2,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0520": {
@@ -18266,8 +18284,8 @@
     "dz_mm": -1.5,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.6 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0521": {
@@ -18301,8 +18319,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0522": {
@@ -18336,8 +18354,8 @@
     "dz_mm": -2.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 22.3 cm between two hands (0.2-0.45 m), 13.3 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0523": {
@@ -18476,8 +18494,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 5.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0527": {
@@ -18511,8 +18529,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0528": {
@@ -18546,8 +18564,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0529": {
@@ -18757,7 +18775,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 20.8 cm > jaw; wide side 28.4 cm, 7.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0535": {
@@ -18792,7 +18810,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 10.5 cm > jaw; wide side 19.7 cm, 17.8 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0536": {
@@ -20926,8 +20944,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 22.0 cm between two hands (0.2-0.45 m), 11.0 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0597": {
@@ -20961,8 +20979,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 28.9 cm between two hands (0.2-0.45 m), 11.2 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0598": {
@@ -20996,8 +21014,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0599": {
@@ -21067,7 +21085,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 15.2 cm > jaw; wide side 16.3 cm, 8.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0601": {
@@ -21102,7 +21120,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0602": {
@@ -21137,7 +21155,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 6.9 cm fits the jaw but the grasp point 0.398 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0603": {
@@ -21172,7 +21190,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 16.5 cm > jaw; wide side 21.4 cm, 9.9 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0604": {
@@ -21206,8 +21224,8 @@
     "dz_mm": -2.0,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 25.0 cm between two hands (0.2-0.45 m), 11.4 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0605": {
@@ -21242,7 +21260,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.1 cm > jaw; wide side 19.6 cm, 14.0 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0606": {
@@ -21312,7 +21330,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.6 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0608": {
@@ -22816,8 +22834,8 @@
     "dz_mm": -2.2,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 2.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0651": {
@@ -23202,7 +23220,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "does not stand at rest on a plane: tilted 3.44 deg, slid 0.0 mm",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0662": {
@@ -23236,8 +23254,8 @@
     "dz_mm": -1.4,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.9 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0663": {
@@ -23307,7 +23325,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.8 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0665": {
@@ -23342,7 +23360,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.5 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0666": {
@@ -23377,7 +23395,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.6 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0667": {
@@ -23446,8 +23464,8 @@
     "dz_mm": -1.5,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 1.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0669": {
@@ -23657,7 +23675,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0675": {
@@ -23692,7 +23710,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0676": {
@@ -23727,7 +23745,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 22.7 cm > jaw; wide side 22.7 cm, 5.5 cm tall: outside the two-hand range",
+   "why": "category Car Seat: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0677": {
@@ -23867,7 +23885,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0681": {
@@ -23902,7 +23920,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0682": {
@@ -23937,7 +23955,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0683": {
@@ -23972,7 +23990,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0684": {
@@ -24007,7 +24025,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0685": {
@@ -24042,7 +24060,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0686": {
@@ -24217,7 +24235,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0691": {
@@ -24252,7 +24270,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0692": {
@@ -24287,7 +24305,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0693": {
@@ -24321,8 +24339,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0694": {
@@ -24392,7 +24410,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 13.9 cm > jaw; wide side 15.9 cm, 5.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0696": {
@@ -24462,7 +24480,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0698": {
@@ -24497,7 +24515,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0699": {
@@ -24532,7 +24550,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 10.1 cm > jaw; wide side 14.6 cm, 3.8 cm tall: outside the two-hand range",
+   "why": "category Mouse: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0700": {
@@ -24567,7 +24585,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 24.6 cm > jaw; wide side 47.2 cm, 9.4 cm tall: outside the two-hand range",
+   "why": "category Keyboard: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0701": {
@@ -24602,7 +24620,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 29.9 cm > jaw; wide side 47.1 cm, 4.9 cm tall: outside the two-hand range",
+   "why": "category Keyboard: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0702": {
@@ -24637,7 +24655,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 22.0 cm > jaw; wide side 36.6 cm, 4.7 cm tall: outside the two-hand range",
+   "why": "category Keyboard: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0703": {
@@ -24777,7 +24795,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 7.5 cm fits the jaw but the grasp point 0.393 m is under 0.4 m",
+   "why": "category Mouse: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0707": {
@@ -24812,7 +24830,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 12.3 cm > jaw; wide side 17.5 cm, 4.0 cm tall: outside the two-hand range",
+   "why": "category Mouse: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0708": {
@@ -24847,7 +24865,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 10.0 cm > jaw; wide side 18.2 cm, 4.0 cm tall: outside the two-hand range",
+   "why": "category Mouse: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0709": {
@@ -24917,7 +24935,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0711": {
@@ -24987,7 +25005,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0713": {
@@ -25022,7 +25040,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0714": {
@@ -25057,7 +25075,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0715": {
@@ -25092,7 +25110,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0716": {
@@ -25127,7 +25145,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0717": {
@@ -25162,7 +25180,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0718": {
@@ -25197,7 +25215,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0719": {
@@ -25232,7 +25250,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0720": {
@@ -25267,7 +25285,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0721": {
@@ -25302,7 +25320,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0722": {
@@ -25337,7 +25355,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0723": {
@@ -25372,7 +25390,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0724": {
@@ -25407,7 +25425,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0725": {
@@ -25442,7 +25460,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0726": {
@@ -25477,7 +25495,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0727": {
@@ -25512,7 +25530,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0728": {
@@ -25547,7 +25565,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0729": {
@@ -25582,7 +25600,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0730": {
@@ -25617,7 +25635,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0731": {
@@ -25652,7 +25670,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0732": {
@@ -25687,7 +25705,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0733": {
@@ -25722,7 +25740,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0734": {
@@ -25757,7 +25775,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0735": {
@@ -25792,7 +25810,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0736": {
@@ -25827,7 +25845,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0737": {
@@ -25862,7 +25880,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0738": {
@@ -25897,7 +25915,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0739": {
@@ -25932,7 +25950,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0740": {
@@ -25967,7 +25985,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0741": {
@@ -26002,7 +26020,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0742": {
@@ -26037,7 +26055,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0743": {
@@ -26072,7 +26090,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0744": {
@@ -26107,7 +26125,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0745": {
@@ -26142,7 +26160,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0746": {
@@ -26177,7 +26195,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0747": {
@@ -26212,7 +26230,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0748": {
@@ -26247,7 +26265,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0749": {
@@ -26282,7 +26300,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0750": {
@@ -26317,7 +26335,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0751": {
@@ -26352,7 +26370,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0752": {
@@ -26387,7 +26405,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0753": {
@@ -26422,7 +26440,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0754": {
@@ -26457,7 +26475,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0755": {
@@ -26492,7 +26510,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0756": {
@@ -26807,7 +26825,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0765": {
@@ -27052,7 +27070,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0772": {
@@ -27122,7 +27140,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0774": {
@@ -27157,7 +27175,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0775": {
@@ -27262,7 +27280,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 12.8 cm > jaw; wide side 13.8 cm, 4.9 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0778": {
@@ -27332,7 +27350,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 3.2 cm fits the jaw but the grasp point 0.390 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0780": {
@@ -27367,7 +27385,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.9 cm > jaw; wide side 25.4 cm, 3.4 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0781": {
@@ -27402,7 +27420,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.5 cm > jaw; wide side 18.9 cm, 3.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0782": {
@@ -27437,7 +27455,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.9 cm > jaw; wide side 33.6 cm, 4.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0783": {
@@ -27472,7 +27490,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 12.3 cm > jaw; wide side 18.7 cm, 9.0 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0784": {
@@ -27507,7 +27525,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0785": {
@@ -27541,8 +27559,8 @@
     "dz_mm": -1.4,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0786": {
@@ -27576,8 +27594,8 @@
     "dz_mm": -3.0,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 29.0 cm between two hands (0.2-0.45 m), 13.5 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0787": {
@@ -27611,8 +27629,8 @@
     "dz_mm": -2.4,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 23.8 cm between two hands (0.2-0.45 m), 13.8 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0788": {
@@ -27647,7 +27665,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 12.0 cm > jaw; wide side 14.3 cm, 6.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0789": {
@@ -27682,7 +27700,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 10.1 cm > jaw; wide side 10.8 cm, 17.8 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0790": {
@@ -27717,7 +27735,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 20.0 cm > jaw; wide side 22.1 cm, 9.4 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0791": {
@@ -27751,8 +27769,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.9 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0792": {
@@ -27787,7 +27805,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 13.9 cm > jaw; wide side 20.1 cm, 4.0 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0793": {
@@ -27822,7 +27840,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0794": {
@@ -27892,7 +27910,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0796": {
@@ -27962,7 +27980,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0798": {
@@ -27997,7 +28015,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0799": {
@@ -28032,7 +28050,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0800": {
@@ -28067,7 +28085,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0801": {
@@ -28102,7 +28120,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0802": {
@@ -28171,8 +28189,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0804": {
@@ -28206,8 +28224,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.7 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0805": {
@@ -28241,8 +28259,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0806": {
@@ -28276,8 +28294,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0807": {
@@ -28311,8 +28329,8 @@
     "dz_mm": -1.7,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 4.2 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0808": {
@@ -28346,8 +28364,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 5.5 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0809": {
@@ -28381,8 +28399,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.7 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0810": {
@@ -28416,8 +28434,8 @@
     "dz_mm": -1.5,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 21.8 cm between two hands (0.2-0.45 m), 19.7 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0811": {
@@ -28872,7 +28890,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0824": {
@@ -28907,7 +28925,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 22.9 cm > jaw; wide side 22.9 cm, 4.8 cm tall: outside the two-hand range",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0825": {
@@ -29186,8 +29204,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.8 cm between two hands (0.2-0.45 m), 20.7 cm tall",
+   "graspable": "none",
+   "why": "category Stuffed Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0833": {
@@ -29221,8 +29239,8 @@
     "dz_mm": -1.3,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 40.7 cm between two hands (0.2-0.45 m), 14.5 cm tall",
+   "graspable": "none",
+   "why": "category Stuffed Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0834": {
@@ -29327,7 +29345,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0837": {
@@ -29362,7 +29380,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0838": {
@@ -29396,8 +29414,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 9.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0839": {
@@ -29431,8 +29449,8 @@
     "dz_mm": -1.9,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.4 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0840": {
@@ -29642,7 +29660,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0846": {
@@ -29782,7 +29800,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "1.7 cm tall: flatter than 3 cm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0850": {
@@ -29817,7 +29835,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "does not stand at rest on a plane: tilted 3.11 deg, slid 0.0 mm",
+   "why": "category Media Cases: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0851": {
@@ -29851,8 +29869,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 38.4 cm between two hands (0.2-0.45 m), 10.8 cm tall",
+   "graspable": "none",
+   "why": "category Legos: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0852": {
@@ -29992,7 +30010,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 29.3 cm > jaw; wide side 35.0 cm, 4.1 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0856": {
@@ -30027,7 +30045,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 27.8 cm > jaw; wide side 41.2 cm, 6.3 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0857": {
@@ -30062,7 +30080,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 19.6 cm > jaw; wide side 29.7 cm, 6.0 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0858": {
@@ -30097,7 +30115,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 15.5 cm > jaw; wide side 26.1 cm, 9.7 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0859": {
@@ -30132,7 +30150,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0860": {
@@ -30167,7 +30185,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0861": {
@@ -30201,8 +30219,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 26.1 cm between two hands (0.2-0.45 m), 16.1 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0862": {
@@ -30237,7 +30255,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0863": {
@@ -30272,7 +30290,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0864": {
@@ -30306,8 +30324,8 @@
     "dz_mm": -1.8,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 8.2 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0865": {
@@ -30342,7 +30360,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0866": {
@@ -30376,8 +30394,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 9.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0867": {
@@ -30412,7 +30430,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 17.5 cm > jaw; wide side 18.9 cm, 3.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0868": {
@@ -30447,7 +30465,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 20.4 cm > jaw; wide side 30.2 cm, 3.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0869": {
@@ -30482,7 +30500,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 18.9 cm > jaw; wide side 25.6 cm, 3.8 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0870": {
@@ -30517,7 +30535,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0871": {
@@ -30761,8 +30779,8 @@
     "dz_mm": -1.6,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.1 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Action Figures: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0878": {
@@ -30972,7 +30990,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 3.7 cm fits the jaw but the grasp point 0.396 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0884": {
@@ -31006,8 +31024,8 @@
     "dz_mm": -3.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 5.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0885": {
@@ -31042,7 +31060,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 20.5 cm > jaw; wide side 35.7 cm, 5.8 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0886": {
@@ -31112,7 +31130,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 3.8 cm fits the jaw but the grasp point 0.396 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0888": {
@@ -31707,7 +31725,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0905": {
@@ -31742,7 +31760,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0906": {
@@ -31777,7 +31795,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0907": {
@@ -31812,7 +31830,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0908": {
@@ -31847,7 +31865,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0909": {
@@ -31882,7 +31900,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0910": {
@@ -31917,7 +31935,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0911": {
@@ -31952,7 +31970,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0912": {
@@ -31987,7 +32005,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0913": {
@@ -32022,7 +32040,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0914": {
@@ -32057,7 +32075,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0915": {
@@ -32092,7 +32110,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0916": {
@@ -32127,7 +32145,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0917": {
@@ -32162,7 +32180,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0918": {
@@ -32197,7 +32215,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0919": {
@@ -32302,7 +32320,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0922": {
@@ -32337,7 +32355,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0923": {
@@ -32372,7 +32390,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0924": {
@@ -32407,7 +32425,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0925": {
@@ -32511,8 +32529,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 7.8 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0928": {
@@ -32547,7 +32565,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 24.4 cm > jaw; wide side 47.8 cm, 32.4 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0929": {
@@ -32897,7 +32915,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0939": {
@@ -32932,7 +32950,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0940": {
@@ -32967,7 +32985,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0941": {
@@ -33002,7 +33020,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0942": {
@@ -33037,7 +33055,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0943": {
@@ -33072,7 +33090,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0944": {
@@ -33107,7 +33125,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0945": {
@@ -33317,7 +33335,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0951": {
@@ -33422,7 +33440,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 19.2 cm > jaw; wide side 23.0 cm, 4.6 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0954": {
@@ -33526,8 +33544,8 @@
     "dz_mm": -3.5,
     "stands": true
    },
-   "graspable": "bimanual",
-   "why": "wide side 35.5 cm between two hands (0.2-0.45 m), 11.8 cm tall",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0957": {
@@ -33597,7 +33615,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 12.8 cm > jaw; wide side 13.5 cm, 23.3 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0959": {
@@ -33632,7 +33650,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 20.5 cm > jaw; wide side 39.1 cm, 7.5 cm tall: outside the two-hand range",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0960": {
@@ -33667,7 +33685,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "narrow side 5.8 cm fits the jaw but the grasp point 0.390 m is under 0.4 m",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0961": {
@@ -33702,7 +33720,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0962": {
@@ -33982,7 +34000,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0970": {
@@ -34017,7 +34035,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0971": {
@@ -34227,7 +34245,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0977": {
@@ -34262,7 +34280,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0978": {
@@ -34297,7 +34315,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0979": {
@@ -34332,7 +34350,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0980": {
@@ -34367,7 +34385,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0981": {
@@ -34402,7 +34420,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0982": {
@@ -34437,7 +34455,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0983": {
@@ -34472,7 +34490,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0984": {
@@ -34507,7 +34525,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0985": {
@@ -34542,7 +34560,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0986": {
@@ -34577,7 +34595,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0987": {
@@ -34612,7 +34630,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0988": {
@@ -34647,7 +34665,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0989": {
@@ -34682,7 +34700,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0990": {
@@ -34717,7 +34735,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0991": {
@@ -34752,7 +34770,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0992": {
@@ -34787,7 +34805,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_0993": {
@@ -34822,7 +34840,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0994": {
@@ -34857,7 +34875,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0995": {
@@ -34927,7 +34945,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0997": {
@@ -34962,7 +34980,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0998": {
@@ -34997,7 +35015,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_0999": {
@@ -35032,7 +35050,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_1000": {
@@ -35067,7 +35085,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1001": {
@@ -35102,7 +35120,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1002": {
@@ -35137,7 +35155,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1003": {
@@ -35172,7 +35190,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1004": {
@@ -35207,7 +35225,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1005": {
@@ -35242,7 +35260,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1006": {
@@ -35312,7 +35330,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1008": {
@@ -35347,7 +35365,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1009": {
@@ -35382,7 +35400,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1010": {
@@ -35417,7 +35435,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1011": {
@@ -35452,7 +35470,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1012": {
@@ -35487,7 +35505,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1013": {
@@ -35522,7 +35540,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1014": {
@@ -35557,7 +35575,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1015": {
@@ -35592,7 +35610,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "held_out"
   },
   "gso_1016": {
@@ -35627,7 +35645,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1017": {
@@ -35662,7 +35680,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1018": {
@@ -35696,8 +35714,8 @@
     "dz_mm": -2.1,
     "stands": true
    },
-   "graspable": "single",
-   "why": "narrow side 6.3 cm fits the 9.5 cm jaw",
+   "graspable": "none",
+   "why": "category Toys: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1019": {
@@ -35837,7 +35855,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1023": {
@@ -35872,7 +35890,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1024": {
@@ -35907,7 +35925,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1025": {
@@ -35942,7 +35960,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1026": {
@@ -35977,7 +35995,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1027": {
@@ -36012,7 +36030,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1028": {
@@ -36047,7 +36065,7 @@
     "stands": false
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   },
   "gso_1029": {
@@ -36082,7 +36100,7 @@
     "stands": true
    },
    "graspable": "none",
-   "why": "category Shoe: kept out of the logistics room (user 2026-11-04)",
+   "why": "category Shoe: not among the used categories (user 2026-11-05)",
    "split": "train"
   }
  }

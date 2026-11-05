@@ -1,16 +1,16 @@
 {
  "name": "gso_grasp_s4",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 4 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0447 = mattel skip bo card game, gso_0622 = perricone md cold plasma body, gso_0806 = schleich hereford bull, gso_0864 = tower tumbling, gso_0877 = teenage mutant ninja turtles rahzar action figure, gso_0971 = wilton easy layers cake pan set",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 4 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0495 = my monopoly board game, gso_0621 = perricone md cold plasma, gso_0776 = same 200, gso_0852 = supernatural ouija board game, gso_0882 = theanine, gso_0972 = wilton pearlized sugar sprinkles 525 oz gold",
  "scene": "outputs/scene_discovery/logistics_room_1030_s4",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s4_tasks.jsonl",
  "tasks": [
-  "pick_gso_0447",
-  "pick_gso_0622",
-  "pick_gso_0806",
-  "pick_gso_0864",
-  "pick_gso_0877",
-  "pick_gso_0971"
+  "pick_gso_0495",
+  "pick_gso_0621",
+  "pick_gso_0776",
+  "pick_gso_0852",
+  "pick_gso_0882",
+  "pick_gso_0972"
  ],
  "spawn": {
   "rooms": "all",

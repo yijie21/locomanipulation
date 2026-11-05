@@ -2,8 +2,8 @@
 """Write `assets/mujoco_scanned_objects/categories.json`: every Google Scanned Object's category as the dataset labels
 it (Shoe, Consumer Goods, Toys, Bottles and Cans and Cups, Bag, Media Cases, Action Figures, Board Games, Legos, ...;
 about a fifth carry no label), read from the dataset's home on Gazebo Fuel. kevinzakka's MuJoCo conversion ships
-the meshes without these labels; the catalog (scripts/gso_catalog.py) reads this file to keep whole categories out of
-the logistics room (user 2026-11-04: no shoes).
+the meshes without these labels; the catalog (scripts/gso_catalog.py) reads this file to choose which categories
+reach the logistics room (`--use-categories`, user 2026-11-05).
 
     python3 scripts/gso_categories.py [--out assets/mujoco_scanned_objects/categories.json]
 

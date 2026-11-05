@@ -2,7 +2,7 @@
 
 [物流间](rsi_logistics_room.md)那条线的场景，加上 Google 的 Scanned Objects 数据集（1030 件扫描的日用品，kevinzakka 的 MuJoCo 版）：每个场景实例 `logistics_room_1030_s<seed>` 从目录里抽 10 件（默认 6 件单手、4 件双手）和原来的 1.2 kg 纸箱一起随机放在中央 1.2 × 0.9 m 托盘平台的可达带上，机器人（mars 版 G1，Dex1 两指夹爪）走过去用一只手或两只手把目标拿起来。两个任务族由场景文件自动生成：`gso_grasp_s<seed>`（单手，每件单手物体一个任务，`held(X)` 加 `lifted(X, 0.10, 60)`）和 `gso_bimanual_s<seed>`（双手，每件双手物体和纸箱各一个任务，`held(X)` 加 `lifted(X, 0.20, 60)`，最后 5 秒一直成立）。流程机制见[场景 RSI 详解](rsi_design.md)；2026-11-03 的决策（Q1–Q25）和 11-04 的鞋类排除在 [DECISIONS](../DECISIONS.md)，待办在 TODO 40。代码在分支 `henry-dev`（提交 `5ba83e16`，2026-11-04）。
 
-现状（2026-11-04）：代码、测试和 5 个实例做完，RSI 还没跑（用户：先只实现代码）。目录 1030 件里鞋类 254 件按用户要求不进物流间（数据集自带的类别标签，`categories.json`），其余单手 334、双手 135、不能抓 307，留出评测 96 件；实例 s0–s4 都过 `scene_lint.py`（0 错误），五个 Unreal 关卡都建好，MuJoCo 和 Unreal 各有五张预览图（`outputs/gso_preview/`，第 2、7 节）。渲染器：MuJoCo 和 Unreal；Isaac 暂缓（`configs/scenes.yaml` 里这些实例没有 `isaac` 条目，TODO 40.6）。
+现状（2026-11-05）：代码、测试和 5 个实例做完，RSI 还没跑（用户：先只实现代码）。目录 1030 件按数据集自带的类别标签（`categories.json`）只用剩下的类别：Shoe、Toys、Stuffed Toys、Mouse、Media Cases、Legos、Keyboard、Car Seat、Action Figures、Hat 十类共 463 件按用户要求不进物流间（11-04 先排除鞋，11-05 扩到十类），用的是 Consumer Goods、Bottles and Cans and Cups、Bag、Board Games、Headphones、Camera 和 216 件没有标签的；可抽的单手 270、双手 90，其余 207 件形状不合格，留出评测 96 件；实例 s0–s4 都过 `scene_lint.py`（0 错误），五个 Unreal 关卡都建好，MuJoCo 和 Unreal 各有五张预览图（`outputs/gso_preview/`，第 2、7 节）。渲染器：MuJoCo 和 Unreal；Isaac 暂缓（`configs/scenes.yaml` 里这些实例没有 `isaac` 条目，TODO 40.6）。
 
 耗时是 2026-11-04 在 SRA0889（一张 RTX 5090、16 核）上的实测。
 
@@ -37,8 +37,8 @@ python3 scripts/gso_categories.py      # 只在要刷新类别标签时；catego
 $PY scripts/gso_catalog.py
 ```
 
-做什么：第一条把 1030 件物体的网格装到 `assets/mujoco_scanned_objects/models/`（git 忽略；仓库只跟踪 `catalog.json`、`categories.json`、LICENSE、README、VERSION），已经装好就什么都不做。第二条从数据集在 Gazebo Fuel 上的条目取每件物体的官方类别（Shoe 254、Consumer Goods 248、Toys 150、Bottles and Cans and Cups 53、Bag 28……216 件没有标签；kevinzakka 的 MuJoCo 版没带这些标签）写成 `categories.json`。第三条按每件物体的网格算尺寸、V-HACD 壳体体积、质量（体积 × 300 kg/m³，截到 0.05–1.5 kg）、预计抓取高度、24 s 落地静置测试，判成单手 / 双手 / 不能抓，并按名字哈希留出 10% 作评测集；类别在 `--exclude-categories`（默认 `Shoe`，用户 2026-11-04：鞋子不进物流间）里的一律记 `none`，`why` 写 `category Shoe`；阈值都是参数（`--jaw 0.095`、`--bimanual-width 0.20 0.45`、`--bimanual-min-height 0.10`、`--density 300`、`--held-out 0.10` 等，见 `--help`），写进文件。`catalog.json` 已在仓库里，和模型一样就不用重建；重建得到同一个文件。
-得到什么：终端打印 `counts`（`single 334, bimanual 135, none 561, held_out 96, excluded 254`）、阈值和秒数；字段说明在 `assets/mujoco_scanned_objects/README.md`。
+做什么：第一条把 1030 件物体的网格装到 `assets/mujoco_scanned_objects/models/`（git 忽略；仓库只跟踪 `catalog.json`、`categories.json`、LICENSE、README、VERSION），已经装好就什么都不做。第二条从数据集在 Gazebo Fuel 上的条目取每件物体的官方类别（Shoe 254、Consumer Goods 248、Toys 150、Bottles and Cans and Cups 53、Bag 28……216 件没有标签；kevinzakka 的 MuJoCo 版没带这些标签）写成 `categories.json`。第三条按每件物体的网格算尺寸、V-HACD 壳体体积、质量（体积 × 300 kg/m³，截到 0.05–1.5 kg）、预计抓取高度、24 s 落地静置测试，判成单手 / 双手 / 不能抓，并按名字哈希留出 10% 作评测集；只有 `--use-categories` 里的类别能被抽到，其余类别一律记 `none`，`why` 写 `category Shoe: not among the used categories`。默认是去掉 Shoe、Toys、Stuffed Toys、Mouse、Media Cases、Legos、Keyboard、Car Seat、Action Figures、Hat 之后剩下的类别加上没有标签的 `(none)`（用户 2026-11-05，`gso_objects.USED_CATEGORIES`）；`--use-categories Bag "Board Games"` 只用这几类，`--use-categories all` 全用，`--exclude-categories Shoe Toys` 用除这些以外的全部；类别名按 `categories.json` 的 `counts` 写，不分大小写，写错名字直接报错；阈值都是参数（`--jaw 0.095`、`--bimanual-width 0.20 0.45`、`--bimanual-min-height 0.10`、`--density 300`、`--held-out 0.10` 等，见 `--help`），写进文件。`catalog.json` 已在仓库里，和模型一样就不用重建；重建得到同一个文件。
+得到什么：终端打印 `counts`（`single 270, bimanual 90, none 670, held_out 96, excluded 463`）和 `not_used_categories`、阈值和秒数；字段说明在 `assets/mujoco_scanned_objects/README.md`。
 
 看全部物体长什么样（用户 2026-11-05）：
 
@@ -87,7 +87,7 @@ make test TESTS="tests/test_gso_catalog.py tests/test_gso_family.py tests/test_g
 make test TESTS="tests/test_gso_preview.py"; echo "exit $?"
 ```
 
-做什么：第一条是纯函数和注册表的测试（短语、筛选规则、鞋类排除与仓库里的目录没有可抽的鞋、留出划分、抽样、放置、任务族文件、Unreal 导出烤惯量、五个实例在注册表里），约 20 s。第二条在临时目录里建一个实例并渲染一张图（第 2 节的全套），约 1 分钟；没有场景包、物体网格或离屏 GL 时跳过（跳过原因打印在 `-rs` 里）。
+做什么：第一条是纯函数和注册表的测试（短语、筛选规则、类别选择与仓库里的目录只抽得到用的类别、留出划分、抽样、放置、任务族文件、Unreal 导出烤惯量、五个实例在注册表里），约 20 s。第二条在临时目录里建一个实例并渲染一张图（第 2 节的全套），约 1 分钟；没有场景包、物体网格或离屏 GL 时跳过（跳过原因打印在 `-rs` 里）。
 得到什么：退出码 0。
 
 ## 4. 可行性探针（提示，不挡）
@@ -118,7 +118,7 @@ cat $S/outputs/scene_rsi_20261016_hidden/gso_grasp_s0/sealed/summary.json
 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_grasp_s0 --out outputs/scene_rsi_20261016/gso_grasp_s0_media --only task --versions final
 ```
 
-做什么：同物流间 runbook 第 5、6 节。按任务的成功数就是“哪些物体学会了”；双手族的 135 件“untested”物体哪些抱得起，看它的封存集。
+做什么：同物流间 runbook 第 5、6 节。按任务的成功数就是“哪些物体学会了”；双手族的 90 件“untested”物体哪些抱得起，看它的封存集。
 
 ## 7. Unreal 关卡（每个实例一个）
 
@@ -143,7 +143,7 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 
 ## 9. 改阈值与判据
 
-- 筛选阈值和排除的类别：`scripts/gso_catalog.py` 的参数（默认值在 `src/locomani/sim/gso_objects.py` 的 `Thresholds`，`--exclude-categories` 默认 `Shoe`，类别名见 `categories.json` 的 `counts`）；改了重建目录，已建的实例记着它们用的 `catalog_sha256`，不受影响；要让已建实例换物体就删掉它的目录重建（关卡也要重建）。
+- 筛选阈值和排除的类别：`scripts/gso_catalog.py` 的参数（默认值在 `src/locomani/sim/gso_objects.py` 的 `Thresholds`，`--use-categories` 默认见上面第 1 节，类别名见 `categories.json` 的 `counts`）；改了重建目录，已建的实例记着它们用的 `catalog_sha256`，不受影响；要让已建实例换物体就删掉它的目录重建（关卡也要重建）。
 - 任务判据：`scripts/rsi/gso_family.py` 的 `LIFT_M`（0.10 / 0.20 m）、`TILT_DEG`（60）、`POOL_SIZES`；改了重跑它，再改两份方案和 `scripts/rsi/rules.md`，算一次人工干预。
 - 实例里物体多少、单双手比例、可达带深度：第 2 节的参数；`configs/scenes.yaml` 里记的是默认值。
 

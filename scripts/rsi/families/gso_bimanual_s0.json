@@ -1,13 +1,13 @@
 {
  "name": "gso_bimanual_s0",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 0 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0442 = markings desk caddy, gso_0577 = olive kids dinosaur land lunch box, gso_0829 = sonny school bus, gso_0931 = tristar products ppc power pressure cooker xl in black",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 0 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0574 = olive kids birdie sidekick backpack, gso_0587 = olive kids trains planes trucks bogo backpack, gso_0829 = sonny school bus, gso_0931 = tristar products ppc power pressure cooker xl in black",
  "scene": "outputs/scene_discovery/logistics_room_1030_s0",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s0_tasks.jsonl",
  "tasks": [
   "lift_nor_cal_box",
-  "lift_gso_0442",
-  "lift_gso_0577",
+  "lift_gso_0574",
+  "lift_gso_0587",
   "lift_gso_0829",
   "lift_gso_0931"
  ],

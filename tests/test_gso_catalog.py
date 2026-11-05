@@ -118,15 +118,41 @@ def test_mass_density_and_hull_volume(tmp_path):
     assert np.allclose(q, [np.cos(np.pi / 4), 0, 0, np.sin(np.pi / 4)])
 
 
-def test_an_object_of_an_excluded_dataset_category_is_none_whatever_its_shape():
-    kind, why = G.graspable((0.06, 0.10, 0.15), TH, None, category="Shoe")  # a single-hand shape
-    assert kind == "none" and "category Shoe" in why
+def test_an_object_outside_the_used_categories_is_none_whatever_its_shape():
+    for cat in G.NOT_USED_CATEGORIES:
+        kind, why = G.graspable((0.06, 0.10, 0.15), TH, None, category=cat)  # a single-hand shape
+        assert kind == "none" and f"category {cat}" in why
     assert G.graspable((0.15, 0.30, 0.12), TH, None, category="Shoe")[0] == "none"  # a two-hand shape
-    assert G.graspable((0.06, 0.10, 0.15), TH, None, category="Toys")[0] == "single"
-    assert G.graspable((0.06, 0.10, 0.15), TH, None, category=None)[0] == "single"  # unlabelled: the rule alone
-    lenient = G.Thresholds(excluded_categories=())
-    assert G.graspable((0.06, 0.10, 0.15), lenient, None, category="Shoe")[0] == "single"
-    assert "Shoe" in G.EXCLUDED_CATEGORIES and TH.excluded_categories == G.EXCLUDED_CATEGORIES
+    assert G.graspable((0.06, 0.10, 0.15), TH, None, category="Consumer Goods")[0] == "single"
+    assert G.graspable((0.06, 0.10, 0.15), TH, None, category=None)[0] == "single"  # unlabelled is used by default
+    only_bags = G.Thresholds(used_categories=("Bag",))
+    assert G.graspable((0.06, 0.10, 0.15), only_bags, None, category=None)[0] == "none"
+    every = G.Thresholds(used_categories=None)
+    assert G.graspable((0.06, 0.10, 0.15), every, None, category="Shoe")[0] == "single"
+    assert TH.used_categories == G.USED_CATEGORIES and not set(G.USED_CATEGORIES) & set(G.NOT_USED_CATEGORIES)
+
+
+def test_the_catalog_flags_resolve_names_without_case_and_refuse_unknown_ones():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import gso_catalog as C
+
+    labels = {"a": "Shoe", "b": "Bag", "c": None, "d": "Keyboard"}
+    assert C.resolve_categories(None, None, labels) == G.USED_CATEGORIES
+    assert C.resolve_categories(["bag", "(NONE)"], None, labels) == ("Bag", "(none)")
+    assert C.resolve_categories(["all"], None, labels) is None
+    assert C.resolve_categories(None, ["shoe", "keyboard"], labels) == ("(none)", "Bag")
+    with pytest.raises(SystemExit, match="unknown categories"):
+        C.resolve_categories(["keyborad"], None, labels)
+
+
+def test_the_tracked_labels_hold_every_default_category():
+    labels = Path(__file__).resolve().parents[1] / "assets/mujoco_scanned_objects/categories.json"
+    if not labels.is_file():
+        pytest.skip("no tracked categories")
+    known = {c or G.UNLABELLED for c in G.load_categories(labels).values()}
+    assert known == set(G.USED_CATEGORIES) | set(G.NOT_USED_CATEGORIES)
 
 
 def test_the_catalog_entry_records_the_category_and_the_builder_refuses_unlabelled_models(tmp_path):
@@ -137,24 +163,28 @@ def test_the_catalog_entry_records_the_category_and_the_builder_refuses_unlabell
     shoe = G.catalog_entry(0, d, TH, rest=False, category="Shoe")
     assert shoe["category"] == "Shoe" and shoe["graspable"] == "none" and "category Shoe" in shoe["why"]
     toy = G.catalog_entry(0, d, TH, rest=False, category="Toys")
-    assert toy["category"] == "Toys" and toy["graspable"] == "single"
+    assert toy["category"] == "Toys" and toy["graspable"] == "none"
+    goods = G.catalog_entry(0, d, TH, rest=False, category="Consumer Goods")
+    assert goods["category"] == "Consumer Goods" and goods["graspable"] == "single"
     with pytest.raises(ValueError, match="no entry in categories.json"):
         G.build_catalog(tmp_path / "models", TH, workers=1, categories={})
     (tmp_path / "categories.json").write_text('{"categories": {"Some_Sneaker": "Shoe", "Other": null}}')
     assert G.load_categories(tmp_path / "categories.json") == {"Some_Sneaker": "Shoe", "Other": None}
 
 
-def test_the_tracked_catalog_holds_no_drawable_shoe_and_every_name_has_a_label():
+def test_the_tracked_catalog_draws_only_the_used_categories_and_every_name_has_a_label():
     assets = Path(__file__).resolve().parents[1] / "assets/mujoco_scanned_objects"
     if not (assets / "catalog.json").is_file() or not (assets / "categories.json").is_file():
         pytest.skip("no tracked catalog / categories")
     cat = G.load_catalog(assets / "catalog.json")
     labels = G.load_categories(assets / "categories.json")
-    assert cat["thresholds"]["excluded_categories"] == ["Shoe"]
+    assert cat["thresholds"]["used_categories"] == list(G.USED_CATEGORIES)
+    assert cat["not_used_categories"] == sorted(G.NOT_USED_CATEGORIES)
     assert all(o["name"] in labels and o["category"] == labels[o["name"]] for o in cat["objects"].values())
-    shoes = [o for o in cat["objects"].values() if o["category"] == "Shoe"]
-    assert len(shoes) == cat["counts"]["excluded"] > 0
-    assert all(o["graspable"] == "none" for o in shoes)
+    out = [o for o in cat["objects"].values() if (o["category"] or G.UNLABELLED) not in G.USED_CATEGORIES]
+    assert len(out) == cat["counts"]["excluded"] > 0
+    assert all(o["graspable"] == "none" for o in out)
     for kind in ("single", "bimanual"):
         for pool in G.POOLS:
-            assert all(cat["objects"][k]["category"] != "Shoe" for k in G.pool_keys(cat, kind, pool))
+            keys = G.pool_keys(cat, kind, pool)
+            assert keys and all((cat["objects"][k]["category"] or G.UNLABELLED) in G.USED_CATEGORIES for k in keys)

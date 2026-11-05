@@ -65,7 +65,7 @@ The scene (the logistics room of box_bimanual's plan, plus the objects):
   occupancy map carries them as obstacles. The platform collides.
 - The platform (surface `A`): 1.2 x 0.9 m, top 0.371 m, centre (0, -0.105); all four edges are approach edges, with
   1.05-1.63 m of clear floor in front of each. Its middle is out of reach from every edge (D13).
-- The objects: scanned household items (boxes of games and food, bottles, toys, electronics; no shoes) with their scan
+- The objects: scanned household items (boxes of games and food, bottles, bags, electronics, household goods; no shoes, toys, Legos or hats) with their scan
   texture, 0.05-1.5 kg (hull volume x 300 kg/m^3, clamped), friction 0.8, collision by the dataset's convex hulls (up
   to 32 per object). `scene_meta.json` gives each one `box.half_extent` and `box.centre` (the body origin is the mesh
   origin, not the bottom centre), `semantic.phrase`, `semantic.graspable` (`single` here), `semantic.mass_kg`,

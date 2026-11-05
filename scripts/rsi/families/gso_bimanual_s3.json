@@ -1,15 +1,15 @@
 {
  "name": "gso_bimanual_s3",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 3 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0208 = diet pepsi soda cola12 pack 12 oz cans, gso_0367 = jansport school backpack blue streak, gso_0429 = modern doll family, gso_0578 = olive kids dinosaur land munch n lunch",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 3 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0290 = fisher price classic toys buzzy bee, gso_0512 = nestle pure life exotics sparkling water strawberry dragon fruit 8 count 12 fl oz can, gso_0572 = olive kids birdie munch n lunch, gso_0587 = olive kids trains planes trucks bogo backpack",
  "scene": "outputs/scene_discovery/logistics_room_1030_s3",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s3_tasks.jsonl",
  "tasks": [
   "lift_nor_cal_box",
-  "lift_gso_0208",
-  "lift_gso_0367",
-  "lift_gso_0429",
-  "lift_gso_0578"
+  "lift_gso_0290",
+  "lift_gso_0512",
+  "lift_gso_0572",
+  "lift_gso_0587"
  ],
  "spawn": {
   "rooms": "all",

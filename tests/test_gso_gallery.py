@@ -19,7 +19,8 @@ import gso_gallery as G  # noqa: E402
 
 CATALOG = {
     "counts": {"objects": 2, "single": 1, "bimanual": 0, "none": 1, "held_out": 0, "excluded": 1},
-    "thresholds": {"excluded_categories": ["Shoe"]},
+    "thresholds": {"used_categories": ["(none)"]},
+    "not_used_categories": ["Shoe"],
     "objects": {
         "gso_0000": {"name": "Some_Sneaker", "phrase": "some sneaker", "category": "Shoe", "graspable": "none",
                      "why": "category Shoe: kept out", "split": "train", "mass_kg": 0.4, "extent_m": [0.1, 0.29, 0.12],

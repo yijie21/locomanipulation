@@ -8,8 +8,8 @@ it; this module reads the meshes and writes the object into the scene's own MJCF
 Three things live here, each a plain function over plain data:
 - the catalog (`build_catalog`): every object's size, hull volume, mass, rest test, dataset category, graspability and
   train / held-out split, from the meshes, the thresholds and `categories.json` (the dataset's own labels, fetched from
-  Gazebo Fuel by `scripts/gso_categories.py`; a category in `Thresholds.excluded_categories` is `none`: the user keeps
-  shoes out of the logistics room, 2026-11-04); written once to `assets/mujoco_scanned_objects/catalog.json` by
+  Gazebo Fuel by `scripts/gso_categories.py`; an object whose category is not in `Thresholds.used_categories` is
+  `none`: the user keeps shoes, toys and the like out of the logistics room, 2026-11-04 / 05); written once to `assets/mujoco_scanned_objects/catalog.json` by
   `scripts/gso_catalog.py` and read by the scene builder;
 - the draw (`sample_keys`): which objects a scene instance gets, from a seed, a pool and the single / bimanual ratio;
 - the placement (`place_objects`) and the MJCF / scene-file records (`add_to_scene`, `object_record`).
@@ -40,13 +40,23 @@ from locomani.tasks.scene.start import (
     overlap,
 )
 
-CATALOG_VERSION = 1
+CATALOG_VERSION = 2  # 2: `thresholds.used_categories` (the categories drawn) replaces `excluded_categories`
 KEY_FORMAT = (
     "gso_{index:04d}"  # object keys: short, stable, not an English word (rules.md 30 voids skills naming objects)
 )
 POOLS = ("train", "eval_unseen", "all")
 GRASPABLE = ("single", "bimanual", "none")
-EXCLUDED_CATEGORIES = ("Shoe",)  # dataset labels (categories.json); user 2026-11-04: no shoes in the room
+UNLABELLED = "(none)"  # how a model without a dataset label is named in a category list (categories.json `counts`)
+# the dataset's labels (categories.json) kept out of the logistics room (user 2026-11-04: shoes; 2026-11-05: also toys,
+# stuffed toys, mice, media cases, Legos, keyboards, the car seat, action figures and hats) ...
+NOT_USED_CATEGORIES = (
+    "Shoe", "Toys", "Stuffed Toys", "Mouse", "Media Cases", "Legos", "Keyboard", "Car Seat", "Action Figures", "Hat",
+)  # fmt: skip
+# ... and the categories drawn by default: every other label of categories.json and the unlabelled models (216, which
+# no list names, so "the rest" keeps them; drop UNLABELLED from the list to leave them out too)
+USED_CATEGORIES = (
+    "Consumer Goods", "Bottles and Cans and Cups", "Bag", "Board Games", "Headphones", "Camera", UNLABELLED,
+)  # fmt: skip
 FRICTION = [0.8, 0.005, 0.0001]  # as the ADT apartment's free objects (scripts/adt_to_scene.py)
 REST_DT = 0.005  # the ScaleBFM runner's physics step (scene_settle.DT)
 REST_SETTLE_S, REST_CHECK_S = 1.0, 23.0  # dropped 1 mm onto a plane, then watched; scene_settle.py settles for 24 s
@@ -66,8 +76,9 @@ class Thresholds:
     Bimanual: wider than a jaw, its wide side between the two hands' plausible span and tall enough to press on
     (user Q17, 2026-11-03: 0.20-0.45 m, >= 0.10 m; the measured two-hand width is only the carton's 0.43-0.47 m,
     capability.yaml `box_grasp.width`, so this range is `untested`).
-    Excluded: an object whose dataset category is in `excluded_categories` is `none` whatever its shape (the user keeps
-    the 254 shoes out of the logistics room, 2026-11-04)."""
+    Categories: an object whose dataset category (UNLABELLED when it has none) is not in `used_categories` is `none`
+    whatever its shape (user 2026-11-04: no shoes; 2026-11-05: only USED_CATEGORIES, the labels left once
+    NOT_USED_CATEGORIES are taken out). None uses every category and needs no labels."""
 
     jaw_m: float = 0.095
     min_height_m: float = 0.03
@@ -78,7 +89,7 @@ class Thresholds:
     density_kg_m3: float = 300.0  # a hull is hollow-ish scanned plastic, cardboard, cloth: well under water
     mass_range_kg: tuple[float, float] = (0.05, 1.5)  # the upper bound is the single arm's measured mass_lifted_max
     held_out_fraction: float = 0.10
-    excluded_categories: tuple[str, ...] = EXCLUDED_CATEGORIES
+    used_categories: tuple[str, ...] | None = USED_CATEGORIES
 
 
 def phrase(name: str) -> str:
@@ -122,14 +133,20 @@ def split_of(name: str, held_out_fraction: float) -> str:
     return "held_out" if h % 10_000 < int(round(held_out_fraction * 10_000)) else "train"
 
 
+def category_used(category: str | None, thresholds: Thresholds) -> bool:
+    """Whether an object of this dataset category (None: unlabelled) may be drawn under `thresholds.used_categories`."""
+    used = thresholds.used_categories
+    return used is None or (category or UNLABELLED) in used
+
+
 def graspable(extent, thresholds: Thresholds, rest: dict | None = None, category: str | None = None) -> tuple[str, str]:
     """(`single` | `bimanual` | `none`, why) from the object's resting extents (x, y, z in metres), its rest test
-    (`rest_test`; None skips that check) and its dataset category (None: unlabelled, never excluded)."""
+    (`rest_test`; None skips that check) and its dataset category (None: unlabelled, the category UNLABELLED)."""
     narrow, wide = sorted(float(e) for e in extent[:2])
     height = float(extent[2])
     grasp_height = thresholds.surface_top_m + height / 2
-    if category is not None and category in thresholds.excluded_categories:
-        return "none", f"category {category}: kept out of the logistics room (user 2026-11-04)"
+    if not category_used(category, thresholds):
+        return "none", f"category {category or UNLABELLED}: not among the used categories (user 2026-11-05)"
     if rest is not None and not rest["stands"]:
         return "none", f"does not stand at rest on a plane: tilted {rest['tilt_deg']} deg, slid {rest['slid_mm']} mm"
     if height < thresholds.min_height_m:
@@ -257,18 +274,19 @@ def build_catalog(
 ) -> dict:
     """Every `models/<name>/model.obj` as a record, keyed `gso_NNNN` in sorted-name order (the key never changes while
     the model set does not); `workers` processes (default: the machine's cores, at most 16). `categories` (from
-    `load_categories`) must name every model when `thresholds.excluded_categories` is not empty: an exclusion that
-    silently skipped unlabelled objects would let the excluded things back in."""
+    `load_categories`) must name every model unless `thresholds.used_categories` is None: a model missing from the
+    labels would silently count as unlabelled and be drawn, or dropped, by mistake. `counts.excluded` is the number of
+    objects whose category is not used; `not_used_categories` lists those categories."""
     thresholds = thresholds or Thresholds()  # fmt: skip
     dirs = sorted(p for p in models.iterdir() if (p / "model.obj").is_file())
     if not dirs:
         raise FileNotFoundError(f"no models under {models}: run scripts/install_gso.sh")
     categories = categories or {}
-    if thresholds.excluded_categories:
+    if thresholds.used_categories is not None:
         unknown = [d.name for d in dirs if d.name not in categories]
         if unknown:
             raise ValueError(f"{len(unknown)} models have no entry in categories.json (scripts/gso_categories.py), "
-                             f"e.g. {unknown[:3]}: cannot exclude {list(thresholds.excluded_categories)}")  # fmt: skip
+                             f"e.g. {unknown[:3]}: cannot select {list(thresholds.used_categories)}")  # fmt: skip
     jobs = [(i, d, thresholds, True, categories.get(d.name)) for i, d in enumerate(dirs)]
     workers = workers or min(16, os.cpu_count() or 1)
     with ProcessPoolExecutor(workers) as pool:
@@ -276,11 +294,13 @@ def build_catalog(
     objects = {rec["key"]: rec for rec in records}
     counts = {k: sum(1 for o in objects.values() if o["graspable"] == k) for k in GRASPABLE}
     counts["held_out"] = sum(1 for o in objects.values() if o["split"] == "held_out")
-    counts["excluded"] = sum(1 for o in objects.values() if o["category"] in thresholds.excluded_categories)
+    out = [o["category"] or UNLABELLED for o in objects.values() if not category_used(o["category"], thresholds)]
+    counts["excluded"] = len(out)
     return {
         "version": CATALOG_VERSION,
         "source": source or {},
         "thresholds": asdict(thresholds),
+        "not_used_categories": sorted(set(out)),
         "counts": {"objects": len(objects), **counts},
         "objects": objects,
     }

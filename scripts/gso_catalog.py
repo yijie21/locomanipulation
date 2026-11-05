@@ -3,11 +3,15 @@
 object's size, hull volume, mass, grasp height, dataset category, graspability (`single` / `bimanual` / `none`) and
 train / held-out split, from the meshes under `models/`, the dataset's category labels in `categories.json`
 (scripts/gso_categories.py) and the thresholds in locomani.sim.gso_objects.Thresholds (each one a flag here, recorded
-in the file). A category in `--exclude-categories` (default `Shoe`: user 2026-11-04, no shoes in the logistics room)
-is `none` whatever its shape. The scene builder draws from this file, never from the 2 GB of meshes.
+in the file). Only objects of the categories in `--use-categories` can be drawn; the others are `none` whatever their
+shape. The default is every label but Shoe, Toys, Stuffed Toys, Mouse, Media Cases, Legos, Keyboard, Car Seat, Action
+Figures and Hat (user 2026-11-05; gso_objects.USED_CATEGORIES), with the unlabelled models (`(none)`). `all` uses
+every category; `--exclude-categories A B` uses every category but those. Names are the labels of categories.json,
+matched without case. The scene builder draws from this file, never from the 2 GB of meshes.
 
     $VENV_SIM_PY scripts/gso_catalog.py [--models assets/mujoco_scanned_objects/models] [--out .../catalog.json]
-        [--categories .../categories.json] [--exclude-categories Shoe] [--jaw 0.095] [--bimanual-width 0.20 0.45]
+        [--categories .../categories.json] [--use-categories "Consumer Goods" Bag ... | all]
+        [--exclude-categories Shoe Toys ...] [--jaw 0.095] [--bimanual-width 0.20 0.45]
         [--bimanual-min-height 0.10] [--density 300] ...
 """
 
@@ -28,6 +32,28 @@ from locomani.sim import gso_objects as G  # noqa: E402
 ASSETS = ROOT / "assets/mujoco_scanned_objects"
 
 
+def resolve_categories(use: list[str] | None, exclude: list[str] | None, labels: dict[str, str | None]):
+    """The used-category tuple (None: every category) from the two flags, every name matched without case against the
+    labels of categories.json plus `(none)`; an unknown name stops the build."""
+    known = sorted({c or G.UNLABELLED for c in labels.values()} | {G.UNLABELLED})
+    by_lower = {k.lower(): k for k in known}
+
+    def real(names):
+        bad = [n for n in names if n.lower() not in by_lower]
+        if bad:
+            raise SystemExit(f"unknown categories {bad}; categories.json has {known}")
+        return [by_lower[n.lower()] for n in names]
+
+    if exclude is not None:
+        drop = set(real(exclude))
+        return tuple(k for k in known if k not in drop)
+    if use is not None and [n.lower() for n in use] == ["all"]:
+        return None
+    if not labels:  # no categories.json: no object is labelled, so no list can select them
+        raise SystemExit("no categories.json: python3 scripts/gso_categories.py (or --use-categories all)")
+    return G.USED_CATEGORIES if use is None else tuple(real(use))  # the default is checked against the tracked labels
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--models", type=Path, default=ASSETS / "models")
@@ -35,8 +61,12 @@ def main(argv=None) -> int:
     ap.add_argument("--categories", type=Path, default=ASSETS / "categories.json",
                     help="scripts/gso_categories.py's file: the dataset's category label per model")  # fmt: skip
     d = G.Thresholds()
-    ap.add_argument("--exclude-categories", nargs="*", default=list(d.excluded_categories), metavar="CATEGORY",
-                    help="objects of these dataset categories are `none` (never drawn); give none to exclude nothing")  # fmt: skip
+    pick = ap.add_mutually_exclusive_group()
+    pick.add_argument("--use-categories", nargs="+", default=None, metavar="CATEGORY",
+                      help="dataset categories whose objects can be drawn, `(none)` for the unlabelled ones, or `all` "
+                           "(default: gso_objects.USED_CATEGORIES, every label but shoes, toys, mice, ...)")  # fmt: skip
+    pick.add_argument("--exclude-categories", nargs="*", default=None, metavar="CATEGORY",
+                      help="use every category but these (no value: every category)")  # fmt: skip
     ap.add_argument(
         "--jaw", type=float, default=d.jaw_m, help="m; the open Dex1 jaw a single-hand object's narrow side fits"
     )
@@ -59,17 +89,13 @@ def main(argv=None) -> int:
         "--held-out", type=float, default=d.held_out_fraction, help="fraction of names hashed into the evaluation split"
     )
     a = ap.parse_args(argv)
+    categories = G.load_categories(a.categories) if a.categories.is_file() else {}
     th = G.Thresholds(
         jaw_m=a.jaw, min_height_m=a.min_height, surface_top_m=a.surface_top, min_grasp_height_m=a.min_grasp_height,
         bimanual_width_m=tuple(a.bimanual_width), bimanual_min_height_m=a.bimanual_min_height,
         density_kg_m3=a.density, mass_range_kg=tuple(a.mass_range), held_out_fraction=a.held_out,
-        excluded_categories=tuple(a.exclude_categories),
+        used_categories=resolve_categories(a.use_categories, a.exclude_categories, categories),
     )  # fmt: skip
-    if th.excluded_categories and not a.categories.is_file():
-        raise SystemExit(
-            f"no {a.categories}: python3 scripts/gso_categories.py (or --exclude-categories with no value)"
-        )
-    categories = G.load_categories(a.categories) if a.categories.is_file() else {}
     version = a.models.parent / "VERSION"
     source = {
         "dataset": "Google Scanned Objects (Downs et al. 2022, CC-BY 4.0), MJCF by kevinzakka/mujoco_scanned_objects (MIT)",
@@ -82,7 +108,7 @@ def main(argv=None) -> int:
     t0 = time.time()
     cat = G.build_catalog(a.models, th, source, categories=categories)
     a.out.write_text(json.dumps(cat, indent=1) + "\n")
-    print(json.dumps({"out": str(a.out), "counts": cat["counts"], "thresholds": {f.name: getattr(th, f.name) for f in fields(th)},
+    print(json.dumps({"out": str(a.out), "counts": cat["counts"], "not_used_categories": cat["not_used_categories"], "thresholds": {f.name: getattr(th, f.name) for f in fields(th)},
                       "seconds": round(time.time() - t0, 1)}, indent=1))  # fmt: skip
     return 0
 

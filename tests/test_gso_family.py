@@ -95,10 +95,19 @@ def test_the_tracked_s0_families_match_the_built_scene_and_draw_starts_on_the_re
         assert [t.split("_", 1)[1] for t in fam["tasks"]] == keys
         occ, nav = build(fam["meta"], body_radius=BODY_RADIUS_M)
         surf = fam["meta"]["surfaces"]["A"]
-        for i, t in enumerate(fam["tasks"][:2]):
+        for t in fam["tasks"][:2]:
             task = F.task(fam, t)
-            st = sample_start(fam["meta"], occ, nav, list(task.objects), np.random.default_rng(i), seed=i,
-                              spawn=fam["spawn"], placement=fam["rows"][t]["placement"])  # fmt: skip
+            # a seed whose draw cannot meet the placement raises and the pool skips it (sample_start); a big object
+            # among ten (s0's 35 cm motherboard) fails about half the seeds, so take the first seed that starts
+            for i in range(20):
+                try:
+                    st = sample_start(fam["meta"], occ, nav, list(task.objects), np.random.default_rng(i), seed=i,
+                                      spawn=fam["spawn"], placement=fam["rows"][t]["placement"])  # fmt: skip
+                    break
+                except RuntimeError:
+                    continue
+            else:
+                pytest.fail(f"{t}: no start in 20 seeds")
             key = t.split("_", 1)[1]
             p = st.placements[key][0]
             assert min(edge_depths(surf, p[:2]).values()) <= 0.35 + 1e-6

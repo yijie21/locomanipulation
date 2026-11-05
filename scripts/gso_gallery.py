@@ -92,14 +92,14 @@ def render_one(job: tuple) -> tuple[str, str | None]:
 
 def entries(catalog: dict) -> list[dict]:
     """The page's rows: one per object, the catalog fields the page shows."""
-    excluded = set(catalog.get("thresholds", {}).get("excluded_categories") or [])
+    excluded = set(catalog.get("not_used_categories") or [])  # gso_objects.build_catalog: categories never drawn
     rows = []
     for key, o in catalog["objects"].items():
         rows.append({
             "key": key, "name": o["name"], "phrase": o["phrase"], "category": o.get("category") or "(none)",
             "kind": o["graspable"], "why": o["why"], "split": o["split"], "mass": o["mass_kg"],
             "extent": [round(float(e) * 100, 1) for e in o["extent_m"]], "grasp_h": o.get("grasp_height_m"),
-            "excluded": (o.get("category") in excluded), "stands": (o.get("rest") or {}).get("stands"),
+            "excluded": ((o.get("category") or "(none)") in excluded), "stands": (o.get("rest") or {}).get("stands"),
             "img": f"img/{key}.jpg",
         })  # fmt: skip
     return rows
@@ -186,7 +186,7 @@ def page(catalog: dict) -> str:
     sub = (
         f"single {c.get('single')} · bimanual {c.get('bimanual')} · none {c.get('none')} "
         f"(of which excluded categories {c.get('excluded', 0)}: "
-        f"{', '.join(catalog['thresholds'].get('excluded_categories') or []) or 'none'}) · held out {c.get('held_out')}"
+        f"{', '.join(catalog.get('not_used_categories') or []) or 'none'}) · held out {c.get('held_out')}"
         " · rendered by MuJoCo from the scan mesh and texture; kinds and masses from catalog.json"
     )
     data = json.dumps(rows, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")

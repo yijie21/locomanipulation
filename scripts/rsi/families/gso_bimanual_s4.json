@@ -1,15 +1,15 @@
 {
  "name": "gso_bimanual_s4",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 4 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0332 = hammer ball, gso_0573 = olive kids birdie pack n snack, gso_0579 = olive kids dinosaur land pack n snack, gso_0696 = racoon",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 4 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0411 = lenovo yoga 2 11, gso_0582 = olive kids game on munch n lunch, gso_0588 = olive kids trains planes trucks munch n lunch bag, gso_0704 = razer kraken 71 chroma headset full size black",
  "scene": "outputs/scene_discovery/logistics_room_1030_s4",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s4_tasks.jsonl",
  "tasks": [
   "lift_nor_cal_box",
-  "lift_gso_0332",
-  "lift_gso_0573",
-  "lift_gso_0579",
-  "lift_gso_0696"
+  "lift_gso_0411",
+  "lift_gso_0582",
+  "lift_gso_0588",
+  "lift_gso_0704"
  ],
  "spawn": {
   "rooms": "all",

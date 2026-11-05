@@ -115,7 +115,7 @@ On the carton in this room (box_bimanual's probes, `scripts/rsi/probe_box.py`, 2
 | wall pinch | one grasp point on each side wall under the rim, palm pitched 60 deg down, `grip("both")`, then `reach("both", +0.32 m)`: 3 / 10, all with the long side towards the edge | the jaws arrive 3-8 cm and 22-37 deg off; with the short side towards the edge 0 / 5 |
 
 No probe has been run on the scanned two-hand objects yet (2026-11-03): their walls are the hulls of scanned shapes
-(game boxes, cereal boxes, lunch bags, toys; no shoes), and whether a squeeze holds them is what the first rounds measure. Objects at rest:
+(game boxes, cereal boxes, lunch bags, backpacks; no shoes or toys), and whether a squeeze holds them is what the first rounds measure. Objects at rest:
 every instance passes `scripts/scene_lint.py` (0 errors) after `scripts/scene_settle.py --write`.
 
 - Modes: walking is mode 2 (pelvis + wrists), standing still is mode 4 (pelvis + wrists + ankles pinned). Walks run at
