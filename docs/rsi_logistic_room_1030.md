@@ -1,8 +1,8 @@
 # 场景 RSI 在物流间 1030：扫描物体的单手 / 双手移动抓取
 
-[物流间](rsi_logistics_room.md)那条线的场景，加上 Google 的 Scanned Objects 数据集（1030 件扫描的日用品，kevinzakka 的 MuJoCo 版）：每个场景实例 `logistics_room_1030_s<seed>` 从目录里抽 10 件（默认 6 件单手、4 件双手）和原来的 1.2 kg 纸箱一起随机放在中央 1.2 × 0.9 m 托盘平台的可达带上，机器人（mars 版 G1，Dex1 两指夹爪）走过去用一只手或两只手把目标拿起来。两个任务族由场景文件自动生成：`gso_grasp_s<seed>`（单手，每件单手物体一个任务，`held(X)` 加 `lifted(X, 0.10, 60)`）和 `gso_bimanual_s<seed>`（双手，每件双手物体和纸箱各一个任务，`held(X)` 加 `lifted(X, 0.20, 60)`，最后 5 秒一直成立）。流程机制见[场景 RSI 详解](rsi_design.md)；2026-11-03 的决策（Q1–Q25）在 [DECISIONS](../DECISIONS.md)，待办在 TODO 40。代码在分支 `henry-dev`。
+[物流间](rsi_logistics_room.md)那条线的场景，加上 Google 的 Scanned Objects 数据集（1030 件扫描的日用品，kevinzakka 的 MuJoCo 版）：每个场景实例 `logistics_room_1030_s<seed>` 从目录里抽 10 件（默认 6 件单手、4 件双手）和原来的 1.2 kg 纸箱一起随机放在中央 1.2 × 0.9 m 托盘平台的可达带上，机器人（mars 版 G1，Dex1 两指夹爪）走过去用一只手或两只手把目标拿起来。两个任务族由场景文件自动生成：`gso_grasp_s<seed>`（单手，每件单手物体一个任务，`held(X)` 加 `lifted(X, 0.10, 60)`）和 `gso_bimanual_s<seed>`（双手，每件双手物体和纸箱各一个任务，`held(X)` 加 `lifted(X, 0.20, 60)`，最后 5 秒一直成立）。流程机制见[场景 RSI 详解](rsi_design.md)；2026-11-03 的决策（Q1–Q25）和 11-04 的鞋类排除在 [DECISIONS](../DECISIONS.md)，待办在 TODO 40。代码在分支 `henry-dev`（提交 `5ba83e16`，2026-11-04）。
 
-现状（2026-11-04）：代码、测试和 5 个实例做完，RSI 还没跑（用户：先只实现代码）。目录 1030 件里鞋类 254 件按用户要求不进物流间（数据集自带的类别标签，`categories.json`），其余单手 334、双手 135、不能抓 307，留出评测 96 件；实例 s0–s4 都过 `scene_lint.py`（0 错误），s0 的 Unreal 关卡建好。渲染器：MuJoCo 和 Unreal；Isaac 暂缓（`configs/scenes.yaml` 里这些实例没有 `isaac` 条目，TODO 40.6）。
+现状（2026-11-04）：代码、测试和 5 个实例做完，RSI 还没跑（用户：先只实现代码）。目录 1030 件里鞋类 254 件按用户要求不进物流间（数据集自带的类别标签，`categories.json`），其余单手 334、双手 135、不能抓 307，留出评测 96 件；实例 s0–s4 都过 `scene_lint.py`（0 错误），五个 Unreal 关卡都建好，MuJoCo 和 Unreal 各有五张预览图（`outputs/gso_preview/`，第 2、7 节）。渲染器：MuJoCo 和 Unreal；Isaac 暂缓（`configs/scenes.yaml` 里这些实例没有 `isaac` 条目，TODO 40.6）。
 
 耗时是 2026-11-04 在 SRA0889（一张 RTX 5090、16 核）上的实测。
 
@@ -12,8 +12,8 @@
 | 取类别标签（Gazebo Fuel，一次） | 几秒 |
 | 建目录（1030 件，含每件 24 s 的静置测试） | 8 s |
 | 一个实例：建场景 + 沉降 + 落地测试 + lint + 任务族 + 预览图 | 10–15 s |
-| 一个实例的 Unreal 关卡 | 41–57 s |
-| 一个实例的 Unreal 预览图（两个视角） | 约 30 s |
+| 一个实例的 Unreal 关卡 | 41–88 s |
+| 一个实例的 Unreal 预览图（两个视角） | 20–29 s |
 | 内环一轮 / 封存集 | 同[物流间 runbook](rsi_logistics_room.md)的表 |
 
 ## 0. 每个新终端先执行
@@ -77,7 +77,7 @@ make test TESTS="tests/test_gso_catalog.py tests/test_gso_family.py tests/test_u
 make test TESTS="tests/test_gso_preview.py"; echo "exit $?"
 ```
 
-做什么：第一条是纯函数和注册表的测试（短语、筛选规则、留出划分、抽样、放置、任务族文件、Unreal 导出烤惯量、五个实例在注册表里），约 20 s。第二条在临时目录里建一个实例并渲染一张图（第 2 节的全套），约 1 分钟；没有场景包、物体网格或离屏 GL 时跳过（跳过原因打印在 `-rs` 里）。
+做什么：第一条是纯函数和注册表的测试（短语、筛选规则、鞋类排除与仓库里的目录没有可抽的鞋、留出划分、抽样、放置、任务族文件、Unreal 导出烤惯量、五个实例在注册表里），约 20 s。第二条在临时目录里建一个实例并渲染一张图（第 2 节的全套），约 1 分钟；没有场景包、物体网格或离屏 GL 时跳过（跳过原因打印在 `-rs` 里）。
 得到什么：退出码 0。
 
 ## 4. 可行性探针（提示，不挡）
@@ -97,7 +97,7 @@ cd $S && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_gra
 cd -
 ```
 
-做什么：和物流间 runbook 第 4 节一样，任务族换成 `gso_grasp_s0`（单手，6 个任务，种子是空技能包 `scripts/rsi/seeds/atomic`，角色读的方案是 `scripts/rsi/plans/gso_grasp.md`）。双手族把三处 `gso_grasp_s0` 换成 `gso_bimanual_s0`（5 个任务：4 件双手物体加纸箱，种子 `scripts/rsi/seeds/box_strict_start`，方案 `scripts/rsi/plans/gso_bimanual.md`，`hold_s` 2 / `judge_s` 5），沙盒目录另起一个。沙盒导出的是**已提交**的代码：任务族文件和场景实例目录要先提交 / 建好。规则第 30 条仍然有效：技能代码里出现物体名字（`gso_0051`、短语或刚体名）的草稿作废，技能只能读 `box.half_extent`、`semantic`、`gso.grasp_height_m` 这些字段。
+做什么：和物流间 runbook 第 4 节一样，任务族换成 `gso_grasp_s0`（单手，6 个任务，种子是空技能包 `scripts/rsi/seeds/atomic`，角色读的方案是 `scripts/rsi/plans/gso_grasp.md`）。双手族把三处 `gso_grasp_s0` 换成 `gso_bimanual_s0`（5 个任务：4 件双手物体加纸箱，种子 `scripts/rsi/seeds/box_strict_start`，方案 `scripts/rsi/plans/gso_bimanual.md`，`hold_s` 2 / `judge_s` 5），沙盒目录另起一个。沙盒导出的是**已提交**的代码：s0–s4 的任务族文件在提交 `5ba83e16` 里，场景实例目录要在本机建好（第 2 节）；改了任务族或场景就要再提交 / 重建。规则第 30 条仍然有效：技能代码里出现物体名字（`gso_0051`、短语或刚体名）的草稿作废，技能只能读 `box.half_extent`、`semantic`、`gso.grasp_height_m` 这些字段。
 得到什么：账本 `$S/outputs/scene_rsi_20261016/gso_grasp_s0/loop/ledger.jsonl`；进度 `cd $S && $PY scripts/rsi/loop.py status gso_grasp_s0; cd -`。起点池种子：单手 440000 / 540000 / 640000，双手 450000 / 550000 / 650000，和其他族不重叠。
 
 ## 6. 封存集与视频
@@ -108,7 +108,7 @@ cat $S/outputs/scene_rsi_20261016_hidden/gso_grasp_s0/sealed/summary.json
 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_grasp_s0 --out outputs/scene_rsi_20261016/gso_grasp_s0_media --only task --versions final
 ```
 
-做什么：同物流间 runbook 第 5、6 节。按任务的成功数就是“哪些物体学会了”；双手族的 270 件“untested”物体哪些抱得起，看它的封存集。
+做什么：同物流间 runbook 第 5、6 节。按任务的成功数就是“哪些物体学会了”；双手族的 135 件“untested”物体哪些抱得起，看它的封存集。
 
 ## 7. Unreal 关卡（每个实例一个）
 
@@ -120,7 +120,7 @@ PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 5 --build
 
 做什么：按 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `unreal.build` 建关卡：把场景的会动部分（机器人、纸箱、10 件物体和它们的扫描纹理）导出成 URLab 的 MJCF 导入进 `/Game/Levels/logistics_room_1030_s0`（房间是 warehouse 的关卡）。导出器剥掉碰撞壳之前先把每件物体的质量和惯量烤成显式 `<inertial>`，不然扫描物体没有质量、编译失败。s1–s4 换名字各建一次（每个实例一份关卡，10 件物体各不相同）；重建场景实例后关卡要重建（`source.json` 记着场景 XML 的哈希，不一致 `run_context.unreal_scene` 会拒绝）。
 第三条给每个实例出一张 Unreal 图（用户 11-04）：把关卡里的第三视角机位（1280 × 960、fovy 45）依次放到平台正上方 2 m 和房间远角（和 MuJoCo 预览图同样的两个视角），各拍一帧静止场景（沉降后的物体、机器人在起点），图下列出物体；`--build` 让它先给缺关卡或关卡过期（场景哈希不符）的实例建关卡，不加就报错停下。
-得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个约 40–60 s；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 五张和 `index_unreal.json`，每张约 30 s（主要是载关卡、起 PIE）。之后 Unreal 视频按物流间 runbook 第 7 节用 `scripts/rsi/report/report_unreal.py`，场景名从沙盒的 `media.json` 来。
+得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 41–88 s（s0–s4 的 11-04 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 五张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 20–29 s（主要是载关卡、起 PIE）。之后 Unreal 视频按物流间 runbook 第 7 节用 `scripts/rsi/report/report_unreal.py`，场景名从沙盒的 `media.json` 来。
 
 ## 8. 评测没见过的物体
 
@@ -144,4 +144,5 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 - 预览或渲染测试报 GL / EGL 错：第 0 节的 `MUJOCO_GL=egl` 要在 pytest 导入 mujoco 之前设好（放在命令行环境里，别在测试里设）。
 - `scene_feasibility.py` 全部 `does not rest still in the sim`：少了落地测试那一步。
 - Unreal 导出时 MuJoCo 编译报自由物体的质量和惯量为零：导出器版本太旧，剥碰撞壳之前没有烤惯量（`export_mjcf.bake_inertia`）。
+- `gso_preview_unreal.py` 报 `Unreal level missing` / `stale`：该实例没建关卡或场景重建后关卡没重建，加 `--build` 或手动 `build_scene.sh <实例> --unreal`；报 `PIE did not start` 或连不上编辑器：先 `bash scripts/start_unreal.sh --gpu 0`，且同一时间只能有一个进程用编辑器（建关卡时别渲染）。
 - 内环第一行就崩、`loop.log` 里找不到任务族或场景：沙盒看不到没提交的文件，先提交任务族文件；场景目录要在 `outputs/scene_discovery/` 下。
