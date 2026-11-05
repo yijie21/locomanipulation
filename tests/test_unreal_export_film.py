@@ -8,6 +8,7 @@ import json
 
 import mujoco
 import numpy as np
+import pytest
 
 from locomani.pipeline import sim_video
 from locomani.sim.unreal import export_mjcf as X
@@ -113,3 +114,26 @@ def test_every_free_body_is_exported_not_only_the_target(tmp_path):
     assert exported["moving"] == ["box", "cup"]
     m = mujoco.MjModel.from_xml_path(exported["xml"])
     assert m.body("cup").id > 0 and mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, "shelf") == -1
+
+
+def test_a_body_whose_mass_sits_on_the_colliders_the_export_drops_keeps_it(tmp_path):
+    # a scanned object (gso_objects.add_to_scene): mass on its convex hulls, nothing on the visual mesh; the export
+    # drops the hulls (URLab would draw them), so the mass is baked in first (bake_inertia, 2026-11-04)
+    d = scene(tmp_path / "scene")
+    xml = (
+        (d / "scene_locomani.xml")
+        .read_text()
+        .replace(
+            '<geom type="box" size="0.1 0.1 0.1"/>',
+            '<geom type="box" size="0.1 0.1 0.1" contype="0" conaffinity="0" density="0" rgba="1 0 0 1"/>'
+            '<geom type="box" size="0.08 0.08 0.08" group="3" density="500" rgba="0 1 0 1"/>',
+        )
+    )
+    (d / "scene_locomani.xml").write_text(xml)
+    full = mujoco.MjModel.from_xml_path(str(d / "scene_locomani.xml"))
+    exported = X.export(d, tmp_path / "out", "lvl")
+    m = mujoco.MjModel.from_xml_path(exported["xml"])
+    assert exported["moving"] == ["box"]
+    assert m.body("box").mass[0] == pytest.approx(full.body("box").mass[0]) == pytest.approx(500 * 0.16**3)
+    assert np.allclose(m.body("box").inertia, full.body("box").inertia)
+    assert m.body("box").geomnum[0] == 1  # the collider is gone, the visual stays

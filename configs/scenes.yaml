@@ -288,6 +288,46 @@ logistics_room_mars:  # the scanned logistics room on the mars robot with the sc
     repeats: 8
     build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_mars
 
+logistics_room_1030_s0:  # the logistics room with the carton and 10 Google Scanned Objects drawn with seed 0 (6 single-hand, 4 two-hand, from the catalog's training split), each at a random spot on the platform within reach of an edge (docs/rsi_logistic_room_1030.md). One name per draw: a scene instance never changes its objects. No Isaac stage yet (the logistics-room stage builder knows only the carton). Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_1030_s0
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_1030_s0 --robot mars --rsi --gso-seed 0
+  unreal:  # the warehouse room level with this instance's robot, carton and ten objects imported (about 15 MB of meshes)
+    level: logistics_room_1030_s0  # /Game/Levels/logistics_room_1030_s0 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_1030_s0
+
+logistics_room_1030_s1:  # the logistics room with the carton and 10 Google Scanned Objects drawn with seed 1 (6 single-hand, 4 two-hand, from the catalog's training split), each at a random spot on the platform within reach of an edge (docs/rsi_logistic_room_1030.md). One name per draw: a scene instance never changes its objects. No Isaac stage yet (the logistics-room stage builder knows only the carton). Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_1030_s1
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_1030_s1 --robot mars --rsi --gso-seed 1
+  unreal:  # the warehouse room level with this instance's robot, carton and ten objects imported (about 15 MB of meshes)
+    level: logistics_room_1030_s1  # /Game/Levels/logistics_room_1030_s1 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_1030_s1
+
+logistics_room_1030_s2:  # the logistics room with the carton and 10 Google Scanned Objects drawn with seed 2 (6 single-hand, 4 two-hand, from the catalog's training split), each at a random spot on the platform within reach of an edge (docs/rsi_logistic_room_1030.md). One name per draw: a scene instance never changes its objects. No Isaac stage yet (the logistics-room stage builder knows only the carton). Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_1030_s2
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_1030_s2 --robot mars --rsi --gso-seed 2
+  unreal:  # the warehouse room level with this instance's robot, carton and ten objects imported (about 15 MB of meshes)
+    level: logistics_room_1030_s2  # /Game/Levels/logistics_room_1030_s2 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_1030_s2
+
+logistics_room_1030_s3:  # the logistics room with the carton and 10 Google Scanned Objects drawn with seed 3 (6 single-hand, 4 two-hand, from the catalog's training split), each at a random spot on the platform within reach of an edge (docs/rsi_logistic_room_1030.md). One name per draw: a scene instance never changes its objects. No Isaac stage yet (the logistics-room stage builder knows only the carton). Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_1030_s3
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_1030_s3 --robot mars --rsi --gso-seed 3
+  unreal:  # the warehouse room level with this instance's robot, carton and ten objects imported (about 15 MB of meshes)
+    level: logistics_room_1030_s3  # /Game/Levels/logistics_room_1030_s3 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_1030_s3
+
+logistics_room_1030_s4:  # the logistics room with the carton and 10 Google Scanned Objects drawn with seed 4 (6 single-hand, 4 two-hand, from the catalog's training split), each at a random spot on the platform within reach of an edge (docs/rsi_logistic_room_1030.md). One name per draw: a scene instance never changes its objects. No Isaac stage yet (the logistics-room stage builder knows only the carton). Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_1030_s4
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_1030_s4 --robot mars --rsi --gso-seed 4
+  unreal:  # the warehouse room level with this instance's robot, carton and ten objects imported (about 15 MB of meshes)
+    level: logistics_room_1030_s4  # /Game/Levels/logistics_room_1030_s4 in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_1030_s4
+
 adt_apartment_mars:
   dir: outputs/scene_discovery/adt_apartment_mars
   build: >-

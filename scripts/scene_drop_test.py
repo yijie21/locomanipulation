@@ -26,11 +26,11 @@ import mujoco  # noqa: E402
 from locomani.scene_discovery import drop_test, scene_file  # noqa: E402
 
 
-def main() -> None:
+def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--scene", required=True)
     ap.add_argument("--seconds", type=float, default=2.0)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     path = Path(args.scene)
     meta = json.loads(path.read_text())
     t0 = time.time()
@@ -68,7 +68,8 @@ def main() -> None:
         print(
             f"    {key}: moved {r['moved_m']} m, tilt {r['tilt_deg']} deg, z {r['final_z']}, initial penetration {r['penetration_m']} m"
         )
+    return len(bad)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

@@ -76,9 +76,37 @@ def moving_bodies(spec) -> list[str]:
     ]
 
 
-def strip_to_dynamic(spec, moving: list[str]) -> None:
+def bake_inertia(spec, model, moving: list[str]) -> list[str]:
+    """Give every body of the `moving` subtrees that takes its mass from its geoms an explicit inertial, read from
+    the compiled `model` of the whole scene, so that dropping its collision geoms (strip_to_dynamic) leaves its mass
+    and inertia as they were. A scanned object (locomani.sim.gso_objects) carries its mass on its convex hulls and
+    nothing on its visual mesh: without this it would compile with no mass at all (2026-11-04). The robot's links
+    carry their own inertials and are left alone. Returns the bodies baked."""
+    baked = []
+    for name in sorted(set().union(*(_subtree(spec, b) for b in moving)) if moving else ()):
+        body = spec.body(name)
+        if body.explicitinertial or not any(g.contype or g.conaffinity for g in body.geoms):
+            continue
+        mb = model.body(body.name)
+        if mb.mass[0] <= 0:
+            continue
+        body.mass, body.ipos, body.iquat, body.inertia = (
+            float(mb.mass[0]),
+            mb.ipos.tolist(),
+            mb.iquat.tolist(),
+            mb.inertia.tolist(),
+        )
+        body.explicitinertial = True
+        baked.append(body.name)
+    return baked
+
+
+def strip_to_dynamic(spec, moving: list[str], model=None) -> None:
     """Keep the robot and the `moving` subtrees with the dataset cameras; drop world geoms and cameras, lights,
-    invisible geoms and the com_marker site."""
+    invisible geoms and the com_marker site. With `model` (the compiled scene), the mass a body took from the geoms
+    that go is baked in first (bake_inertia)."""
+    if model is not None:
+        bake_inertia(spec, model, moving)
     keep = _subtree(spec, ROBOT_ROOT).union(*(_subtree(spec, b) for b in moving))
     for b in list(spec.worldbody.bodies):
         if b.name not in keep:
@@ -165,7 +193,7 @@ def export(scene_dir: Path, out: Path, level: str) -> dict:
     fovy = third_person_shot.scene_fovy(scene_model, meta)
     spec = mujoco.MjSpec.from_file(str(scene_xml))
     moving = moving_bodies(spec)
-    strip_to_dynamic(spec, moving)
+    strip_to_dynamic(spec, moving, scene_model)
     add_film_bodies(spec, scene_model, fovy)
     if out.exists():
         shutil.rmtree(out)

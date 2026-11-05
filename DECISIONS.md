@@ -3042,3 +3042,28 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 回填旧沙盒以便在真实数据上验证：用户要从头跑；代码检查改用临时目录里的两局演示记录和合成局。
 - 单独一节“从原子动作从头跑”：实际运行早就是这种起点，该写回 5.1，而不是加节。
 
+
+## 2026-11-03 / 04 物流间 1030：Google Scanned Objects 进物流间，单手 / 双手两个任务族（用户“我下载了数据库 Scanned Objects Dataset……新建一个 simulation 场景名叫 logistics room 1030……用于 RSI 学习多种不同物体 mobile grasp task，包括 single arm and dual-arm……每次开始前，从数据库随机选择 10 个物体”；runbook [docs/rsi_logistic_room_1030.md](docs/rsi_logistic_room_1030.md)；TODO 40）
+
+### 决策（Q1–Q25 逐条问答，三轮）
+- 只用真实机器人配置 `mars`（Q16）。渲染先 MuJoCo + Unreal，Isaac 暂缓（Q11）：`configs/scenes.yaml` 的五个实例没有 `isaac` 条目，TODO 40.6 记通用 OBJ→USD 的台子。
+- 10 件物体按实例在建场景时抽一次（Q1 b），不按局换：模板名 `logistics_room_1030`，实例 `logistics_room_1030_s<seed>`，每个实例一个 Unreal 关卡（Q12 a）。一组放不下平台就按确定性规则重抽（`sample_keys(attempt=k)`，记 `gso.draw_attempt`；seed 4 第 0 组放不下）。
+- 筛选写成 `catalog.json`（Q2、Q17 b）：单手 = 窄边 ≤ 0.095 m 夹口、高 ≥ 3 cm、抓取点（台面 0.371 + 半高）≥ 0.40 m；双手 = 宽边 0.20–0.45 m、高 ≥ 0.10 m（用户放宽，标 untested）；另加 24 s 落地静置测试，倒下的记 `none`（Jenga 盒等 26 件）。阈值都是 `scripts/gso_catalog.py` 的参数并记在文件里。不复用 `adt.graspable()`（mars 能力表没有 `box_grasp.width`）。结果 1030 件：单手 407、双手 270、none 353，留出 96（11-04 排除鞋类后：单手 334、双手 135、none 561，见下一条）。
+- 鞋子不进物流间（用户 11-04“数据库中鞋子类别的物体不要引入 logistics room”）：按数据集自己的类别标签排除，不按名字猜。kevinzakka 的 MuJoCo 版没带类别，`scripts/gso_categories.py` 从数据集在 Gazebo Fuel 上的条目取每件的类别写成 `assets/mujoco_scanned_objects/categories.json`（1030 件全覆盖：Shoe 254、Consumer Goods 248、Toys 150……216 件无标签）；`Thresholds.excluded_categories = ("Shoe",)`（`gso_catalog.py --exclude-categories`，记在 catalog 里），这类一律 `graspable = none`、`why = category Shoe`，`pool_keys` 自然抽不到；目录缺标签的模型建目录时报错而不是放过。s0–s4 五个实例、任务族、预览图和 s0 的 Unreal 关卡都重建了（s0 原来有 Timberland 靴和 Teva 短靴，s4 有 Reebok、ASICS 和 Hikerfish 靴）。
+- 质量固定（Q3 c）：壳体体积 × 300 kg/m³，截到 0.05–1.5 kg；不随机。惯量从 V-HACD 壳体按密度算（不是包围盒实体）：包围盒惯量让 12 寸蜘蛛侠人偶倒下，壳体密度站得住。
+- 放置（Q5 a）：拒绝采样，底面贴平台、随机 yaw、互不重叠、再沉降；目标物体限制在离台沿 0.35 m 的可达带内（D13），干扰物可以在够不到的中央（Q9 b）；纸箱也随机放（Q19 c，用户改定），作为双手任务之一。几何带规则是硬约束，`scene_feasibility.py` 只作提示（Q20 c）。
+- 单臂任务 = 1 个目标 + 9 个干扰物；双臂 = 两手抱一个大物体（Q6）。判据（Q23 b）：单手 `held(X)` + `lifted(X, 0.10, 60)`，双手 `held` + `lifted(X, 0.20, 60)`，双手沿用 `hold_s` 2 / `judge_s` 5。
+- 两个任务族 `gso_grasp_s<seed>` / `gso_bimanual_s<seed>`，任务行由场景文件自动生成（Q13），键 `gso_<4 位序号>`，可读短语在 `semantic.phrase`（Q14 b）；种子分别是空技能包和 `box_strict_start`；起点池种子 440000 / 450000 起，与其他族不重叠。
+- 评测开关 `--pool train|eval_unseen|all`（Q7、Q22）：按名字哈希留出 10%，实例级别。
+- 仓库只跟踪 `catalog.json` / LICENSE / README / VERSION；`models/` 忽略，`scripts/install_gso.sh` 装（Q8、Q24 b）。每个实例把抽到的 10 件网格拷进场景目录（Q15）。
+- `--objects 10 --bimanual 4` 参数化，默认 6 / 4（Q18 b）。预览用 MuJoCo 离屏渲染：新相机 `platform_top` 俯视 + `reverse_room`（Q25 a），`scripts/gso_preview.py --seeds 5` 建 5 个实例并各出一张图，pytest 只建 1 个、没有 EGL 就跳过。
+- Unreal 导出：导出器剥掉碰撞体前先把刚体从 geom 得到的质量 / 惯量烤成显式 `<inertial>`（只对自由物体，机器人连杆不动）；不烤的话扫描物体没有质量，编译失败。本机只有一张卡（Q21）：s0 关卡建了一次（41 s）。
+- 先只写代码、冒烟测试，不跑 RSI；全部在分支 `henry-dev`。
+
+### 被否决的方案（及原因）
+- 每局换物体（Q1 a）：`start.py` 是冻结层，按局换物体要改它，且 Unreal 关卡按实例导入。
+- 预先把 1030 件全导入 Unreal：关卡太大，每个实例只用 10 件。
+- 纸箱固定不动、不作任务：用户要纸箱也随机、也作双臂任务。
+- 把双手阈值绑在夹口宽度上：用户放宽到 0.2–0.45 m，先跑了再看哪些抱得起。
+- 包围盒实体惯量：倒的物体在场景 lint 里报错。
+- 用名字关键词挑鞋子：1030 个名字里鞋的品牌名、型号名（`D_ROSE_773_II`、`TERREX_FAST_R`、`Hilary`、`Samoa`）靠正则漏一半，`Granimals`、`Vans_Cereal` 之类又误中；数据集自带的标签全覆盖且是它自己的分类。

@@ -1,0 +1,118 @@
+{
+ "name": "gso_grasp_s2",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 2 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0100 = brother ink cartridge magenta lc75m, gso_0267 = epson labelworks lc4wbn9 tape reel labels 047 x 295 roll black on white, gso_0297 = frozen scrabble jr, gso_0379 = justified the complete fourth season 3 discs dvd, gso_0660 = pinwheel pencil case, gso_0669 = polar herring fillets smoked peppered 705 oz total",
+ "scene": "outputs/scene_discovery/logistics_room_1030_s2",
+ "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
+ "tasks_file": "scripts/rsi/families/gso_s2_tasks.jsonl",
+ "tasks": [
+  "pick_gso_0100",
+  "pick_gso_0267",
+  "pick_gso_0297",
+  "pick_gso_0379",
+  "pick_gso_0660",
+  "pick_gso_0669"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "pools": {
+  "diag": {
+   "seed": 440000,
+   "n": 30
+  },
+  "accept": {
+   "seed": 540000,
+   "n": 40
+  },
+  "sealed": {
+   "seed": 640000,
+   "n": 50
+  }
+ },
+ "plan": "scripts/rsi/plans/gso_grasp.md",
+ "skills_note": "the incumbent's skills; the seed was empty (`__init__.py`: plan_for covers no goal)",
+ "sandbox": {
+  "seed": "scripts/rsi/seeds/atomic",
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/prep.py",
+   "scripts/rsi/past.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/plans/gso_grasp.md",
+   "scripts/rsi/families/gso_grasp_s2.json",
+   "scripts/rsi/families/gso_s2_tasks.jsonl"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "diag_pool",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep",
+   "locomani.tasks.scene.past"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "lint.json",
+   "settle.json",
+   "upright.json",
+   "feasibility",
+   "preview"
+  ]
+ }
+}

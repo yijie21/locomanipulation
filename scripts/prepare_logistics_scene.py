@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Install the packaged logistics MJCF as a box-probe runtime scene; `--rsi` adds the scene-file v2 fields and
-`env_only.xml` the scene RSI needs (TODO 38.1, docs/handoff/box-bimanual-rsi-plan-20261023.md)."""
+`env_only.xml` the scene RSI needs (TODO 38.1, docs/handoff/box-bimanual-rsi-plan-20261023.md); `--gso-seed N` adds
+N-drawn Google Scanned Objects on the platform next to the carton (the `logistics_room_1030_s<N>` scenes, 2026-11-03,
+docs/rsi_logistic_room_1030.md): the objects from `catalog.json`, the carton and every object at a random spot and
+yaw on the platform, a top-down camera `platform_top`, and the scene file's `gso` block naming the draw."""
 
 from __future__ import annotations
 
@@ -19,10 +22,12 @@ import mujoco
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))  # `python scripts/prepare_logistics_scene.py` from the repository root
 
+from locomani.sim import gso_objects as G  # noqa: E402
 from locomani.sim import make_dex1_model  # noqa: E402
 
 DEFAULT_SOURCE = ROOT / "assets/scene/logistics_room_box_v1/mujoco"
 SONIC_MESHES = ROOT / "third_party/GR00T-WholeBodyControl/gear_sonic/data/robot_model/model_data/g1/meshes"
+GSO_ASSETS = ROOT / "assets/mujoco_scanned_objects"
 
 
 def _sha256(path: Path) -> str:
@@ -52,11 +57,20 @@ def _relative_references(tree: ET.ElementTree, source: Path, destination: Path) 
 
 ROOM = "logistics_room"  # the one room; tasks and spawn regions name it
 BOX_KEY, BOX_MASS_KG = "nor_cal_box", 1.2  # assets/scene/logistics_room_box_v1/README.md
+BOX_BODY = "nor_cal_box_object"
+BOX_HALF = [0.225, 0.16, 0.165]  # the carton's outer 0.45 x 0.32 x 0.33 m; its body origin is the bottom centre
+BOX_PHRASE = "open cardboard box"
+PLATFORM_TOP_CAMERA = "platform_top"  # straight down on the platform, for the scene previews (scripts/gso_preview.py)
+PLATFORM_TOP_HEIGHT_M = 2.0  # above the platform top: at fovy 45 the 4:3 frame spans about 1.7 x 2.2 m of it
+DRAW_ATTEMPTS = 20  # draws of one seed tried before giving up on fitting its objects on the platform
+REACH_DEPTH_M = 0.35  # a target's centre at most this far inside the nearest approach edge (D13: forward reach
+# 0.6-0.7 m from a pelvis standing about 0.3 m outside the edge; the feasibility checker says the rest)
 
 
-def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str) -> None:
+def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str, built_by: str) -> None:
     """Extend the v1 meta in place to the scene-file v2 fields the scene RSI reads (TODO 38.1): `room` from the
-    meshes (scan_room), the platform's yaw / approach edges / room, the box's `semantic`, `randomization`."""
+    meshes (scan_room), the platform's yaw / approach edges / room, the box's `semantic`, `randomization` over every
+    free object (the GSO objects carry their `semantic` already, gso_objects.object_record)."""
     from datetime import datetime, timezone
 
     from locomani.scene_discovery import scan_room
@@ -71,7 +85,7 @@ def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str) -
     meta["source"] = {
         "kind": "scan",
         "pack": source_scene,
-        "built_by": "scripts/prepare_logistics_scene.py --rsi",
+        "built_by": built_by,
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
     meta["room"] = room
@@ -88,10 +102,14 @@ def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str) -
         "upright_axis": [0.0, 0.0, 1.0],
         "container": {"is": True, "opening_half_extent": [0.215, 0.15], "rim_height": 0.33},
     }
-    box["provenance"] = {"semantic": "rule", "bimanual": "rule", "container": "rule", "mass_kg": "measured"}
+    box["provenance"] = {  # one source per semantic field (scene_file.validate); `bimanual` is the legacy flag's
+        "semantic": "rule", "phrase": "rule", "room": "rule", "movable": "rule", "graspable": "rule",
+        "upright_axis": "rule", "bimanual": "rule", "container": "rule", "mass_kg": "measured",
+    }  # fmt: skip
+    free = [k for k, o in meta["objects"].items() if o.get("free")]
     meta["randomization"] = {
-        "movable_pool": [BOX_KEY],
-        "placements": {BOX_KEY: ["A"]},
+        "movable_pool": free,
+        "placements": {k: ["A"] for k in free},
         "distractor_pool": [],
         "spawn_rooms": [ROOM],
     }
@@ -129,7 +147,56 @@ def write_env_only(tree: ET.ElementTree, destination: Path) -> None:
     mujoco.MjModel.from_xml_path(str(path))  # it must compile on its own
 
 
-def main() -> int:
+def platform_surface(platform_geom: ET.Element) -> dict:
+    """The platform's top as the scene file describes a surface (from the pack's `platform_col` box attributes)."""
+    pos = [float(v) for v in platform_geom.get("pos").split()]
+    size = [float(v) for v in platform_geom.get("size").split()]
+    return {"xy": pos[:2], "top": pos[2] + size[2], "half_extent": size[:2], "flat_half_extent": size[:2], "yaw": 0.0,
+            "approach_edges": ["-x", "+x", "-y", "+y"]}  # fmt: skip
+
+
+def add_gso_objects(tree: ET.ElementTree, destination: Path, surface: dict, args) -> dict:
+    """Draw the objects, place them and the carton, write them into the MJCF; returns the `gso` block of the scene
+    file ({seed, pool, catalog, keys, placed}) with each object's catalog record under `records`."""
+    catalog = G.load_catalog(args.catalog)
+    for attempt in range(DRAW_ATTEMPTS):  # a set that does not fit on the platform is drawn again (deterministic)
+        keys = G.sample_keys(
+            catalog, args.gso_seed, n=args.objects, n_bimanual=args.bimanual, pool=args.pool, attempt=attempt
+        )
+        records = {k: catalog["objects"][k] for k in keys}
+        boxes = {k: G.object_box(r)["half_extent"] for k, r in records.items()}
+        boxes[BOX_KEY] = BOX_HALF
+        try:
+            placed = G.place_objects(boxes, surface, seed=args.gso_seed, reach_depth_m=args.reach_depth)
+            break
+        except RuntimeError as e:
+            print(f"[gso] draw {attempt} of seed {args.gso_seed} does not fit on the platform ({e}); drawing again")
+    else:
+        raise SystemExit(
+            f"seed {args.gso_seed}: no draw of {args.objects} objects fits on the platform in {DRAW_ATTEMPTS} tries"
+        )
+    root = tree.getroot()
+    for k in keys:  # pos: the scan's origin is its bottom centre (bbox_min z ~ 0); 1 mm up, scene_settle.py seats it
+        rec = records[k]
+        z = surface["top"] - rec["bbox_min_m"][2] + 0.001
+        G.add_to_scene(root, destination, args.gso_models, k, rec, [*placed[k]["xy"], z], placed[k]["yaw"])
+    box_body = root.find("worldbody").find(f"body[@name='{BOX_BODY}']")
+    box_z = float(box_body.get("pos").split()[2])
+    box_body.set("pos", " ".join(f"{v:.6g}" for v in (*placed[BOX_KEY]["xy"], box_z)))
+    box_body.set("quat", " ".join(f"{v:.6g}" for v in G.yaw_quat(placed[BOX_KEY]["yaw"])))
+    cam = ET.SubElement(root.find("worldbody"), "camera", name=PLATFORM_TOP_CAMERA)
+    cam.set("pos", " ".join(f"{v:.6g}" for v in (*surface["xy"], surface["top"] + PLATFORM_TOP_HEIGHT_M)))
+    cam.set("quat", "1 0 0 0")  # MuJoCo cameras look down their -z: identity looks straight down, image x = world x
+    cam.set("fovy", "45")
+    return {
+        "seed": args.gso_seed, "pool": args.pool, "objects": args.objects, "bimanual": args.bimanual,
+        "reach_depth_m": args.reach_depth, "catalog": str(args.catalog.relative_to(ROOT)) if args.catalog.is_relative_to(ROOT) else str(args.catalog),
+        "catalog_sha256": G.sha256_file(args.catalog), "thresholds": catalog["thresholds"],
+        "draw_attempt": attempt, "keys": keys, "placed": placed, "records": records,
+    }  # fmt: skip
+
+
+def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("out_dir", type=Path, help="new runtime directory under outputs/")
     parser.add_argument("--source", type=Path, default=DEFAULT_SOURCE)
@@ -164,9 +231,24 @@ def main() -> int:
         help="--rsi: the navigation body radius the spawn region keeps from any obstacle "
         "(locomani.tasks.scene.world.BODY_RADIUS_M, not imported: it pulls in the simulator)",
     )
-    args = parser.parse_args()
+    gso = parser.add_argument_group("Google Scanned Objects (the logistics_room_1030 scenes)")
+    gso.add_argument("--gso-seed", type=int, default=None, help="draw and place the objects with this seed (the scene "
+                     "instance's name carries it: logistics_room_1030_s<seed>); without it the scene is the carton alone")  # fmt: skip
+    gso.add_argument("--objects", type=int, default=10, help="how many objects the instance gets")
+    gso.add_argument(
+        "--bimanual", type=int, default=4, help="how many of them are two-hand objects (the rest single-hand)"
+    )
+    gso.add_argument("--pool", choices=G.POOLS, default="train", help="train: the catalog's training split; eval_unseen: "
+                     "the held-out tenth no training instance draws; all: both")  # fmt: skip
+    gso.add_argument("--catalog", type=Path, default=GSO_ASSETS / "catalog.json", help="scripts/gso_catalog.py's file")
+    gso.add_argument("--gso-models", type=Path, default=GSO_ASSETS / "models", help="the models/<name>/ directories")
+    gso.add_argument("--reach-depth", type=float, default=REACH_DEPTH_M, help="m; an object is placed within this "
+                     "depth of an approach edge when a spot exists (the task rows' `placement.depth_m` repeat it)")  # fmt: skip
+    args = parser.parse_args(argv)
     if args.ego_camera and args.robot != "mars":
         raise SystemExit(f"--ego-camera picks one of mars's head cameras; robot {args.robot} has one ego camera")
+    if args.gso_seed is not None and not args.catalog.is_file():
+        raise SystemExit(f"no catalog {args.catalog}: bash scripts/install_gso.sh, then scripts/gso_catalog.py")
     ego_camera = args.ego_camera or make_dex1_model.MARS_EGO_DEFAULT
     source = args.source.resolve()
     destination = args.out_dir.resolve()
@@ -191,9 +273,12 @@ def main() -> int:
     if args.robot == "mars":
         make_dex1_model.write_mars()  # the meshes the scene references (and the robot model) are gitignored
         tree = make_dex1_model.apply_mars(tree, make_dex1_model.MARS_MESHES, ego_camera)
-    if args.rsi:  # scene_settle.py rewrites a free body's `pos="..." quat="..."` pair; the pack's box has no quat
-        box_body = tree.getroot().find("worldbody").find("body[@name='nor_cal_box_object']")
+    if args.rsi or args.gso_seed is not None:  # scene_settle.py rewrites a free body's `pos="..." quat="..."` pair
+        box_body = tree.getroot().find("worldbody").find(f"body[@name='{BOX_BODY}']")
         box_body.set("quat", box_body.get("quat") or "1 0 0 0")
+    gso_block = (
+        add_gso_objects(tree, destination, platform_surface(platform_geom), args) if args.gso_seed is not None else None
+    )
     tree.write(runtime_xml, encoding="unicode")
     if args.robot == "mars":
         make_dex1_model.check_mars(str(runtime_xml))
@@ -208,10 +293,14 @@ def main() -> int:
             raise AssertionError(f"compiled scene has no {name}")
         return value
 
-    box_body = object_id(mujoco.mjtObj.mjOBJ_BODY, "nor_cal_box_object")
+    def free_pose(body_name: str) -> tuple[int, int, list, list]:
+        body = object_id(mujoco.mjtObj.mjOBJ_BODY, body_name)
+        adr = int(model.jnt_qposadr[model.body_jntadr[body]])
+        return body, adr, model.qpos0[adr : adr + 3].tolist(), model.qpos0[adr + 3 : adr + 7].tolist()
+
+    box_body, qpos_address, box_pos, box_quat = free_pose(BOX_BODY)
     platform_body = object_id(mujoco.mjtObj.mjOBJ_BODY, "logistics_platform")
     platform_geom_id = object_id(mujoco.mjtObj.mjOBJ_GEOM, "platform_col")
-    qpos_address = int(model.jnt_qposadr[model.body_jntadr[box_body]])
     half = model.geom_size[platform_geom_id, :2].tolist()
     xy = data.geom_xpos[platform_geom_id, :2].tolist()
     top = float(data.geom_xpos[platform_geom_id, 2] + model.geom_size[platform_geom_id, 2])
@@ -226,11 +315,39 @@ def main() -> int:
         source_scene = str(source_xml.relative_to(ROOT))
     except ValueError:
         source_scene = str(source_xml)
+    objects = {
+        BOX_KEY: {
+            "body": BOX_BODY,
+            "body_id": box_body,
+            "qpos_adr": qpos_address,
+            "free": True,
+            "surface": "A",
+            "init_pos": box_pos,
+            "init_quat": box_quat,
+            "height": 0.33,
+            "scale": 1.0,
+            "bimanual": True,
+            "container": True,
+            "box": {"half_extent": BOX_HALF, "centre": [0.0, 0.0, 0.165]},
+        }
+    }
+    phrases = {BOX_KEY: BOX_PHRASE}
+    if gso_block:
+        for k in gso_block["keys"]:
+            rec = gso_block["records"][k]
+            body_id, adr, pos, q = free_pose(f"{k}_object")
+            objects[k] = G.object_record(rec, ROOM, gso_block["placed"][k], body_id, adr, pos, q)
+            phrases[k] = rec["phrase"]
+    built_by = (
+        "scripts/prepare_logistics_scene.py"
+        + (" --rsi" if args.rsi else "")
+        + (f" --gso-seed {args.gso_seed}" if gso_block else "")
+    )
     meta = {
         "scene_xml": str(runtime_xml),
-        "target_object": "nor_cal_box",
-        "target_pool": ["nor_cal_box"],
-        "object_phrase": {"nor_cal_box": "open cardboard box"},
+        "target_object": BOX_KEY,
+        "target_pool": list(objects),
+        "object_phrase": phrases,
         "goal_object": None,
         "robot": args.robot,
         **({"ego_camera": ego_camera} if args.robot == "mars" else {}),
@@ -251,22 +368,7 @@ def main() -> int:
                 "circumradius": math.hypot(*half),
             }
         },
-        "objects": {
-            "nor_cal_box": {
-                "body": "nor_cal_box_object",
-                "body_id": box_body,
-                "qpos_adr": qpos_address,
-                "free": True,
-                "surface": "A",
-                "init_pos": model.qpos0[qpos_address : qpos_address + 3].tolist(),
-                "init_quat": model.qpos0[qpos_address + 3 : qpos_address + 7].tolist(),
-                "height": 0.33,
-                "scale": 1.0,
-                "bimanual": True,
-                "container": True,
-                "box": {"half_extent": [0.225, 0.16, 0.165], "centre": [0.0, 0.0, 0.165]},
-            }
-        },
+        "objects": objects,
         "nbody": int(model.nbody),
         "ngeom": int(model.ngeom),
         "nq": int(model.nq),
@@ -278,8 +380,11 @@ def main() -> int:
         ),
         "video_camera": "reverse_room",
     }
+    if gso_block:
+        meta["gso"] = {k: v for k, v in gso_block.items() if k not in ("records", "placed")}
+        meta["gso"]["in_reach_band"] = {k: v["in_reach_band"] for k, v in gso_block["placed"].items()}
     if args.rsi:
-        rsi_fields(meta, model, data, args.body_radius, source_scene)
+        rsi_fields(meta, model, data, args.body_radius, source_scene, built_by)
         write_env_only(tree, destination)
     meta_path = destination / "scene_meta.json"
     meta_path.write_text(json.dumps(meta, indent=2) + "\n")
@@ -289,7 +394,7 @@ def main() -> int:
                 "scene": str(destination),
                 "scene_xml": str(runtime_xml),
                 "scene_meta": str(meta_path),
-                "target_key": "nor_cal_box",
+                "target_key": BOX_KEY,
                 "surface_top_m": top,
                 "box_qpos_adr": qpos_address,
                 "compiled": {"nbody": model.nbody, "ngeom": model.ngeom, "nq": model.nq},
@@ -303,6 +408,17 @@ def main() -> int:
                         }
                     }
                     if args.rsi
+                    else {}
+                ),
+                **(
+                    {
+                        "gso": {
+                            "seed": args.gso_seed,
+                            "objects": {k: gso_block["records"][k]["name"] for k in gso_block["keys"]},
+                            "in_reach_band": meta["gso"]["in_reach_band"],
+                        }
+                    }
+                    if gso_block
                     else {}
                 ),
             },
