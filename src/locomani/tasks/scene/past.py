@@ -2,6 +2,7 @@
 scene-graph record per skill step and retry of a round, built after the round from the step log, the primitive call log,
 the trace (with the motor layer's contact channel, TODO 39.1) and the scene file. Pure functions: no simulator, no motor
 layer; the builder never runs during a round and nothing in the skills package may read its output (rules.md 38).
+Given the physics model, it also runs graspability.py's static check (no simulation) for the objects' affordances.
 
 Records separate observed facts (contacts, poses), the goal predicates (predicates.py) and derived geometry
 (support, spatial and relative-pose edges); a relation that could not be computed is `unknown`, never false. Entities
@@ -20,7 +21,7 @@ import numpy as np
 
 from locomani.scene_discovery import predicates as PR
 
-SCHEMA = "PAST-locomani-0.1"
+SCHEMA = "PAST-locomani-0.2"  # 0.2 (2026-11-06): object entities carry `affordance`; 0.1 records lack it
 NEIGHBOUR_M = 0.30  # a movable object this close (xy) to the target is in scope
 OVERHANG_M = 0.50  # a surface this far above the target is in scope
 STANCE_M = 0.35  # the stance footprint's radius around walk_to's goal
@@ -31,6 +32,7 @@ SUPPORT_BAND_M = 0.02  # an underside this close to a surface's top may rest on 
 REACH_TOL_CM = 3.0  # a reach lands when the jaw centre is this close to its target (body.reach's miss)
 WALK_TOL_CM = 5.0  # a walk lands when the pelvis is this close to the stance (failure_class.WALK_OFF_CM)
 JAW_OFF_M = 0.1515  # runtime.OFF: wrist frame -> jaw (pad) centre; the trace records the wrist, a reach targets the jaw
+AFFORD_STALE_DEG = 60.0  # an object tilted this far from its pose at the round's start: its one-hand verdicts are stale
 PREDICATE_DT_TICKS = 5  # predicates and derived edges are re-evaluated every 0.1 s (episode.JUDGE_DT)
 SIDES = ("left", "right")
 HAND = {s: f"{s}_hand" for s in SIDES}
@@ -287,6 +289,117 @@ def _entity_surface(meta: dict, s: str) -> dict:
     surf = meta["surfaces"][s]
     return dict(type="surface", of=surf.get("of_object"), top_m=surf["top"], half_extent_m=surf["half_extent"],
                 yaw=surf.get("yaw", 0.0), approach_edges=surf.get("approach_edges"), fixed=True)  # fmt: skip
+
+
+# -- affordances (2026-11-06): what the scene file says an object affords, and what the Dex1 jaw and a hug could do ----
+def affordance_static(meta: dict, key: str) -> dict:
+    """The scene file's affordance fields, copied; `src` gives each one's provenance (the scene file's `provenance`,
+    else the block it came from). A field the scene file lacks is left out."""
+    o = meta["objects"][key]
+    sem, gso, prov = o.get("semantic") or {}, o.get("gso") or {}, o.get("provenance") or {}
+    cont = sem.get("container") if isinstance(sem.get("container"), dict) else {}
+    out: dict = {}
+    src: dict = {}
+
+    def put(name: str, v, origin: str):
+        if v is not None:
+            out[name], src[name] = v, origin
+
+    for f in ("graspable", "phrase", "support", "friction"):
+        put(f, sem.get(f), prov.get(f, "scene"))
+    put("category", (sem.get("adt") or {}).get("category"), "adt")
+    for f in ("grasp_height_m", "in_reach_band", "capability"):
+        put(f, gso.get(f), "gso")
+    if cont.get("is"):
+        put("opening_half_extent_m", cont.get("opening_half_extent"), prov.get("container", "scene"))
+        put("rim_height_m", cont.get("rim_height"), prov.get("container", "scene"))
+    out["src"] = src
+    return out
+
+
+def hug_geometry(meta: dict, key: str) -> dict | None:
+    """What a two-hand hug squeezes, from the scene file's box (object frame): the span between the walls across each
+    horizontal axis, the height and the mass. Numbers only: no threshold has been measured for a hug."""
+    o = meta["objects"][key]
+    half = (o.get("box") or {}).get("half_extent")
+    if not half:
+        return None
+    return dict(span_x_m=round(2 * float(half[0]), 4), span_y_m=round(2 * float(half[1]), 4),
+                height_m=round(2 * float(half[2]), 4), mass_kg=(o.get("semantic") or {}).get("mass_kg"))  # fmt: skip
+
+
+class StartScene:
+    """graspability.py's world at the round's first tick: the physics model, the scene file and the trace's poses."""
+
+    def __init__(self, model, meta: dict, frame: Frame):
+        self.m, self.meta, self.frame = model, meta, frame
+
+    def object_pose(self, key: str):
+        return self.frame.obj_pose(key)
+
+
+def _wrap_deg(d: float) -> float:
+    return float((d + 180.0) % 360.0 - 180.0)
+
+
+def _ranges(degs: list[float], step: float) -> list[list[float]]:
+    """Sorted angles sampled every `step` degrees -> [lo, hi] runs; a run through +-180 is one run (lo > hi)."""
+    runs: list[list[float]] = []
+    for d in sorted(degs):
+        if runs and d - runs[-1][1] <= step + 1e-6:
+            runs[-1][1] = d
+        else:
+            runs.append([d, d])
+    if len(runs) > 1 and runs[0][0] + 360.0 - runs[-1][1] <= step + 1e-6:
+        runs[0][0] = runs.pop()[0]
+    return [[round(lo, 1), round(hi, 1)] for lo, hi in runs]
+
+
+def one_hand(scene, key: str) -> dict:
+    """graspability.assess at the scene's pose, its angles turned into the object's frame: an approach yaw (shoulder to
+    object, as graspability's) measured from the object's x axis, so it holds while the object stays upright."""
+    from locomani.tasks.scene import graspability as G  # mujoco: only a caller with the physics model needs it
+
+    p, q = scene.object_pose(key)
+    yaw = math.degrees(_yaw(q))
+    a = G.assess(scene, key)
+    widths = G.section_widths(scene, key, a["z"])
+    fits = [_wrap_deg(d - yaw) for d, w in widths.items() if G.verdict(w)[0] == "fits"]
+    out = dict(jaw_open_m=a["jaw_open_m"], grasp_z_above_origin_m=round(a["z"] - float(p[2]), 4), flat=a["flat"],
+               below_jaw=a["section_points"] == 0, side_fits_deg=_ranges(fits, G.STEP_DEG))  # fmt: skip
+    if "narrowest" in a:
+        n = a["narrowest"]
+        out["narrowest"] = dict(approach_deg=round(_wrap_deg(n["approach_deg"] - yaw), 1), width_m=n["width_m"],
+                                margin_m=n["margin_m"])  # fmt: skip
+        out["widest_m"] = a["widest_m"]
+    if a.get("rim"):
+        out["rim"] = {k: a["rim"][k] for k in ("available", "wall_m", "margin_m", "fits") if k in a["rim"]}
+    if a.get("top_pinch"):
+        tp = a["top_pinch"]
+        out["top_pinch"] = dict(width_m=tp["width_m"], margin_m=tp["margin_m"], fits=tp["fits"],
+                                closing_deg=round(_wrap_deg(tp["closing_deg"] - yaw), 1))  # fmt: skip
+    return out
+
+
+def affordance(meta: dict, key: str, scene=None) -> dict:
+    """An object's `affordance`: the scene file's fields, the hug's numbers and, given a StartScene, the one-hand
+    check. A check that raises leaves `one_hand` out and says why; it never costs the record."""
+    out = affordance_static(meta, key)
+    hug = hug_geometry(meta, key)
+    if hug is not None:
+        out["hug"], out["src"]["hug"] = hug, "derived:box"
+    if scene is not None:
+        try:
+            out["one_hand"], out["src"]["one_hand"] = one_hand(scene, key), "derived:graspability"
+        except Exception as e:
+            out["one_hand_error"] = f"{type(e).__name__}: {e}"[:200]
+    return out
+
+
+def _tilt_deg(q0, q1) -> float:
+    """The angle between an object's z axis at two poses."""
+    z0, z1 = _quat_to_mat(q0)[:, 2], _quat_to_mat(q1)[:, 2]
+    return math.degrees(math.acos(max(-1.0, min(1.0, float(np.dot(z0, z1))))))
 
 
 def _entity_furniture(meta: dict, key: str) -> dict:
@@ -765,12 +878,27 @@ def _task_dict(task) -> dict:
                 goal=list(getattr(task, "goal", ()) or ()))  # fmt: skip
 
 
-def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
+def build(rec: dict, arrays: dict | None, meta: dict, task, model=None) -> list[dict]:
     """One record per step row of `rec` (spec section 4.6). No arrays (the plan was refused before the world moved):
-    no records."""
+    no records. `model` (the physics model): the object entities' `affordance` gets the one-hand check, run once per
+    object on its pose at the round's first tick and marked `stale` in a record where it has tilted AFFORD_STALE_DEG
+    since."""
     if arrays is None or "t" not in arrays or len(arrays["t"]) == 0:
         return []
     task = _task_dict(task)
+    first = Frame(arrays, meta, 0)
+    scene = StartScene(model, meta, first) if model is not None else None
+    afford: dict = {}
+
+    def afford_at(key: str, frame: Frame) -> dict:
+        if key not in afford:
+            afford[key] = affordance(meta, key, scene)
+        a = dict(afford[key])
+        if "one_hand" in a:
+            tilt = _tilt_deg(first.obj_pose(key)[1], frame.obj_pose(key)[1])
+            a["tilt_deg"], a["stale"] = round(tilt, 1), tilt > AFFORD_STALE_DEG
+        return a
+
     steps, calls = rec.get("steps") or [], rec.get("calls") or []
     label = str(rec.get("label", ""))
     g_surface, g_container = _goal_targets(task["goal"])
@@ -795,6 +923,9 @@ def build(rec: dict, arrays: dict | None, meta: dict, task) -> list[dict]:
         expected = expected_of(kind, roles, task, g_before, rising=rising)
         events, added = events_of(arrays, meta, k0, k1, entities, roles, task)
         scope["added"] = added
+        for eid, ent in entities.items():
+            if ent.get("type") == "object":
+                ent["affordance"] = afford_at(eid, f0)
         g_after = graph_of(f1, entities, roles, meta)
         measured_at(g_after, iv.row)
         sup = support_of(f0, roles["target"], meta)[0] if roles.get("target") in meta["objects"] else None

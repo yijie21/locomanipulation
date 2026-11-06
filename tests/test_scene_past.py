@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import tempfile
 import unittest
 from pathlib import Path
@@ -340,6 +341,88 @@ class Build(unittest.TestCase):
         self.assertEqual(len(back), len(recs))
         self.assertEqual(back[1]["record_id"], recs[1]["record_id"])
         json.dumps(back)  # plain JSON all the way down
+
+
+def affordance_meta():
+    """META_T with the scene file's affordance fields: an ADT-style mug, a gso-style can, a container."""
+    meta = json.loads(json.dumps(META_T))
+    mug, can, far = (meta["objects"][k] for k in ("Mug", "Can", "Far"))
+    mug["semantic"].update(graspable="single", phrase="the mug", friction=0.7, adt={"category": "kitchen"},
+                           drop_test={"ok": True})  # fmt: skip
+    mug["provenance"] = {"graspable": "rule", "drop_test": "measured"}
+    can["box"]["half_extent"] = [0.07, 0.03, 0.03]
+    can["semantic"]["graspable"] = "single"
+    can["gso"] = {"grasp_height_m": 0.79, "in_reach_band": True, "capability": "measured_envelope"}
+    far["semantic"]["container"] = {"is": True, "opening_half_extent": [0.025, 0.025], "rim_height": 0.06}
+    return meta
+
+
+def affordance_model():
+    import mujoco
+
+    boxes = {"Mug": (0.04, 0.04, 0.05), "Can": (0.07, 0.03, 0.03), "Far": (0.03, 0.03, 0.03)}
+    bodies = "".join(f'<body name="{k}"><freejoint/><geom type="box" size="{h[0]} {h[1]} {h[2]}"/></body>'
+                     for k, h in boxes.items())  # fmt: skip
+    return mujoco.MjModel.from_xml_string(f"<mujoco><worldbody>{bodies}</worldbody></mujoco>")
+
+
+class Affordance(unittest.TestCase):
+    def test_static_fields_are_copied_with_their_provenance_and_the_drop_test_is_not(self):
+        meta = affordance_meta()
+        a = P.affordance_static(meta, "Mug")
+        self.assertEqual(
+            (a["graspable"], a["phrase"], a["friction"], a["category"]), ("single", "the mug", 0.7, "kitchen")
+        )
+        self.assertEqual((a["src"]["graspable"], a["src"]["phrase"], a["src"]["category"]), ("rule", "scene", "adt"))
+        self.assertNotIn("drop_test", a)
+        c = P.affordance_static(meta, "Can")
+        self.assertEqual((c["grasp_height_m"], c["src"]["grasp_height_m"]), (0.79, "gso"))
+        f = P.affordance_static(meta, "Far")
+        self.assertEqual((f["opening_half_extent_m"], f["rim_height_m"]), ([0.025, 0.025], 0.06))
+        self.assertEqual(P.hug_geometry(meta, "Can"), dict(span_x_m=0.14, span_y_m=0.06, height_m=0.06, mass_kg=0.4))
+
+    def test_without_the_model_the_records_carry_the_scene_fields_and_no_one_hand_check(self):
+        recs = P.build(grasp_round_rec(), grasp_round_arrays(), affordance_meta(), TASK)
+        a = recs[1]["entities"]["Mug"]["affordance"]
+        self.assertEqual((a["graspable"], a["src"]["hug"]), ("single", "derived:box"))
+        self.assertNotIn("one_hand", a)
+        self.assertNotIn("affordance", recs[1]["entities"]["T"])  # surfaces and furniture: none
+
+    def test_the_one_hand_check_is_in_the_objects_frame_and_goes_stale_when_it_tips(self):
+        arr = grasp_round_arrays()
+        yaw90 = [math.cos(math.pi / 4), 0, 0, math.sin(math.pi / 4)]
+        tipped = [math.cos(math.pi / 4), math.sin(math.pi / 4), 0, 0]  # 90 deg about x
+        arr["obj_Can"] = np.array([[1.0, 0.10, 0.76, *(yaw90 if k < 20 else tipped)] for k in range(40)])
+        recs = P.build(grasp_round_rec(), arr, affordance_meta(), TASK, model=affordance_model())
+        pre, grip = recs[1], recs[2]
+        can = pre["entities"]["Can"]["affordance"]
+        oh = can["one_hand"]
+        self.assertEqual(can["src"]["one_hand"], "derived:graspability")
+        # 14 cm along its x, 6 cm along its y: the jaw closes across y, so the approach runs along x whatever the yaw
+        self.assertAlmostEqual(abs(oh["narrowest"]["approach_deg"]) % 180.0, 0.0, delta=1.0)
+        self.assertAlmostEqual(oh["narrowest"]["width_m"], 0.06, places=3)
+        self.assertTrue(any(lo <= 0.0 <= hi for lo, hi in oh["side_fits_deg"]))
+        self.assertFalse(any(lo <= 90.0 <= hi for lo, hi in oh["side_fits_deg"] if lo <= hi))
+        self.assertFalse(can["stale"])
+        self.assertTrue(pre["entities"]["Mug"]["affordance"]["one_hand"]["side_fits_deg"])  # 8 cm: fits all round
+        g = grip["entities"]["Can"]["affordance"]
+        self.assertTrue(g["stale"])
+        self.assertAlmostEqual(g["tilt_deg"], 90.0, delta=0.5)
+        json.dumps(recs, default=P._json_default)
+
+    def test_a_check_that_raises_leaves_one_hand_out(self):
+        class Broken:
+            meta = affordance_meta()
+
+            def object_pose(self, key):
+                raise RuntimeError("no pose")
+
+        a = P.affordance(affordance_meta(), "Mug", Broken())
+        self.assertNotIn("one_hand", a)
+        self.assertIn("RuntimeError: no pose", a["one_hand_error"])
+
+    def test_runs_through_plus_minus_180_join(self):
+        self.assertEqual(P._ranges([-180.0, -175.0, -5.0, 0.0, 5.0, 170.0, 175.0], 5.0), [[170.0, -175.0], [-5.0, 5.0]])
 
 
 class OldRounds(unittest.TestCase):

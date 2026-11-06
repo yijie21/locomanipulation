@@ -154,7 +154,7 @@ def run_round(
         ):  # the plan was refused before the world moved (an empty seed's rounds): say so, not a 0-byte file
             records = [PAST.note_line(label, f"no records: {rec.get('why') or 'the world never moved'}")]
         else:
-            records = PAST.build(rec, arrays, world.meta, task)
+            records = PAST.build(rec, arrays, world.meta, task, model=world.sim.m)
         PAST.write(out, label, records)
     except Exception as e:
         PAST.write(out, label, [PAST.error_line(label, f"{type(e).__name__}: {e}")])

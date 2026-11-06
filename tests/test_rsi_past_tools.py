@@ -95,6 +95,26 @@ class Cli(unittest.TestCase):
         self.assertIn("    9.2  Mug —touching→ right_hand  false→true", text)
         self.assertIn("  evidence pick_Mug_s0.npz ticks 450-480", text)
 
+    def test_show_prints_each_objects_affordance_once_and_marks_a_stale_one(self):
+        aff = dict(graspable="single", phrase="the mug", src={},
+                   one_hand=dict(jaw_open_m=0.095, grasp_z_above_origin_m=0.04, flat=False, below_jaw=False,
+                                 side_fits_deg=[[170.0, -170.0], [-10.0, 10.0]],
+                                 narrowest=dict(approach_deg=-0.2, width_m=0.06, margin_m=0.0175), widest_m=0.14),
+                   hug=dict(span_x_m=0.14, span_y_m=0.06, height_m=0.1, mass_kg=0.3))  # fmt: skip
+        recs = two_step_records("pick_Mug_s0", False)
+        for i, r in enumerate(recs):
+            r["entities"] = {"Mug": dict(type="object", affordance=dict(aff, tilt_deg=80.0 * i, stale=i > 0))}
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "pick_Mug_s0.past.jsonl").write_text("".join(json.dumps(r) + "\n" for r in recs))
+            text = past_cli.show(Path(d) / "pick_Mug_s0")
+        self.assertEqual(text.count("Mug  single"), 1)
+        self.assertIn(
+            '  Mug  single  "the mug"  jaw fits from [+170,-170] [-10,+10] deg, narrowest 6.0 cm at +0 deg (+1.8 cm a'
+            " side); grasp z +0.04 m  hug spans x 14.0 y 6.0 cm, 10.0 cm tall 0.3 kg",
+            text,
+        )
+        self.assertIn("  affordance stale (one-hand check from the start pose): Mug tilted 80 deg", text)
+
     def test_show_one_step_as_json_and_the_json_suffix_is_accepted(self):
         with tempfile.TemporaryDirectory() as d:
             write_round(d, "pick_Mug_s0", False)

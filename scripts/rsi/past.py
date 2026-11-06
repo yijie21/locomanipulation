@@ -4,8 +4,8 @@
     PYTHONPATH=src $PY scripts/rsi/past.py show <diag dir>/<label> [--step N] [--json]
     PYTHONPATH=src $PY scripts/rsi/past.py compare <failed round> <successful round>
 
-`show` prints every step: roles, G_before -> G_after per edge with its expectation, the events in between, the
-bodies that joined the scope, and where the NPZ ticks are; `compare` aligns two rounds' steps by kind (longest common
+`show` prints one affordance line per object (schema 0.2), then every step: roles, G_before -> G_after per edge with its
+expectation, the events in between, the bodies that joined the scope, and where the NPZ ticks are; `compare` aligns two rounds' steps by kind (longest common
 subsequence) and prints the edges whose values differ. Reading only; the records are written by scene_round.py.
 """
 
@@ -55,6 +55,66 @@ def _key(e: dict) -> tuple:
     return (e["s"], e["r"], e["o"])
 
 
+def _cm(m) -> str:
+    return f"{float(m) * 100:.1f}"
+
+
+def affordance_line(key: str, a: dict) -> str:
+    """One object's `affordance` in a line: the scene file's labels, the one-hand check (angles in the object's frame),
+    the hug's numbers and a container's opening."""
+    parts = [key, str(a.get("graspable", "?"))]
+    if a.get("category"):
+        parts.append(f"[{a['category']}]")
+    if a.get("phrase"):
+        parts.append(json.dumps(a["phrase"]))
+    oh = a.get("one_hand")
+    if oh:
+        if oh.get("below_jaw"):
+            jaw = "nothing at the jaw height"
+        elif oh.get("side_fits_deg"):
+            runs = " ".join(f"[{lo:+.0f},{hi:+.0f}]" for lo, hi in oh["side_fits_deg"])
+            jaw = f"jaw fits from {runs} deg"
+        else:
+            jaw = "jaw fits from no approach"
+        n = oh.get("narrowest")
+        if n:
+            deg = int(round(n["approach_deg"])) or 0  # no "-0"
+            jaw += f", narrowest {_cm(n['width_m'])} cm at {deg:+d} deg ({float(n['margin_m']) * 100:+.1f} cm a side)"
+        if (oh.get("rim") or {}).get("available"):
+            jaw += f", rim pinch {_cm(oh['rim']['wall_m'])} cm wall"
+        if (oh.get("top_pinch") or {}).get("fits"):
+            jaw += f", top pinch {_cm(oh['top_pinch']['width_m'])} cm"
+        parts.append(f"{jaw}; grasp z {oh['grasp_z_above_origin_m']:+.2f} m")
+    elif a.get("one_hand_error"):
+        parts.append(f"one-hand check failed: {a['one_hand_error']}")
+    if a.get("grasp_height_m") is not None:
+        parts.append(f"scene grasp height {a['grasp_height_m']:.2f} m")
+    h = a.get("hug")
+    if h:
+        mass = f" {h['mass_kg']} kg" if h.get("mass_kg") is not None else ""
+        parts.append(f"hug spans x {_cm(h['span_x_m'])} y {_cm(h['span_y_m'])} cm, {_cm(h['height_m'])} cm tall{mass}")
+    if a.get("opening_half_extent_m"):
+        o = a["opening_half_extent_m"]
+        rim = f", rim {a['rim_height_m']:.2f} m" if a.get("rim_height_m") is not None else ""
+        parts.append(f"opening {_cm(2 * o[0])}x{_cm(2 * o[1])} cm{rim}")
+    return "  " + "  ".join(parts)
+
+
+def affordance_lines(recs: list[dict]) -> list[str]:
+    """Each object entity's affordance once, from the first record it appears in (angles: the object's frame, an
+    approach from its +x axis is 0)."""
+    seen: dict = {}
+    for r in recs:
+        for eid, ent in (r.get("entities") or {}).items():
+            if ent.get("type") == "object" and ent.get("affordance") and eid not in seen:
+                seen[eid] = ent["affordance"]
+    if not seen:
+        return []
+    return ["objects (affordance; jaw angles in the object's frame):"] + [
+        affordance_line(k, a) for k, a in seen.items()
+    ]
+
+
 def record_lines(r: dict) -> list[str]:
     a = r.get("action") or {}
     kind = r["kind"] + ("?" if r.get("kind_src") == "primitive" else "")  # '?': from the trace, no call log
@@ -68,6 +128,10 @@ def record_lines(r: dict) -> list[str]:
         out.append("  roles " + ", ".join(f"{k}={v}" for k, v in roles.items()))
     if a.get("check"):
         out.append("  check " + json.dumps(a["check"]))
+    stale = [f"{e} tilted {ent['affordance']['tilt_deg']:.0f} deg" for e, ent in (r.get("entities") or {}).items()
+             if (ent.get("affordance") or {}).get("stale")]  # fmt: skip
+    if stale:
+        out.append("  affordance stale (one-hand check from the start pose): " + ", ".join(stale))
     exp = {tuple(x["edge"]): x for x in r.get("expected") or []}
     before = {_key(e): e for e in r["G_before"]["edges"]}
     after = {_key(e): e for e in r["G_after"]["edges"]}
@@ -110,6 +174,8 @@ def show(path: Path, step: int | None = None, as_json: bool = False) -> str:
         return "; ".join(notes) if notes else "no records"
     ok = recs[0].get("outcome", {}).get("round_ok")
     out = [f"{recs[0]['label']}  task {recs[0]['task']}  round {'OK' if ok else 'FAIL'}"]
+    if step is None:
+        out += affordance_lines(recs)
     for r in recs:
         out += [""] + record_lines(r)
     return "\n".join(out)

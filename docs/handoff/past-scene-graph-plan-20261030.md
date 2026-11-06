@@ -152,6 +152,11 @@
 - **未知不是假**：没有接触通道的旧局，所有 `touching` 边和依赖它的 `supported_by`、`blocking`（按接触判的部分）记 `"v": null, "src": "unknown"`；几何边照算。
 - **边以角色为中心**：只记一端是 `target`、`effector`、`robot` 或某个 `region` 的对，不记全对全；邻居之间的关系不记。每条记录一两百条边、一局几十 KB。
 - **实体属性**（原文的 geometry、mass / CoM、pose / velocity、joint states）：物体有质量、半尺寸、质心（`meta.objects[*].box.centre`）、竖直轴，状态里有位姿、线速度和角速度（相邻两拍差分）、底面高度、偏航；手有组成刚体和夹爪最大开口，状态里有位姿、开口、腕姿态档（水平 / 俯 / 竖直，和 `body.reach()` 同一分法）、肩 3 + 肘 1 + 腕 3 的关节角、相对参考的误差；机器人有骨盆位姿和高度、偏航、两脚位置、是否摔倒、当前原语和模式；面有顶高、半尺寸、偏航、可接近的边、所属家具；区域有形状和参数。
+- **物体的 affordance**（schema `PAST-locomani-0.2`，2026-11-06，/grill-me Q1–Q13）：每个物体实体多一个 `affordance` 子字典，`src` 给每个字段的来源。三部分：
+  - 场景文件照抄（来源沿用场景文件的 `provenance`，没有时记 `scene` / `gso` / `adt`）：`graspable`、`phrase`、`category`（ADT）、`grasp_height_m` / `in_reach_band` / `capability`（gso）、容器的 `opening_half_extent_m` / `rim_height_m`、`support`、`friction`；不抄 `drop_test`，没有的字段不写。
+  - `hug`（`derived:box`）：包围盒两个水平轴的墙间距、高度、质量。只给数，不给结论——双手抱没有测过的阈值。
+  - `one_hand`（`derived:graspability`）：`graspability.assess()` 在局第一拍的位姿上每个物体算一次（`scene_round` 把物理模型传给 `build(..., model=)`），角度换成物体自身坐标系（接近方向从物体 +x 轴量起）：`side_fits_deg`（夹爪放得进的接近角区间，跨 ±180° 的区间 lo > hi）、`narrowest`、`widest_m`、`grasp_z_above_origin_m`、`flat`、`below_jaw`、容器的 `rim`、扁物体的 `top_pinch`。某条记录开始时物体相对局开始倾斜超过 `AFFORD_STALE_DEG`（60°，同 `lifted` 的倾斜）记 `stale: true` 和 `tilt_deg`。检查出错时不写 `one_hand`，写 `one_hand_error`，不花记录。没有模型时（单测、离线重建）只有前两部分。
+  - 记录范围里所有可动物体都带（邻居也带，"先挪开它"要看它能不能夹）；面和家具不带。只给角色读，技能不读（规则第 38 条不变）。0.1 的旧局不回填，读取工具两种都认。`show` 在每局开头每个物体打印一行，失效的步骤单独标出。
 - **一步一条、重试各一条**：`record_id` 是 `<label>/<step_index>.<attempt>`；`stage()` 的多次尝试在步骤日志里是同名多行，按 `attempt` 分开。
 - **`kind`** 是步骤内主导原语的种类（`reach`、`grip`、`release`、`walk`、`turn`、`sidestep`、`posture`、`hold`、`squeeze`、`mixed`、`none`），由第 4.5 节的规则定；步骤名 `step` 原样保留但不参与任何推断。
 - **`expected`** 来自第 4.5 节的表；查不到的 `kind` 为空列表。
