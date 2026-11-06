@@ -711,6 +711,18 @@ class Successes(unittest.TestCase):
         self.assertEqual(box["status"], "none")
 
 
+class SessionUsage(unittest.TestCase):
+    def test_a_role_is_booked_for_its_whole_session_not_its_last_turn(self):
+        lp = _fresh("scene_rsi_loop_usage", "loop.py")
+        out = {"usage": {"output_tokens": 679, "input_tokens": 3},  # TODO 37.5.1: the last turn only
+               "modelUsage": {"claude-opus-5-5": {"outputTokens": 133000, "inputTokens": 200, "cacheReadInputTokens": 9,
+                                                  "cacheCreationInputTokens": 1},
+                              "claude-haiku-5-5": {"outputTokens": 483, "inputTokens": 5}}}  # fmt: skip
+        self.assertEqual(lp.session_usage(out), {"input_tokens": 205, "output_tokens": 133483,
+                                                 "cache_read_input_tokens": 9, "cache_creation_input_tokens": 1})  # fmt: skip
+        self.assertEqual(lp.session_usage({"usage": {"output_tokens": 5}}), {"output_tokens": 5})
+
+
 class Calibrate(unittest.TestCase):
     """The checker's calibration sample (calibrate.py, plan section 12.3)."""
 

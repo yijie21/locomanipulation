@@ -43,6 +43,7 @@
    "scripts/paths.sh",
    "scripts/rsi/loop.py",
    "scripts/rsi/batch.py",
+   "scripts/rsi/cards.py",
    "scripts/rsi/digest.py",
    "scripts/rsi/family.py",
    "scripts/rsi/gate.py",
@@ -58,6 +59,7 @@
    "scripts/rsi/records.py",
    "scripts/rsi/isolate.py",
    "scripts/rsi/design.py",
+   "scripts/rsi/capability_probe.py",
    "scripts/rsi/try.py",
    "scripts/rsi/experience",
    "scripts/rsi/rules.md",
@@ -72,6 +74,7 @@
   "closure": [
    "loop",
    "gate",
+   "cards",
    "digest",
    "sealed",
    "claim_check",

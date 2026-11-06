@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 25, 2026-10-25)
+# Rules for the scene RSI loop (TODO 27, version 27, 2026-11-06)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -176,8 +176,8 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 32. Every round record carries `failure_class` (too_wide, side_reach, pinch_reach, walk_off, knocked, slip, fell,
     other) and `events` (the walk's end, the pre-grasp's end, the grip, the lift, the hand's closest approach, the
     object's first move and the hand that moved it), computed by the driver from the trace and the scene file
-    (scripts/rsi/failure_class.py, TODO 33.15); the gate reports its tally per class and the digest leads with the
-    classes. `src/locomani/tasks/scene/graspability.py` (and scripts/rsi/graspability.py) says, without simulating,
+    (scripts/rsi/failure_class.py, TODO 33.15); the gate reports its tally per class and the failure cards (rule 37)
+    lead with the classes. `src/locomani/tasks/scene/graspability.py` (and scripts/rsi/graspability.py) says, without simulating,
     whether an object fits the open jaw on each side, how far to turn so a side that fits faces the jaw, and which
     preparatory action would make it fit (TODO 33.18, D13). `src/locomani/tasks/scene/body.py` (scripts/rsi/body.py)
     says, from a table of 15,120 measured reaches, how likely the controller is to land a hand 3 cm or more off a
@@ -223,7 +223,9 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     one factor forced at a few levels on the same diagnostic starts, under the incumbent -- `param` (an overridable
     parameter `name` set to each level), `spawn_bearing` (the object `level` degrees off the robot's heading at the
     spawn), `spawn_distance` (the robot `level` metres from the object along the line to its spawn), `object_yaw` (the
-    object turned `level` degrees, slid up to 0.15 m on its top when it no longer fits there). At most 2 an iteration,
+    object turned `level` degrees, slid up to 0.15 m on its top when it no longer fits there), `primitive` (one motor
+    primitive `name` -- walk, back, side or turn -- alone on the empty floor, one deterministic run per level; its
+    curve is the body's, not a skill's or a start's). At most 2 an iteration,
     at most 300 rounds each; a start the forcing makes invalid is left out, and each level says how many and why
     (`skipped_why`); a level that lost more than half its starts is named in the result's `note` and says little. The
     per-level outcome goes to the Manager, the next Reviewer and this run's curves (body/curves_run.jsonl, tagged
@@ -231,7 +233,8 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     the sandbox was built with, fixed for the whole run, and a person gathers finished runs' curves into the origin
     (body_curves.py, run at the origin only) for the next. A curve says how the factor changes the outcome, never that a change
     should stay (rule 7) (code: design.py, loop.py run_designs) (version 20; the slide and the reasons version 21,
-    TODO 37.9.1; the run's own curves and the snapshot version 22, TODO 33.1.7).
+    TODO 37.9.1; the run's own curves and the snapshot version 22, TODO 33.1.7; `primitive` version 26, TODO
+    33.19.1).
 
 36. Keypoint grasps (TODO 33.9; D8; RoboHarness arXiv 2610.14018): `src/locomani/tasks/scene/keypoints.py` (and
     scripts/rsi/keypoints.py) turns a set of constraints on an object's points into ranked, executable grasps. The
@@ -245,3 +248,8 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     writes which points and which constraints, by the object's geometry (a recipe's SIGNATURE, rule 30), never by its
     name. A plan is a prediction for choosing what to try; only the gate is evidence (rule 7) (code; prompt)
     (version 23).
+37. What the Reviewer gets of the incumbent's diagnostic rounds is the failure cards (scripts/rsi/cards.py, TODO 43):
+    the driver writes them to iter_NN/cards after the diagnosis, one card and one schematic per failed round under a
+    summary of the pool, and the round directory has mode 000 while the Reviewer runs. To look closer at a round the
+    Reviewer runs it again with try.py. The Prober and the later roles read the rounds as before (code: loop.py
+    reviewer_cards, rounds_locked; prompt) (version 27).

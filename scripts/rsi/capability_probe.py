@@ -452,6 +452,24 @@ def worker(kind: str, ids: list[str]) -> None:
         print(i, "ok" if rec.get("ok") else "fail", rec.get("error", ""), flush=True)
 
 
+def run_cells(kind: str, spec: Path, out: Path) -> None:
+    """TODO 33.19.1: run the cells listed in `spec` (a JSON list, each with an `id`) into `out`/<id>.json -- the design
+    probes' `primitive` factor (design.py) asks for its own levels of one loco op."""
+    out.mkdir(parents=True, exist_ok=True)
+    pr = Probe(kind)
+    for c in json.loads(spec.read_text()):
+        f = out / f"{c['id']}.json"
+        if f.exists():
+            continue
+        t0 = time.time()
+        try:
+            rec = pr.run(c)
+        except Exception as e:  # noqa: BLE001 -- a cell that raises is recorded, the rest go on
+            rec = dict(ok=False, fell=False, error=f"{type(e).__name__}: {e}")
+        rec.update(cell=c, wall_s=round(time.time() - t0, 1))
+        f.write_text(json.dumps(rec, indent=1, default=float))
+
+
 # -- driver side ------------------------------------------------------------------------------------------------------
 
 
@@ -546,6 +564,10 @@ def main(argv=None) -> int:
     sub.add_parser("summary")
     c = sub.add_parser("cells")
     c.add_argument("kind", choices=KINDS)
+    rc = sub.add_parser("run-cells", help="run the cells a JSON file lists (design.py's primitive factor)")
+    rc.add_argument("kind", choices=KINDS)
+    rc.add_argument("--spec", type=Path, required=True)
+    rc.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if a.cmd == "run":
         run(a.kinds, a.procs, a.gpus, a.shard)
@@ -553,6 +575,8 @@ def main(argv=None) -> int:
         worker(a.kind, a.ids.split(","))
     elif a.cmd == "cells":
         print(json.dumps([x["id"] for x in cells(a.kind)]))
+    elif a.cmd == "run-cells":
+        run_cells(a.kind, a.spec, a.out)
     else:
         s = summary()
         print(json.dumps({k: (v if k != "reach" else {kk: vv for kk, vv in v.items() if kk != "grid"}) for k, v in s.items()},

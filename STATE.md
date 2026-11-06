@@ -7,9 +7,9 @@
   `assets/blender/{fonts,textures}/`、`assets/crates/nor_cal_box/visual/`、`assets/hero.png`、`docs/robotics_rsi_*.md`、
   `run_engineer.out`、根目录的 `reports/`、`research_notes/`。`outputs/`、`third_party/`、`datasets/` 永不进仓库。只按路径 `git add`。
 - 提交前确认 `git config --get core.bare` 是 false、`user.name` 是 yijie21。提交钩子对代码改动跑全套 CPU 检查（几分钟、多核）。
-- **已确认：10-27“连着做 TODO”的代码和文档改动都没提交**（`git diff --stat`：37 个文件 + 新文件 `scripts/scene_mesh_budget.py`、
+- **已确认：10-27“连着做 TODO”的改动除 37.5.1 / 33.19.1 外都没提交**（这两项 11-06 随 TODO 43.1 提交；另有新文件 `scripts/scene_mesh_budget.py`、
   `tests/test_scene_mesh_budget.py`），10-27 最后一次 `make check` 通过。用户说提交再提交，按 TODO 分组、按路径 add：
-  42.2 `start.py` + `test_scene_task_runner.py`；37.5.1 / 33.19.1 都改了 `scripts/rsi/loop.py`（一起提交）；4.7.8 `build_scene.sh`、
+  42.2 `start.py` + `test_scene_task_runner.py`；4.7.8 `build_scene.sh`、
   `adt_to_scene.py`、`scene_mesh_budget.py`；10.7 `crate/collect.py`；其余是文档和 warehouse 循环的提示词。
 - 已确认（10-27 08:20）：`/workspace` 可用 72 GB（93%）。Kimodo、CHOIS、GMR 已删（重装：`outputs/scene_rsi_20261016/traj_prior_20261026/install_kimodo.sh`）。
 
@@ -20,6 +20,7 @@
   （没换的 37 个起点 30 → 30），它分支上的提交 e1325906、1c47a609。旧的视觉数字都是旧地图上的。
 
 ## 当前进度（已确认）
+- Reviewer 改读失败卡片（TODO 43.1，规则 37，`rules.md` version 27）：两次真实回放跑通到 Prober，完整一轮只用桩跑过。下一步 43.2：两个并行的 Reviewer。
 - grasp_atomic 现任仍是 run C 的 `5cba2fa49d31`。新地图（TODO 42）上 120 个位置赢 88（旧图 86），走路摔倒 7 → 0
   （`outputs/scene_rsi_20261016/walkmap_20261027/README.md`）。旧图上的封存 38 / 50 照旧算数，只是地图更准了（用户 10-27）。
 - 场景文件已改（42.1）：sha256 主场景 `abe78c1f…`、可移动变体 `3395c67c…`；旧文件 `outputs/scene_discovery/<场景>.bak_20261027_before_walkmap/`。

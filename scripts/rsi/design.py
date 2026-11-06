@@ -13,6 +13,10 @@ Factors (the forcing is written here, by people; what to measure is the Reviewer
   object_yaw      the task's object turned by `level` degrees about the vertical, then slid by the smallest shift (at
                   most MAX_SHIFT_M) that keeps its footprint on its surface's top and clear of its neighbours; left out
                   when no spot that close fits
+  primitive       one motor primitive alone on the empty floor (`walk_mars`, capability_probe.py's loco cells), no skill,
+                  no task: `name` walk / back (metres ahead / behind), side (metres, + left), turn (degrees, + left in
+                  place); each level is one deterministic run, reported as ok, fell, the pelvis's position and heading
+                  error and the time it took (TODO 33.19.1: is it the primitive, or what the skill did around it)
 
 Each level reports how many starts were left out and why (`skipped_why`), an object_yaw level how far the objects were
 slid (`shift_cm_max`), and the result a `note` naming the levels that lost more than half their starts. Run D turned a
@@ -39,11 +43,13 @@ REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import batch as B  # noqa: E402
+import capability_probe as CP  # noqa: E402
 import family as F  # noqa: E402
 
 from locomani.tasks.scene import start as ST  # noqa: E402
 
-FACTORS = ("param", "spawn_bearing", "spawn_distance", "object_yaw")
+FACTORS = ("param", "spawn_bearing", "spawn_distance", "object_yaw", "primitive")
+PRIMITIVES = {"walk": (0.1, 4.0), "back": (0.1, 1.0), "side": (-0.6, 0.6), "turn": (-180.0, 180.0)}  # level range
 MAX_PROBES = 2  # per iteration
 MAX_ROUNDS = 300  # per probe: levels x starts x tasks
 MAX_LEVELS = 8
@@ -60,6 +66,13 @@ def check(spec: dict, tasks_all: list[str], params: dict | None = None) -> str |
         return f"levels: 1 to {MAX_LEVELS} numbers"
     if spec["factor"] == "param" and (params is None or spec.get("name") not in params):
         return f"param: `name` must be one of the incumbent's overridable parameters, not {spec.get('name')!r}"
+    if spec["factor"] == "primitive":
+        if spec.get("name") not in PRIMITIVES:
+            return f"primitive: `name` must be one of {', '.join(PRIMITIVES)}, not {spec.get('name')!r}"
+        lo, hi = PRIMITIVES[spec["name"]]
+        if not all(lo <= x <= hi and x != 0 for x in levels):
+            return f"primitive {spec['name']}: levels within {lo:g} to {hi:g}, not 0"
+        return None
     tasks = spec.get("tasks") or tasks_all
     if set(tasks) - set(tasks_all):
         return f"unknown tasks {sorted(set(tasks) - set(tasks_all))}"
@@ -155,8 +168,53 @@ def base_starts(pool: Path, tasks: list[str], per_task: int) -> list[tuple[str, 
     return [x for t in tasks for x in by[t]]
 
 
+def primitive_cells(name: str, levels: list[float]) -> list[dict]:
+    """capability_probe.py loco cells for one primitive at each level."""
+    key = "deg" if name == "turn" else "d"
+    return [{"id": f"{name}_L{i}", "op": name, key: float(lv)} for i, lv in enumerate(levels)]
+
+
+def run_primitive(spec: dict, out: Path, gpus: str) -> dict:
+    """The `primitive` factor: the loco cells in one simulator process on the empty floor, holding one of the machine's
+    simulation slots like a batch worker (capability_probe.py run-cells)."""
+    import os
+    import subprocess
+    import time
+
+    levels = [float(x) for x in spec["levels"]]
+    out.mkdir(parents=True, exist_ok=True)
+    cells = primitive_cells(spec["name"], levels)
+    (out / "cells.json").write_text(json.dumps(cells))
+    slot = None
+    while B.SIM_SLOTS and (slot := B.take_slot()) is None:
+        time.sleep(5)
+    try:
+        env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0",
+                   CUDA_VISIBLE_DEVICES=gpus.split(",")[0])  # fmt: skip
+        with (out / "run.log").open("a") as fh:
+            subprocess.run([str(CP.SIM_PY), str(Path(CP.__file__).resolve()), "run-cells", "loco", "--spec",
+                            str(out / "cells.json"), "--out", str(out / "cells")], cwd=REPO, env=env, stdout=fh,
+                           stderr=subprocess.STDOUT, check=False)  # fmt: skip
+    finally:
+        if slot is not None:
+            slot.close()
+    per = []
+    for lv, c in zip(levels, cells, strict=True):
+        f = out / "cells" / f"{c['id']}.json"
+        r = json.loads(f.read_text()) if f.exists() else {"ok": False, "fell": False, "error": "no result"}
+        per.append(dict(level=lv, n=1, ok=int(bool(r.get("ok"))), rate=float(bool(r.get("ok"))), fell=bool(r.get("fell")),
+                        **{k: r[k] for k in ("pos_err_cm", "yaw_err_deg", "seconds", "error") if k in r}))  # fmt: skip
+    res = dict(
+        factor="primitive", name=spec["name"], tasks=[], starts=0, levels=per, dir=str(out), controller="scalebfm"
+    )
+    (out / "result.json").write_text(json.dumps(res, indent=1))
+    return res
+
+
 def run(spec: dict, family: str, pool: Path, skills: Path, overrides: dict, out: Path, procs: int, gpus: str) -> dict:
     """One design probe: the forced starts (or parameter sets), the rounds on the queue, the tally per level."""
+    if spec["factor"] == "primitive":
+        return run_primitive(spec, out, gpus)
     fam = F.load(family)
     tasks = list(spec.get("tasks") or fam["tasks"])
     starts = base_starts(pool, tasks, max(1, int(spec.get("starts") or 1)))
@@ -225,7 +283,7 @@ def main(argv=None) -> int:
     ap.add_argument("--levels", type=float, nargs="+", required=True)
     ap.add_argument("--starts", type=int, default=4, help="starts per task, the same at every level")
     ap.add_argument("--task", action="append")
-    ap.add_argument("--name", help="the parameter, for factor param")
+    ap.add_argument("--name", help="the parameter (factor param) or the primitive (factor primitive)")
     ap.add_argument("--procs", type=int, default=B.SIM_SLOTS or 12)
     ap.add_argument("--gpus", default="0,1")
     a = ap.parse_args(argv)

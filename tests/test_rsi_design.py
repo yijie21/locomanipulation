@@ -183,3 +183,34 @@ def test_the_driver_runs_at_most_two_and_records_where_results_go(tmp_path, monk
     curves = [json.loads(x) for x in (tmp_path / "body" / "curves_run.jsonl").read_text().splitlines()]
     assert [c["hypothesis"] for c in curves] == ["H1", "H2"] and curves[0]["incumbent"] == "h"
     assert [c["scope"] for c in curves] == ["start", "skill"] and all(c["machine"] for c in curves)
+
+
+def test_a_primitive_probe_checks_its_levels_and_runs_the_loco_cells_alone(tmp_path, monkeypatch):
+    """TODO 33.19.1: one motor primitive alone on the empty floor, a deterministic run per level."""
+    assert DS.check(dict(factor="primitive", name="turn", levels=[45, -90, 180]), ["t"]) is None
+    assert "one of walk" in DS.check(dict(factor="primitive", name="jump", levels=[1]), ["t"])
+    assert "within 0.1 to 4" in DS.check(dict(factor="primitive", name="walk", levels=[0.5, 6.0]), ["t"])
+    assert DS.primitive_cells("turn", [90.0]) == [{"id": "turn_L0", "op": "turn", "deg": 90.0}]
+    assert DS.primitive_cells("side", [-0.2]) == [{"id": "side_L0", "op": "side", "d": -0.2}]
+    calls = []
+
+    def fake_sub(cmd, cwd, env, stdout, stderr, check):
+        calls.append(cmd)
+        out = Path(cmd[cmd.index("--out") + 1])
+        out.mkdir(parents=True)
+        for c in json.loads(Path(cmd[cmd.index("--spec") + 1]).read_text()):
+            fell = c["deg"] == 180.0
+            (out / f"{c['id']}.json").write_text(
+                json.dumps(dict(ok=not fell, fell=fell, pos_err_cm=3.0, yaw_err_deg=2.0))
+            )
+
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "run", fake_sub)
+    monkeypatch.setattr(DS.B, "SIM_SLOTS", 0)
+    res = DS.run(dict(factor="primitive", name="turn", levels=[90, 180]), "fam", tmp_path, tmp_path, {}, tmp_path / "o",
+                 1, "1")  # fmt: skip
+    assert calls and calls[0][2:4] == ["run-cells", "loco"]
+    assert [(p["level"], p["ok"], p["fell"], p["pos_err_cm"]) for p in res["levels"]] == [(90.0, 1, False, 3.0),
+                                                                                          (180.0, 0, True, 3.0)]  # fmt: skip
+    assert res["factor"] == "primitive" and res["tasks"] == []

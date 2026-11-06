@@ -31,8 +31,8 @@ never built, from its `repeats` links), and `reopen` is not offered after MAX_RE
 (rules.md 30): a draft whose skills package holds a string constant equal to an object's name is void.
 
 TODO 33.15-33.17 (user 2026-10-22: "把 33.15 到 33.18 先做了吧，开始下一轮的 RSI"; rules.md 31-33, version 15): round
-records carry a failure class (scene_round.py, failure_class.py); the gate reports its tally per class; the digest leads
-with the classes. After the probe each hypothesis gets a `status` (probe_status). A mechanism proposed in two or more
+records carry a failure class (scene_round.py, failure_class.py); the gate reports its tally per class; the failure cards
+lead with the classes. After the probe each hypothesis gets a `status` (probe_status). A mechanism proposed in two or more
 iterations, never built and not refuted takes one Engineer slot (force_build, a `forced` ledger row) unless the
 Manager's `skip` names one of SKIP_CHECKS as failing. After a rejection the Manager reads `repair_notes`: the failure
 classes, the gate's per-class tally and CLASS_SUGGEST. `run --stop-rate R` sets the 70 % stop for a run continued from
@@ -80,7 +80,6 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 import batch as B  # noqa: E402
 import design as DS  # noqa: E402
 import diag_pool as DP  # noqa: E402
-import digest as DG  # noqa: E402
 import family as F  # noqa: E402
 import records as RC  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
@@ -809,6 +808,26 @@ def unlock_hidden() -> None:
     _HID.update(n=0, mode=None)
 
 
+@contextlib.contextmanager
+def rounds_locked(base: Path):
+    """Rule 37: the incumbent's diagnostic rounds have mode 000 while the Reviewer runs, the failure cards are what it
+    gets of them. In the replays of 2026-11-05 this cost as good a diagnosis as the digest with the rounds open and about
+    20 % less (TODO 43). The Prober and the later roles read the rounds again."""
+    mode = stat.S_IMODE(base.stat().st_mode)
+    base.chmod(0)
+    try:
+        yield
+    finally:
+        base.chmod(mode)
+
+
+def unlock_rounds() -> None:
+    """A crash while the Reviewer ran leaves the rounds at mode 000: put them back (at the start of a command)."""
+    for d in (LOOP / "diag").glob("incumbent_*"):
+        if stat.S_IMODE(d.stat().st_mode) & 0o700 == 0:
+            d.chmod(0o755)
+
+
 def git_head() -> str:
     return subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True).stdout.strip()
 
@@ -868,7 +887,7 @@ def claude(
     if out.get("is_error"):
         raise RoleFailed(f"{role}: {out.get('subtype')} {str(out.get('result'))[-300:]}")
     acct = dict(cost_usd=float(out.get("total_cost_usd") or 0.0), session=out.get("session_id"),
-                seconds=round(time.time() - t0), usage=out.get("usage"), killed_leftovers=killed,
+                seconds=round(time.time() - t0), usage=session_usage(out), killed_leftovers=killed,
                 **({"committed": committed} if committed else {}))  # fmt: skip
     so = out.get("structured_output") or structured_from_transcript(acct["session"])
     if so is None:
@@ -941,6 +960,20 @@ def transcript(session: str | None) -> Path | None:
         return None
     p = Path.home() / ".claude" / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str(REPO)) / f"{session}.jsonl"
     return p if p.exists() else None
+
+
+USAGE_KEYS = {"input_tokens": "inputTokens", "output_tokens": "outputTokens",
+              "cache_read_input_tokens": "cacheReadInputTokens", "cache_creation_input_tokens": "cacheCreationInputTokens"}  # fmt: skip
+
+
+def session_usage(out: dict) -> dict | None:
+    """The whole session's tokens, from `claude -p`'s `modelUsage` (per model, like `total_cost_usd`). Its `usage` covers
+    the last turn only: a role whose background command's notification, or a follow-up prompt, opened another turn
+    was booked at ~700 output tokens for a 76-minute session that wrote 133,483 (TODO 37.5.1)."""
+    models = out.get("modelUsage") or {}
+    if not models:
+        return out.get("usage")
+    return {k: sum(int(m.get(v) or 0) for m in models.values()) for k, v in USAGE_KEYS.items()}
 
 
 def structured_from_transcript(session: str | None) -> dict | None:
@@ -1262,7 +1295,7 @@ def refresh_diag_pool(inc: dict, base: Path, n: int | None) -> dict | None:
     ledger(dict(row, iter=n, incumbent=inc["hash"]))
     print(f"diag pool redrawn: {row['fails_before']} -> {row['fails_after']} failing of {row['n']} "
           f"(+{len(row['added'])} -{len(row['retired'])}, {row['drawn']} fresh starts run)")  # fmt: skip
-    jobs = [B.Job(Path(e["dir"]) / "skills", LOOP / "diag" / f"candidate_{e['hash']}", overrides(Path(e["dir"])), None)
+    jobs = [B.Job(Path(e["dir"]) / "skills", LOOP / "diag" / f"candidate_{e['hash']}", overrides(Path(e["dir"])), None, True)
             for e in pool_load() if (LOOP / "diag" / f"candidate_{e['hash']}").exists() and Path(e["dir"]).exists()]  # fmt: skip
     if jobs and row["added"]:
         B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, scratch / "redraw.log", GPUS)
@@ -1488,6 +1521,20 @@ def snapshot(n: int) -> None:
     )
 
 
+def reviewer_cards(n: int, base: Path, it_dir: Path) -> Path:
+    """The failure cards of the incumbent's diagnostic rounds (cards.py, rule 37), in iter_NN/cards."""
+    out = it_dir / "cards"
+    r = subprocess.run([str(SIM_PY), str(HERE / "cards.py"), str(base), str(REPO / family_spec()["scene"]), "--out", str(out)],
+                       capture_output=True, text=True)  # fmt: skip
+    (it_dir / "cards.log").write_text(r.stdout + r.stderr)
+    if r.returncode:
+        raise RuntimeError(f"cards.py failed ({r.returncode}): {r.stderr[-800:]}")
+    imgs = list((out / "img").glob("*.png"))
+    ledger(dict(step="cards", iter=n, cards_bytes=(out / "cards.md").stat().st_size, images=len(imgs),
+                image_bytes=sum(p.stat().st_size for p in imgs)))  # fmt: skip
+    return out / "cards.md"
+
+
 def iterate(n: int, meta: dict, stub: bool) -> str | None:
     it_dir = STATE / f"iter_{n:02d}"
     it_dir.mkdir(parents=True, exist_ok=True)
@@ -1499,11 +1546,10 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
     attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
-    digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
-    digest.write_text(DG.build(base, FAMILY))
+    cards = reviewer_cards(n, base, it_dir)
     common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
-                  TMP=role_tmp(), DIGEST=digest)  # fmt: skip
+                  TMP=role_tmp(), CARDS=cards)  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}))  # fmt: skip
     if attribution:
@@ -1517,12 +1563,13 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", instead="stub", evidence="stub",
                   delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},
                   predicted_fixed=[], predicted_broken=[])])  # fmt: skip
-    if SCOPED:
-        hyps, acct = scoped_review(prompt, it_dir, stub_h if stub else None)
-    else:
-        hyps, acct = claude(
-            "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
-        )
+    with rounds_locked(base):
+        if SCOPED:
+            hyps, acct = scoped_review(prompt, it_dir, stub_h if stub else None)
+        else:
+            hyps, acct = claude(
+                "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
+            )
     jdump(it_dir / "hypotheses.json", hyps)
     sessions = acct.pop("sessions", None) or [acct["session"]]
     leaks = sorted({x for sess in sessions for x in transcript_leaks(sess)})
@@ -2175,7 +2222,8 @@ def run_designs(hyps: dict, inc: dict, it_dir: Path, n: int) -> list[dict]:
     with curves.open("a") as fh:
         for r in out:
             if "levels" in r:
-                tag = dict(machine=RC.machine(), scope="skill" if r.get("factor") == "param" else "start")
+                scope = {"param": "skill", "primitive": "body"}.get(r.get("factor"), "start")  # 33.19.1: body alone
+                tag = dict(machine=RC.machine(), scope=scope)
                 fh.write(json.dumps(dict(t=now(), iter=n, incumbent=inc["hash"], family=FAMILY, **tag, **r)) + "\n")
     return out
 
@@ -2758,6 +2806,7 @@ def cmd_run(a) -> int:
     STATE.mkdir(parents=True, exist_ok=True)
     efforts = parse_effort(getattr(a, "effort", None) or [])
     unlock_hidden()
+    unlock_rounds()
 
     def on_term(*_):
         raise Terminated()
@@ -2852,6 +2901,7 @@ def cmd_redraw(a) -> int:
     cfg = resolve_settings(a, meta, bool(meta and "started" in meta))
     DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX = cfg["diag_min_fails"], cfg["diag_target_fails"], cfg["diag_draw_max"]  # fmt: skip
     unlock_hidden()
+    unlock_rounds()
     inc = incumbent()
     n = max([e["iter"] for e in entries() if isinstance(e.get("iter"), int)] or [0])
     it_dir = STATE / f"iter_{n:02d}"
