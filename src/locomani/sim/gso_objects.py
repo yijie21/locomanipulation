@@ -38,9 +38,10 @@ from locomani.tasks.scene.start import (
     footprint,
     inside_top,
     overlap,
+    placement_ok,
 )
 
-CATALOG_VERSION = 2  # 2: `thresholds.used_categories` (the categories drawn) replaces `excluded_categories`
+CATALOG_VERSION = 3  # 2: `thresholds.used_categories` replaces `excluded_categories`; 3: `fits_carton` per object
 KEY_FORMAT = (
     "gso_{index:04d}"  # object keys: short, stable, not an English word (rules.md 30 voids skills naming objects)
 )
@@ -58,6 +59,11 @@ USED_CATEGORIES = (
     "Consumer Goods", "Bottles and Cans and Cups", "Bag", "Board Games", "Headphones", "Camera", UNLABELLED,
 )  # fmt: skip
 FRICTION = [0.8, 0.005, 0.0001]  # as the ADT apartment's free objects (scripts/adt_to_scene.py)
+# the logistics room's open carton (`nor_cal_box`, assets/scene/logistics_room_box_v1): outer 0.45 x 0.32 x 0.33 m, walls
+# predicates' default `box.wall` 0.01, so the `in` predicate's inner box is 0.43 x 0.30 m; an object of the pack tasks
+# (user 2026-11-05) must fit through it and under its rim
+CARTON_INNER_M = (0.43, 0.30)
+CARTON_RIM_M = 0.33
 REST_DT = 0.005  # the ScaleBFM runner's physics step (scene_settle.DT)
 REST_SETTLE_S, REST_CHECK_S = 1.0, 23.0  # dropped 1 mm onto a plane, then watched; scene_settle.py settles for 24 s
 REST_TILT_DEG, REST_SLIDE_M = 3.0, 0.005  # scene_settle.DRIFT_DEG / DRIFT_M: more than this at rest and the scene lint
@@ -78,7 +84,11 @@ class Thresholds:
     capability.yaml `box_grasp.width`, so this range is `untested`).
     Categories: an object whose dataset category (UNLABELLED when it has none) is not in `used_categories` is `none`
     whatever its shape (user 2026-11-04: no shoes; 2026-11-05: only USED_CATEGORIES, the labels left once
-    NOT_USED_CATEGORIES are taken out). None uses every category and needs no labels."""
+    NOT_USED_CATEGORIES are taken out). None uses every category and needs no labels.
+    Carton (`fits_carton`, user 2026-11-05 Q3): the object's resting footprint, `fit_margin_m` smaller on every side,
+    lies inside the carton's inner box `carton_inner_m` (either way round) and the object is no taller than the rim
+    `carton_rim_m`, so a drawn object can be put in and nothing sticks out when the carton is lifted. The draw
+    (`sample_keys`) takes only objects that fit."""
 
     jaw_m: float = 0.095
     min_height_m: float = 0.03
@@ -90,6 +100,9 @@ class Thresholds:
     mass_range_kg: tuple[float, float] = (0.05, 1.5)  # the upper bound is the single arm's measured mass_lifted_max
     held_out_fraction: float = 0.10
     used_categories: tuple[str, ...] | None = USED_CATEGORIES
+    carton_inner_m: tuple[float, float] = CARTON_INNER_M
+    carton_rim_m: float = CARTON_RIM_M
+    fit_margin_m: float = 0.02
 
 
 def phrase(name: str) -> str:
@@ -160,6 +173,20 @@ def graspable(extent, thresholds: Thresholds, rest: dict | None = None, category
     if lo <= wide <= hi and height >= thresholds.bimanual_min_height_m:
         return "bimanual", f"wide side {wide * 100:.1f} cm between two hands ({lo}-{hi} m), {height * 100:.1f} cm tall"
     return "none", f"narrow side {narrow * 100:.1f} cm > jaw; wide side {wide * 100:.1f} cm, {height * 100:.1f} cm tall: outside the two-hand range"  # fmt: skip
+
+
+def fits_carton(extent, thresholds: Thresholds) -> tuple[bool, str]:
+    """(whether the object goes into the carton, why not) from its resting extents: footprint inside the inner box less
+    the margin on every side, either way round, and height at most the rim (Thresholds docstring)."""
+    narrow, wide = sorted(float(e) for e in extent[:2])
+    height = float(extent[2])
+    long_in, short_in = (max(float(s) - 2 * thresholds.fit_margin_m, 0.0) for s in thresholds.carton_inner_m)
+    if wide > long_in or narrow > short_in:
+        return False, (f"footprint {wide * 100:.1f} x {narrow * 100:.1f} cm does not fit the carton's "
+                       f"{long_in * 100:.0f} x {short_in * 100:.0f} cm")  # fmt: skip
+    if height > thresholds.carton_rim_m:
+        return False, f"{height * 100:.1f} cm tall: over the carton's {thresholds.carton_rim_m * 100:.0f} cm rim"
+    return True, ""
 
 
 def density_of(mass_kg: float, hull_volume_m3: float) -> float:
@@ -241,6 +268,7 @@ def catalog_entry(
     mass = float(np.clip(volume * thresholds.density_kg_m3, *thresholds.mass_range_kg))
     rested = rest_test(model_dir, mass, volume) if rest else None
     kind, why = graspable(extent, thresholds, rested, category)
+    fits, fit_why = fits_carton(extent, thresholds)
     return {
         "key": KEY_FORMAT.format(index=index),
         "name": name,
@@ -257,6 +285,8 @@ def catalog_entry(
         "rest": rested,
         "graspable": kind,
         "why": why,
+        "fits_carton": fits,
+        "fit_why": fit_why,
         "split": split_of(name, thresholds.held_out_fraction),
     }
 
@@ -294,6 +324,8 @@ def build_catalog(
     objects = {rec["key"]: rec for rec in records}
     counts = {k: sum(1 for o in objects.values() if o["graspable"] == k) for k in GRASPABLE}
     counts["held_out"] = sum(1 for o in objects.values() if o["split"] == "held_out")
+    counts["fits_carton"] = {k: sum(1 for o in objects.values() if o["graspable"] == k and o["fits_carton"])
+                             for k in GRASPABLE[:2]}  # fmt: skip
     out = [o["category"] or UNLABELLED for o in objects.values() if not category_used(o["category"], thresholds)]
     counts["excluded"] = len(out)
     return {
@@ -313,27 +345,29 @@ def load_catalog(path: Path) -> dict:
     return cat
 
 
-def pool_keys(catalog: dict, kind: str, pool: str) -> list[str]:
-    """The keys of one graspability kind in one pool, in catalog order."""
+def pool_keys(catalog: dict, kind: str, pool: str, fit: bool = True) -> list[str]:
+    """The keys of one graspability kind in one pool, in catalog order; `fit`: only the objects that fit the carton
+    (`fits_carton`, the pack tasks' condition; user 2026-11-05: every drawn object fits)."""
     if pool not in POOLS:
         raise ValueError(f"pool {pool!r}: one of {POOLS}")
     want = {"train": {"train"}, "eval_unseen": {"held_out"}, "all": {"train", "held_out"}}[pool]
-    return [k for k, o in catalog["objects"].items() if o["graspable"] == kind and o["split"] in want]
+    return [k for k, o in catalog["objects"].items()
+            if o["graspable"] == kind and o["split"] in want and (o["fits_carton"] or not fit)]  # fmt: skip
 
 
 def sample_keys(
-    catalog: dict, seed: int, n: int = 10, n_bimanual: int = 4, pool: str = "train", attempt: int = 0
+    catalog: dict, seed: int, n: int = 10, n_bimanual: int = 4, pool: str = "train", attempt: int = 0, fit: bool = True
 ) -> list[str]:
     """`n` objects for one scene instance: `n_bimanual` two-hand ones and the rest single-hand, without replacement,
-    from `pool` (user Q18: the ratio is a parameter, 6 / 4 by default; Q22: `train`, `eval_unseen` or `all`).
-    `attempt` > 0 is the instance's next draw with the same seed, for when the first set does not fit on the
-    platform (place_objects; seed 4's 0.44 x 0.24 m game box with the carton and three more wide boxes did not)."""
+    from `pool` (user Q18: the ratio is a parameter, 6 / 4 by default; Q22: `train`, `eval_unseen` or `all`), every
+    one fitting the carton unless `fit` is off. `attempt` > 0 is the instance's next draw with the same seed, for
+    when the first set does not fit on the platform (place_objects)."""
     if not 0 <= n_bimanual <= n:
         raise ValueError(f"--bimanual {n_bimanual} must be between 0 and --objects {n}")
     rng = np.random.default_rng(seed if attempt == 0 else [seed, attempt])
     out = []
     for kind, count in (("single", n - n_bimanual), ("bimanual", n_bimanual)):
-        keys = pool_keys(catalog, kind, pool)
+        keys = pool_keys(catalog, kind, pool, fit)
         if count > len(keys):
             raise ValueError(f"pool {pool!r} holds {len(keys)} {kind} objects, {count} asked")
         out += [keys[i] for i in sorted(rng.choice(len(keys), size=count, replace=False))]
@@ -347,23 +381,29 @@ def place_objects(
     reach_depth_m: float,
     gap_m: float = 0.03,
     tries: int = 4000,
+    constraints: dict[str, dict] | None = None,
+    band_only: bool = True,
 ) -> dict[str, dict]:
     """A spot and yaw on `surface` for every object (`boxes`: key -> half extents x, y of its footprint), largest
     footprint first, by rejection sampling: inside the top by start.SURFACE_MARGIN_M, `gap_m` from every placed
     footprint (more than start.OBJECT_GAP_M, so a drawn start can still move one object among the others), and within
-    `reach_depth_m` of an approach edge when such a spot exists (D13: the middle of the 1.2 x 0.9 m platform is out of
-    reach from every edge; user Q9: a distractor may stand there, a target may not). Returns
-    {key: {xy, yaw, in_reach_band}}; raises when an object finds no spot at all."""  # fmt: skip
+    `reach_depth_m` of an approach edge (D13: the middle of the 1.2 x 0.9 m platform is out of reach from every edge;
+    user 2026-11-05 Q7: every object on the band; `band_only` off lets an object that finds no band spot stand in the
+    middle, user Q9's distractor). `constraints` (key -> a start.placement_ok option: `depth_m`, `yaw_deg`, `edge`)
+    replace the band for that object: the carton's two-hand stance band (prepare_logistics_scene.CARTON_PLACEMENT).
+    Returns {key: {xy, yaw, in_reach_band}}; raises when an object finds no spot at all."""  # fmt: skip
     rng = np.random.default_rng(seed)
     flat = np.asarray(surface.get("flat_half_extent") or surface["half_extent"], float)[:2]
     yaw_s = float(surface.get("yaw", 0.0))
     top = (np.asarray(surface["xy"], float), flat - SURFACE_MARGIN_M, yaw_s)
     room = np.maximum(flat - SURFACE_MARGIN_M, 0.0)
+    constraints = constraints or {}
     taken, out = [], {}
     for key in sorted(boxes, key=lambda k: -float(np.prod(boxes[k][:2]))):
         obj = {"box": {"half_extent": list(boxes[key][:2])}}
+        want = constraints.get(key)
         found = None
-        for in_band in (True, False):
+        for in_band in (True,) if band_only or want else (True, False):
             for _ in range(tries):
                 xy = top[0] + _rot2(yaw_s) @ rng.uniform(-room, room)
                 yaw = float(rng.uniform(-np.pi, np.pi))
@@ -371,14 +411,17 @@ def place_objects(
                 fp = footprint(obj, xy, quat)
                 if not inside_top(fp, top) or any(overlap(fp, t, max(gap_m, OBJECT_GAP_M)) for t in taken):
                     continue
-                if in_band and min(edge_depths(surface, xy).values()) > reach_depth_m:
+                if want:
+                    if not placement_ok(surface, xy, fp[2], want):
+                        continue
+                elif in_band and min(edge_depths(surface, xy).values()) > reach_depth_m:
                     continue
                 found = (xy, yaw, in_band)
                 break
             if found:
                 break
         if found is None:
-            raise RuntimeError(f"no spot on the surface for {key} after {2 * tries} tries ({len(taken)} placed)")
+            raise RuntimeError(f"no spot on the surface for {key} after {tries} tries ({len(taken)} placed)")
         taken.append(footprint(obj, found[0], np.array([np.cos(found[1] / 2), 0.0, 0.0, np.sin(found[1] / 2)])))
         out[key] = {"xy": [float(found[0][0]), float(found[0][1])], "yaw": found[1], "in_reach_band": found[2]}
     return out

@@ -27,10 +27,12 @@ the other nine objects stay where the scene file put them.
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.
-- **The seed**: the box line's two-hand hug pick (`seeds/box_strict_start`, `bimanual.py`: stand square to the
-  platform edge nearest the object, crouch, open jaws beside its two side walls, squeeze, lift by arms and legs). It
-  dispatches only on `held(nor_cal_box)`; on every scanned object `plan_for` returns None, so the seed fails every
-  start but the carton's, where it lifts 3-16 cm (low_lift).
+- **The seed**: none (`sandbox.seed` null since 2026-11-05): the family runs on the main library, which holds the
+  box line's two-hand hug pick ported from `seeds/box_strict_start` (`skills/bimanual.py`; `plan_for` sends `held(X)`
+  of an object the scene file marks `bimanual` to it): stand square to the platform edge nearest the object, crouch,
+  open jaws beside its two side walls, squeeze, lift by arms and legs. Measured once on the carton in the warehouse
+  (lifts of 3-16 cm) and once here (gso_0945, both pregrasps 15 cm off: the pack line's smoke test, runbook 5a);
+  it has passed no gate on a scanned object, so expect the seed to fail most starts.
 - **Done by the loop**: generalising the hug from the carton to objects of other sizes and shapes, computed from
   `box.half_extent` and `semantic` (never from names, rules.md 30); the lift height, standing up, keeping the object
   level and steady through the window; accepting a change only through the gate.

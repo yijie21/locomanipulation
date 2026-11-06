@@ -66,8 +66,8 @@ _Disclaimer: This is not affiliated with Scanned Objects or Google Research._
 
 Only `catalog.json`, `categories.json`, `LICENSE`, `README.md` and `VERSION` are tracked; `models/` (2 GB) is installed by
 `bash scripts/install_gso.sh` (a shallow clone of kevinzakka/mujoco_scanned_objects, or `--from <dir>`) and is in
-`.gitignore`. The scenes `logistics_room_1030_s<seed>` (`configs/scenes.yaml`) draw ten objects per instance from
-`catalog.json` and copy those objects' meshes into the scene directory; see `docs/rsi_logistic_room_1030.md`.
+`.gitignore`. The scenes `logistics_room_1030_s<seed>` (`configs/scenes.yaml`) draw ten objects per instance (all of
+them fitting the carton since 2026-11-05, `fits_carton`) from `catalog.json` and copy those objects' meshes into the scene directory; see `docs/rsi_logistic_room_1030.md`.
 
 `categories.json` (`scripts/gso_categories.py`): every model's category as the dataset labels it on Gazebo Fuel
 (Shoe 254, Consumer Goods 248, Toys 150, Bottles and Cans and Cups 53, Bag 28, Media Cases 21, Action Figures 17,
@@ -78,8 +78,9 @@ Shoe, Toys, Stuffed Toys, Mouse, Media Cases, Legos, Keyboard, Car Seat, Action 
 models (`(none)`); `--use-categories all` uses everything, `--exclude-categories A B` everything but those.
 
 `catalog.json` (`scripts/gso_catalog.py`, `locomani.sim.gso_objects`): `version`, `source` (dataset, `VERSION`,
-models dir, categories file), `thresholds` (the rule's parameters as run, `used_categories` among them), `not_used_categories`, `counts`
-(`excluded` counts the objects of the categories not used, which are inside `none`), and per object under `objects`
+models dir, categories file), `thresholds` (the rule's parameters as run, `used_categories`, `carton_inner_m`, `carton_rim_m` and `fit_margin_m` among
+them), `not_used_categories`, `counts` (`excluded` counts the objects of the categories not used, which are inside `none`;
+`fits_carton` the single / bimanual objects that fit the carton), and per object under `objects`
 keyed `gso_<4-digit index in sorted directory order>`:
 
 | Field | Meaning |
@@ -92,6 +93,7 @@ keyed `gso_<4-digit index in sorted directory order>`:
 | `grasp_height_m` | the predicted single-hand grasp point above the floor: platform top 0.371 m + half the height (Q10) |
 | `rest` | a 24 s drop test on a plane: `tilt_deg`, `slid_mm`, `dz_mm`, `stands` |
 | `graspable`, `why` | `single` (narrow side fits the 9.5 cm Dex1 jaw, 3 cm or taller, grasp point 0.40 m or higher, stands), `bimanual` (wide side 0.20-0.45 m, 10 cm or taller, stands; untested, Q17), or `none` (also every object of a category not used: `why` says `category Shoe: not among the used categories`) |
+| `fits_carton`, `fit_why` | whether the object fits the scene's open carton (version 3, 2026-11-05): its resting footprint plus `fit_margin_m` (2 cm) inside the inner box `carton_inner_m` (0.43 x 0.30 m) either way round, and no taller than the rim `carton_rim_m` (0.33 m); `fit_why` says which rule failed. The logistics_room_1030 instances draw only objects that fit (single 260 of 270, bimanual 59 of 90) |
 | `split` | `train` or `held_out` (10 % by name hash; `--pool eval_unseen` instances draw the held-out tenth, Q7 / Q22) |
 
 Attribution: the scans are Google Research's Scanned Objects dataset (Downs et al. 2022, CC-BY 4.0); the MJCF files

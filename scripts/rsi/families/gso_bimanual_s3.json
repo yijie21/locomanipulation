@@ -1,15 +1,15 @@
 {
  "name": "gso_bimanual_s3",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 3 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0290 = fisher price classic toys buzzy bee, gso_0512 = nestle pure life exotics sparkling water strawberry dragon fruit 8 count 12 fl oz can, gso_0572 = olive kids birdie munch n lunch, gso_0587 = olive kids trains planes trucks bogo backpack",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 3 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0260 = elephant, gso_0453 = melissa doug pound and roll, gso_0579 = olive kids dinosaur land pack n snack, gso_0761 = retail leadership summit",
  "scene": "outputs/scene_discovery/logistics_room_1030_s3",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s3_tasks.jsonl",
  "tasks": [
   "lift_nor_cal_box",
-  "lift_gso_0290",
-  "lift_gso_0512",
-  "lift_gso_0572",
-  "lift_gso_0587"
+  "lift_gso_0260",
+  "lift_gso_0453",
+  "lift_gso_0579",
+  "lift_gso_0761"
  ],
  "spawn": {
   "rooms": "all",
@@ -35,9 +35,9 @@
   }
  },
  "plan": "scripts/rsi/plans/gso_bimanual.md",
- "skills_note": "the incumbent's skills; the seed was the box line's two-hand hug pick (seeds/box_strict_start)",
+ "skills_note": "the main skill library as it stands: its two-hand hug pick (skills/bimanual.py, the box line's seed ported on 2026-11-05; sandbox.seed null)",
  "sandbox": {
-  "seed": "scripts/rsi/seeds/box_strict_start",
+  "seed": null,
   "keep": [
    "Makefile",
    "pyproject.toml",

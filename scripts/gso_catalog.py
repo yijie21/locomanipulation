@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Write the Google Scanned Objects catalog `assets/mujoco_scanned_objects/catalog.json` (user Q2, 2026-11-03): every
-object's size, hull volume, mass, grasp height, dataset category, graspability (`single` / `bimanual` / `none`) and
-train / held-out split, from the meshes under `models/`, the dataset's category labels in `categories.json`
+object's size, hull volume, mass, grasp height, dataset category, graspability (`single` / `bimanual` / `none`),
+whether it fits the logistics room's carton (`fits_carton`: footprint inside the inner box less a margin, no taller
+than the rim; the scenes draw only objects that fit, user 2026-11-05) and train / held-out split, from the meshes under `models/`, the dataset's category labels in `categories.json`
 (scripts/gso_categories.py) and the thresholds in locomani.sim.gso_objects.Thresholds (each one a flag here, recorded
 in the file). Only objects of the categories in `--use-categories` can be drawn; the others are `none` whatever their
 shape. The default is every label but Shoe, Toys, Stuffed Toys, Mouse, Media Cases, Legos, Keyboard, Car Seat, Action
@@ -85,6 +86,12 @@ def main(argv=None) -> int:
     ap.add_argument("--bimanual-min-height", type=float, default=d.bimanual_min_height_m, help="m")
     ap.add_argument("--density", type=float, default=d.density_kg_m3, help="kg/m^3 over the hull volume")
     ap.add_argument("--mass-range", type=float, nargs=2, default=list(d.mass_range_kg), metavar=("LO", "HI"), help="kg")
+    ap.add_argument("--carton-inner", type=float, nargs=2, default=list(d.carton_inner_m), metavar=("LONG", "SHORT"),
+                    help="m; the carton's inner box an object must fit (`fits_carton`, user 2026-11-05)")  # fmt: skip
+    ap.add_argument(
+        "--carton-rim", type=float, default=d.carton_rim_m, help="m; an object taller than this does not fit"
+    )
+    ap.add_argument("--fit-margin", type=float, default=d.fit_margin_m, help="m; clearance on every side of the carton")
     ap.add_argument(
         "--held-out", type=float, default=d.held_out_fraction, help="fraction of names hashed into the evaluation split"
     )
@@ -95,6 +102,7 @@ def main(argv=None) -> int:
         bimanual_width_m=tuple(a.bimanual_width), bimanual_min_height_m=a.bimanual_min_height,
         density_kg_m3=a.density, mass_range_kg=tuple(a.mass_range), held_out_fraction=a.held_out,
         used_categories=resolve_categories(a.use_categories, a.exclude_categories, categories),
+        carton_inner_m=tuple(a.carton_inner), carton_rim_m=a.carton_rim, fit_margin_m=a.fit_margin,
     )  # fmt: skip
     version = a.models.parent / "VERSION"
     source = {

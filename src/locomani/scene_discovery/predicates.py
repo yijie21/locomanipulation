@@ -114,12 +114,17 @@ def _on(scene: _Scene, obj: str, surface: str, state: dict) -> tuple[bool, str]:
 
 
 def _in(scene: _Scene, obj: str, container: str, state: dict) -> tuple[bool, str]:
+    """The object's box centre inside the container's inner box, both centres from the bodies' poses (2026-11-05: a
+    scanned object's body origin is its mesh origin, not its centre, so `pos` alone misjudged it; the ADT objects'
+    `box.centre` is zero, so nothing changes for them)."""
     half, centre, wall = scene.box(container)
     goal = state["objects"][container]
-    gz = float(goal["pos"][2]) + centre[2]
-    goal_pos = [goal["pos"][0] + centre[0], goal["pos"][1] + centre[1], gz]
+    goal_pos = np.asarray(goal["pos"], dtype=float) + _rotate(goal["quat"], centre)
+    gz = float(goal_pos[2])
     inner = (half[0] - wall, half[1] - wall)
-    return in_container(state["objects"][obj]["pos"], goal_pos, goal["quat"], inner, gz - half[2] + wall, gz + half[2])
+    o = state["objects"][obj]
+    obj_pos = np.asarray(o["pos"], dtype=float) + _rotate(o["quat"], scene.box(obj)[1])
+    return in_container(obj_pos, goal_pos, goal["quat"], inner, gz - half[2] + wall, gz + half[2])
 
 
 def _held(scene: _Scene, obj: str, state: dict) -> tuple[bool, str]:

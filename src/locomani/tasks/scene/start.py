@@ -77,7 +77,7 @@ def overlap(a, b, gap: float) -> bool:
 
 
 NORMALS = {"-x": (-1.0, 0.0), "+x": (1.0, 0.0), "-y": (0.0, -1.0), "+y": (0.0, 1.0)}  # a surface's edges, its frame
-PLACEMENT_KEYS = ("depth_m", "yaw_deg", "blocker", "edge")  # the `placement` option (TODO 33.5, D5)
+PLACEMENT_KEYS = ("depth_m", "yaw_deg", "blocker", "edge", "objects")  # the `placement` option (TODO 33.5, D5)
 BLOCKER_GAP_M = 0.03
 BLOCKER_SLIDES_M = (0.0, 0.03, -0.03, 0.06, -0.06)  # a blocker slid along the edge still sits in the hand's corridor
 
@@ -202,8 +202,10 @@ def sample_start(
     SPAWN_DISTANCE_M (hi None: no upper limit). `placement` (a family's or a task's option, TODO 33.5, D5):
     {"depth_m": [lo, hi]} and {"yaw_deg": [lo, hi]} constrain the task objects' spots (placement_ok), {"blocker":
     {"key": K, "gap_m": g}} sets the free object K between the first task object and its nearest approach edge
-    (place_blocker); a condition the surface cannot meet raises RuntimeError, so the pool skips that seed. Without
-    them every start is drawn as before."""
+    (place_blocker); {"objects": {K: {...}}} gives task object K its own depth / yaw / edge conditions in place of
+    the shared ones (the pack tasks, 2026-11-05: the carton on the two-hand stance band, the object on the reach band);
+    a condition the surface cannot meet raises RuntimeError, so the pool skips that seed. Without them every start is
+    drawn as before."""
     spawn = dict(spawn or {})
     unknown = set(spawn) - {"rooms", "distance_m"}
     if unknown or spawn.get("rooms", "all") != "all":
@@ -215,21 +217,33 @@ def sample_start(
     blocker = (want.get("blocker") or {}).get("key")
     if blocker and (blocker in objects or not meta["objects"].get(blocker, {}).get("free")):
         raise KeyError(f"placement blocker {blocker}: not a free object outside the task")
+    own = dict(want.pop("objects", None) or {})
+    if unknown := [k for k in own if k not in objects]:
+        raise KeyError(f"placement objects {unknown}: not objects of the task")
+    for k, o in own.items():
+        if bad := set(o) - {"depth_m", "yaw_deg", "edge"}:
+            raise KeyError(f"placement objects {k}: unknown {sorted(bad)}")
     d_lo, d_hi = spawn.get("distance_m") or SPAWN_DISTANCE_M
     d_hi = np.inf if d_hi is None else d_hi
     placements, taken = {}, []
     # with a placement option only the objects on the task object's own surface count as taken: the footprints are
     # flat, so without that filter a shelf above or below (a display unit's) crowds this one out of the spots the
     # option asks for; the plain draw keeps every resting object, as every pool so far was drawn (TODO 33.5)
-    own = {meta["objects"][k].get("surface") for k in objects} if want else None
+    own_surfaces = {meta["objects"][k].get("surface") for k in objects} if (want or own) else None
     for k, o in meta["objects"].items():  # every object resting on a surface and not moved keeps its spot -- free or
         # not: a movable object that is not free still collides (its hull), and the canister placed on the utility
         # cart's tray was thrown off within a second (2026-10-16)
-        if o.get("surface") and k not in objects and k != blocker and (own is None or o["surface"] in own):
+        if (
+            o.get("surface")
+            and k not in objects
+            and k != blocker
+            and (own_surfaces is None or o["surface"] in own_surfaces)
+        ):
             taken.append(footprint(o, o["init_pos"], o["init_quat"]))
     for k in objects:
-        spot = place_on_surface(meta, k, rng, taken, want)
-        if spot is None and want:
+        want_k = own[k] if k in own else {kk: v for kk, v in want.items() if kk != "blocker"}
+        spot = place_on_surface(meta, k, rng, taken, want_k)
+        if spot is None and want_k:
             raise RuntimeError(f"no spot on {meta['objects'][k]['surface']} meets the placement option for {k}")
         if spot is None:  # a crowded top (the bedroom's display shelves): the scene file's own spot is a valid start
             o = meta["objects"][k]

@@ -78,11 +78,14 @@ class World:
 
 class PlanFor(unittest.TestCase):
     def test_held_alone_or_with_upright_of_the_same_object_goes_to_the_pick_and_other_goals_have_no_plan(self):
+        ctx = SimpleNamespace(world=World())  # the dispatch reads the object's features (one hand here)
         with mock.patch.object(held, "pick_held", return_value=Outcome(True)) as h:
-            skills.plan_for(SimpleNamespace(goal=["held(Can)"]))("ctx")
-            skills.plan_for(SimpleNamespace(goal=["upright(Can)", "held(Can)"]))("ctx")
-        self.assertEqual(h.call_args_list, [mock.call("ctx", "Can", pick.pick, False),
-                                            mock.call("ctx", "Can", pick.pick, True)])  # fmt: skip
+            skills.plan_for(SimpleNamespace(goal=["held(Can)"]))(ctx)
+            skills.plan_for(SimpleNamespace(goal=["upright(Can)", "held(Can)"]))(ctx)
+            skills.plan_for(SimpleNamespace(goal=["held(Can)", "lifted(Can, 0.10, 60)"]))(ctx)
+        self.assertEqual(h.call_args_list, [mock.call(ctx, "Can", pick.pick, False),
+                                            mock.call(ctx, "Can", pick.pick, True),
+                                            mock.call(ctx, "Can", pick.pick, False)])  # fmt: skip
         for goal in (
             ["upright(Can)"],
             ["held(Can)", "upright(Book)"],

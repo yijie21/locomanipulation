@@ -63,6 +63,10 @@ BOX_PHRASE = "open cardboard box"
 PLATFORM_TOP_CAMERA = "platform_top"  # straight down on the platform, for the scene previews (scripts/gso_preview.py)
 PLATFORM_TOP_HEIGHT_M = 2.0  # above the platform top: at fovy 45 the 4:3 frame spans about 1.7 x 2.2 m of it
 DRAW_ATTEMPTS = 20  # draws of one seed tried before giving up on fitting its objects on the platform
+# where the carton stands (user 2026-11-05 Q7): the two-hand hug's stance band, its long side along the edge it is
+# nearest to, that edge drawn at random (box_bimanual's `box_long_side` placement: depth 0.18-0.31 m, yaw 85-90 deg);
+# the put-in's reach (skills/into.MAX_DEPTH_M 0.40) covers it from the same edge; the task rows repeat it
+CARTON_PLACEMENT = {"depth_m": [0.18, 0.31], "yaw_deg": [85, 90]}
 REACH_DEPTH_M = 0.35  # a target's centre at most this far inside the nearest approach edge (D13: forward reach
 # 0.6-0.7 m from a pelvis standing about 0.3 m outside the edge; the feasibility checker says the rest)
 
@@ -167,7 +171,8 @@ def add_gso_objects(tree: ET.ElementTree, destination: Path, surface: dict, args
         boxes = {k: G.object_box(r)["half_extent"] for k, r in records.items()}
         boxes[BOX_KEY] = BOX_HALF
         try:
-            placed = G.place_objects(boxes, surface, seed=args.gso_seed, reach_depth_m=args.reach_depth)
+            placed = G.place_objects(boxes, surface, seed=args.gso_seed, reach_depth_m=args.reach_depth,
+                                     constraints={BOX_KEY: CARTON_PLACEMENT})  # fmt: skip
             break
         except RuntimeError as e:
             print(f"[gso] draw {attempt} of seed {args.gso_seed} does not fit on the platform ({e}); drawing again")
@@ -190,7 +195,7 @@ def add_gso_objects(tree: ET.ElementTree, destination: Path, surface: dict, args
     cam.set("fovy", "45")
     return {
         "seed": args.gso_seed, "pool": args.pool, "objects": args.objects, "bimanual": args.bimanual,
-        "reach_depth_m": args.reach_depth, "catalog": str(args.catalog.relative_to(ROOT)) if args.catalog.is_relative_to(ROOT) else str(args.catalog),
+        "reach_depth_m": args.reach_depth, "carton_placement": CARTON_PLACEMENT, "catalog": str(args.catalog.relative_to(ROOT)) if args.catalog.is_relative_to(ROOT) else str(args.catalog),
         "catalog_sha256": G.sha256_file(args.catalog), "thresholds": catalog["thresholds"],
         "draw_attempt": attempt, "keys": keys, "placed": placed, "records": records,
     }  # fmt: skip

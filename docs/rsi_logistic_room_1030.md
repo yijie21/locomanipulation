@@ -1,10 +1,10 @@
 # 场景 RSI 在物流间 1030：扫描物体的单手 / 双手移动抓取
 
-[物流间](rsi_logistics_room.md)那条线的场景，加上 Google 的 Scanned Objects 数据集（1030 件扫描的日用品，kevinzakka 的 MuJoCo 版）：每个场景实例 `logistics_room_1030_s<seed>` 从目录里抽 10 件（默认 6 件单手、4 件双手）和原来的 1.2 kg 纸箱一起随机放在中央 1.2 × 0.9 m 托盘平台的可达带上，机器人（mars 版 G1，Dex1 两指夹爪）走过去用一只手或两只手把目标拿起来。两个任务族由场景文件自动生成：`gso_grasp_s<seed>`（单手，每件单手物体一个任务，`held(X)` 加 `lifted(X, 0.10, 60)`）和 `gso_bimanual_s<seed>`（双手，每件双手物体和纸箱各一个任务，`held(X)` 加 `lifted(X, 0.20, 60)`，最后 5 秒一直成立）。流程机制见[场景 RSI 详解](rsi_design.md)；2026-11-03 的决策（Q1–Q25）和 11-04 的鞋类排除在 [DECISIONS](../DECISIONS.md)，待办在 TODO 40。代码在分支 `henry-dev`（提交 `5ba83e16`，2026-11-04）。
+[物流间](rsi_logistics_room.md)那条线的场景，加上 Google 的 Scanned Objects 数据集（1030 件扫描的日用品，kevinzakka 的 MuJoCo 版）：每个场景实例 `logistics_room_1030_s<seed>` 从目录里抽 10 件（默认 6 件单手、4 件双手）和原来的 1.2 kg 纸箱一起随机放在中央 1.2 × 0.9 m 托盘平台的可达带上，机器人（mars 版 G1，Dex1 两指夹爪）走过去用一只手或两只手把目标拿起来。两个任务族由场景文件自动生成：`gso_grasp_s<seed>`（单手，每件单手物体一个任务，`held(X)` 加 `lifted(X, 0.10, 60)`）和 `gso_bimanual_s<seed>`（双手，每件双手物体和纸箱各一个任务，`held(X)` 加 `lifted(X, 0.20, 60)`，最后 5 秒一直成立）。11-05 加了装箱线（用户：把 10 件物体逐件放进纸箱再把纸箱拿起来）：`gso_pack_s<seed>`（单手物体，每件一个任务）和 `gso_pack_bimanual_s<seed>`（双手物体，每件一个任务），目标 `in(X, nor_cal_box)` + `held(nor_cal_box)` + `lifted(nor_cal_box, 0.20, 60)`，每局独立（纸箱是空的，只放一件，方案 `scripts/rsi/plans/gso_pack.md`）；为此实例改成 10 个（s0–s9），10 件都放得进纸箱（内空 0.43 × 0.30 m、沿高 0.33 m，留 2 cm，目录字段 `fits_carton`），纸箱固定放在离台沿 0.18–0.31 m、长边沿台沿的抱取带上。流程机制见[场景 RSI 详解](rsi_design.md)；2026-11-03 的决策（Q1–Q25）、11-04 的鞋类排除和 11-05 的装箱线在 [DECISIONS](../DECISIONS.md)，待办在 TODO 40。代码在分支 `henry-dev`（提交 `5ba83e16`，2026-11-04）。
 
-现状（2026-11-05）：代码、测试和 5 个实例做完，RSI 还没跑（用户：先只实现代码）。目录 1030 件按数据集自带的类别标签（`categories.json`）只用剩下的类别：Shoe、Toys、Stuffed Toys、Mouse、Media Cases、Legos、Keyboard、Car Seat、Action Figures、Hat 十类共 463 件按用户要求不进物流间（11-04 先排除鞋，11-05 扩到十类），用的是 Consumer Goods、Bottles and Cans and Cups、Bag、Board Games、Headphones、Camera 和 216 件没有标签的；可抽的单手 270、双手 90，其余 207 件形状不合格，留出评测 96 件；实例 s0–s4 都过 `scene_lint.py`（0 错误），五个 Unreal 关卡都建好，MuJoCo 和 Unreal 各有五张预览图（`outputs/gso_preview/`，第 2、7 节）。渲染器：MuJoCo 和 Unreal；Isaac 暂缓（`configs/scenes.yaml` 里这些实例没有 `isaac` 条目，TODO 40.6）。
+现状（2026-11-05）：代码、测试和 10 个实例做完，装箱线单手 / 双手各冒烟一局跑通（第 5a 节），RSI 还没跑（用户：先只实现代码）。目录 1030 件按数据集自带的类别标签（`categories.json`）只用剩下的类别：Shoe、Toys、Stuffed Toys、Mouse、Media Cases、Legos、Keyboard、Car Seat、Action Figures、Hat 十类共 463 件按用户要求不进物流间（11-04 先排除鞋，11-05 扩到十类），用的是 Consumer Goods、Bottles and Cans and Cups、Bag、Board Games、Headphones、Camera 和 216 件没有标签的；可抽的单手 270、双手 90（其中放得进纸箱的 260 / 59，实例只抽这些），其余 207 件形状不合格，留出评测 96 件；实例 s0–s9 都过 `scene_lint.py`（0 错误；s3 一条静置漂移警告），十个 Unreal 关卡都建好，MuJoCo 和 Unreal 各有十张预览图（`outputs/gso_preview/`，第 2、7 节）。渲染器：MuJoCo 和 Unreal；Isaac 暂缓（`configs/scenes.yaml` 里这些实例没有 `isaac` 条目，TODO 40.6）。
 
-耗时是 2026-11-04 在 SRA0889（一张 RTX 5090、16 核）上的实测。
+耗时是 2026-11-04 / 05 在 SRA0889（一张 RTX 5090、16 核）上的实测。
 
 | 步骤 | 耗时 |
 |---|---|
@@ -13,8 +13,9 @@
 | 建目录（1030 件，含每件 24 s 的静置测试） | 8 s |
 | 物体图库网页（1030 张图） | 54 s |
 | 一个实例：建场景 + 沉降 + 落地测试 + lint + 任务族 + 预览图 | 10–15 s |
-| 一个实例的 Unreal 关卡 | 41–88 s |
-| 一个实例的 Unreal 预览图（两个视角） | 20–29 s |
+| 一个实例的 Unreal 关卡 | 39–97 s |
+| 一个实例的 Unreal 预览图（两个视角） | 15–31 s |
+| 装箱线冒烟一局（`gso_pack_check.py`，载入 1 s，仿真 25–66 s） | 4–8 s |
 | 内环一轮 / 封存集 | 同[物流间 runbook](rsi_logistics_room.md)的表 |
 
 ## 0. 每个新终端先执行
@@ -52,11 +53,11 @@ $PY scripts/gso_gallery.py               # --force 全部重画；--size 384；-
 ## 2. 建场景实例、出预览图
 
 ```bash
-$PY scripts/gso_preview.py --seeds 5
+$PY scripts/gso_preview.py --seeds 10
 ```
 
-做什么：对 seed 0–4 各建一个实例 `outputs/scene_discovery/logistics_room_1030_s<seed>/`：抽 10 件（一组在平台上放不下就按确定性规则重抽，`scene_meta.json` 的 `gso.draw_attempt` 记第几组；seed 1 用的是第 1 组）、连纸箱一起放到平台离台沿 0.35 m 的可达带上、壳体密度惯量、俯视相机 `platform_top`，再沉降（`scene_settle.py --write`）、落地测试（`scene_drop_test.py`，可行性探针读它）、lint（必须 0 错误，否则停）、写两个任务族（第 5 节），最后用 MuJoCo 离屏渲染俯视图和房间视角拼成一张图，图下列出每件物体的键、短语、单手 / 双手、质量、在不在可达带。已经存在的实例原样复用（要重抽就删掉它的目录）。
-得到什么：`outputs/gso_preview/logistics_room_1030_s<seed>.png` 五张和 `index.json`；`scripts/rsi/families/` 下每个实例三个文件：`gso_grasp_s<seed>.json`、`gso_bimanual_s<seed>.json`、`gso_s<seed>_tasks.jsonl`（s0–s4 的在仓库里）。约 1 分钟。
+做什么：对 seed 0–9 各建一个实例 `outputs/scene_discovery/logistics_room_1030_s<seed>/`：抽 10 件放得进纸箱的（目录的 `fits_carton`；一组在平台上放不下就按确定性规则重抽，`scene_meta.json` 的 `gso.draw_attempt` 记第几组；11-05 的目录下 seed 3 用的是第 1 组）、放到平台离台沿 0.35 m 的可达带上，纸箱放在离台沿 0.18–0.31 m、长边沿台沿（yaw 85–90°）的抱取带上（`prepare_logistics_scene.CARTON_PLACEMENT`，记在 `gso.carton_placement`）、壳体密度惯量、俯视相机 `platform_top`，再沉降（`scene_settle.py --write`）、落地测试（`scene_drop_test.py`，可行性探针读它）、lint（必须 0 错误，否则停）、写四个任务族（第 5 节），最后用 MuJoCo 离屏渲染俯视图和房间视角拼成一张图，图下列出每件物体的键、短语、单手 / 双手、质量、在不在可达带。已经存在的实例原样复用（要重抽就删掉它的目录）。
+得到什么：`outputs/gso_preview/logistics_room_1030_s<seed>.png` 十张和 `index.json`；`scripts/rsi/families/` 下每个实例五个文件：`gso_grasp_s<seed>.json`、`gso_bimanual_s<seed>.json`、`gso_pack_s<seed>.json`、`gso_pack_bimanual_s<seed>.json`、`gso_s<seed>_tasks.jsonl`（s0–s9 的在仓库里）。十个实例约 1.5 分钟。
 
 | 选项 | 作用 |
 |---|---|
@@ -77,17 +78,17 @@ $PY scripts/scene_lint.py --scene $SC
 PYTHONPATH=src $PY scripts/rsi/gso_family.py $SC
 ```
 
-做什么：第二条是 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `build` 命令（`bash scripts/build_scene.sh logistics_room_1030_s0` 跑的就是它），参数 `--objects`、`--bimanual`、`--pool`、`--reach-depth`、`--catalog`、`--gso-models` 同上。最后一条从 `scene_meta.json` 写任务族：单手物体一行 `pick_<键>`、双手物体和纸箱一行 `lift_<键>`，每行 `placement.depth_m` 为 `[0, 0.35]`（目标起点限制在可达带，D13），提示语由物体短语生成。
+做什么：第二条是 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `build` 命令（`bash scripts/build_scene.sh logistics_room_1030_s0` 跑的就是它），参数 `--objects`、`--bimanual`、`--pool`、`--reach-depth`、`--catalog`、`--gso-models` 同上。最后一条从 `scene_meta.json` 写任务族：单手物体一行 `pick_<键>`、双手物体和纸箱一行 `lift_<键>`，每行 `placement.depth_m` 为 `[0, 0.35]`（目标起点限制在可达带，D13），提示语由物体短语生成；装箱族每件物体一行 `pack_<键>`（目标 `in(X, nor_cal_box)` + `held` + `lifted` 纸箱），`placement.objects.nor_cal_box` 是纸箱的抱取带，双手物体自己再限 yaw 让宽边沿台沿。
 得到什么：`$SC/` 下 `scene_locomani.xml`、`env_only.xml`、`scene_meta.json`（每件物体的 `box`、`semantic`、`gso` 块和落地测试）、`gso/<键>/` 网格拷贝、`settle.json`、`drop_test.json`、`lint.json`；lint 打印 `[lint] 0 errors, 0 warnings`。
 
 ## 3. 检查代码
 
 ```bash
-make test TESTS="tests/test_gso_catalog.py tests/test_gso_family.py tests/test_gso_gallery.py tests/test_unreal_export_film.py tests/test_run_context.py tests/test_image_source.py"; echo "exit $?"
+make test TESTS="tests/test_gso_catalog.py tests/test_gso_family.py tests/test_gso_gallery.py tests/test_unreal_export_film.py tests/test_run_context.py tests/test_image_source.py tests/test_scene_task_runner.py tests/test_scene_discovery.py src/locomani/tasks/scene/skills/test_pack.py src/locomani/tasks/scene/skills/test_plan_for.py src/locomani/tasks/scene/skills/test_into.py"; echo "exit $?"
 make test TESTS="tests/test_gso_preview.py"; echo "exit $?"
 ```
 
-做什么：第一条是纯函数和注册表的测试（短语、筛选规则、类别选择与仓库里的目录只抽得到用的类别、留出划分、抽样、放置、任务族文件、Unreal 导出烤惯量、五个实例在注册表里），约 20 s。第二条在临时目录里建一个实例并渲染一张图（第 2 节的全套），约 1 分钟；没有场景包、物体网格或离屏 GL 时跳过（跳过原因打印在 `-rs` 里）。
+做什么：第一条是纯函数和注册表的测试（短语、筛选规则、放得进纸箱的规则、类别选择与仓库里的目录只抽得到用的类别、留出划分、抽样、带约束的放置、四个任务族文件、Unreal 导出烤惯量、十个实例在注册表里、按物体的放置选项、`in` 用转过的盒中心、装箱链的分派和顺序、物理副本的绝对资源路径），约 30 s。第二条在临时目录里建一个实例并渲染一张图（第 2 节的全套），约 1 分钟；没有场景包、物体网格或离屏 GL 时跳过（跳过原因打印在 `-rs` 里）。
 得到什么：退出码 0。
 
 ## 4. 可行性探针（提示，不挡）
@@ -107,8 +108,21 @@ cd $S && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_gra
 cd -
 ```
 
-做什么：和物流间 runbook 第 4 节一样，任务族换成 `gso_grasp_s0`（单手，6 个任务，种子是空技能包 `scripts/rsi/seeds/atomic`，角色读的方案是 `scripts/rsi/plans/gso_grasp.md`）。双手族把三处 `gso_grasp_s0` 换成 `gso_bimanual_s0`（5 个任务：4 件双手物体加纸箱，种子 `scripts/rsi/seeds/box_strict_start`，方案 `scripts/rsi/plans/gso_bimanual.md`，`hold_s` 2 / `judge_s` 5），沙盒目录另起一个。沙盒导出的是**已提交**的代码：s0–s4 的任务族文件在提交 `5ba83e16` 里，场景实例目录要在本机建好（第 2 节）；改了任务族或场景就要再提交 / 重建。规则第 30 条仍然有效：技能代码里出现物体名字（`gso_0051`、短语或刚体名）的草稿作废，技能只能读 `box.half_extent`、`semantic`、`gso.grasp_height_m` 这些字段。
-得到什么：账本 `$S/outputs/scene_rsi_20261016/gso_grasp_s0/loop/ledger.jsonl`；进度 `cd $S && $PY scripts/rsi/loop.py status gso_grasp_s0; cd -`。起点池种子：单手 440000 / 540000 / 640000，双手 450000 / 550000 / 650000，和其他族不重叠。
+做什么：和物流间 runbook 第 4 节一样，任务族换成 `gso_grasp_s0`（单手，6 个任务，种子是空技能包 `scripts/rsi/seeds/atomic`，角色读的方案是 `scripts/rsi/plans/gso_grasp.md`）。双手族把三处 `gso_grasp_s0` 换成 `gso_bimanual_s0`（5 个任务：4 件双手物体加纸箱，种子为空即主技能库 —— 两手抱取 `skills/bimanual.py` 11-05 从 `seeds/box_strict_start` 移进了主库；方案 `scripts/rsi/plans/gso_bimanual.md`，`hold_s` 2 / `judge_s` 5）；装箱族换成 `gso_pack_s0`（6 件单手物体各一个任务）或 `gso_pack_bimanual_s0`（4 件双手物体），种子同样为空（主库 `skills/pack.py`：单手或双手放入，再双手抱起纸箱），方案 `scripts/rsi/plans/gso_pack.md`，`hold_s` 2 / `judge_s` 5；要跑哪个场景就换族名里的 seed（s0–s9）。沙盒目录每个族另起一个。沙盒导出的是**已提交**的代码：s0–s4 的任务族文件在提交 `5ba83e16` 里，场景实例目录要在本机建好（第 2 节）；改了任务族或场景就要再提交 / 重建。规则第 30 条仍然有效：技能代码里出现物体名字（`gso_0051`、短语或刚体名）的草稿作废，技能只能读 `box.half_extent`、`semantic`、`gso.grasp_height_m` 这些字段。
+得到什么：账本 `$S/outputs/scene_rsi_20261016/gso_grasp_s0/loop/ledger.jsonl`；进度 `cd $S && $PY scripts/rsi/loop.py status gso_grasp_s0; cd -`。起点池种子：单手 440000 / 540000 / 640000，双手 450000 / 550000 / 650000，装箱 460000 / 560000 / 660000，双手装箱 470000 / 570000 / 670000，和其他族不重叠。
+
+## 5a. 装箱线冒烟（一局，不是 RSI）
+
+```bash
+$PY scripts/gso_pack_check.py --family gso_pack_s0             # --task pack_gso_0558 --seed 0 --tries 10
+$PY scripts/gso_pack_check.py --family gso_pack_bimanual_s0
+```
+
+做什么：不进沙盒、不建池、不过门：读任务族，按 RSI 一局的方式建世界（`scene_round.make_world`，ScaleBFM）、按族的 spawn 和任务行的 placement 采一个起点（纸箱带放不下的 seed 跳过，最多试 `--tries` 个），跑 `src/` 里主库 `plan_for(task)` 的计划（`episode.run_episode`，族的 `hold_s` / `judge_s`），逐步打印，写 `outputs/gso_pack_check/<族>/<任务>_s<seed>.json`（判定、步骤、判窗）和 `.npz`（轨迹）。`LOCOMANI_WORKSPACE` 要指向有 `models/scalebfm/humanoid_transformer_m_22200.pt` 的目录（第 0 节的 `paths.sh`；本机是 `$HOME/workspace`）。
+得到什么（2026-11-05，s0，主库 `6674fb78`）：两条链都从头跑到尾、没有崩溃，都停在放入那一步的抓取上：
+- `pack_gso_0558`（单手，墨盒 8.6 × 5 × 11.8 cm）：seed 0–2 的起点纸箱带放不下、跳过；seed 3 走到台沿（0.27 m 深），单手 pregrasp 偏 19 cm，重试偏 4.8 cm，`pick failed: pregrasp missed by 4.6 cm`；仿真 66 s、墙钟 7.7 s，判定 `in` 不成立。
+- `pack_gso_0945`（双手，午餐袋 22 × 16 × 27 cm）：seed 0–1 跳过；seed 2 走 0.84 m 到抱取站位、下蹲，两手 pregrasp 偏 16 / 15 cm（IK 误差 < 1 cm，是手臂没跟到位），`hug pick failed`；仿真 25 s、墙钟 3.9 s。
+这就是装箱线 RSI 的起点：计划分派、起点采样（含纸箱带）、单手 / 双手放入、抱纸箱、再判目标这条链都接通，抓取精度留给内环学（TODO 40.15）。冒烟修的一个真 bug：`world.physics_scene` 写物理副本时不改相对的 `file=`，扫描网格 `gso/<键>/…` 找不到（其他场景全是绝对路径）；现在副本里的相对资源路径都指回场景目录。
 
 ## 6. 封存集与视频
 
@@ -125,12 +139,12 @@ $PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_grasp_s0 --o
 ```bash
 bash scripts/start_unreal.sh --gpu 0      # 编辑器没开着时
 bash scripts/build_scene.sh logistics_room_1030_s0 --unreal
-PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 5 --build
+PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 --build
 ```
 
-做什么：按 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `unreal.build` 建关卡：把场景的会动部分（机器人、纸箱、10 件物体和它们的扫描纹理）导出成 URLab 的 MJCF 导入进 `/Game/Levels/logistics_room_1030_s0`（房间是 warehouse 的关卡）。导出器剥掉碰撞壳之前先把每件物体的质量和惯量烤成显式 `<inertial>`，不然扫描物体没有质量、编译失败。s1–s4 换名字各建一次（每个实例一份关卡，10 件物体各不相同）；重建场景实例后关卡要重建（`source.json` 记着场景 XML 的哈希，不一致 `run_context.unreal_scene` 会拒绝）。
+做什么：按 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `unreal.build` 建关卡：把场景的会动部分（机器人、纸箱、10 件物体和它们的扫描纹理）导出成 URLab 的 MJCF 导入进 `/Game/Levels/logistics_room_1030_s0`（房间是 warehouse 的关卡）。导出器剥掉碰撞壳之前先把每件物体的质量和惯量烤成显式 `<inertial>`，不然扫描物体没有质量、编译失败。s1–s9 换名字各建一次（每个实例一份关卡，10 件物体各不相同）；重建场景实例后关卡要重建（`source.json` 记着场景 XML 的哈希，不一致 `run_context.unreal_scene` 会拒绝）。
 第三条给每个实例出一张 Unreal 图（用户 11-04）：把关卡里的第三视角机位（1280 × 960、fovy 45）依次放到平台正上方 2 m 和房间远角（和 MuJoCo 预览图同样的两个视角），各拍一帧静止场景（沉降后的物体、机器人在起点），图下列出物体；`--build` 让它先给缺关卡或关卡过期（场景哈希不符）的实例建关卡，不加就报错停下。
-得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 41–88 s（s0–s4 的 11-04 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 五张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 20–29 s（主要是载关卡、起 PIE）。之后 Unreal 视频按物流间 runbook 第 7 节用 `scripts/rsi/report/report_unreal.py`，场景名从沙盒的 `media.json` 来。
+得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 39–97 s（s0–s9 的 11-05 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 十张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 15–31 s（主要是载关卡、起 PIE）。之后 Unreal 视频按物流间 runbook 第 7 节用 `scripts/rsi/report/report_unreal.py`，场景名从沙盒的 `media.json` 来。
 
 ## 8. 评测没见过的物体
 
@@ -144,7 +158,8 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 ## 9. 改阈值与判据
 
 - 筛选阈值和排除的类别：`scripts/gso_catalog.py` 的参数（默认值在 `src/locomani/sim/gso_objects.py` 的 `Thresholds`，`--use-categories` 默认见上面第 1 节，类别名见 `categories.json` 的 `counts`）；改了重建目录，已建的实例记着它们用的 `catalog_sha256`，不受影响；要让已建实例换物体就删掉它的目录重建（关卡也要重建）。
-- 任务判据：`scripts/rsi/gso_family.py` 的 `LIFT_M`（0.10 / 0.20 m）、`TILT_DEG`（60）、`POOL_SIZES`；改了重跑它，再改两份方案和 `scripts/rsi/rules.md`，算一次人工干预。
+- 放得进纸箱的规则：`gso_catalog.py --carton-inner 0.43 0.30 --carton-rim 0.33 --fit-margin 0.02`（`Thresholds.carton_inner_m` / `carton_rim_m` / `fit_margin_m`，目录版本 3，字段 `fits_carton` / `fit_why`）；纸箱的抱取带是 `prepare_logistics_scene.py` 的 `CARTON_PLACEMENT`（任务族从 `gso.carton_placement` 读，旧场景文件没有就用 `gso_family.CARTON_BAND`）。
+- 任务判据：`scripts/rsi/gso_family.py` 的 `LIFT_M`（0.10 / 0.20 m）、`TILT_DEG`（60）、`POOL_SIZES`；改了重跑它，再改三份方案和 `scripts/rsi/rules.md`，算一次人工干预。
 - 实例里物体多少、单双手比例、可达带深度：第 2 节的参数；`configs/scenes.yaml` 里记的是默认值。
 
 ## 10. 常见错误
@@ -154,5 +169,8 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 - 预览或渲染测试报 GL / EGL 错：第 0 节的 `MUJOCO_GL=egl` 要在 pytest 导入 mujoco 之前设好（放在命令行环境里，别在测试里设）。
 - `scene_feasibility.py` 全部 `does not rest still in the sim`：少了落地测试那一步。
 - Unreal 导出时 MuJoCo 编译报自由物体的质量和惯量为零：导出器版本太旧，剥碰撞壳之前没有烤惯量（`export_mjcf.bake_inertia`）。
+- `gso_preview_unreal.py` 中途报 `zmq.error.Again`、之后 `no Unreal editor command server on :18801`：编辑器死了（11-05 建到 s5 的预览时一次），`bash scripts/start_unreal.sh --gpu 0` 再跑同一条命令，建好的关卡和图会跳过。
 - `gso_preview_unreal.py` 报 `Unreal level missing` / `stale`：该实例没建关卡或场景重建后关卡没重建，加 `--build` 或手动 `build_scene.sh <实例> --unreal`；报 `PIE did not start` 或连不上编辑器：先 `bash scripts/start_unreal.sh --gpu 0`，且同一时间只能有一个进程用编辑器（建关卡时别渲染）。
+- `gso_pack_check.py` 或一局报 `Error opening file 'gso/gso_0050/model_collision_0.obj'`：场景目录旁的 `<实例>_physics/` 是 11-05 之前写的旧副本（相对网格路径没改成绝对的，场景文件没更新它就不重写），删掉重跑；报 `FileNotFoundError: /workspace/models/scalebfm/…`：`LOCOMANI_WORKSPACE` 没设（第 0 节）。
+- 起点采样打印 `seed N: skipped (no spot on A meets the placement option for nor_cal_box)`：纸箱的抱取带（离台沿 0.18–0.31 m、长边沿台沿）被别的物体占着，跳过这个 seed 是正常的，池也这样跳。
 - 内环第一行就崩、`loop.log` 里找不到任务族或场景：沙盒看不到没提交的文件，先提交任务族文件；场景目录要在 `outputs/scene_discovery/` 下。

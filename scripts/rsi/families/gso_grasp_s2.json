@@ -1,16 +1,16 @@
 {
  "name": "gso_grasp_s2",
- "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 2 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0102 = brother printing cartridge pc501, gso_0266 = epson ink cartridge black 200, gso_0292 = folic acid, gso_0376 = just for men shampooin haircolor jet black 60, gso_0655 = phillips caplets size 24, gso_0657 = phillips milk of magnesia saline laxative liquid original",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.10, 60) with one hand on the Google Scanned Objects drawn with seed 2 onto the 0.371 m pallet platform (catalog.json single objects); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0101 = brother lc 1053pks ink cartridge cyanmagentayellow 1pack, gso_0263 = epson 273xl ink cartridge magenta, gso_0289 = fisherprice make a match game thomas friends, gso_0375 = just for men mustache beard brushin hair color gel mediumdark brown m40, gso_0653 = philips ecovantage 43 w light bulbs natural light 2 pack, gso_0655 = phillips caplets size 24",
  "scene": "outputs/scene_discovery/logistics_room_1030_s2",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s2_tasks.jsonl",
  "tasks": [
-  "pick_gso_0102",
-  "pick_gso_0266",
-  "pick_gso_0292",
-  "pick_gso_0376",
-  "pick_gso_0655",
-  "pick_gso_0657"
+  "pick_gso_0101",
+  "pick_gso_0263",
+  "pick_gso_0289",
+  "pick_gso_0375",
+  "pick_gso_0653",
+  "pick_gso_0655"
  ],
  "spawn": {
   "rooms": "all",

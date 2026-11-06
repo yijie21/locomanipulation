@@ -3069,3 +3069,25 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 包围盒实体惯量：倒的物体在场景 lint 里报错。
 - 用名字关键词挑鞋子：1030 个名字里鞋的品牌名、型号名（`D_ROSE_773_II`、`TERREX_FAST_R`、`Hilary`、`Samoa`）靠正则漏一半，`Granimals`、`Vans_Cereal` 之类又误中；数据集自带的标签全覆盖且是它自己的分类。
 - 只用部分类别的写法：仍用排除名单（`excluded_categories`），把十类都列进去。否决：用户要的是“使用剩下的类别”，参数是“选择使用哪些类别”；写成用的名单，数据集以后多出来的新类别不会悄悄被抽到。
+
+## 2026-11-05 物流间 1030 装箱线：每件物体放进纸箱再把纸箱拿起来（用户“增加新的 task：在 logistics room 中心平台上随机摆放 10 个物体和 nor_cal_box，Unitree G1 抓起 10 个物体中的 1 个物体，然后放到 nor_cal_box 中去，然后机器人拿起 nor_cal_box 并保持直立……10 个物体有 6 个单手抓起物体，4 个双手抓起物体”；/grill-me 三轮 Q1–Q18；runbook [docs/rsi_logistic_room_1030.md](docs/rsi_logistic_room_1030.md) 第 5a 节；方案 `scripts/rsi/plans/gso_pack.md`；TODO 40.15）
+
+### 决策
+- 先只写代码和冒烟测试，不跑 RSI（用户）；全部在分支 `henry-dev`。
+- 放得进纸箱是目录的字段（`fits_carton` / `fit_why`，目录版本 3）而不是建场景时才算：底面（静置朝向）加 2 cm 边距放得进内空 0.43 × 0.30 m（横竖都试）、高 ≤ 沿高 0.33 m；阈值 `--carton-inner` / `--carton-rim` / `--fit-margin`。实例只抽放得进的（单手 260 / 双手 59 放得进），所以 `gso_grasp` / `gso_bimanual` 两个族的物体也跟着变了（Q2 a）。
+- 判据（Q11 b）：`in(X, nor_cal_box)` + `held(nor_cal_box)` + `lifted(nor_cal_box, 0.20, 60)`，不加 `upright`：`lifted` 的 60° 倾斜上限已经是“保持直立”的那一半，`upright` 的阈值更严、对纸箱另算一遍没有意义；`hold_s` 2 / `judge_s` 5 同双手族。
+- 每局独立（Q5 a）：纸箱是空的，只放当局的那一件，不按 10 件的顺序累计（累计要把前几局的结果带到下一局，冻结层 `start.py` 不支持，判据也要变）。
+- 每局只重放目标物体和纸箱（Q6 a）：纸箱固定在抱取带上（离台沿 0.18–0.31 m、yaw 85–90°、随机一条台沿，`prepare_logistics_scene.CARTON_PLACEMENT`，`placement.objects` 是 `start.py` 新的按物体放置选项），双手物体再限 yaw 让宽边沿台沿（抱取要两手夹窄边）。
+- 十个场景实例 s0–s9（Q9、Q15），一次内环只跑一个族名里指定的实例；四个族 `gso_grasp` / `gso_bimanual` / `gso_pack` / `gso_pack_bimanual` `_s<seed>`，起点池种子 440000 / 450000 / 460000 / 470000 起（每池 +100000）。
+- 技能全部进主技能库（用户，Q12 a）：两手抱取从 `seeds/box_strict_start` 原样移入 `skills/bimanual.py`（常数不动），新写两手放入 `bimanual.place_into`（举高过沿、后退、走到纸箱的抱取线、对准开口、放低、松开、起身后退）和链 `skills/pack.py`（按场景文件的 `semantic.graspable == "bimanual"` 或 `bimanual` 旗选单手 / 双手放入，再抱纸箱，再判一遍目标）；`plan_for` 的 `held(X)` 对双手物体也走抱取。`gso_bimanual` 族的种子改为空（主库，Q18 b）；`box_strict_start` 种子留给仓库纸箱线。
+- 谓词 `_in` 用物体和容器转过的 `box.centre`（扫描物体的盒中心不在刚体原点；此前取刚体原点，侧放的物体会判错）。
+- 冒烟用单局脚本 `scripts/gso_pack_check.py`（不是 RSI）：s0 单手 `pack_gso_0558`、双手 `pack_gso_0945` 各一局都跑通、都停在抓取（单手 pregrasp 偏 4.8 cm、双手 15 cm）；修了一个真 bug：`world.physics_scene` 的副本不改相对 `file=`，扫描网格找不到（其他场景全是绝对路径），现在相对资源路径都改成场景目录下的绝对路径。
+- 能力表里两手抱取 / 两手放入 / 两手搬运 / 抱装了东西的纸箱都标 untested（门没量过），`scene_feasibility.py` 对装箱任务只提示。
+
+### 被否决的方案（及原因）
+- 纸箱也随机放在可达带上任意朝向：两手抱取要站在台沿正对窄边，纸箱斜着或离台沿太远抱不到；固定在抱取带上，物体照旧随机。
+- 加 `upright(nor_cal_box)`：和 `lifted` 的倾斜上限重复、更严，用户选不加。
+- 10 件按顺序累计装箱成一个任务：冻结层不支持跨局状态，判据和重放都要改；用户选每局独立。
+- 两手放入先放进沙盒种子再由内环搬进主库：用户要两手抱取、两手放入都是主库的原子技能。
+- 场景保留 5 个实例：用户要 10 个，一次内环指定跑哪个。
+- 放得进纸箱只在建场景时筛：目录字段让图库和族文件都能看到哪些放得进、为什么放不进。

@@ -7,7 +7,7 @@ scripts/rsi/report/report_unreal.py films; the scene is shown at rest (the settl
 start). Needs the Unreal editor (bash scripts/start_unreal.sh --gpu N) and every instance's level
 (bash scripts/build_scene.sh logistics_room_1030_s<seed> --unreal; `--build` runs that for a missing or stale level).
 
-    PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 5 [--build] [--out outputs/gso_preview]
+    PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 [--build] [--out outputs/gso_preview]
         [--scenes outputs/scene_discovery]
 
 Writes `<out>/<scene>_unreal.png` per instance and `<out>/index_unreal.json`. About 30 s an instance (the level load
@@ -143,7 +143,7 @@ def render_instance(scene_dir: Path, out_png: Path, log=print) -> dict:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--seeds", type=int, default=5, help="instances s0 .. s<N-1>")
+    ap.add_argument("--seeds", type=int, default=10, help="instances s0 .. s<N-1>")
     ap.add_argument("--first-seed", type=int, default=0)
     ap.add_argument("--scenes", type=Path, default=ROOT / "outputs/scene_discovery")
     ap.add_argument("--out", type=Path, default=ROOT / "outputs/gso_preview")

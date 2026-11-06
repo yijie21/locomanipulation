@@ -12,24 +12,27 @@ from __future__ import annotations
 from locomani.backends.scalebfm.motor import Outcome
 from locomani.scene_discovery.predicates import parse
 
-from . import clearance, cover, grasp_program, held, into, near, pick, place  # noqa: F401  (apply_set reaches them)
+from . import bimanual, clearance, cover, grasp_program, held, into, near, pack, pick, place  # noqa: F401
 
 PLAN_HELD = "pick"  # held(X): "pick" (the ported closed-loop program, plan D4) or "pick_simple"
+MODULES = ("pick", "grasp_program", "place", "clearance", "held", "cover", "into", "near", "bimanual", "pack")
 
 
 def plan_for(task):
-    """The plan for a task's goal, or None when no skill covers it. Covered: held(X), alone or with upright(X) of the
-    same X (`held.pick_held` over the PLAN_HELD pick); held(X) and exactly one near(X, T, d), with upright(X) or not,
-    all of the same X (`near.bring_near` over the PLAN_HELD pick); exactly one in(X, C), alone or with upright(X) of
-    the same X (`into.place_into`); a conjunction of on(X, S) and upright(X) only (`place_all`: `place.place_on` for
-    each on(X, S) in goal order, stopping at the first failure; nothing when the goal already holds)."""
+    """The plan for a task's goal, or None when no skill covers it. Covered: held(X), alone or with upright(X) and
+    lifted(X, ...) of the same X (`pick_held`: the two-hand hug for an object the scene file says takes two hands, else
+    `held.pick_held` over the PLAN_HELD pick); held(X) and exactly one near(X, T, d), with upright(X) or not, all of the
+    same X (`near.bring_near` over the PLAN_HELD pick); exactly one in(X, C), alone or with upright(X) of the same X
+    (`put_into`: `bimanual.place_into` for a two-hand X, else `into.place_into`); one in(X, C) with held(C) and
+    lifted(C, ...) / upright(C) of the container (`pack.pack_into`: the put-in, then the hug of C); a conjunction of
+    on(X, S) and upright(X) only (`place_all`: `place.place_on` for each on(X, S) in goal order, stopping at the first
+    failure; nothing when the goal already holds)."""
     preds = [parse(g) for g in task.goal]
     names, keys = {p.name for p in preds}, {p.args[0] for p in preds}
-    if "held" in names and names <= {"held", "upright"} and len(keys) == 1:
+    if "held" in names and names <= {"held", "upright", "lifted"} and len(keys) == 1:
         key = preds[0].args[0]
-        skill = getattr(pick, PLAN_HELD)
         upright = "upright" in names
-        return lambda ctx: held.pick_held(ctx, key, skill, upright)
+        return lambda ctx: pick_held(ctx, key, upright)
     nears = [p for p in preds if p.name == "near"]
     if "held" in names and names <= {"held", "near", "upright"} and len(nears) == 1 and len(keys) == 1:
         key, target, d = nears[0].args
@@ -39,11 +42,28 @@ def plan_for(task):
     ins = [tuple(p.args) for p in preds if p.name == "in"]
     if len(ins) == 1 and all(p.name == "in" or (p.name == "upright" and p.args[0] == ins[0][0]) for p in preds):
         key, container = ins[0]
-        return lambda ctx: into.place_into(ctx, key, container)
+        return lambda ctx: put_into(ctx, key, container)
+    if (len(ins) == 1 and "held" in names
+            and all(p.name == "in" or (p.name in ("held", "lifted", "upright") and p.args[0] == ins[0][1]) for p in preds)):  # fmt: skip
+        key, container = ins[0]
+        return lambda ctx: pack.pack_into(ctx, key, container)
     ons = [tuple(p.args) for p in preds if p.name == "on"]
     if ons and all(p.name in ("on", "upright") for p in preds):
         return lambda ctx: place_all(ctx, ons)
     return None
+
+
+def pick_held(ctx, key, upright):
+    """held(X): the two-hand hug (bimanual.pick) when the scene file's features say X takes two hands (never its name,
+    rules.md 30), else held.pick_held over the PLAN_HELD pick."""
+    if bimanual.two_handed(ctx.world, key):
+        return bimanual.pick(ctx, key)
+    return held.pick_held(ctx, key, getattr(pick, PLAN_HELD), upright)
+
+
+def put_into(ctx, key, container):
+    """in(X, C): the two-hand put-in for a two-hand X, else the one-hand one (pack.put_in)."""
+    return pack.put_in(ctx, key, container)
 
 
 def bring_near(ctx, key, target, d, skill, upright):
@@ -109,9 +129,10 @@ def apply_set(package, overrides: dict) -> list[str]:
 
 
 def parameters(package) -> dict:
-    """Every overridable parameter: upper-case module constants (numbers, strings, dicts of them), by `apply_set` key."""
+    """Every overridable parameter: upper-case module constants (numbers, strings, dicts of them) of the package and of
+    each module in MODULES, by `apply_set` key."""
     out = {k: v for k, v in vars(package).items() if k.isupper() and isinstance(v, (int, float, str, dict))}
-    for name in ("pick", "grasp_program", "place", "clearance", "held", "cover", "into", "near"):
+    for name in MODULES:
         mod = getattr(package, name)
         for k, v in vars(mod).items():
             if k.isupper() and isinstance(v, (int, float, str, dict)) and not isinstance(v, bool):

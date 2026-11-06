@@ -203,7 +203,7 @@ def test_the_registry_gives_every_warehouse_scene_a_level_and_says_why_the_other
     apartments = {"adt_apartment_mars"}
     # the logistics room's scene RSI scene, on the warehouse's own room level (TODO 38.20), and the five
     # logistics_room_1030 instances (one level per draw of ten scanned objects, 2026-11-03)
-    logistics = {"logistics_room_mars", *(f"logistics_room_1030_s{i}" for i in range(5))}
+    logistics = {"logistics_room_mars", *(f"logistics_room_1030_s{i}" for i in range(10))}
     assert (
         levels
         == {name for name in scenes if name.startswith("warehouse_") and name not in bases} | apartments | logistics

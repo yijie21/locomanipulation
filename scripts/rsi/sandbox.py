@@ -81,8 +81,9 @@ def apply_spec(dest: Path, family: str) -> dict:
     if not spec:
         return spec
     skills = dest / "src" / "locomani" / "tasks" / "scene" / "skills"
-    shutil.rmtree(skills)
-    shutil.copytree(dest / spec["seed"], skills, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if spec.get("seed"):  # null: the family starts from the main library as it is (the pack families, 2026-11-05)
+        shutil.rmtree(skills)
+        shutil.copytree(dest / spec["seed"], skills, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     mods = closure(dest, spec["closure"])
     src = dest / "src"
     kept_py = {src / (m.replace(".", "/") + ".py") for m in mods} | {
@@ -110,7 +111,7 @@ def apply_spec(dest: Path, family: str) -> dict:
     for d in sorted((p for p in dest.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)):
         if not any(d.iterdir()):
             d.rmdir()
-    print(f"sandbox spec: seed {spec['seed']}, {len(kept_py)} src modules kept")
+    print(f"sandbox spec: seed {spec.get('seed') or 'the main library'}, {len(kept_py)} src modules kept")
     return spec
 
 

@@ -31,10 +31,11 @@ def bowl_world(xy=(0.0, 0.0)):
 
 class PlanFor(unittest.TestCase):
     def test_one_in_alone_or_with_upright_of_the_same_object_goes_to_place_into(self):
+        ctx = SimpleNamespace(world=World())  # the dispatch reads the object's features (one hand here)
         with mock.patch.object(into, "place_into", return_value=Outcome(True)) as p:
-            skills.plan_for(SimpleNamespace(goal=["in(Can, Bowl)"]))("ctx")
-            skills.plan_for(SimpleNamespace(goal=["in(Can, Bowl)", "upright(Can)"]))("ctx")
-        self.assertEqual(p.call_args_list, [mock.call("ctx", "Can", "Bowl")] * 2)
+            skills.plan_for(SimpleNamespace(goal=["in(Can, Bowl)"]))(ctx)
+            skills.plan_for(SimpleNamespace(goal=["in(Can, Bowl)", "upright(Can)"]))(ctx)
+        self.assertEqual(p.call_args_list, [mock.call(ctx, "Can", "Bowl")] * 2)
         for goal in (
             ["in(Can, Bowl)", "upright(Book)"],
             ["in(Can, Bowl)", "in(Book, Bowl)"],

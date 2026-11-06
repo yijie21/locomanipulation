@@ -1,10 +1,12 @@
 """The scene-task runner's pure parts (TODO 27.2.3, src/locomani/tasks/scene/): object placement stays on its surface and
 clear of what rests there (oriented footprints), the robot spawns free, in the spawn region, at the asked distance and
 with the object reachable; a walk is cut into straight legs that stay on traversable cells; a task names its free
-objects; a family's spawn option widens the spawn to every room and any distance. The skills catalog's own tests are
+objects; a family's spawn option widens the spawn to every room and any distance; the physics copy of a scene points
+relative asset files at the scene directory. The skills catalog's own tests are
 in test_scene_skills_catalog.py (a sandbox with another seed drops them). Live: scripts/rsi/episode_check.py."""
 
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -69,6 +71,30 @@ class Placement(unittest.TestCase):
             self.assertFalse(any(S.overlap(fp, t, S.OBJECT_GAP_M) for t in taken))
             self.assertAlmostEqual(pos[2], 0.79)
 
+    def test_an_object_takes_its_own_placement_option_in_place_of_the_shared_one(self):
+        """`placement.objects` (the pack tasks, 2026-11-05): the carton on its own band while the object keeps the
+        shared reach band; an option for an object outside the task, or an unknown key in it, is refused."""
+        m = meta()
+        occ, nav = build(m)
+        own = {"depth_m": [0.2, 0.3], "edge": "+x", "yaw_deg": [85, 90]}
+        want = {"depth_m": [0.0, 0.1], "objects": {"Box": own}}
+        for seed in range(5):
+            st = S.sample_start(m, occ, nav, ["Can", "Box"], np.random.default_rng(seed), seed=seed, placement=want)
+            can, box = st.placements["Can"], st.placements["Box"]
+            self.assertLessEqual(min(S.edge_depths(m["surfaces"]["T"], can[0][:2]).values()), 0.1 + 1e-9)
+            yaw = 2 * np.arctan2(box[1][3], box[1][0])
+            self.assertTrue(S.placement_ok(m["surfaces"]["T"], box[0][:2], yaw, own))
+            self.assertFalse(S.placement_ok(m["surfaces"]["T"], box[0][:2], yaw, {"depth_m": [0.0, 0.1]}))
+        self.assertEqual(want["objects"], {"Box": own})  # the row's option is not consumed
+        with self.assertRaisesRegex(KeyError, "not objects of the task"):
+            S.sample_start(m, occ, nav, ["Can"], np.random.default_rng(0), seed=0, placement=want)
+        with self.assertRaisesRegex(KeyError, "unknown"):
+            S.sample_start(m, occ, nav, ["Can", "Box"], np.random.default_rng(0), seed=0,
+                           placement={"objects": {"Box": {"blocker": {"key": "Tray"}}}})  # fmt: skip
+        with self.assertRaises(RuntimeError):  # a band the table cannot give: the +x edge is 0.4 m from the centre
+            S.sample_start(m, occ, nav, ["Can", "Box"], np.random.default_rng(0), seed=0,
+                           placement={"objects": {"Box": {"depth_m": [0.9, 1.0], "edge": "+x"}}})  # fmt: skip
+
     def test_overlap_uses_orientation(self):
         long = (np.zeros(2), np.array([0.3, 0.02]), 0.0)
         # a square 0.1 m above the long thin box's centre: clear when it lies along x, hit when it is turned upright
@@ -131,3 +157,50 @@ class Tasks(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhysicsCopy(unittest.TestCase):
+    def test_the_physics_copy_points_relative_asset_files_at_the_scene_directory(self):
+        """A logistics_room_1030 instance names its scanned meshes `gso/<key>/...` relative to its directory; the
+        physics copy is written next to it, so a relative file there would not be found (the pack smoke test's first
+        crash, 2026-11-05). Absolute files and the compiler's meshdir are honoured."""
+        import tempfile
+        import xml.etree.ElementTree as ET
+
+        import mujoco
+
+        from locomani.tasks.scene.world import absolute_asset_files, physics_scene
+
+        tet = "v 0 0 0\nv 0.1 0 0\nv 0 0.1 0\nv 0 0 0.1\nf 1 2 3\nf 1 2 4\nf 1 3 4\nf 2 3 4\n"
+        with tempfile.TemporaryDirectory() as tmp:
+            sc = Path(tmp) / "scene"
+            (sc / "gso" / "gso_0001").mkdir(parents=True)
+            (sc / "gso" / "gso_0001" / "model.obj").write_text(tet)
+            (sc / "meshes").mkdir()
+            (sc / "meshes" / "part.obj").write_text(tet)
+            absolute = str((sc / "meshes" / "part.obj").resolve())
+            (sc / "scene_locomani.xml").write_text(
+                '<mujoco><compiler angle="radian"/><asset>'
+                '<mesh name="scan" file="gso/gso_0001/model.obj"/><mesh name="part" file="meshes/part.obj"/>'
+                f'<mesh name="abs" file="{absolute}"/></asset><worldbody>'
+                '<body name="pelvis"><freejoint/><geom type="mesh" mesh="abs" mass="1"/></body>'
+                '<body name="gso_0001" pos="0 0 1"><freejoint/><geom type="mesh" mesh="scan" mass="0.1"/>'
+                '<geom type="mesh" mesh="part" mass="0.1" contype="0" conaffinity="0"/></body></worldbody></mujoco>'
+            )
+            (sc / "scene_meta.json").write_text("{}")
+            out = physics_scene(sc)
+            self.assertEqual(out, sc.parent / "scene_physics")
+            copy = ET.parse(out / "scene_locomani.xml").getroot()
+            files = {m.get("name"): m.get("file") for m in copy.find("asset")}
+            # the visual-only geom's mesh is pruned; the others are absolute under the scene directory
+            self.assertEqual(files, {"scan": str((sc / "gso" / "gso_0001" / "model.obj").resolve()), "abs": absolute})
+            m = mujoco.MjModel.from_xml_path(str(out / "scene_locomani.xml"))
+            self.assertEqual(m.nmesh, 2)
+            self.assertEqual(mujoco.MjModel.from_xml_path(str(out / "robot.xml")).nbody, 2)
+            # the helper alone: meshdir / texturedir are folded into the files and dropped, two rewritten, one kept
+            root = ET.fromstring('<mujoco><compiler meshdir="m" texturedir="t"/><asset><mesh file="a.obj"/>'
+                                 f'<texture file="t.png"/><mesh file="{absolute}"/></asset></mujoco>')  # fmt: skip
+            self.assertEqual(absolute_asset_files(root, sc), 2)
+            self.assertEqual([e.get("file") for e in root.find("asset")],
+                             [str(sc / "m" / "a.obj"), str(sc / "t" / "t.png"), absolute])  # fmt: skip
+            self.assertEqual(root.find("compiler").attrib, {})

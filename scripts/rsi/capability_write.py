@@ -509,7 +509,7 @@ def build(
         "reach_bimanual": {
             "box_grasp": dict(
                 status="untested",
-                note="no bimanual skill in the mars + ScaleBFM library (D4 starts single-hand); the warehouse box line (ScaleBFM, docs/handoff/scalebfm-warehouse-rsi-20261014.md) runs on its own runner. ADT holds one bimanual object.",
+                note="the two-hand hug (skills/bimanual.py, ported from the warehouse box line 2026-11-05) is in the library but no gate has measured it: once on the carton in the warehouse (lifts of 3-16 cm), once on a scanned object (gso_0945, pregrasps 15 cm off, the pack line's smoke test); a loaded carton (an object inside) was never lifted. ADT holds one bimanual object.",
             ),
         },
         "carry": {
@@ -533,7 +533,11 @@ def build(
                 ),
                 source=PROBE_SRC + "grip/",
             ),  # fmt: skip
-            "bimanual_box": dict(status="untested", usable_distance=0.0, note="no bimanual skill"),
+            "bimanual_box": dict(
+                status="untested",
+                usable_distance=0.0,
+                note="the two-hand carry on foot (bimanual.place_into walks the hugged object to the container) has never run to its end",
+            ),
         },
         "place": {
             "into_container_single_arm": dict(
@@ -554,7 +558,10 @@ def build(
                 note="no place skill in the library yet (D4: the loop writes it)",
                 failed_tasks=put_in_failed,
             ),
-            "put_down_bimanual": dict(status="untested", note="no bimanual skill"),
+            "put_down_bimanual": dict(
+                status="untested",
+                note="the two-hand put-in (bimanual.place_into: raise, carry, lower over the rim, open both) is in the library, never run past its pick",
+            ),
             "on_surface_single": dict(
                 status="measured",
                 setting="the put-down families' sealed pools: each setting is one object onto one surface (the checker takes it for that pair whatever the ranges say); the ranges span the settings",
@@ -648,7 +655,7 @@ HEADER = """# What the mars G1 + Dex1 + ScaleBFM stack can do, as measured (scen
 #     bounds a top-pinched object's carry by the longest measured (carry_single.top_pinch_distance).
 #   place.into_container_single_arm.release_* is how the put-in lets go (as held, release_margin_m inside the box).
 #   Calibration samples (calibrate.py, --calibration) count as measured tasks like a family's sealed pool.
-#   Every skill the library does not have yet (bimanual) is untested: a gap, never bucket 1.
+#   Every skill no gate has measured (the two-hand hug, put-in and carry, in the library since 2026-11-05) is untested: a gap, never bucket 1.
 """
 
 

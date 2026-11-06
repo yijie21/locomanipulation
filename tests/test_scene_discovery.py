@@ -65,13 +65,13 @@ META = {
 
 
 def state(mug=(0.0, 0.0, 0.80), mug_quat=(1, 0, 0, 0), touching=(), bowl=(0.3, 0.3, 0.79), pelvis=(0.0, -1.0, 0.79),
-          gripped=()):  # fmt: skip
+          gripped=(), bowl_quat=(1, 0, 0, 0)):  # fmt: skip
     return {
         "fallen": False,
         "pelvis": {"pos": list(pelvis)},
         "objects": {
             "Mug_1": {"pos": list(mug), "quat": list(mug_quat), "touching": list(touching), "gripped": list(gripped)},
-            "WhiteBowl": {"pos": list(bowl), "quat": [1, 0, 0, 0], "touching": []},
+            "WhiteBowl": {"pos": list(bowl), "quat": list(bowl_quat), "touching": []},
         },
     }
 
@@ -156,6 +156,24 @@ def test_in_held_upright_near_in_room():
     assert in_room(state())[0]
     ok, why = in_room(state(pelvis=(0.0, 2.0, 0.79)))
     assert not ok and why.startswith("[goal] in_room(robot, kitchen)")
+
+
+def test_in_reads_the_box_centres_of_object_and_container_turned_with_their_bodies():
+    """A scanned object's body origin is its mesh origin, not its centre (2026-11-05): `in` judges where the box is."""
+    import copy
+
+    meta = copy.deepcopy(META)
+    meta["objects"]["Mug_1"]["box"]["centre"] = [0.3, 0.0, 0.0]  # the box 30 cm along the body's x from its origin
+    meta["objects"]["WhiteBowl"]["box"]["centre"] = [0.1, 0.0, 0.0]
+    goal = predicates.compile_goal(["in(Mug_1, WhiteBowl)"], meta)
+    # the bowl at (0.3, 0.3) unturned: its inner box is centred at (0.4, 0.3)
+    assert goal(state(mug=(0.1, 0.3, 0.80)))[0]  # the mug's box centre at (0.4, 0.3)
+    assert not goal(state(mug=(0.4, 0.3, 0.80)))[0]  # its origin there, its box 30 cm beyond the bowl
+    assert goal(state(mug=(0.7, 0.3, 0.80), mug_quat=(0, 0, 0, 1)))[0]  # turned 180 deg: the box back at (0.4, 0.3)
+    # the bowl turned 90 deg: its centre offset turns with it, the inner box is centred at (0.3, 0.4)
+    quarter = (float(np.cos(np.pi / 4)), 0.0, 0.0, float(np.sin(np.pi / 4)))
+    assert goal(state(mug=(0.0, 0.4, 0.80), bowl_quat=quarter))[0]
+    assert not goal(state(mug=(0.1, 0.3, 0.80), bowl_quat=quarter))[0]
 
 
 def test_a_fall_fails_every_goal():

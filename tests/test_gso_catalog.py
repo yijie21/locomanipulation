@@ -1,6 +1,7 @@
 """The Google Scanned Objects catalog and the scene builder's draw (locomani.sim.gso_objects, 2026-11-03): phrases
 from directory names, the graspability rule, the dataset-category exclusion (no shoes, 2026-11-04), the stable train /
-held-out split, the per-instance draw and the non-overlapping placement on the platform's reach band."""
+held-out split, the carton fit rule (2026-11-05: the pack tasks draw only objects that go into the carton), the
+per-instance draw and the non-overlapping placement on the platform's reach band, the carton on its own band."""
 
 from __future__ import annotations
 
@@ -59,9 +60,39 @@ def catalog(n_single=20, n_bimanual=10, n_none=5):
     for kind, n in (("single", n_single), ("bimanual", n_bimanual), ("none", n_none)):
         for j in range(n):
             key = G.KEY_FORMAT.format(index=i)
-            objs[key] = {"name": f"{kind}_{j}", "graspable": kind, "split": "held_out" if j % 5 == 0 else "train"}
+            objs[key] = {"name": f"{kind}_{j}", "graspable": kind, "split": "held_out" if j % 5 == 0 else "train",
+                         "fits_carton": j % 7 != 3}  # fmt: skip
             i += 1
     return {"version": G.CATALOG_VERSION, "objects": objs}
+
+
+@pytest.mark.parametrize(
+    "extent, fits, why",
+    [
+        ((0.38, 0.25, 0.33), True, ""),  # the 2 cm margin on every side of 0.43 x 0.30, no taller than the 0.33 rim
+        ((0.25, 0.38, 0.33), True, ""),  # either way round
+        ((0.40, 0.25, 0.20), False, "40.0 x 25.0 cm does not fit the carton's 39 x 26 cm"),
+        ((0.30, 0.27, 0.20), False, "does not fit"),  # the narrow side over the short inner side
+        ((0.10, 0.10, 0.34), False, "34.0 cm tall: over the carton's 33 cm rim"),
+    ],
+)
+def test_the_carton_fit_rule_takes_the_footprint_either_way_round_with_the_margin_and_the_height_under_the_rim(
+    extent, fits, why
+):
+    got, reason = G.fits_carton(extent, TH)
+    assert got == fits and why in reason
+    assert G.fits_carton((0.40, 0.25, 0.20), G.Thresholds(fit_margin_m=0.0))[0]
+    assert not G.fits_carton((0.10, 0.10, 0.34), G.Thresholds(carton_rim_m=0.33))[0]
+    assert G.fits_carton((0.10, 0.10, 0.34), G.Thresholds(carton_rim_m=0.35))[0]
+
+
+def test_the_pools_and_the_draw_hold_only_objects_that_fit_the_carton_unless_asked():
+    cat = catalog()
+    assert len(G.pool_keys(cat, "single", "all")) == 17 and len(G.pool_keys(cat, "single", "all", fit=False)) == 20
+    keys = G.sample_keys(cat, seed=3, n=10, n_bimanual=4, pool="train")
+    assert all(cat["objects"][k]["fits_carton"] for k in keys)
+    loose = {k for s in range(30) for k in G.sample_keys(cat, seed=s, n=10, n_bimanual=4, pool="train", fit=False)}
+    assert any(not cat["objects"][k]["fits_carton"] for k in loose)
 
 
 def test_the_draw_takes_the_asked_mix_from_the_asked_pool_without_repeats_and_repeats_by_seed():
@@ -74,8 +105,9 @@ def test_the_draw_takes_the_asked_mix_from_the_asked_pool_without_repeats_and_re
     assert keys != G.sample_keys(cat, seed=4, n=10, n_bimanual=4, pool="train")
     unseen = G.sample_keys(cat, seed=3, n=4, n_bimanual=2, pool="eval_unseen")
     assert all(cat["objects"][k]["split"] == "held_out" for k in unseen)
-    assert len(G.pool_keys(cat, "single", "all")) == 20 and len(G.pool_keys(cat, "single", "eval_unseen")) == 4
-    with pytest.raises(ValueError, match="holds 4 single"):
+    assert len(G.pool_keys(cat, "single", "all", fit=False)) == 20
+    assert len(G.pool_keys(cat, "single", "eval_unseen", fit=False)) == 4
+    with pytest.raises(ValueError, match="holds 3 single"):  # 4 held out, one of them does not fit the carton
         G.sample_keys(cat, seed=0, n=10, n_bimanual=4, pool="eval_unseen")
     with pytest.raises(ValueError, match="between 0"):
         G.sample_keys(cat, seed=0, n=3, n_bimanual=4)
@@ -103,6 +135,28 @@ def test_the_placement_keeps_every_footprint_inside_the_top_apart_and_on_the_rea
     for a in range(len(keys)):
         for b in range(a + 1, len(keys)):
             assert not overlap(fps[keys[a]], fps[keys[b]], 0.03), (keys[a], keys[b])
+
+
+def test_a_constrained_object_stands_on_its_own_band_and_the_others_may_leave_the_band_only_when_allowed():
+    from locomani.tasks.scene.start import placement_ok
+
+    boxes = {"nor_cal_box": [0.225, 0.16, 0.165]}
+    rng = np.random.default_rng(2)
+    for i in range(10):
+        boxes[f"gso_{i:04d}"] = list(rng.uniform(0.03, 0.12, size=2)) + [0.1]
+    want = {"depth_m": [0.18, 0.31], "yaw_deg": [85, 90]}
+    placed = G.place_objects(boxes, PLATFORM, seed=5, reach_depth_m=0.35, constraints={"nor_cal_box": want})
+    p = placed["nor_cal_box"]
+    assert placement_ok(PLATFORM, p["xy"], p["yaw"], want) and p["in_reach_band"]
+    assert placed != G.place_objects(boxes, PLATFORM, seed=5, reach_depth_m=0.35)
+    with pytest.raises(RuntimeError, match="no spot"):  # the band cannot hold a 0.43 m deep carton and depth 0.18-0.31
+        G.place_objects(boxes, PLATFORM, seed=5, reach_depth_m=0.35, tries=300,
+                        constraints={"nor_cal_box": {"depth_m": [0.1, 0.11], "edge": "+y"}})  # fmt: skip
+    crate = {"crate": [0.33, 0.33, 0.1]}  # a 0.66 m square only stands in the middle of the 1.2 x 0.9 m top
+    with pytest.raises(RuntimeError, match="no spot"):
+        G.place_objects(crate, PLATFORM, seed=0, reach_depth_m=0.35, tries=2000)
+    loose = G.place_objects(crate, PLATFORM, seed=0, reach_depth_m=0.35, tries=2000, band_only=False)
+    assert not loose["crate"]["in_reach_band"]
 
 
 def test_a_platform_too_small_for_the_objects_is_refused():

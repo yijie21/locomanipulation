@@ -6,7 +6,7 @@ settle (scripts/scene_settle.py --write), the drop test (scripts/scene_drop_test
 reads), the lint (scripts/scene_lint.py, which must report 0 errors), the two task families
 (scripts/rsi/gso_family.py) and the MuJoCo offscreen render (EGL: run with MUJOCO_GL=egl).
 
-    MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 $VENV_SIM_PY scripts/gso_preview.py --seeds 5 [--out outputs/gso_preview]
+    MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 $VENV_SIM_PY scripts/gso_preview.py --seeds 10 [--out outputs/gso_preview]
         [--scenes outputs/scene_discovery] [--pool train] [--objects 10 --bimanual 4] [--families-dir ... | --no-families]
 
 An instance already built under --scenes is reused as it is (delete its directory to draw it again). Writes
@@ -127,7 +127,7 @@ def preview(seeds, scenes: Path, out: Path, pool: str, objects: int, bimanual: i
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--seeds", type=int, default=5, help="instances s0 .. s<N-1>")
+    ap.add_argument("--seeds", type=int, default=10, help="instances s0 .. s<N-1>")
     ap.add_argument("--first-seed", type=int, default=0)
     ap.add_argument("--scenes", type=Path, default=ROOT / "outputs/scene_discovery", help="where the instances live")
     ap.add_argument("--out", type=Path, default=ROOT / "outputs/gso_preview")

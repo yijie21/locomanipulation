@@ -57,7 +57,8 @@ def physics_scene(scene_dir) -> Path:
     `robot.xml` (the robot alone, for whole-body IK) and a copy of scene_meta.json. The ADT apartment's full MJCF is
     5.1 GB in memory (9.6 M mesh vertices, nearly all visual) and the IK loaded a second copy: 12 round processes ran
     the container out of memory (15 OOM kills, 2026-10-16). Physics is unchanged; renders replay the trace on the full
-    scene. Rebuilt when the source is newer."""
+    scene. Relative asset files are made absolute (`absolute_asset_files`): the copy lives in another directory.
+    Rebuilt when the source is newer."""
     import xml.etree.ElementTree as ET
 
     src = Path(scene_dir)
@@ -84,6 +85,7 @@ def physics_scene(scene_dir) -> Path:
 
     tree = ET.parse(xml)
     root = tree.getroot()
+    absolute_asset_files(root, src)
     world = root.find("worldbody")
     robot = world.find("body[@name='pelvis']")
     robot_geoms = {id(g) for g in robot.iter("geom")}
@@ -101,6 +103,29 @@ def physics_scene(scene_dir) -> Path:
     meta["physics_of"] = str(src)
     (dst / "scene_meta.json").write_text(json.dumps(meta))
     return dst
+
+
+def absolute_asset_files(root, scene_dir: Path) -> int:
+    """Point every relative asset `file` (mesh, texture, hfield) at `scene_dir`, where the copy of the scene file is
+    written elsewhere: the logistics_room_1030 instances name their scanned meshes `gso/<key>/...` relative to the scene
+    directory (the directory is copied whole), and MuJoCo resolves a relative file against the XML it loads. The
+    compiler's `meshdir` / `texturedir` (relative to the scene directory) are honoured and dropped. Returns the number
+    of files rewritten."""
+    compiler = root.find("compiler")
+    dirs = (
+        {}
+        if compiler is None
+        else {k: compiler.attrib.pop(k) for k in ("meshdir", "texturedir") if k in compiler.attrib}
+    )
+    asset = root.find("asset")
+    n = 0
+    for el in [] if asset is None else asset:
+        f = el.get("file")
+        if f and not Path(f).is_absolute():
+            sub = dirs.get("texturedir" if el.tag == "texture" else "meshdir", "")
+            el.set("file", str((scene_dir / sub / f).resolve()))
+            n += 1
+    return n
 
 
 SEAT_BAND_M = 0.05  # SceneWorld.seat lifts an object whose underside is up to this far into a surface it is over

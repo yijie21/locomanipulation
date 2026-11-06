@@ -1,0 +1,119 @@
+{
+ "name": "gso_bimanual_s5",
+ "about": "logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, 0.20, 60) with both hands on the Google Scanned Objects drawn with seed 5 onto the 0.371 m pallet platform (catalog.json bimanual objects, plus the 1.2 kg open carton); every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0214 = dog, gso_0511 = nestle pure life exotics sparkling water strawberry dragon fruit 8 count 12 fl oz can, gso_0517 = netgear nighthawk x6 ac3200 triband gigabit wireless router, gso_0579 = olive kids dinosaur land pack n snack",
+ "scene": "outputs/scene_discovery/logistics_room_1030_s5",
+ "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
+ "tasks_file": "scripts/rsi/families/gso_s5_tasks.jsonl",
+ "tasks": [
+  "lift_nor_cal_box",
+  "lift_gso_0214",
+  "lift_gso_0511",
+  "lift_gso_0517",
+  "lift_gso_0579"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "hold_s": 2.0,
+ "judge_s": 5.0,
+ "pools": {
+  "diag": {
+   "seed": 450000,
+   "n": 30
+  },
+  "accept": {
+   "seed": 550000,
+   "n": 40
+  },
+  "sealed": {
+   "seed": 650000,
+   "n": 50
+  }
+ },
+ "plan": "scripts/rsi/plans/gso_bimanual.md",
+ "skills_note": "the main skill library as it stands: its two-hand hug pick (skills/bimanual.py, the box line's seed ported on 2026-11-05; sandbox.seed null)",
+ "sandbox": {
+  "seed": null,
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/prep.py",
+   "scripts/rsi/past.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/plans/gso_bimanual.md",
+   "scripts/rsi/families/gso_bimanual_s5.json",
+   "scripts/rsi/families/gso_s5_tasks.jsonl"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "diag_pool",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep",
+   "locomani.tasks.scene.past"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "lint.json",
+   "settle.json",
+   "upright.json",
+   "feasibility",
+   "preview"
+  ]
+ }
+}
