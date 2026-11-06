@@ -425,6 +425,17 @@ class Affordance(unittest.TestCase):
         self.assertEqual(P._ranges([-180.0, -175.0, -5.0, 0.0, 5.0, 170.0, 175.0], 5.0), [[170.0, -175.0], [-5.0, 5.0]])
 
 
+class TwoHandReach(unittest.TestCase):
+    def test_a_both_hands_reach_targets_the_midpoint_and_the_round_builds(self):
+        both = call("reach", 0.0, 0.38, "both", [[0.85, 0.10, 0.78], [0.85, -0.10, 0.78]])
+        np.testing.assert_allclose(P._reach_goal([both]), [0.85, 0.0, 0.78])
+        np.testing.assert_allclose(P._reach_goal([call("reach", 0, 1, "right", [0.85, 0.0, 0.78])]), [0.85, 0.0, 0.78])
+        rec = grasp_round_rec()
+        rec["calls"][0] = both
+        recs = P.build(rec, grasp_round_arrays(), META_T, TASK)
+        self.assertEqual(recs[1]["entities"]["region:pregrasp_target"]["p"], [0.85, 0.0, 0.78])
+
+
 class OldRounds(unittest.TestCase):
     def test_without_a_call_log_the_kind_comes_from_the_trace_primitives(self):
         arr = grasp_round_arrays()

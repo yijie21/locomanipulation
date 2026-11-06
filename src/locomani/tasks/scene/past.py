@@ -420,10 +420,13 @@ def _goal_targets(goal: list[str]) -> tuple[str | None, str | None]:
 
 
 def _reach_goal(calls: list[dict]) -> np.ndarray | None:
+    """The first reach's jaw target; a two-hand reach's (a left, right pair) is their midpoint, the hugged object's
+    side of the corridor (one point raised ValueError in scope_of until 2026-11-06: every hug round lost its records)."""
     for c in calls:
         args = c.get("args") or []
         if c.get("name") == "reach" and len(args) > 1 and args[1] is not None:
-            return np.asarray(args[1][:3], float)
+            goal = np.asarray(args[1], float)
+            return goal[:, :3].mean(axis=0) if goal.ndim == 2 else goal[:3]
     return None
 
 
