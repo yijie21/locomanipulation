@@ -90,7 +90,11 @@ def run_episode(world: SceneWorld, task: Task, start: Start, plan, *, hold_s: fl
     TODO 38.19, user 2026-10-24): the goal must hold at every JUDGE_DT check over the round's last `judge_s` s -- the
     end of the plan included, so a skill may still stand up or lift in it -- not only at the end."""
     m, wall = world.motor, time.time()
-    m.track = {world.meta["objects"][k]["body"]: world.free[k] for k in task.objects}
+    # the trace records every object the start places, the task objects first (the report tools take the first
+    # obj_ array as the task object's): the PAST records read the neighbours' poses from it, and since
+    # `shuffle_others` (2026-11-06) the scene file's spots are not where the others stand
+    tracked = dict.fromkeys([*task.objects, *start.placements])
+    m.track = {world.meta["objects"][k]["body"]: world.free[k] for k in tracked}
     m.reset(start.robot_xy, start.robot_yaw)
     for k, (pos, quat) in start.placements.items():
         m.place(world.meta["objects"][k]["body"], pos, quat)

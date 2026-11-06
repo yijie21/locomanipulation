@@ -221,6 +221,16 @@ class LoopProcedure(unittest.TestCase):
         lib = (HERE / "experience" / "INDEX.md").exists()
         self.assertEqual(bool(self.lp.prompt_vars()["LIBRARY"]), lib)
 
+    def test_the_reviewer_reads_its_familys_scene_file(self):
+        from unittest import mock
+
+        self.lp.configure("gso_all_s3")
+        text = self.lp.fill((HERE / "prompts" / "reviewer.md").read_text(), **self.lp.prompt_vars())
+        self.assertIn("outputs/scene_discovery/logistics_room_1030_s3/scene_meta.json", text)
+        self.assertNotIn("adt_apartment_mars", text)
+        with mock.patch.object(self.lp, "family_spec", return_value={}):  # a family without `scene`: the ADT file
+            self.assertEqual(self.lp.prompt_vars()["SCENE_FILE"], self.lp.SCENE_FILE)
+
 
 class RunFlags(unittest.TestCase):
     """`loop.py run` takes every TODO 32 switch on its command line (the first --scoped-review never reached the

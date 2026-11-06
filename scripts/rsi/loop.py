@@ -374,6 +374,7 @@ def family_spec() -> dict:
     return json.loads(p.read_text()) if p.exists() else {}
 
 
+SCENE_FILE = REPO / "outputs" / "scene_discovery" / "adt_apartment_mars" / "scene_meta.json"  # a family without `scene`
 SCENE_NOTE = (
     "in a simulated apartment"  # the prompts' opening line; a family on another scene sets `scene_note` (TODO 38.10)
 )
@@ -381,14 +382,16 @@ SCENE_NOTE = (
 
 def prompt_vars() -> dict:
     """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, the scene
-    the prompts' first line names (`scene_note`, TODO 38.10), and the pool sizes. A family without them gets the text
-    the prompts had before."""
+    the prompts' first line names (`scene_note`, TODO 38.10), its scene file (`scene`; the Reviewer's prompt named the
+    ADT apartment's to every family until 2026-11-06), and the pool sizes. A family without them gets the text the
+    prompts had before."""
     spec = family_spec()
     pools = spec.get("pools") or {}
     return dict(
         PLAN=PLAN,
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         SCENE_NOTE=spec.get("scene_note") or SCENE_NOTE,
+        SCENE_FILE=REPO / spec["scene"] / "scene_meta.json" if spec.get("scene") else SCENE_FILE,
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",

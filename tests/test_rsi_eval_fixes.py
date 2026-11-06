@@ -243,6 +243,19 @@ class EpisodeLimitTest(unittest.TestCase):
         self.assertTrue(res.ok)
         self.assertEqual(res.why, "")
 
+    def test_trace_tracks_every_placed_object_task_objects_first(self):
+        from locomani.backends.scalebfm.motor import Outcome
+        from locomani.tasks.scene.episode import run_episode
+
+        world, task, start = self._world()
+        world.meta = {"objects": {k: {"body": f"{k}_body"} for k in ("a", "box", "x", "y")}}
+        world.free = {k: i for i, k in enumerate(world.meta["objects"])}
+        start.placements = {k: ((0, 0, 0), (1, 0, 0, 0)) for k in ("x", "box", "a", "y")}
+        task.objects = ["a", "box"]
+        run_episode(world, task, start, lambda ctx: Outcome(True), limit_s=5.0)
+        # the neighbours a shuffled start moved: the PAST records read them from the trace, not the scene file
+        self.assertEqual(list(world.motor.track), ["a_body", "box_body", "x_body", "y_body"])
+
 
 class WritebackEntryTest(unittest.TestCase):
     SRC = (
