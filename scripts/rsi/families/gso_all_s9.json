@@ -1,0 +1,139 @@
+{
+ "name": "gso_all_s9",
+ "about": "logistics_room_1030, the whole instance in one family (user 2026-11-06): every task of gso_grasp, gso_bimanual, gso_pack and gso_pack_bimanual_s9 (6 gso_grasp, 5 gso_bimanual, 6 gso_pack, 4 gso_pack_bimanual) on the Google Scanned Objects drawn with seed 9 onto the 0.371 m pallet platform, each with its own family's goal, placement and judging (a one-hand pick at the end of the plan, the rest over the last 5 s), so one iteration evolves all the skills together; objects: gso_0118 = canon 225226 ink cartridges blackcolor cyan magenta yellow 6 count, gso_0270 = epson ultrachrome t0543 ink cartridge magenta 1pack, gso_0376 = just for men shampooin haircolor jet black 60, gso_0551 = office depot canon pg 240xl ink cartridge black 5206b001, gso_0687 = qabsorb coq10, gso_0932 = tune belt sport armband for samsung galaxy s3, nor_cal_box = open cardboard box, gso_0609 = paul frank dot lunch box, gso_0760 = retail leadership summit, gso_0761 = retail leadership summit, gso_0826 = smith hawken woven baskettray organizer with 3 compartments 95 x 9 x 13",
+ "scene": "outputs/scene_discovery/logistics_room_1030_s9",
+ "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
+ "tasks_file": "scripts/rsi/families/gso_s9_tasks.jsonl",
+ "tasks": [
+  "pick_gso_0118",
+  "pick_gso_0270",
+  "pick_gso_0376",
+  "pick_gso_0551",
+  "pick_gso_0687",
+  "pick_gso_0932",
+  "lift_nor_cal_box",
+  "lift_gso_0609",
+  "lift_gso_0760",
+  "lift_gso_0761",
+  "lift_gso_0826",
+  "pack_gso_0118",
+  "pack_gso_0270",
+  "pack_gso_0376",
+  "pack_gso_0551",
+  "pack_gso_0687",
+  "pack_gso_0932",
+  "pack_gso_0609",
+  "pack_gso_0760",
+  "pack_gso_0761",
+  "pack_gso_0826"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "stop_rate": 0.8,
+ "max_wall_h": 5.0,
+ "max_run_iters": 5,
+ "pools": {
+  "diag": {
+   "seed": 480000,
+   "n": 42
+  },
+  "accept": {
+   "seed": 580000,
+   "n": 42
+  },
+  "sealed": {
+   "seed": 680000,
+   "n": 105
+  }
+ },
+ "plan": "scripts/rsi/plans/gso_all.md",
+ "skills_note": "the main skill library as it stands: the one-hand pick (skills/pick.py), the two-hand hug pick (skills/bimanual.py) and the pack chain (skills/pack.py) together; sandbox.seed null",
+ "sandbox": {
+  "seed": null,
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/prep.py",
+   "scripts/rsi/past.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/plans/gso_grasp.md",
+   "scripts/rsi/plans/gso_bimanual.md",
+   "scripts/rsi/plans/gso_pack.md",
+   "scripts/rsi/plans/gso_all.md",
+   "scripts/rsi/families/gso_all_s9.json",
+   "scripts/rsi/families/gso_s9_tasks.jsonl"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "diag_pool",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep",
+   "locomani.tasks.scene.past"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "lint.json",
+   "settle.json",
+   "upright.json",
+   "feasibility",
+   "preview"
+  ]
+ }
+}

@@ -16,11 +16,11 @@ The Engineer may change only the sandbox's skills package (src/locomani/tasks/sc
 voids the call and is restored. On a rejection the package goes back to the incumbent's snapshot.
 
 Stops (D8 and the warehouse budgets): the incumbent's acceptance successes >= STOP_RATE of the pool, this run's gate
-calls >= 12, wall clock >= MAX_WALL_H, a Manager `stop` (model cost has no cap since the user lifted it on 2026-10-19;
-RSI_COST_CAP_USD sets one), MAX_VOID_STREAK iterations in a row voided by the audit (an abnormal stop); and
-(D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
-least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
-tasks (`accept_pool`, rule 26).
+calls >= 12, wall clock >= MAX_WALL_H, this run's iterations >= MAX_RUN_ITERS when a family sets one, a Manager `stop`
+(model cost has no cap since the user lifted it on 2026-10-19; RSI_COST_CAP_USD sets one), MAX_VOID_STREAK iterations
+in a row voided by the audit (an abnormal stop); and (D13.4) the incumbent wins >= STOP_RATE of the acceptance starts
+that no task-wide park covers, when those are at least UNPARKED_MIN of the pool. Below that share the gate judges on
+an acceptance pool drawn afresh from the unparked tasks (`accept_pool`, rule 26).
 
 The candidate pool (TODO 33.8, D7, user 2026-10-22): the gate (rule 2: b - c >= 3 and c <= b / 3, no p) leaves the
 best POOL_KEEP rejected candidates with b > c in loop/candidates_pool.json, cleared when the incumbent changes. The
@@ -96,6 +96,9 @@ COST_CAP = float(os.environ["RSI_COST_CAP_USD"]) if "RSI_COST_CAP_USD" in os.env
 WALL_DEFAULT_H = 6.0
 MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", WALL_DEFAULT_H))  # cmd_run resolves it again (resolve_settings)
 MAX_GATE_CALLS = 12
+# iterations one run takes across its resumes; None = no cap (`--max-iters` only bounds one invocation). A family file
+# may set `max_run_iters`, `max_wall_h` and `stop_rate` (logistics_room_1030: 5, 5 h, 80 %; user 2026-11-06)
+MAX_RUN_ITERS = None
 MAX_VOID_STREAK = 2  # TODO 36.7 (user 2026-10-22): voided iterations in a row that stop the loop
 HISTORY_FULL = 2  # TODO 36.7: the Manager reads the last 2 iterations' ledger rows in full, older ones one line each
 MAX_HYPOTHESES = 4
@@ -482,6 +485,13 @@ def run_gates(es: list[dict], meta: dict | None) -> list[dict]:
     return [e for e in es if e.get("step") == "gate" and not e.get("void") and str(e.get("t", "")) >= t0]
 
 
+def run_iters(es: list[dict], meta: dict | None) -> set[int]:
+    """The iterations THIS run has taken (voided ones too): the `iter` numbers of ledger rows from meta['started'] on,
+    like run_gates."""
+    t0 = (meta or {}).get("started") or ""
+    return {e["iter"] for e in es if isinstance(e.get("iter"), int) and str(e.get("t", "")) >= t0}
+
+
 def voided_in_a_row(es: list[dict]) -> list[int]:
     """The latest iterations, oldest first, that the audit voided (`void_iter` rows), counted back one by one from the
     newest iteration in the ledger until one that was not voided or has no rows. An iteration a re-probe (`void`) or
@@ -522,6 +532,9 @@ def stop_reason(meta: dict) -> str | None:
         return f"gate calls {len(gates)} >= {MAX_GATE_CALLS}"
     if wall_h(meta) >= MAX_WALL_H:
         return f"wall clock >= {MAX_WALL_H} h"
+    iters = run_iters(es, meta)
+    if MAX_RUN_ITERS is not None and len(iters) >= MAX_RUN_ITERS:
+        return f"iterations {len(iters)} >= {MAX_RUN_ITERS}"
     cost = run_cost(es, meta)
     if COST_CAP is not None and cost >= COST_CAP:
         return f"model cost {cost:.0f} >= {COST_CAP:.0f} USD"
@@ -2731,12 +2744,16 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
         return cli if cli is not None else (meta[key] if resuming and key in meta else default)
 
     env_wall = os.environ.get("RSI_MAX_WALL_H")
-    # a family file may set its own `stop_rate` (grasp_atomic_past 0.85, user 2026-11-01); the command line still wins
-    fam_stop = (family_spec().get("stop_rate") if FAMILY else None) or STOP_RATE_DEFAULT
+    # a family file may set its own `stop_rate` (grasp_atomic_past 0.85, user 2026-11-01), `max_wall_h` and
+    # `max_run_iters` (logistics_room_1030, user 2026-11-06); the command line and RSI_MAX_WALL_H still win
+    spec = family_spec() if FAMILY else {}
+    fam_stop = spec.get("stop_rate") or STOP_RATE_DEFAULT
+    fam_wall, fam_iters = spec.get("max_wall_h") or WALL_DEFAULT_H, spec.get("max_run_iters")
     return dict(
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
-        max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", WALL_DEFAULT_H)),
+        max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", fam_wall)),
+        max_run_iters=pick(None, "max_run_iters", fam_iters),
         stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", fam_stop)),
         engineer_late_min=float(
             pick(getattr(a, "engineer_late_min", None), "engineer_late_min", ENGINEER_LATE_MIN_DEFAULT)
@@ -2801,7 +2818,7 @@ def cmd_run(a) -> int:
 
 
 def _run(a, efforts: dict) -> int:
-    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT
+    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT, MAX_RUN_ITERS
     global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
@@ -2812,6 +2829,7 @@ def _run(a, efforts: dict) -> int:
     STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT = cfg["stop_rate"], cfg["engineer_late_min"], cfg["second_shot"]
     DIAG_MIN_FAILS, DIAG_TARGET_FAILS = cfg["diag_min_fails"], cfg["diag_target_fails"]
     DIAG_DRAW_MAX = cfg["diag_draw_max"]
+    MAX_RUN_ITERS = None if cfg["max_run_iters"] is None else int(cfg["max_run_iters"])
     if not cfg["stop_rate"] > 0:
         raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
     changed = settings_changes(cfg, meta, resuming)

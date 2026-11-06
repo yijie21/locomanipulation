@@ -34,7 +34,7 @@ META = {
     },
 }  # fmt: skip
 PACK_GOAL = ["held(nor_cal_box)", "lifted(nor_cal_box, 0.20, 60)"]
-NAMES = ("gso_grasp_s0", "gso_bimanual_s0", "gso_pack_s0", "gso_pack_bimanual_s0")
+NAMES = ("gso_grasp_s0", "gso_bimanual_s0", "gso_pack_s0", "gso_pack_bimanual_s0")  # gso_all_s0 is their union
 S0 = ROOT / "outputs/scene_discovery/logistics_room_1030_s0"
 
 
@@ -46,8 +46,11 @@ def test_one_row_per_object_of_the_kind_with_the_goal_prompts_and_the_reach_band
     assert single[0]["goal"] == ["held(gso_0001)", "lifted(gso_0001, 0.10, 60)"]
     assert both[1]["goal"] == ["held(gso_0002)", "lifted(gso_0002, 0.20, 60)"]
     assert "red mug" in single[0]["prompts"][0] and "both hands" in both[1]["prompts"][0]
-    for r in single + both:
+    for r in single:
         assert r["room"] == "logistics_room" and r["placement"] == {"depth_m": [0.0, 0.35]}
+    for r in both:  # a hugged object keeps its hands' corridors free (user 2026-11-06)
+        assert r["room"] == "logistics_room" and r["placement"] == {"depth_m": [0.0, 0.35],
+                                                                    "hands_clear_m": GF.HANDS_CLEAR_M}  # fmt: skip
 
 
 def test_a_pack_row_per_object_but_the_carton_puts_the_carton_on_its_band_and_a_two_hand_object_along_its_edge():
@@ -57,16 +60,17 @@ def test_a_pack_row_per_object_but_the_carton_puts_the_carton_on_its_band_and_a_
     assert pack[0]["goal"] == ["in(gso_0001, nor_cal_box)", *PACK_GOAL]
     assert both[0]["goal"] == ["in(gso_0002, nor_cal_box)", *PACK_GOAL]
     assert "into the cardboard box" in pack[0]["prompts"][0] and "both hands" in both[0]["prompts"][0]
-    carton = {"depth_m": [0.18, 0.31], "yaw_deg": [85, 90]}
+    carton = {"depth_m": [0.18, 0.31], "yaw_deg": [85, 90], "hands_clear_m": GF.HANDS_CLEAR_M}
     assert pack[0]["placement"] == {"depth_m": [0.0, 0.35], "objects": {"nor_cal_box": carton}}
     assert both[0]["placement"] == {"depth_m": [0.0, 0.35], "objects": {
-        "nor_cal_box": carton, "gso_0002": {"depth_m": [0.0, 0.35], "yaw_deg": [0, 5]}}}  # fmt: skip
+        "nor_cal_box": carton, "gso_0002": {"depth_m": [0.0, 0.35], "yaw_deg": [0, 5], "hands_clear_m": GF.HANDS_CLEAR_M}}}  # fmt: skip
     meta = json.loads(json.dumps(META))
     meta["objects"]["gso_0002"]["box"]["half_extent"] = [0.17, 0.1, 0.06]  # the wide side is x: x along the edge
     del meta["gso"]["carton_placement"]  # an instance built before the band was recorded: the same band
     row = GF.rows_for(meta, "pack_bimanual", 0.35)[0]
-    assert row["placement"]["objects"] == {"nor_cal_box": GF.CARTON_BAND, "gso_0002": {"depth_m": [0.0, 0.35],
-                                                                                         "yaw_deg": [85, 90]}}  # fmt: skip
+    hug = {"hands_clear_m": GF.HANDS_CLEAR_M}
+    assert row["placement"]["objects"] == {"nor_cal_box": {**GF.CARTON_BAND, **hug},
+                                           "gso_0002": {"depth_m": [0.0, 0.35], "yaw_deg": [85, 90], **hug}}  # fmt: skip
     sys.path.insert(0, str(ROOT / "scripts"))
     import prepare_logistics_scene as P
 
@@ -78,9 +82,11 @@ def test_the_writer_puts_both_families_and_the_tasks_file_in_the_given_directory
     scene.mkdir()
     (scene / "scene_meta.json").write_text(json.dumps(META))
     out = GF.write(scene, tmp_path / "families")
-    assert out == {"gso_grasp_s7": 1, "gso_bimanual_s7": 2, "gso_pack_s7": 1, "gso_pack_bimanual_s7": 1}
-    fams = {k: json.loads((tmp_path / f"families/{k}.json").read_text()) for k in out}
-    grasp, both, pack, pack2 = (fams[k] for k in out)
+    assert out == {"gso_grasp_s7": 1, "gso_bimanual_s7": 2, "gso_pack_s7": 1, "gso_pack_bimanual_s7": 1,
+                   "gso_all_s7": 5}  # fmt: skip
+    every = json.loads((tmp_path / "families/gso_all_s7.json").read_text())
+    fams = {k: json.loads((tmp_path / f"families/{k}.json").read_text()) for k in out if k != "gso_all_s7"}
+    grasp, both, pack, pack2 = fams.values()
     rows = [json.loads(x) for x in (tmp_path / "families/gso_s7_tasks.jsonl").read_text().splitlines()]
     assert [r["id"] for r in rows] == ["pick_gso_0001", "lift_nor_cal_box", "lift_gso_0002", "pack_gso_0001",
                                        "pack_gso_0002"]  # fmt: skip
@@ -102,6 +108,30 @@ def test_the_writer_puts_both_families_and_the_tasks_file_in_the_given_directory
     assert all(f["sandbox"]["seed"] is None for f in (both, pack, pack2))  # the main library as it stands
     assert pack["plan"] == pack2["plan"] == "scripts/rsi/plans/gso_pack.md"
     assert "fits the carton" in pack["about"] and "wide side along it" in pack2["about"]
+    # gso_all (user 2026-11-06): every row of the four, one rotation, 2 / 2 / 3 starts per task, timing per row
+    assert every["tasks"] == [r["id"] for r in rows] and every["tasks_file"] == grasp["tasks_file"]
+    assert {k: p["n"] for k, p in every["pools"].items()} == {"diag": 10, "accept": 10, "sealed": 25}
+    assert not set(p["seed"] for p in every["pools"].values()) & set(seeds)
+    assert "hold_s" not in every and every["sandbox"]["seed"] is None and (ROOT / every["plan"]).is_file()
+    assert all(p in every["sandbox"]["keep"] for p in set(GF.PLANS.values()))
+    assert (every["stop_rate"], every["max_wall_h"], every["max_run_iters"]) == (0.8, 5.0, 5)
+    by_id = {r["id"]: r for r in rows}
+    assert "hold_s" not in by_id["pick_gso_0001"]
+    assert all((by_id[t]["hold_s"], by_id[t]["judge_s"]) == (2.0, 5.0) for t in every["tasks"][1:])
+    fam = dict(every, rows=by_id)
+    assert F.timing(fam, "pick_gso_0001") == {} and F.timing(fam, "pack_gso_0002") == GF.TIMING
+    assert F.timing(dict(grasp, rows=by_id, judge_s=3.0), "pick_gso_0001") == {"judge_s": 3.0}  # the family's
+
+
+def test_every_tracked_gso_all_family_is_the_four_families_of_its_instance():
+    for seed in range(10):
+        fams = [json.loads((ROOT / f"scripts/rsi/families/{n.replace('_s0', f'_s{seed}')}.json").read_text())
+                for n in NAMES]  # fmt: skip
+        every = json.loads((ROOT / f"scripts/rsi/families/gso_all_s{seed}.json").read_text())
+        assert every["tasks"] == [t for f in fams for t in f["tasks"]]
+        assert {k: p["n"] for k, p in every["pools"].items()} == {
+            k: n * len(every["tasks"]) for k, n in GF.ALL_PER_TASK.items()
+        }
 
 
 def test_a_scene_without_the_gso_block_or_a_kind_is_refused(tmp_path):

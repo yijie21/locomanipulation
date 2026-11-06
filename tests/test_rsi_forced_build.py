@@ -256,6 +256,39 @@ class StopRate(unittest.TestCase):
             a.stop_rate = 0.85
             self.assertEqual(rs(a, {"stop_rate": 0.9}, True)["stop_rate"], 0.85)
 
+    def test_a_family_sets_rate_wall_clock_and_iterations_below_cli_env_and_resume(self):
+        # logistics_room_1030 (user 2026-11-06): 80 %, 5 h, 5 iterations from the family file
+        spec = dict(stop_rate=0.8, max_wall_h=5.0, max_run_iters=5)
+        with mock.patch.dict(os.environ, {}, clear=False), mock.patch.object(self.lp, "family_spec", lambda: spec):
+            os.environ.pop("RSI_MAX_WALL_H", None)
+            self.lp.FAMILY = "gso_pack_s0"
+            rs = self.lp.resolve_settings
+            cfg = rs(self.args(), {}, False)
+            self.assertEqual((cfg["stop_rate"], cfg["max_wall_h"], cfg["max_run_iters"]), (0.8, 5.0, 5))
+            cfg = rs(self.args(), dict(started="x", max_wall_h=6.0, max_run_iters=8), True)
+            self.assertEqual((cfg["max_wall_h"], cfg["max_run_iters"]), (6.0, 8))
+            os.environ["RSI_MAX_WALL_H"] = "2"
+            self.assertEqual(rs(self.args(), {}, False)["max_wall_h"], 2.0)
+
+    def test_the_run_stops_after_its_iteration_cap_counting_only_its_own_rows(self):
+        lp = self.lp
+        rows = [dict(t="2026-11-01", step="manager", iter=0)]  # a replay's copied row, before this run started
+        rows += [dict(t="2026-11-06", step=s, iter=n) for n in range(4) for s in ("reviewer", "gate")]
+        meta = dict(started="2026-11-06", started_s=lp.time.time())
+        with (
+            mock.patch.object(lp, "entries", lambda: rows),
+            mock.patch.object(lp, "incumbent_ok_here", lambda es: None),
+            mock.patch.object(lp, "accept_pool", lambda: Path("/nonexistent")),
+            mock.patch.object(lp.B, "pool_labels", lambda p: ["a"] * 10),
+            mock.patch.object(lp, "jload", lambda *a, **k: None),
+            mock.patch.object(lp, "MAX_RUN_ITERS", 5),
+        ):
+            self.assertIsNone(lp.stop_reason(meta))  # 4 of 5 (the copied iteration 0 row is not this run's)
+            rows.append(dict(t="2026-11-06", step="reviewer", iter=4))
+            self.assertEqual(lp.stop_reason(meta), "iterations 5 >= 5")
+            with mock.patch.object(lp, "MAX_RUN_ITERS", None):
+                self.assertIsNone(lp.stop_reason(meta))
+
     def test_a_resume_records_a_changed_rate_even_where_meta_has_none(self):
         ch = self.lp.settings_changes
         cfg = dict(candidates=3, scoped_review=False, max_wall_h=5.0, stop_rate=0.9)

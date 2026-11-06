@@ -9,7 +9,7 @@ in the loop's output tree.
 Loads the family (scripts/rsi/family.py), builds the world as a round does (scene_round.make_world: the family's motor
 block, the ScaleBFM controller), draws the task's start as its pools do (sample_start with the family's spawn and the
 row's placement; a seed the surface cannot place is skipped, up to --tries), runs `plan_for(task)` of the library in
-src/ with the family's hold_s / judge_s (episode.run_episode) and writes <out>/<family>/<task>_s<seed>.json (ok, why,
+src/ with the task's hold_s / judge_s (family.timing, episode.run_episode) and writes <out>/<family>/<task>_s<seed>.json (ok, why,
 the step log, the judging window) and .npz (the trace). Prints one line per logged step and the verdict.
 """
 
@@ -72,8 +72,9 @@ def main(argv=None) -> int:
           f"{ {k: np.round(p[0][:2], 2).tolist() for k, (p) in start.placements.items()} } ({time.time() - t0:.0f} s to load)",
           flush=True)  # fmt: skip
     kw = {} if a.limit_s is None else dict(limit_s=a.limit_s)
-    res, arrays = run_episode(world, task, start, plan, hold_s=float(fam.get("hold_s", HOLD_S)),
-                              judge_s=fam.get("judge_s"), **kw)  # fmt: skip
+    timing = F.timing(fam, task_id)
+    res, arrays = run_episode(world, task, start, plan, hold_s=float(timing.get("hold_s", HOLD_S)),
+                              judge_s=timing.get("judge_s"), **kw)  # fmt: skip
     ex = res.execution
     for s in ex["steps"]:
         extra = {k: v for k, v in s.items() if k not in ("step", "ok", "why", "t0", "t1")}

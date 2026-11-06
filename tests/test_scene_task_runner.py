@@ -95,6 +95,68 @@ class Placement(unittest.TestCase):
             S.sample_start(m, occ, nav, ["Can", "Box"], np.random.default_rng(0), seed=0,
                            placement={"objects": {"Box": {"depth_m": [0.9, 1.0], "edge": "+x"}}})  # fmt: skip
 
+    def test_two_hand_corridors_lie_beside_the_squeezed_walls_and_in_front_from_the_nearest_edge(self):
+        """`hand_corridors` (user 2026-11-06): a box 0.15 m in from the -y edge, its y axis the one closest to the
+        inward normal: a strip `clear` wide beside each x wall from the edge to the far face, and one in front."""
+        surf = meta()["surfaces"]["T"]
+        fp = (np.array([0.0, -0.15]), np.array([0.05, 0.08]), 0.0)
+        left, right, front = S.hand_corridors(surf, fp, 0.10)
+        for (c, h, y), x in ((left, -0.10), (right, 0.10)):
+            np.testing.assert_allclose(c, [x, -0.185], atol=1e-9)
+            np.testing.assert_allclose(h, [0.115, 0.05], atol=1e-9)
+            self.assertAlmostEqual(y, np.pi / 2)
+        np.testing.assert_allclose(front[0], [0.0, -0.265], atol=1e-9)
+        np.testing.assert_allclose(front[1], [0.035, 0.15], atol=1e-9)
+        # turned a quarter, the box's x axis points at the edge: the hands squeeze its y walls instead
+        turned = S.hand_corridors(surf, (fp[0], fp[1], np.pi / 2), 0.10)
+        np.testing.assert_allclose(turned[0][0], [-(0.08 + 0.05), -0.15 + (0.05 - 0.15) / 2], atol=1e-9)
+        # named edge: from +x, 0.4 m away
+        c, h, _ = S.hand_corridors(surf, fp, 0.10, "+x")[0]
+        self.assertAlmostEqual(h[0], (0.4 + 0.05) / 2)
+
+    def test_hands_clear_keeps_the_hug_corridors_free_of_what_stays_and_of_later_task_objects(self):
+        """`hands_clear_m`: the corridors of the hugged object miss every resting object, task objects placed after it
+        keep out of them, and a task object placed before it does not count (it is moved by the time of the hug)."""
+        m = meta()
+        del m["objects"]["Tray"]
+        m["surfaces"]["T"].update(half_extent=[0.6, 0.45], flat_half_extent=[0.6, 0.45], approach_edges=None)
+        m["objects"]["Wall"] = dict(surface="T", free=True, init_pos=[0.0, -0.32, 0.75], init_quat=yaw_quat(0.0),
+                                    box=dict(half_extent=[0.05, 0.05, 0.05]))  # fmt: skip
+        m["objects"]["Big"] = dict(surface="T", free=True, init_pos=[0.3, 0.2, 0.8], init_quat=yaw_quat(0.0),
+                                   box=dict(half_extent=[0.1, 0.08, 0.1]))  # fmt: skip
+        occ, nav = build(m)
+        surf = m["surfaces"]["T"]
+
+        def fp(st, k):
+            return S.footprint(m["objects"][k], st.placements[k][0], st.placements[k][1])
+
+        def wall():
+            o = m["objects"]["Wall"]
+            return S.footprint(o, o["init_pos"], o["init_quat"])
+
+        band = {"depth_m": [0.0, 0.3]}
+        hit_without = 0
+        for seed in range(30):
+            st = S.sample_start(m, occ, nav, ["Big"], np.random.default_rng(seed), seed=seed, placement=band)
+            hit_without += any(S.overlap(c, wall(), 0.0) for c in S.hand_corridors(surf, fp(st, "Big"), 0.15))
+            st = S.sample_start(m, occ, nav, ["Big"], np.random.default_rng(seed), seed=seed,
+                                placement={**band, "hands_clear_m": 0.15})  # fmt: skip
+            self.assertFalse(any(S.overlap(c, wall(), 0.0) for c in S.hand_corridors(surf, fp(st, "Big"), 0.15)))
+            # Big first: Can, placed after it, keeps out of its corridors
+            st = S.sample_start(m, occ, nav, ["Big", "Can"], np.random.default_rng(seed), seed=seed,
+                                placement={**band, "objects": {"Big": {**band, "hands_clear_m": 0.15}}})  # fmt: skip
+            self.assertFalse(any(S.overlap(fp(st, "Can"), c, 0.0) for c in S.hand_corridors(surf, fp(st, "Big"), 0.15)))
+        self.assertGreater(hit_without, 0)  # the condition removes starts that happen without it
+        # Can first, then Big: Can may stay in Big's corridors (it is gone when Big is hugged), the wall may not
+        in_corridor = 0
+        for seed in range(40):
+            st = S.sample_start(m, occ, nav, ["Can", "Big"], np.random.default_rng(seed), seed=seed,
+                                placement={**band, "objects": {"Big": {**band, "hands_clear_m": 0.15}}})  # fmt: skip
+            corridors = S.hand_corridors(surf, fp(st, "Big"), 0.15)
+            self.assertFalse(any(S.overlap(c, wall(), 0.0) for c in corridors))
+            in_corridor += any(S.overlap(fp(st, "Can"), c, 0.0) for c in corridors)
+        self.assertGreater(in_corridor, 0)
+
     def test_overlap_uses_orientation(self):
         long = (np.zeros(2), np.array([0.3, 0.02]), 0.0)
         # a square 0.1 m above the long thin box's centre: clear when it lies along x, hit when it is turned upright

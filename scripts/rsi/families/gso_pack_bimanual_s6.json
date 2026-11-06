@@ -1,6 +1,6 @@
 {
  "name": "gso_pack_bimanual_s6",
- "about": "logistics_room_1030 pack line (user 2026-11-05): in(X, nor_cal_box), then held(nor_cal_box) and lifted(nor_cal_box, 0.20, 60) with both hands -- X, a two-hand Google Scanned Object of the instance drawn with seed 6 (every drawn object fits the carton's 0.43 x 0.30 x 0.33 m inside), is put into the 1.2 kg open carton on the 0.371 m pallet platform, which is then lifted; each episode starts with the carton empty, X within 0.35 m of a platform edge with its wide side along it, the carton 0.18-0.31 m in from an edge with its long side along it, the robot anywhere in the room it can walk from; objects: gso_0539 = object remvbdjstub, gso_0584 = olive kids mermaids pack n snack backpack, gso_0593 = ortho forward facing, gso_0671 = poppin file sorter blue",
+ "about": "logistics_room_1030 pack line (user 2026-11-05): in(X, nor_cal_box), then held(nor_cal_box) and lifted(nor_cal_box, 0.20, 60) with both hands -- X, a two-hand Google Scanned Object of the instance drawn with seed 6 (every drawn object fits the carton's 0.43 x 0.30 x 0.33 m inside), is put into the 1.2 kg open carton on the 0.371 m pallet platform, which is then lifted; each episode starts with the carton empty, X within 0.35 m of a platform edge with its wide side along it, the carton 0.18-0.31 m in from an edge with its long side along it, 0.18 m free beside the walls each hug squeezes and in front, the robot anywhere in the room it can walk from; objects: gso_0539 = object remvbdjstub, gso_0584 = olive kids mermaids pack n snack backpack, gso_0593 = ortho forward facing, gso_0671 = poppin file sorter blue",
  "scene": "outputs/scene_discovery/logistics_room_1030_s6",
  "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)",
  "tasks_file": "scripts/rsi/families/gso_s6_tasks.jsonl",
@@ -19,6 +19,9 @@
  },
  "hold_s": 2.0,
  "judge_s": 5.0,
+ "stop_rate": 0.8,
+ "max_wall_h": 5.0,
+ "max_run_iters": 5,
  "pools": {
   "diag": {
    "seed": 470000,

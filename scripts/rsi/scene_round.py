@@ -119,8 +119,9 @@ def run_round(
     elif plan is None:
         rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
     else:
-        # a family's success timing (TODO 38.19): the end-of-plan hold and the judging window
-        hold_s, judge_s = float(fam.get("hold_s", HOLD_S)), fam.get("judge_s")
+        # the task's success timing (TODO 38.19): the end-of-plan hold and the judging window (family.timing)
+        timing = F.timing(fam, task.id)
+        hold_s, judge_s = float(timing.get("hold_s", HOLD_S)), timing.get("judge_s")
         res, arrays = run_episode(world, task, start, plan, hold_s=hold_s, judge_s=judge_s)
         ex = res.execution
         # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start

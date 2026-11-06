@@ -77,7 +77,14 @@ def overlap(a, b, gap: float) -> bool:
 
 
 NORMALS = {"-x": (-1.0, 0.0), "+x": (1.0, 0.0), "-y": (0.0, -1.0), "+y": (0.0, 1.0)}  # a surface's edges, its frame
-PLACEMENT_KEYS = ("depth_m", "yaw_deg", "blocker", "edge", "objects")  # the `placement` option (TODO 33.5, D5)
+PLACEMENT_KEYS = (
+    "depth_m",
+    "yaw_deg",
+    "blocker",
+    "edge",
+    "objects",
+    "hands_clear_m",
+)  # the `placement` option (TODO 33.5, D5)
 BLOCKER_GAP_M = 0.03
 BLOCKER_SLIDES_M = (0.0, 0.03, -0.03, 0.06, -0.06)  # a blocker slid along the edge still sits in the hand's corridor
 
@@ -112,11 +119,41 @@ def placement_ok(surf: dict, xy, yaw: float, want: dict) -> bool:
     return True
 
 
-def place_on_surface(meta: dict, key: str, rng, taken: list, placement: dict | None = None):
+def hand_corridors(surf: dict, fp, clear: float, edge: str | None = None) -> list[tuple]:
+    """Where two hands reach a box from an edge of its surface (user 2026-11-06, the hug probe: a neighbour beside the
+    box stops the hands 15 cm short): `edge` when named, else the nearest approach edge; the approach `v` is the box
+    axis closest to that edge's inward normal (as the hug's own frame is chosen), `u` across it. Three footprints in
+    the shape of `footprint()`: a strip `clear` wide beside each side wall the hands squeeze, from the edge to the box's
+    far side, and the strip between the box's near face and the edge, as wide as the box plus both side strips."""
+    c, half, yaw = fp
+    depths = edge_depths(surf, c)
+    name = edge if edge else min(depths, key=depths.get)
+    if name not in depths:
+        depths[name] = edge_depths(dict(surf, approach_edges=[name]), c)[name]
+    inward = -(_rot2(float(surf.get("yaw", 0.0))) @ np.asarray(NORMALS[name], float))
+    R = _rot2(yaw)
+    v, depth_half, w = max(((sg * R[:, i], half[i], half[1 - i]) for i in (0, 1) for sg in (1.0, -1.0)),
+                           key=lambda t: float(t[0] @ inward))  # fmt: skip
+    u = np.array([-v[1], v[0]])
+    back = max(float(depths[name]) / max(float(v @ inward), 0.5), float(depth_half))  # box centre to the edge along v
+    a_yaw = float(np.arctan2(v[1], v[0]))
+    side_half = np.array([(back + depth_half) / 2, clear / 2])
+    mid = v * (depth_half - back) / 2
+    out = [(c + mid + sg * u * (w + clear / 2), side_half, a_yaw) for sg in (1.0, -1.0)]
+    front = (back - depth_half) / 2
+    if front > 1e-6:
+        out.append((c - v * (depth_half + front), np.array([front, w + clear]), a_yaw))
+    return out
+
+
+def place_on_surface(meta: dict, key: str, rng, taken: list, placement: dict | None = None, *,
+                     avoid: list = (), fixed: list | None = None):  # fmt: skip
     """A random spot and yaw for `key` on its own surface: its footprint inside the flat top (SURFACE_MARGIN_M) and
     clear of the `taken` footprints by OBJECT_GAP_M. The height is the scene file's (the object already rests on that
     surface); the yaw turns its initial attitude about the world vertical. `placement` (TODO 33.5, D5) adds the
-    `depth_m` / `yaw_deg` conditions of `placement_ok`. None when TRIES spots gave nothing."""
+    `depth_m` / `yaw_deg` conditions of `placement_ok`, and `hands_clear_m` the two-hand corridors (`hand_corridors`,
+    clear of the `fixed` footprints, those that stay while the hands come in). Every spot also keeps the footprint out
+    of the `avoid` corridors (those of the task objects placed before it). None when TRIES spots gave nothing."""
     obj = meta["objects"][key]
     surf = meta["surfaces"][obj["surface"]]
     flat = np.asarray(surf.get("flat_half_extent") or surf["half_extent"], float)[:2]
@@ -127,6 +164,8 @@ def place_on_surface(meta: dict, key: str, rng, taken: list, placement: dict | N
     if want.get("edge") and want["edge"] not in NORMALS:
         raise KeyError(f"placement edge {want['edge']!r}: one of {sorted(NORMALS)}")
     want = {k: v for k, v in want.items() if k != "edge" or "depth_m" in want or "yaw_deg" in want}
+    clear = (placement or {}).get("hands_clear_m")
+    edge = (placement or {}).get("edge")
     for _ in range(TRIES):
         xy = top[0] + _rot2(yaw_s) @ rng.uniform(-room, room)
         quat = _qmul(_yaw_quat(float(rng.uniform(-np.pi, np.pi))), np.asarray(obj["init_quat"], float))
@@ -134,6 +173,11 @@ def place_on_surface(meta: dict, key: str, rng, taken: list, placement: dict | N
         if not inside_top(fp, top) or any(overlap(fp, t, OBJECT_GAP_M) for t in taken):
             continue
         if want and not placement_ok(surf, xy, fp[2], want):
+            continue
+        if any(overlap(fp, a, 0.0) for a in avoid):
+            continue
+        if clear and any(overlap(h, t, 0.0) for h in hand_corridors(surf, fp, float(clear), edge)
+                         for t in (taken if fixed is None else fixed)):  # fmt: skip
             continue
         return np.array([xy[0], xy[1], float(obj["init_pos"][2])]), quat
     return None
@@ -204,7 +248,10 @@ def sample_start(
     {"key": K, "gap_m": g}} sets the free object K between the first task object and its nearest approach edge
     (place_blocker); {"objects": {K: {...}}} gives task object K its own depth / yaw / edge conditions in place of
     the shared ones (the pack tasks, 2026-11-05: the carton on the two-hand stance band, the object on the reach band);
-    a condition the surface cannot meet raises RuntimeError, so the pool skips that seed. Without them every start is
+    {"hands_clear_m": c} (shared or an object's own, user 2026-11-06) keeps a two-hand object's corridors
+    (`hand_corridors`, `c` wide beside each squeezed wall) free of every object that stays while it is hugged -- the
+    task objects before it in `objects` are taken to be moved by then (the pack task's X is in the carton when the
+    carton is hugged) -- and keeps the task objects placed after it out of its corridors; a condition the surface cannot meet raises RuntimeError, so the pool skips that seed. Without them every start is
     drawn as before."""
     spawn = dict(spawn or {})
     unknown = set(spawn) - {"rooms", "distance_m"}
@@ -221,7 +268,7 @@ def sample_start(
     if unknown := [k for k in own if k not in objects]:
         raise KeyError(f"placement objects {unknown}: not objects of the task")
     for k, o in own.items():
-        if bad := set(o) - {"depth_m", "yaw_deg", "edge"}:
+        if bad := set(o) - {"depth_m", "yaw_deg", "edge", "hands_clear_m"}:
             raise KeyError(f"placement objects {k}: unknown {sorted(bad)}")
     d_lo, d_hi = spawn.get("distance_m") or SPAWN_DISTANCE_M
     d_hi = np.inf if d_hi is None else d_hi
@@ -240,9 +287,13 @@ def sample_start(
             and (own_surfaces is None or o["surface"] in own_surfaces)
         ):
             taken.append(footprint(o, o["init_pos"], o["init_quat"]))
+    fixed, corridors = (
+        list(taken),
+        [],
+    )  # what stays on the surface; the hand corridors of the task objects placed so far
     for k in objects:
         want_k = own[k] if k in own else {kk: v for kk, v in want.items() if kk != "blocker"}
-        spot = place_on_surface(meta, k, rng, taken, want_k)
+        spot = place_on_surface(meta, k, rng, taken, want_k, avoid=corridors, fixed=fixed)
         if spot is None and want_k:
             raise RuntimeError(f"no spot on {meta['objects'][k]['surface']} meets the placement option for {k}")
         if spot is None:  # a crowded top (the bedroom's display shelves): the scene file's own spot is a valid start
@@ -250,6 +301,9 @@ def sample_start(
             spot = (np.asarray(o["init_pos"], float), np.asarray(o["init_quat"], float))
         placements[k] = spot
         taken.append(footprint(meta["objects"][k], spot[0], spot[1]))
+        if want_k.get("hands_clear_m"):
+            surf = meta["surfaces"][meta["objects"][k]["surface"]]
+            corridors += hand_corridors(surf, taken[-1], float(want_k["hands_clear_m"]), want_k.get("edge"))
     if blocker and objects:
         spot = place_blocker(meta, blocker, objects[0], placements[objects[0]], taken,
                              float(want["blocker"].get("gap_m", BLOCKER_GAP_M)), want.get("edge"))  # fmt: skip

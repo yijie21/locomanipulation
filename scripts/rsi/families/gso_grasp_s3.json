@@ -19,6 +19,9 @@
    null
   ]
  },
+ "stop_rate": 0.8,
+ "max_wall_h": 5.0,
+ "max_run_iters": 5,
  "pools": {
   "diag": {
    "seed": 440000,

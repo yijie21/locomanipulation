@@ -62,6 +62,14 @@ def task(fam: dict, task_id: str) -> Task:
     return Task.from_row(fam["rows"][task_id], fam["meta"])
 
 
+def timing(fam: dict, task_id: str) -> dict:
+    """A round's success timing, `hold_s` (the end-of-plan hold) and `judge_s` (the judging window, TODO 38.19): the
+    task row's, else the family's; a key neither sets is absent (the caller's default). gso_all mixes one-hand picks,
+    judged at the end, with two-hand lifts and packs judged over the last 5 s (user 2026-11-06)."""
+    row = fam["rows"][task_id]
+    return {k: row.get(k, fam.get(k)) for k in ("hold_s", "judge_s") if row.get(k, fam.get(k)) is not None}
+
+
 def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i: int = 0) -> dict:
     """Write the pool's starts into `out`; returns {"written": n, "skipped": [(task, seed, why)], "next_seed": s}.
     `seed`, `n` and `tasks` override the family's pool spec and `start_i` is where the task rotation starts (TODO
