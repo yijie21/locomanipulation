@@ -23,7 +23,8 @@ widened from the jaw-based rule and these objects are untested; the first run te
 hold). The carton (`nor_cal_box`, 0.45 x 0.32 x 0.33 m, 1.2 kg, open top) is drawn into every instance. The robot
 starts anywhere in the room it can walk from, facing a random way, 0.5 m or more from the object; the task object is
 moved to a random spot and yaw within `reach_depth_m` (0.35 m) of a platform edge (the `placement` row option, D13),
-the other nine objects stay where the scene file put them.
+and then every other object on the platform is moved to a random spot clear of the task objects and of the hands'
+corridors (`shuffle_others`, 2026-11-06: with them fixed, 13 of s0's 21 tasks found no start).
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.

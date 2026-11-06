@@ -175,5 +175,5 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 - `gso_preview_unreal.py` 中途报 `zmq.error.Again`、之后 `no Unreal editor command server on :18801`：编辑器死了（11-05 建到 s5 的预览时一次），`bash scripts/start_unreal.sh --gpu 0` 再跑同一条命令，建好的关卡和图会跳过。
 - `gso_preview_unreal.py` 报 `Unreal level missing` / `stale`：该实例没建关卡或场景重建后关卡没重建，加 `--build` 或手动 `build_scene.sh <实例> --unreal`；报 `PIE did not start` 或连不上编辑器：先 `bash scripts/start_unreal.sh --gpu 0`，且同一时间只能有一个进程用编辑器（建关卡时别渲染）。
 - `gso_pack_check.py` 或一局报 `Error opening file 'gso/gso_0050/model_collision_0.obj'`：场景目录旁的 `<实例>_physics/` 是 11-05 之前写的旧副本（相对网格路径没改成绝对的，场景文件没更新它就不重写），删掉重跑；报 `FileNotFoundError: /workspace/models/scalebfm/…`：`LOCOMANI_WORKSPACE` 没设（第 0 节）。
-- 起点采样打印 `seed N: skipped (no spot on A meets the placement option for nor_cal_box)`：纸箱的抱取带（离台沿 0.18–0.31 m、长边沿台沿）被别的物体占着，跳过这个 seed 是正常的，池也这样跳。
+- 起点采样打印 `seed N: skipped (no spot on A ...)`：这个 seed 摆不下，纸箱的抱取带、两手留空的通道或其余物体找不到位置，跳过它是正常的，池也这样跳。每局开始时平台上的其余物体也会重新随机摆放（任务行的 `shuffle_others`，11-06）；关掉它，s0 的 21 个任务里有 13 个一个起点也抽不到。
 - 内环第一行就崩、`loop.log` 里找不到任务族或场景：沙盒看不到没提交的文件，先提交任务族文件；场景目录要在 `outputs/scene_discovery/` 下。

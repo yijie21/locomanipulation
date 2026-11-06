@@ -23,8 +23,9 @@ Every object drawn into an instance fits the carton (`catalog.json` `fits_carton
 the 0.43 x 0.30 m inner box on every side, either way round, and no taller than the 0.33 m rim). Each episode stands
 alone: the carton starts empty; the start moves X to a random spot and yaw within 0.35 m of a platform edge (a two-hand
 X with its wide side along that edge) and the carton to the two-hand stance band, 0.18-0.31 m in from a random edge
-with its long side along it (`placement.objects`); the other nine objects stay where the scene file put them; the
-robot starts anywhere in the room it can walk from, 0.5 m or more from X.
+with its long side along it (`placement.objects`); then every other object on the platform is moved to a random spot
+clear of the task objects and of the hands' corridors (`shuffle_others`, 2026-11-06: with them fixed, 13 of s0's 21
+tasks found no start); the robot starts anywhere in the room it can walk from, 0.5 m or more from X.
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.

@@ -23,7 +23,8 @@ CARTON_PLACEMENT, box_bimanual's `box_long_side`), and a two-hand X with its wid
 squeezes it across that side and it goes into the carton the way it fits (the carton's long inner side lies along the
 same edge). Every object a task hugs (a two-hand X, the carton) also asks for HANDS_CLEAR_M free beside each squeezed
 wall and in front of it (`hands_clear_m`, start.hand_corridors; user 2026-11-06: a neighbour there stopped both hands
-15 cm short of the pre-grasp). Pool seeds: 44/45/46/47 x 10^4 per family, +10^5 per pool, disjoint from every other family's (D7).
+15 cm short of the pre-grasp), and every row moves the other objects of the platform too (`shuffle_others`,
+start.sample_start; user 2026-11-06: with the nine others fixed, 13 of s0's 21 tasks found no start). Pool seeds: 44/45/46/47 x 10^4 per family, +10^5 per pool, disjoint from every other family's (D7).
 
     PYTHONPATH=src $VENV_SIM_PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_1030_s0
         [--families-dir scripts/rsi/families]
@@ -116,7 +117,7 @@ def rows_for(meta: dict, kind: str, reach: float) -> list[dict]:
         if not o.get("free") or sem.get("graspable") != OBJECT_KIND[kind] or (pack and key == CARTON):
             continue
         p = sem["phrase"]
-        placement: dict = dict(band)
+        placement: dict = {**band, "shuffle_others": True}
         if kind == "single":
             prompts = [f"pick up the {p}", f"grab the {p} and lift it off the platform"]
             tid, goal = f"pick_{key}", [f"held({key})", f"lifted({key}, {lift:.2f}, {TILT_DEG})"]

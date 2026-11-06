@@ -22,7 +22,9 @@ s0-s9), each with its own family's goal, placement and judging:
 The timing is on each task row (`hold_s` / `judge_s` in `gso_s<seed>_tasks.jsonl`, read by `family.timing`); a row
 without them is judged at the end of the plan. The objects, their placements and the robot's spawn are as the three
 plans' section 0 describe: the task object within 0.35 m of a platform edge, the carton of a pack task on the hug's
-band, 0.18 m free beside each wall a hug squeezes, the robot anywhere in the room it can walk from, 0.5 m or more away.
+band, 0.18 m free beside each wall a hug squeezes, every other object on the platform moved to a random spot clear of
+the task objects and those corridors (`shuffle_others`), the robot anywhere in the room it can walk from, 0.5 m or more
+away.
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.

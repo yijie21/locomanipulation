@@ -47,9 +47,9 @@ def test_one_row_per_object_of_the_kind_with_the_goal_prompts_and_the_reach_band
     assert both[1]["goal"] == ["held(gso_0002)", "lifted(gso_0002, 0.20, 60)"]
     assert "red mug" in single[0]["prompts"][0] and "both hands" in both[1]["prompts"][0]
     for r in single:
-        assert r["room"] == "logistics_room" and r["placement"] == {"depth_m": [0.0, 0.35]}
+        assert r["room"] == "logistics_room" and r["placement"] == {"depth_m": [0.0, 0.35], "shuffle_others": True}
     for r in both:  # a hugged object keeps its hands' corridors free (user 2026-11-06)
-        assert r["room"] == "logistics_room" and r["placement"] == {"depth_m": [0.0, 0.35],
+        assert r["room"] == "logistics_room" and r["placement"] == {"depth_m": [0.0, 0.35], "shuffle_others": True,
                                                                     "hands_clear_m": GF.HANDS_CLEAR_M}  # fmt: skip
 
 
@@ -61,8 +61,8 @@ def test_a_pack_row_per_object_but_the_carton_puts_the_carton_on_its_band_and_a_
     assert both[0]["goal"] == ["in(gso_0002, nor_cal_box)", *PACK_GOAL]
     assert "into the cardboard box" in pack[0]["prompts"][0] and "both hands" in both[0]["prompts"][0]
     carton = {"depth_m": [0.18, 0.31], "yaw_deg": [85, 90], "hands_clear_m": GF.HANDS_CLEAR_M}
-    assert pack[0]["placement"] == {"depth_m": [0.0, 0.35], "objects": {"nor_cal_box": carton}}
-    assert both[0]["placement"] == {"depth_m": [0.0, 0.35], "objects": {
+    assert pack[0]["placement"] == {"depth_m": [0.0, 0.35], "shuffle_others": True, "objects": {"nor_cal_box": carton}}
+    assert both[0]["placement"] == {"depth_m": [0.0, 0.35], "shuffle_others": True, "objects": {
         "nor_cal_box": carton, "gso_0002": {"depth_m": [0.0, 0.35], "yaw_deg": [0, 5], "hands_clear_m": GF.HANDS_CLEAR_M}}}  # fmt: skip
     meta = json.loads(json.dumps(META))
     meta["objects"]["gso_0002"]["box"]["half_extent"] = [0.17, 0.1, 0.06]  # the wide side is x: x along the edge

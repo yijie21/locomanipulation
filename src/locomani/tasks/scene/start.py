@@ -84,6 +84,7 @@ PLACEMENT_KEYS = (
     "edge",
     "objects",
     "hands_clear_m",
+    "shuffle_others",
 )  # the `placement` option (TODO 33.5, D5)
 BLOCKER_GAP_M = 0.03
 BLOCKER_SLIDES_M = (0.0, 0.03, -0.03, 0.06, -0.06)  # a blocker slid along the edge still sits in the hand's corridor
@@ -251,13 +252,18 @@ def sample_start(
     {"hands_clear_m": c} (shared or an object's own, user 2026-11-06) keeps a two-hand object's corridors
     (`hand_corridors`, `c` wide beside each squeezed wall) free of every object that stays while it is hugged -- the
     task objects before it in `objects` are taken to be moved by then (the pack task's X is in the carton when the
-    carton is hugged) -- and keeps the task objects placed after it out of its corridors; a condition the surface cannot meet raises RuntimeError, so the pool skips that seed. Without them every start is
-    drawn as before."""
+    carton is hugged) -- and keeps the task objects placed after it out of its corridors; a condition the surface cannot meet raises RuntimeError, so the pool skips that seed. {"shuffle_others": true}
+    (user 2026-11-06, the logistics_room_1030 families: ten objects and the carton cover 40 % of the platform, and with
+    the other nine fixed no two-hand task found a spot whose corridors were clear) moves every other free object on the
+    task objects' surfaces too: the task objects are placed first as if those were absent, then the others, largest
+    footprint first, anywhere on their own surface clear of what is placed and of the task objects' corridors; one that
+    finds no spot raises RuntimeError (the pool skips the seed). Without these options every start is drawn as before."""
     spawn = dict(spawn or {})
     unknown = set(spawn) - {"rooms", "distance_m"}
     if unknown or spawn.get("rooms", "all") != "all":
         raise KeyError(f"spawn option: unknown {sorted(unknown) or spawn.get('rooms')}")
     want = dict(placement or {})
+    shuffle = bool(want.pop("shuffle_others", False))
     unknown = set(want) - set(PLACEMENT_KEYS)
     if unknown:
         raise KeyError(f"placement option: unknown {sorted(unknown)}")
@@ -272,7 +278,7 @@ def sample_start(
             raise KeyError(f"placement objects {k}: unknown {sorted(bad)}")
     d_lo, d_hi = spawn.get("distance_m") or SPAWN_DISTANCE_M
     d_hi = np.inf if d_hi is None else d_hi
-    placements, taken = {}, []
+    placements, taken, others = {}, [], []
     # with a placement option only the objects on the task object's own surface count as taken: the footprints are
     # flat, so without that filter a shelf above or below (a display unit's) crowds this one out of the spots the
     # option asks for; the plain draw keeps every resting object, as every pool so far was drawn (TODO 33.5)
@@ -286,7 +292,10 @@ def sample_start(
             and k != blocker
             and (own_surfaces is None or o["surface"] in own_surfaces)
         ):
-            taken.append(footprint(o, o["init_pos"], o["init_quat"]))
+            if shuffle and o.get("free"):
+                others.append(k)  # placed after the task objects (shuffle_others)
+            else:
+                taken.append(footprint(o, o["init_pos"], o["init_quat"]))
     fixed, corridors = (
         list(taken),
         [],
@@ -304,6 +313,13 @@ def sample_start(
         if want_k.get("hands_clear_m"):
             surf = meta["surfaces"][meta["objects"][k]["surface"]]
             corridors += hand_corridors(surf, taken[-1], float(want_k["hands_clear_m"]), want_k.get("edge"))
+    for k in sorted(others, key=lambda k: -float(np.prod(meta["objects"][k]["box"]["half_extent"][:2]))):
+        spot = place_on_surface(meta, k, rng, taken, None, avoid=corridors)
+        if spot is None:
+            surface = meta["objects"][k]["surface"]
+            raise RuntimeError(f"no spot on {surface} for {k} clear of the task objects (shuffle_others)")
+        placements[k] = spot
+        taken.append(footprint(meta["objects"][k], spot[0], spot[1]))
     if blocker and objects:
         spot = place_blocker(meta, blocker, objects[0], placements[objects[0]], taken,
                              float(want["blocker"].get("gap_m", BLOCKER_GAP_M)), want.get("edge"))  # fmt: skip

@@ -14,13 +14,14 @@ family, `gso_grasp_s<seed>`, one task per single-hand object of the instance (us
   60 deg off vertical;
 - both checked at the end of the plan and then 2 s standing still (`hold_s`).
 
-The objects come from `assets/mujoco_scanned_objects/catalog.json`: an object is `single` when its narrow side fits
-the open Dex1 jaw (0.095 m), it stands 0.03 m or more, it stands at rest in a 24 s drop test, and its grasp point
-(half its height above the platform top) is 0.40 m or more above the floor. The instance's ten objects are drawn once
-with its seed (`gso.seed` in scene_meta.json), the carton is always present; the objects that are not the task's are
-distractors on the same platform. The robot starts anywhere in the room it can walk from, facing a random way, 0.5 m
-or more from the object; the task object is moved to a random spot and yaw within `reach_depth_m` (0.35 m) of a
-platform edge (the `placement` row option, D13), the distractors stay where the scene file put them.
+The objects come from `assets/mujoco_scanned_objects/catalog.json`: an object is `single` when its narrow side fits the
+open Dex1 jaw (0.095 m), it stands 0.03 m or more, it stands at rest in a 24 s drop test, and its grasp point (half its
+height above the platform top) is 0.40 m or more above the floor. The instance's ten objects are drawn once with its
+seed (`gso.seed` in scene_meta.json), the carton is always present; the objects that are not the task's are distractors
+on the same platform. The robot starts anywhere in the room it can walk from, facing a random way, 0.5 m or more from
+the object; the task object is moved to a random spot and yaw within `reach_depth_m` (0.35 m) of a platform edge (the
+`placement` row option, D13), and then every other object on the platform is moved to a random spot clear of the task
+objects (`shuffle_others`, 2026-11-06: with them fixed, 13 of s0's 21 tasks found no start).
 
 - **Fixed inputs**: the scene file, the robot (mars G1 with Dex1 two-finger grippers), the controller ScaleBFM M 22200
   (not trained, not changed), MuJoCo, privileged poses from the simulator, the motor layer, `rules.md`.
