@@ -3121,3 +3121,15 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 每局文件开头一条 `objects` 头记录：现有读取工具都按单条记录读，自成一体改动最少，重复每局只多几 KB。
 - 失效阈值 15°：用户选 60°。
 
+## 2026-11-06 装箱局的失败类别（用户“对1，3，4, 直接修复。对2，补齐五个装箱类”；方案 `scripts/rsi/plans/gso_pack.md` D14；TODO 40.19）
+
+### 决策
+- 装箱局（目标里有 `in(X, C)`，X 是任务物体）在共同类别（ok、no_plan、time_limit、fell）之后改分放入的五类；物体原来的类别（含 walk_off）留在 `events.pick_class`，不丢。
+- 只用轨迹里 X 和纸箱的位姿判，不看 `release` 调用：两手放入没有 `release`（松开靠 reach），按调用判会漏一半。
+- 顺序：结束时 X 在箱里（`in` 谓词）→ in_but_not_lifted（纸箱从 X 最后高过沿之后的轨迹算两手类别，放 `lift_class`）；X 从没升过 8 cm → pick_failed；X 底面从没高过沿 → carry_dropped；最后高过沿那一刻盒中心在内空上方 → stuck_on_rim，离内空 20 cm 内 → missed_opening，再远 → carry_dropped。
+- pick_failed 的门槛 8 cm（单手抓取的目标是 10 cm），不用 3 cm 的 `RISE_CM`：s0 诊断池里升了 3–5 cm、抓取本身已失败的局会被算成 carry_dropped。
+
+### 被否决的方案（及原因）
+- 按 `release` 调用定松手时刻：两手放入没有这个调用。
+- 3 cm 算“抓起来了”：见上，抓取失败被归到搬运。
+

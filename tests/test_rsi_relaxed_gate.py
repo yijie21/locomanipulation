@@ -305,6 +305,17 @@ class NameLint(_LoopCase):
             names = self.lp.object_names()
         self.assertEqual(names, {"Mug_2", "Mug_2_object", "Mug", "Orange_A", "Orange_A_object"})
 
+    def test_object_names_keep_record_field_stems_allowed(self):
+        from unittest import mock
+
+        scene = self.root / "scene"
+        scene.mkdir()
+        objs = {"gso_0050": dict(body="gso_0050", gso=dict(id=50), semantic=dict(mass_kg=0.2))}
+        (scene / "scene_meta.json").write_text(json.dumps(dict(objects=objs)))
+        with mock.patch.object(self.lp, "family_spec", lambda: dict(scene=str(scene))):
+            names = self.lp.object_names()
+        self.assertEqual(names, {"gso_0050"})
+
 
 if __name__ == "__main__":
     unittest.main()

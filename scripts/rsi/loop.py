@@ -2297,13 +2297,15 @@ _NAMES: dict = {}
 def object_names() -> set[str]:
     """Names a skills package may not branch on (rules.md 30, TODO 33.13, D10): every scene object's key, body and ADT
     instance name, and the key's stem (Mug_2 -> Mug) unless the stem is also a semantic name (prototype, category:
-    Orange_A -> Orange stays allowed). Semantic fields (category, prototype) are features a flow may use."""
+    Orange_A -> Orange stays allowed) or a field of the object records (gso_0050 -> gso, the record's `gso` block).
+    Semantic fields (category, prototype) are features a flow may use."""
     scene = family_spec().get("scene")
     if scene not in _NAMES:
         objs = (jload(REPO / scene / "scene_meta.json", {}) or {}).get("objects") or {} if scene else {}
         names, semantic = set(), set()
         for k, o in objs.items():
             sem = o.get("semantic") or {}
+            semantic |= {str(x).lower() for x in (*o, *sem)}
             adt = sem.get("adt") or {}
             semantic |= {str(x).lower() for x in (adt.get("prototype_name"), adt.get("category")) if x}
             names |= {k, o.get("body") or "", adt.get("instance_name") or ""}

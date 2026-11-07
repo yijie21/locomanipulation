@@ -238,6 +238,108 @@ class Bimanual(unittest.TestCase):
         self.assertEqual(FC.classify(rec(steps=[WALK, reach(20.0)]), None, bibox_scene(), "B")[0], "side_reach")
 
 
+RIM = TOP + 0.33
+CARTON = dict(half_extent=[0.225, 0.16, 0.165], centre=[0, 0, 0.165], wall=0.01)
+PACK_GOAL = ["in(X, C)", "held(C)", "lifted(C, 0.2, 60)"]
+
+
+def pack_scene():
+    """The carton C at (0.5, 0) on the support and a 6 x 6 x 10 cm object X beside it (box centre at its origin)."""
+    bodies = (f'<body name="c" pos="0.5 0 {TOP}"><freejoint/><geom type="box" size="0.225 0.16 0.165" pos="0 0 0.165"/>'
+              f"</body>" + box_body("x", (0.03, 0.03, 0.05), TOP + 0.05))  # fmt: skip
+    objs = {"C": obj("c", TOP, bimanual=True, container=True, box=CARTON),
+            "X": obj("x", TOP + 0.05, box=dict(half_extent=[0.03, 0.03, 0.05], centre=[0, 0, 0]))}  # fmt: skip
+    return scene(bodies, objs)
+
+
+def packtrace(keys):
+    """20 s of hold / walk / reach with X's box centre moving through `keys` [(t, x, y, z)]; C stays put."""
+    T = 1000
+    t = np.arange(T) * DT
+    prims = np.array(["hold", "reach", "walk_to"])
+    p = np.zeros(T, int)
+    p[50:200] = 2
+    p[200:300] = 1
+    k = np.asarray([(0.0, 0.5, 0.5, TOP + 0.05), *keys], float)
+    x = np.zeros((T, 7))
+    x[:, 3] = 1.0
+    for j in range(3):
+        x[:, j] = np.interp(t, k[:, 0], k[:, j + 1])
+    c = np.zeros((T, 7))
+    c[:, :3] = [0.5, 0.0, TOP]
+    c[:, 3] = 1.0
+    wr = np.zeros((T, 2, 3))
+    wr[:, :, 2] = TOP + 0.2
+    robot = np.zeros((T, 7))
+    robot[:, 3] = 1.0
+    return dict(t=t, primitive=p.astype(np.int16), primitives=prims, jaw=np.full((T, 2), FC.GRIP_OPEN),
+                fingers=np.full((T, 4), FC.GRIP_OPEN), wrists=wr, ref_wrists=wr.copy(), robot=robot,
+                joints=np.zeros((T, 29)), mode=np.zeros(T), ref_pelvis=robot[:, :3], obj_x=x, obj_c=c)  # fmt: skip
+
+
+class Pack(unittest.TestCase):
+    """gso_pack.md D14: the put-in's classes on a pack goal, from X's and the carton's trace poses."""
+
+    def classify(self, keys, **kw):
+        return FC.classify(rec(steps=[WALK, reach(1.0)], **kw), packtrace(keys), pack_scene(), "X", goal=PACK_GOAL)
+
+    def test_the_container_comes_from_an_in_goal_naming_the_object(self):
+        sc = pack_scene()
+        self.assertEqual(FC.container_of(PACK_GOAL, "X", sc), "C")
+        self.assertIsNone(FC.container_of(PACK_GOAL, "C", sc))
+        self.assertIsNone(FC.container_of(["held(X)"], "X", sc))
+        self.assertIsNone(FC.container_of(None, "X", sc))
+
+    def test_never_picked_keeps_the_picks_class(self):
+        cls, ev = self.classify(
+            [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.5, TOP + 0.09), (10.0, 0.5, 0.5, TOP + 0.05)]
+        )
+        self.assertEqual(cls, "pick_failed")
+        self.assertEqual(ev["x_rise_max_cm"], 4.0)
+        self.assertIn("pick_class", ev)
+
+    def test_lost_below_the_rim_or_far_from_the_opening_is_carry_dropped(self):
+        low = [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.5, TOP + 0.20), (10.0, 0.5, 0.5, TOP + 0.05)]
+        cls, ev = self.classify(low)
+        self.assertEqual(cls, "carry_dropped")
+        self.assertIsNone(ev["x_high_t"])
+        far = [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.9, TOP + 0.45), (10.0, 0.5, 0.9, 0.05)]
+        cls, ev = self.classify(far)
+        self.assertEqual(cls, "carry_dropped")
+        self.assertGreater(ev["x_over_opening_cm"], FC.NEAR_OPENING_CM)
+
+    def test_let_go_beside_the_opening_is_missed_opening(self):
+        cls, ev = self.classify(
+            [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.25, TOP + 0.45), (10.0, 0.5, 0.25, TOP + 0.05)]
+        )
+        self.assertEqual(cls, "missed_opening")
+        self.assertAlmostEqual(ev["x_over_opening_cm"], 10.0, delta=0.5)
+        self.assertFalse(ev["x_in_end"])
+
+    def test_resting_on_the_rim_over_the_opening_is_stuck_on_rim(self):
+        cls, ev = self.classify(
+            [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.0, TOP + 0.45), (10.0, 0.5, 0.0, RIM + 0.05)]
+        )
+        self.assertEqual(cls, "stuck_on_rim")
+        self.assertEqual(ev["x_over_opening_cm"], 0.0)
+        self.assertTrue(ev["x_high_end"])
+
+    def test_in_the_carton_and_still_failing_is_in_but_not_lifted_with_the_lifts_class(self):
+        keys = [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.0, TOP + 0.45), (10.0, 0.5, 0.0, TOP + 0.06)]
+        cls, ev = self.classify(keys, why="[goal] held(C): no hand touches it")
+        self.assertEqual(cls, "in_but_not_lifted")
+        self.assertTrue(ev["x_in_end"])
+        self.assertIn(ev["lift_class"], ("side_reach", "one_hand_short", "knocked", "no_lift", "slip", "other"))
+        self.assertAlmostEqual(ev["x_high_t"], 8.4, delta=0.1)
+
+    def test_without_a_pack_goal_the_objects_own_classes_stay(self):
+        keys = [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.5, TOP + 0.09), (10.0, 0.5, 0.5, TOP + 0.05)]
+        cls, ev = FC.classify(rec(steps=[WALK, reach(1.0)]), packtrace(keys), pack_scene(), "X")
+        self.assertNotIn(cls, ("pick_failed", "carry_dropped", "missed_opening", "stuck_on_rim", "in_but_not_lifted"))
+        self.assertNotIn("pick_class", ev)
+        self.assertEqual(FC.classify(rec(ok=True), packtrace(keys), pack_scene(), "X", goal=PACK_GOAL)[0], "ok")
+
+
 if __name__ == "__main__":
     unittest.main()
 

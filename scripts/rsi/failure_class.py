@@ -14,9 +14,12 @@ pinch when the wrist points down at the grip); too_wide (graspability: the secti
 the grip does not fit, and the object was pushed or tipped before the grip or the jaw closed on nothing); knocked
 (moved > MOVED_CM or tipped > TILT_DEG before the grip); slip (gripped, then not held); miss_near (the jaw closed on
 nothing near the object); other. Rounds without a trace classify from their steps alone (`events.source` "steps").
+A two-hand object takes the two-hand set instead (`_classify_bimanual`). A pack round (the goal puts the object in a
+container; `classify(..., goal=)`) with a trace takes the put-in's set (`_classify_pack`): in_but_not_lifted,
+pick_failed, carry_dropped, stuck_on_rim, missed_opening; the object's own class stays in `events.pick_class`.
 
     from failure_class import classify      # scripts/rsi on sys.path
-    cls, events = classify(rec, arrays, world, key)
+    cls, events = classify(rec, arrays, world, key, goal=task.goal)
 """
 
 from __future__ import annotations
@@ -338,9 +341,92 @@ def _classify_bimanual(ev: dict, rec: dict | None = None) -> str:
     return "slip"
 
 
-def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
+PICKED_CM = 8.0  # the object this far above its settled height was picked (the one-hand pick's goal is 10 cm)
+NEAR_OPENING_CM = 20.0  # last above the rim this close outside the opening: a put-in that missed, not a lost carry
+
+
+def container_of(goal: list[str] | None, key: str | None, world) -> str | None:
+    """The container a pack goal puts `key` in (`in(key, C)`, C an object of the scene file), else None."""
+    if not goal or key is None or world is None:
+        return None
+    from locomani.scene_discovery.predicates import parse
+
+    objs = world.meta.get("objects") or {}
+    for g in goal:
+        p = parse(g)
+        if p.name == "in" and len(p.args) == 2 and p.args[0] == key and p.args[1] in objs:
+            return p.args[1]
+    return None
+
+
+def _slice(z: dict, i0: int) -> dict:
+    """The trace from frame `i0` on (per-frame arrays cut, the primitive name table kept)."""
+    n = len(z["t"])
+    return {k: (v[i0:] if k != "primitives" and getattr(v, "ndim", 0) and len(v) == n else v) for k, v in z.items()}
+
+
+def pack_events(z: dict, world, key: str, box: str, ev: dict) -> dict:
+    """The put-in's events (gso_pack.md D14), from the object's and the container's trace poses only, so the one-hand
+    put-in (a `release`) and the two-hand one (the hug opens) read alike: `x_rise_max_cm` (above its settled height),
+    `x_high_t` (the last moment its box's underside was above the rim, rotation ignored as the predicates do),
+    `x_over_opening_cm` (there, how far the box centre was outside the container's inner footprint, 0 over it),
+    `x_in_end` (the `in` predicate at the end), `x_high_end` (still above the rim at the end)."""
+    from locomani.scene_discovery.predicates import compile_goal
+
+    t, objs = z["t"].astype(float), world.meta["objects"]
+    xo, co = z.get(f"obj_{objs[key]['body']}"), z.get(f"obj_{objs[box]['body']}")
+    if xo is None or co is None:
+        return ev
+    xb, cb = objs[key].get("box") or {}, objs[box].get("box") or {}
+    xc, xh = (np.asarray(xb.get(f) or (0.0, 0.0, 0.0), float) for f in ("centre", "half_extent"))
+    cc, ch = (np.asarray(cb.get(f) or (0.0, 0.0, 0.0), float) for f in ("centre", "half_extent"))
+    inner = ch[:2] - float(cb.get("wall", 0.01))
+    s0 = min(len(t) - 1, int(np.searchsorted(t, SETTLE_T)))
+    ev["x_rise_max_cm"] = round(float((xo[s0:, 2] - xo[s0, 2]).max()) * 100, 2)
+    under = xo[:, 2] + xc[2] - xh[2]
+    rim = co[:, 2] + cc[2] + ch[2]
+    high = np.nonzero(under[s0:] >= rim[s0:])[0]
+    i = s0 + int(high[-1]) if len(high) else None
+    ev["x_high_t"] = None if i is None else round(float(t[i]), 2)
+    if i is not None:
+        Rc = _quat_mat(co[i, 3:7])
+        local = Rc.T @ (xo[i, :3] + _quat_mat(xo[i, 3:7]) @ xc - co[i, :3] - Rc @ cc)
+        ev["x_over_opening_cm"] = round(float(np.linalg.norm(np.maximum(np.abs(local[:2]) - inner, 0.0))) * 100, 2)
+    state = {"objects": {k: dict(pos=o[-1, :3].tolist(), quat=o[-1, 3:7].tolist()) for k, o in ((key, xo), (box, co))}}
+    ev["x_in_end"] = bool(compile_goal([f"in({key}, {box})"], {"objects": objs, "surfaces": {}})(state)[0])
+    ev["x_high_end"] = bool(under[-1] >= rim[-1])
+    return ev
+
+
+def _classify_pack(rec: dict, z: dict, world, key: str, box: str, ev: dict) -> str:
+    """The put-in's classes (gso_pack.md D14), after the common ones: in_but_not_lifted (the object ended in the
+    container and the goal still failed: the container's lift, its two-hand class in `events.lift_class`), pick_failed
+    (it never rose PICKED_CM: the pick's class is `events.pick_class`), carry_dropped (it rose and was lost before it was
+    above the rim, or was last above it more than NEAR_OPENING_CM off the opening), stuck_on_rim (last above the rim
+    over the opening and not in: on the rim or wedged in the opening), missed_opening (last above the rim beside the
+    opening: let go, or still held, outside it)."""
+    pack_events(z, world, key, box, ev)
+    if "x_in_end" not in ev:
+        return ev.get("pick_class") or "other"
+    if ev["x_in_end"]:
+        i0 = int(np.searchsorted(z["t"], ev["x_high_t"])) + 1 if ev.get("x_high_t") is not None else 0
+        lift = bimanual_events(_slice(z, min(i0, len(z["t"]) - 2)), world, box, {})
+        ev["lift_class"] = _classify_bimanual(lift, rec)
+        ev["lift_events"] = lift
+        return "in_but_not_lifted"
+    if ev["x_rise_max_cm"] < PICKED_CM:
+        return "pick_failed"
+    if ev.get("x_over_opening_cm") is None:
+        return "carry_dropped"
+    if ev["x_over_opening_cm"] == 0.0:
+        return "stuck_on_rim"
+    return "missed_opening" if ev["x_over_opening_cm"] <= NEAR_OPENING_CM else "carry_dropped"
+
+
+def classify(rec: dict, arrays, world, key: str, goal: list[str] | None = None) -> tuple[str, dict]:
     """(failure class, events) of one round; see the module docstring. A bimanual object (`bimanual()`) takes the
-    two-hand classes after the common ones (TODO 38.11, rules.md 35)."""
+    two-hand classes after the common ones (TODO 38.11, rules.md 35); a pack round (`goal` puts `key` in a container)
+    the put-in's, with the object's own class kept as `events.pick_class` (gso_pack.md D14)."""
     steps = rec.get("steps") or []
     z = _arrays(arrays)
     two = bimanual(world, key)
@@ -373,11 +459,22 @@ def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
             first is not None and fall_t is not None and fall_t < first
         )
         return ("fell_walk" if early or (first is None and ev.get("grip_t") is None and "walk" in last) else "fell"), ev
+    cls = _classify_object(rec, ev, two)
+    box = container_of(goal, key, world)
+    if box is not None and z is not None and len(z.get("t", [])) > 1:
+        ev["pick_class"] = cls
+        return _classify_pack(rec, z, world, key, box, ev), ev
+    return cls, ev
+
+
+def _classify_object(rec: dict, ev: dict, two: bool) -> str:
+    """The task object's class after the common ones: walk_off, then the two-hand set or the one-hand set."""
+    grip_t = ev.get("grip_t")
     if ev["stop_err_cm"] is not None and ev["stop_err_cm"] > WALK_OFF_CM:
-        return "walk_off", ev
+        return "walk_off"
     if two:
         ev["judge"] = rec.get("judge")
-        return _classify_bimanual(ev, rec), ev
+        return _classify_bimanual(ev, rec)
     pushed = (ev.get("obj_moved_before_grip_cm") or 0.0) > MOVED_CM or (
         ev.get("obj_tilt_before_grip_deg") or 0.0
     ) > TILT_DEG
@@ -387,15 +484,15 @@ def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
         miss = ev["reach_gap_cm"] > REACH_GAP_CM
     if miss and not (pushed and ev.get("obj_first_move_t") is not None and grip_t is not None and ev["obj_first_move_t"] < grip_t
                      and (ev.get("fit") or {}).get("verdict") in ("tight", "too_wide")):  # fmt: skip
-        return ("pinch_reach" if ev.get("pinch") else "side_reach"), ev
+        return "pinch_reach" if ev.get("pinch") else "side_reach"
     fit_bad = (ev.get("fit") or {}).get("verdict") in ("tight", "too_wide")
     if fit_bad and (pushed or empty):
-        return "too_wide", ev
+        return "too_wide"
     if pushed and (empty or grip_t is None):
-        return "knocked", ev
+        return "knocked"
     gripped = (ev.get("opening_at_grip_cm") or 0.0) >= EMPTY_CM or bool(ev.get("gripped_step"))
     if gripped and grip_t is not None:
-        return "slip", ev
+        return "slip"
     if empty or grip_t is not None:
-        return "miss_near", ev
-    return "other", ev
+        return "miss_near"
+    return "other"

@@ -73,12 +73,15 @@ def shape(why: str) -> str:
 
 
 def facts(meta: dict, goal: list[str]) -> list[str]:
+    """One line per object or surface the goal names, in goal order; a container (`in(_, C)`) gets its inner box on
+    its one line."""
     objs, surfs = meta["objects"], meta["surfaces"]
-    out = []
-    for g in goal:
-        p = parse(g)
-        for i, a in enumerate(p.args):
-            if not isinstance(a, str) or a == "robot":
+    parsed = [parse(g) for g in goal]
+    containers = {p.args[1] for p in parsed if p.name == "in" and len(p.args) > 1}
+    out = {}
+    for p in parsed:
+        for a in p.args:
+            if not isinstance(a, str) or a == "robot" or a in out:
                 continue
             if a in objs:
                 o = objs[a]
@@ -86,24 +89,25 @@ def facts(meta: dict, goal: list[str]) -> list[str]:
                 he = np.asarray(box.get("half_extent") or (0, 0, 0), float)
                 s = surfs.get(o.get("surface") or "") or {}
                 line = f"- {a}: box {' x '.join(f'{200 * h:.1f}' for h in he)} cm"
-                if o.get("mass") is not None:
-                    line += f", {float(o['mass']):.2f} kg"
+                mass = o.get("mass", (o.get("semantic") or {}).get("mass_kg"))
+                if mass is not None:
+                    line += f", {float(mass):.2f} kg"
                 if o.get("free") and he.any():
                     h = lint.resting_half_height(o)
                     line += f", rests {200 * h:.1f} cm tall (pad margin {100 * (h - lint.DEX1_PAD_HALF_M):+.2f} cm)"
                 if s:
                     line += f", on {o['surface']} (top {float(s['top']):.3f} m)"
-                if p.name == "in" and i == 1:
+                if a in containers:
                     wall = float(box.get("wall", 0.01))
                     top = float(o["init_pos"][2]) + float((box.get("centre") or (0, 0, 0))[2]) + he[2]
                     line += (f"; container: inner {200 * (he[0] - wall):.1f} x {200 * (he[1] - wall):.1f} cm, "
                              f"depth {100 * (2 * he[2] - wall):.1f} cm, rim at {top:.3f} m")  # fmt: skip
-                out.append(line)
+                out[a] = line
             elif a in surfs:
                 s = surfs[a]
-                out.append(f"- {a}: surface, top {float(s['top']):.3f} m, {200 * float(s['half_extent'][0]):.0f} x "
-                           f"{200 * float(s['half_extent'][1]):.0f} cm")  # fmt: skip
-    return list(dict.fromkeys(out))
+                out[a] = (f"- {a}: surface, top {float(s['top']):.3f} m, {200 * float(s['half_extent'][0]):.0f} x "
+                          f"{200 * float(s['half_extent'][1]):.0f} cm")  # fmt: skip
+    return list(out.values())
 
 
 def trace(npz: Path, r: dict, movables: list[str], meta: dict) -> dict:

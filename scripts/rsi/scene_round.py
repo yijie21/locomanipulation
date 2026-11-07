@@ -137,7 +137,8 @@ def run_round(
         if npz:
             np.savez_compressed(out / f"{label}.npz", **arrays)
     try:  # TODO 33.15: the round's failure class and events (failure_class.py); a classifier bug never costs a round
-        rec["failure_class"], rec["events"] = FC.classify(rec, arrays, world, task.objects[0] if task.objects else None)
+        key = task.objects[0] if task.objects else None
+        rec["failure_class"], rec["events"] = FC.classify(rec, arrays, world, key, goal=list(task.goal))
     except Exception as e:
         rec["failure_class"], rec["events"] = "unclassified", dict(error=f"{type(e).__name__}: {e}"[:300])
     rec.update(

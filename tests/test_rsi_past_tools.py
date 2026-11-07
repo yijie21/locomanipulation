@@ -83,6 +83,19 @@ class DigestSection(unittest.TestCase):
             self.assertEqual(DG.past_lines(Path(d), [dict(label="a", task="t", ok=False)]), [])
 
 
+class DigestFacts(unittest.TestCase):
+    def test_a_pack_goal_gives_each_object_one_line_with_its_semantic_mass(self):
+        box = dict(half_extent=[0.225, 0.16, 0.165], centre=[0, 0, 0.165], wall=0.01)
+        meta = dict(surfaces={}, objects=dict(
+            nor_cal_box=dict(box=box, init_pos=[0, 0, 0.371], semantic=dict(mass_kg=0.6)),
+            gso_0050=dict(box=dict(half_extent=[0.03, 0.03, 0.05]), semantic=dict(mass_kg=0.25))))  # fmt: skip
+        goal = ["in(gso_0050, nor_cal_box)", "held(nor_cal_box)", "lifted(nor_cal_box, 0.2, 60)"]
+        lines = DG.facts(meta, goal)
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[0].startswith("- gso_0050:") and "0.25 kg" in lines[0])
+        self.assertTrue(lines[1].startswith("- nor_cal_box:") and "0.60 kg" in lines[1] and "container:" in lines[1])
+
+
 class Cli(unittest.TestCase):
     def test_show_prints_steps_edges_events_and_expectations(self):
         with tempfile.TemporaryDirectory() as d:
