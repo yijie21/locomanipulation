@@ -111,6 +111,7 @@ cd -
 做什么：和物流间 runbook 第 4 节一样，任务族换成 `gso_grasp_s0`（单手，6 个任务，种子是空技能包 `scripts/rsi/seeds/atomic`，角色读的方案是 `scripts/rsi/plans/gso_grasp.md`）。双手族把三处 `gso_grasp_s0` 换成 `gso_bimanual_s0`（5 个任务：4 件双手物体加纸箱，种子为空即主技能库 —— 两手抱取 `skills/bimanual.py` 11-05 从 `seeds/box_strict_start` 移进了主库；方案 `scripts/rsi/plans/gso_bimanual.md`，`hold_s` 2 / `judge_s` 5）；装箱族换成 `gso_pack_s0`（6 件单手物体各一个任务）或 `gso_pack_bimanual_s0`（4 件双手物体），种子同样为空（主库 `skills/pack.py`：单手或双手放入，再双手抱起纸箱），方案 `scripts/rsi/plans/gso_pack.md`，`hold_s` 2 / `judge_s` 5；要跑哪个场景就换族名里的 seed（s0–s9）。沙盒目录每个族另起一个。沙盒导出的是**已提交**的代码：s0–s4 的任务族文件在提交 `5ba83e16` 里，场景实例目录要在本机建好（第 2 节）；改了任务族或场景就要再提交 / 重建。规则第 30 条仍然有效：技能代码里出现物体名字（`gso_0051`、短语或刚体名）的草稿作废，技能只能读 `box.half_extent`、`semantic`、`gso.grasp_height_m` 这些字段。
 一个场景的全部任务一起进化（用户 11-06）：族名用 `gso_all_s0`（三处一起换）。它包含这个场景四个族的全部任务（s0–s9 都是 21 个：6 个单手抓起、5 个双手抱起、6 个单手装箱、4 个双手装箱），一轮迭代里所有技能一起诊断、修改，再在同一个 gate 上比较。每个任务的判据和它原来所在的族一样：单手抓起在计划结束、静止 2 秒后判一次，其余任务要在最后 5 秒内每次检查都成立（任务文件每行的 `hold_s` / `judge_s`）。起点技能是主库现有的；起点池按每个任务诊断 2 局、验收 2 局、封存 5 局，也就是 42 / 42 / 105 局，种子 480000 / 580000 / 680000；角色读的方案是 `scripts/rsi/plans/gso_all.md`。
 
+只做完整装箱任务（用户 11-07，“我最想要的是一个完整 task 成功：拿起 target object，走到 box 附近，放进 box，最后搬起 box”）：族名用 `gso_pack_all_s0`（三处一起换）。它只含这个场景的 10 个装箱任务（6 件单手物体、4 件双手物体，纸箱本身没有装箱任务），目标都是 `in(X, nor_cal_box)` + `held` + `lifted(nor_cal_box, 0.20, 60)`，最后 5 秒内每次检查都成立。起点技能是主库现有的 `skills/pack.py`；起点池按每个任务诊断 3 局、验收 4 局、封存 5 局，也就是 30 / 40 / 50 局，种子 490000 / 590000 / 690000；角色读的方案是 `scripts/rsi/plans/gso_pack_all.md`。和别的族不同的是 gate 的比法（方案 D15、规则 24 版第 25 / 32 条）：每局装箱局记一个进度 `stage`（0 没抓起、1 抓起过 8 cm、2 到过箱口上方、3 进过箱子、4 目标成立，取整局里到过的最高一级，不是结束时的状态），gate 逐起点比候选和现任的 stage，高的赢、低的输、相同算平，接受规则不变（净赢 ≥ 3、输 ≤ 赢/3）；这样一个把三局从“抓不起”推进到“放进去了”的改动，不用等任何一局走完全程就能被接受。80 % 的终止条件和封存集只数 stage 4。digest 每个任务多一行 `Stages reached`，Reviewer 的 context 多 `stages` / `per_task_stage`，`records.csv` 多 `stage` 列。
 什么时候停（用户 11-06）：这五种族的任务族文件写着 `stop_rate` 0.8、`max_wall_h` 5、`max_run_iters` 5，三条先满足哪条就停：现任技能在验收池上赢到 80 %、这次运行跑满 5 小时（停下到续跑之间的时间不算）、这次运行做满 5 轮迭代（续跑接着数）。每轮开始前检查一次，所以正在跑的那一轮会跑完，跑满 5 小时的时候最多再多出一轮的时间（约 1 小时）。`--max-iters` 只限制这一次命令，族文件里的 5 轮是整个运行的上限；命令行的 `--stop-rate` 和环境变量 `RSI_MAX_WALL_H` 仍然优先。停下的原因写在账本最后一行 `stop` 的 `reason` 里。
 得到什么：账本 `$S/outputs/scene_rsi_20261016/gso_grasp_s0/loop/ledger.jsonl`；进度 `cd $S && $PY scripts/rsi/loop.py status gso_grasp_s0; cd -`。起点池种子：单手 440000 / 540000 / 640000，双手 450000 / 550000 / 650000，装箱 460000 / 560000 / 660000，双手装箱 470000 / 570000 / 670000，和其他族不重叠。
 
@@ -136,6 +137,15 @@ $PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_grasp_s0 --o
 ```
 
 做什么：同物流间 runbook 第 5、6 节。按任务的成功数就是“哪些物体学会了”；双手族的 90 件“untested”物体哪些抱得起，看它的封存集。
+
+封存集现在带轨迹跑（`npz`），`summary.json` 里每个版本多一个 `stages`（各进度级的局数，装箱族才有意义）。要看最终版本在封存集上的完整过程视频（抓起 → 走到纸箱 → 放进去 → 双手抱起纸箱），把最终版本的局换成封存集的（用户 11-07）：
+
+```bash
+F=$(python3 -c "import json;print(json.load(open('$S/outputs/scene_rsi_20261016_hidden/gso_pack_all_s0/sealed/summary.json'))['final'])")
+$PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_pack_all_s0 --out outputs/scene_rsi_20261016/gso_pack_all_s0_media --only task --versions final --rounds $S/outputs/scene_rsi_20261016_hidden/gso_pack_all_s0/sealed/$F
+```
+
+每个任务一段 `final_NN_<task>.mp4`：有成功局取最短的一局，否则取最短的失败局；回放现在摆回轨迹里每个物体（纸箱和重摆过的其余物体），不只任务物体。
 
 ## 7. Unreal 关卡（每个实例一个）
 

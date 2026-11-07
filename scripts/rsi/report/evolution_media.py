@@ -192,11 +192,13 @@ def pick_start(final: Path, labels: list[str]) -> str:
     return min(pool, key=lambda x: len(np.load(final / f"{x}.npz")["t"]))
 
 
-def task_videos(sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None, final_only: bool = False) -> list[dict]:
+def task_videos(
+    sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None, final_only: bool = False, pool: str = "诊断池"
+) -> list[dict]:
     """One video per task of the family: the seed and the final version on the start `pick_start` chooses, side by
     side after a card that lists every version's successes on the task's diagnostic starts. `final_only` (--versions
     final, user 2026-10-23) shows the final version alone, one panel, as `final_NN_<task>.mp4`; the card is the same.
-    Returns tasks.json's rows."""
+    `pool` names the rounds on the card (the sealed pool's with --rounds). Returns tasks.json's rows."""
     seed, final = vs[0], vs[-1]
     shown = [final] if final_only or len(vs) == 1 else [seed, final]
     prefix = "final" if final_only else "task"
@@ -212,7 +214,7 @@ def task_videos(sc: V.Scene, vs: list[dict], out_dir: Path, names: dict | None, 
                  else " · ".join(f"{side}：{v['name']}" for side, v in zip(("左", "右"), shown)))  # fmt: skip
         lines = [
             f"{k}. {name}",
-            "诊断池成功数：" + " → ".join(f"{n} {o}/{m}" for n, o, m in counts),
+            f"{pool}成功数：" + " → ".join(f"{n} {o}/{m}" for n, o, m in counts),
             f"{label} · {where}",
         ]
         ps = RM.plan(sc, rounds, None)
@@ -235,9 +237,13 @@ def main(argv=None) -> int:
     ap.add_argument("--only", default="step,overview,task")
     ap.add_argument("--versions", default="seed,final", choices=["seed,final", "final"], metavar="seed,final|final",
                     help="task videos: the seed beside the final version (default), or the final version alone")  # fmt: skip
+    ap.add_argument("--rounds", type=Path, help="task videos from these rounds of the final version instead of its "
+                    "diagnostic ones (the sealed pool's <hidden>/sealed/<final>/, run with traces; user 2026-11-07)")  # fmt: skip
     a = ap.parse_args(argv)
     loop = a.sandbox / "outputs" / "scene_rsi_20261016" / a.family
     vs = versions(loop)
+    if a.rounds is not None:  # the final version alone, on the given rounds; the other versions did not run them
+        vs = [dict(vs[-1], diag=a.rounds.resolve())]
     cards = json.loads(a.cards.read_text()) if a.cards else {}
     a.out.mkdir(parents=True, exist_ok=True)
     # the family's scene (TODO 38.20): the ADT apartment by default, the logistics room for box_bimanual; replayed on
@@ -259,8 +265,8 @@ def main(argv=None) -> int:
     if "overview" in only and len(vs) > 1:
         print("overview", overview(sc, vs, a.out / "overview.png", cards.get("_names")), flush=True)
     if "task" in only:
-        final_only = a.versions == "final"
-        rows = task_videos(sc, vs, a.out, cards.get("_names"), final_only)
+        final_only = a.versions == "final" or a.rounds is not None
+        rows = task_videos(sc, vs, a.out, cards.get("_names"), final_only, "封存集" if a.rounds else "诊断池")
         (a.out / ("tasks_final.json" if final_only else "tasks.json")).write_text(
             json.dumps(rows, indent=1, ensure_ascii=False)
         )

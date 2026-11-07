@@ -16,7 +16,8 @@ the grip does not fit, and the object was pushed or tipped before the grip or th
 nothing near the object); other. Rounds without a trace classify from their steps alone (`events.source` "steps").
 A two-hand object takes the two-hand set instead (`_classify_bimanual`). A pack round (the goal puts the object in a
 container; `classify(..., goal=)`) with a trace takes the put-in's set (`_classify_pack`): in_but_not_lifted,
-pick_failed, carry_dropped, stuck_on_rim, missed_opening; the object's own class stays in `events.pick_class`.
+pick_failed, carry_dropped, stuck_on_rim, missed_opening; the object's own class stays in `events.pick_class`. Its
+progress stage (`stage(rec, events)`, 0-4) is what the gate compares on a pack family (gso_pack_all.md D15).
 
     from failure_class import classify      # scripts/rsi on sys.path
     cls, events = classify(rec, arrays, world, key, goal=task.goal)
@@ -342,6 +343,8 @@ def _classify_bimanual(ev: dict, rec: dict | None = None) -> str:
 
 
 PICKED_CM = 8.0  # the object this far above its settled height was picked (the one-hand pick's goal is 10 cm)
+STAGE_STRIDE = 5  # the trace frames the progress stages sample (0.1 s at 50 Hz)
+STAGES = ("none", "picked", "over_opening", "in_container", "goal")  # a pack round's progress, 0-4 (`stage`)
 NEAR_OPENING_CM = 20.0  # last above the rim this close outside the opening: a put-in that missed, not a lost carry
 
 
@@ -370,7 +373,9 @@ def pack_events(z: dict, world, key: str, box: str, ev: dict) -> dict:
     put-in (a `release`) and the two-hand one (the hug opens) read alike: `x_rise_max_cm` (above its settled height),
     `x_high_t` (the last moment its box's underside was above the rim, rotation ignored as the predicates do),
     `x_over_opening_cm` (there, how far the box centre was outside the container's inner footprint, 0 over it),
-    `x_in_end` (the `in` predicate at the end), `x_high_end` (still above the rim at the end)."""
+    `x_in_end` (the `in` predicate at the end), `x_high_end` (still above the rim at the end); for the progress stage
+    (gso_pack_all.md D15) `x_over_opening_ever` (ever above the rim over the opening) and `x_in_ever` (ever in the
+    container, the `in` predicate's box in the container's frame), sampled every STAGE_STRIDE frames."""
     from locomani.scene_discovery.predicates import compile_goal
 
     t, objs = z["t"].astype(float), world.meta["objects"]
@@ -388,14 +393,47 @@ def pack_events(z: dict, world, key: str, box: str, ev: dict) -> dict:
     high = np.nonzero(under[s0:] >= rim[s0:])[0]
     i = s0 + int(high[-1]) if len(high) else None
     ev["x_high_t"] = None if i is None else round(float(t[i]), 2)
+
+    def local_at(j: int) -> np.ndarray:
+        """The object's box centre in the container's box frame at frame j."""
+        Rc = _quat_mat(co[j, 3:7])
+        return Rc.T @ (xo[j, :3] + _quat_mat(xo[j, 3:7]) @ xc - co[j, :3] - Rc @ cc)
+
     if i is not None:
-        Rc = _quat_mat(co[i, 3:7])
-        local = Rc.T @ (xo[i, :3] + _quat_mat(xo[i, 3:7]) @ xc - co[i, :3] - Rc @ cc)
+        local = local_at(i)
         ev["x_over_opening_cm"] = round(float(np.linalg.norm(np.maximum(np.abs(local[:2]) - inner, 0.0))) * 100, 2)
+    # the progress stages (gso_pack_all.md D15; `stage`): ever above the rim over the opening, ever in the container
     state = {"objects": {k: dict(pos=o[-1, :3].tolist(), quat=o[-1, 3:7].tolist()) for k, o in ((key, xo), (box, co))}}
     ev["x_in_end"] = bool(compile_goal([f"in({key}, {box})"], {"objects": objs, "surfaces": {}})(state)[0])
+    over, inside = False, ev["x_in_end"]  # the end is a sampled moment too, judged by the predicate itself
+    for j in (*range(s0, len(t), STAGE_STRIDE), len(t) - 1):
+        lo = local_at(j)
+        if not np.all(np.abs(lo[:2]) <= inner):
+            continue
+        over = over or bool(under[j] >= rim[j])
+        inside = inside or bool(-ch[2] + float(cb.get("wall", 0.01)) - 0.01 <= lo[2] <= ch[2])
+    ev["x_over_opening_ever"], ev["x_in_ever"] = over, inside
     ev["x_high_end"] = bool(under[-1] >= rim[-1])
     return ev
+
+
+def stage(rec: dict, ev: dict) -> tuple[int, str]:
+    """A pack round's progress (gso_pack_all.md D15, user 2026-11-07), by what it ever reached: 4 the goal held
+    (`ok`); 3 the object was in the container at some moment; 2 it was above the rim over the opening; 1 it rose
+    PICKED_CM; 0 none of these. The gate compares two versions of the skills start by start on this number
+    (gate.stage_of): a round that put the object in and lost it lifting the carton still beats one that never picked
+    it. A round without the pack events (no trace) is 4 or 0."""
+    if rec.get("ok"):
+        k = 4
+    elif ev.get("x_in_ever"):
+        k = 3
+    elif ev.get("x_over_opening_ever"):
+        k = 2
+    elif (ev.get("x_rise_max_cm") or 0.0) >= PICKED_CM:
+        k = 1
+    else:
+        k = 0
+    return k, STAGES[k]
 
 
 def _classify_pack(rec: dict, z: dict, world, key: str, box: str, ev: dict) -> str:
@@ -405,7 +443,8 @@ def _classify_pack(rec: dict, z: dict, world, key: str, box: str, ev: dict) -> s
     above the rim, or was last above it more than NEAR_OPENING_CM off the opening), stuck_on_rim (last above the rim
     over the opening and not in: on the rim or wedged in the opening), missed_opening (last above the rim beside the
     opening: let go, or still held, outside it)."""
-    pack_events(z, world, key, box, ev)
+    if "x_rise_max_cm" not in ev:  # classify() computes them before the common classes
+        pack_events(z, world, key, box, ev)
     if "x_in_end" not in ev:
         return ev.get("pick_class") or "other"
     if ev["x_in_end"]:
@@ -444,6 +483,12 @@ def classify(rec: dict, arrays, world, key: str, goal: list[str] | None = None) 
     reach = _last_before(steps, grip_t, "jaw_err_cm") if grip_t is not None else _last_before(steps, None, "jaw_err_cm")
     ev["stop_err_cm"] = None if walk is None else walk.get("stop_err_cm")
     ev["reach_err_cm"] = None if reach is None else reach.get("jaw_err_cm")
+    box = container_of(goal, key, world)
+    traced = z is not None and len(z.get("t", [])) > 1
+    if (
+        box is not None and traced
+    ):  # the put-in's events before the common classes: the stage of a fall or a time-out too
+        pack_events(z, world, key, box, ev)
     why = f"{rec.get('why') or ''} {rec.get('plan_why') or ''} {rec.get('error') or ''}"
     if rec.get("ok"):
         return "ok", ev
@@ -460,8 +505,7 @@ def classify(rec: dict, arrays, world, key: str, goal: list[str] | None = None) 
         )
         return ("fell_walk" if early or (first is None and ev.get("grip_t") is None and "walk" in last) else "fell"), ev
     cls = _classify_object(rec, ev, two)
-    box = container_of(goal, key, world)
-    if box is not None and z is not None and len(z.get("t", [])) > 1:
+    if box is not None and traced:
         ev["pick_class"] = cls
         return _classify_pack(rec, z, world, key, box, ev), ev
     return cls, ev

@@ -52,15 +52,20 @@ PLANS = {
     "gso_pack": "scripts/rsi/plans/gso_pack.md",
     "gso_pack_bimanual": "scripts/rsi/plans/gso_pack.md",
     "gso_all": "scripts/rsi/plans/gso_all.md",
+    "gso_pack_all": "scripts/rsi/plans/gso_pack_all.md",
 }
 SEEDS = {"gso_grasp": "scripts/rsi/seeds/atomic", "gso_bimanual": None, "gso_pack": None, "gso_pack_bimanual": None,
-         "gso_all": None}  # fmt: skip
+         "gso_all": None, "gso_pack_all": None}  # fmt: skip
 POOL_SEEDS = {"gso_grasp": 440_000, "gso_bimanual": 450_000, "gso_pack": 460_000, "gso_pack_bimanual": 470_000,
-              "gso_all": 480_000}  # fmt: skip
+              "gso_all": 480_000, "gso_pack_all": 490_000}  # fmt: skip
 POOL_SIZES = {"diag": 30, "accept": 40, "sealed": 50}
 ALL = "gso_all"
 # gso_all's pools: starts per task (42 / 42 / 105 on 21 tasks; user 2026-11-06), so the task rotation gives every task the same share
 ALL_PER_TASK = {"diag": 2, "accept": 2, "sealed": 5}
+PACK_ALL = "gso_pack_all"
+# gso_pack_all's pools: starts per task (30 / 40 / 50 on the 10 pack tasks; user 2026-11-07), the gate's usual sizes
+PACK_ALL_PER_TASK = {"diag": 3, "accept": 4, "sealed": 5}
+PACK_KINDS = ("pack", "pack_bimanual")
 # the two-hand and pack families' success timing (box_bimanual's): the end of the plan, 2 s still, judged over 5 s
 TIMING = {"hold_s": 2.0, "judge_s": 5.0}
 LIFT_M = {"gso_grasp": 0.10, "gso_bimanual": 0.20, "gso_pack": 0.20, "gso_pack_bimanual": 0.20}
@@ -183,6 +188,8 @@ SKILLS_NOTE = {
                          "then bimanual.pick of the carton; sandbox.seed null)",
     "gso_all": "the main skill library as it stands: the one-hand pick (skills/pick.py), the two-hand hug pick "
                "(skills/bimanual.py) and the pack chain (skills/pack.py) together; sandbox.seed null",
+    "gso_pack_all": "the main skill library as it stands: skills/pack.py, the chain of the one-hand (into.place_into) "
+                    "or two-hand (bimanual.place_into) put-in and bimanual.pick of the carton; sandbox.seed null",
 }  # fmt: skip
 
 
@@ -262,8 +269,52 @@ def kind_name(kind: str) -> str:
     return KINDS[kind]
 
 
+def family_pack_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows: dict, meta: dict) -> dict:
+    """gso_pack_all (user 2026-11-07): the two pack kinds' rows in one family -- every object but the carton goes into
+    the carton, which is then lifted --, judged by the gate on the progress stage (gso_pack_all.md D15)."""
+    ids = [r["id"] for kind in PACK_KINDS for r in rows[kind]]
+    keys = dict.fromkeys(r["id"].split("_", 1)[1] for kind in PACK_KINDS for r in rows[kind])
+    objects = "; objects: " + ", ".join(f"{k} = {meta['objects'][k]['semantic']['phrase']}" for k in keys)
+    return {
+        "name": name,
+        "about": (
+            f"logistics_room_1030, the whole pack task on one instance (user 2026-11-07): every task of {KINDS['pack']} "
+            f"and {KINDS['pack_bimanual']}_s{seed} ({len(rows['pack'])} one-hand, {len(rows['pack_bimanual'])} two-hand) "
+            f"on the Google Scanned Objects drawn with seed {seed} onto the 0.371 m pallet platform: pick the object, "
+            f"carry it to the open carton, put it in, then lift the carton with both hands (judged over the last 5 s). "
+            f"The gate compares the two versions start by start on the round's progress stage (0 none, 1 picked, 2 over "
+            f"the opening, 3 in the carton, 4 the goal), so a change that carries starts further is accepted before "
+            f"any start completes the chain" + objects
+        ),  # fmt: skip
+        "scene": scene_rel,
+        "scene_note": (
+            "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m "
+            "pallet platform 0.371 m high with an open cardboard box and ten scanned household objects on it)"
+        ),  # fmt: skip
+        "tasks_file": tasks_file,
+        "tasks": ids,
+        "spawn": {"rooms": "all", "distance_m": [0.5, None]},
+        **STOPS,
+        **TIMING,
+        "pools": {
+            pool: {"seed": POOL_SEEDS[PACK_ALL] + i * 100_000, "n": PACK_ALL_PER_TASK[pool] * len(ids)}
+            for i, pool in enumerate(POOL_SIZES)
+        },
+        "plan": PLANS[PACK_ALL],
+        "skills_note": SKILLS_NOTE[PACK_ALL],
+        "sandbox": {
+            "seed": SEEDS[PACK_ALL],
+            # every gso plan: gso_pack_all.md points at gso_pack.md and gso_bimanual.md for their measurements
+            "keep": KEEP_COMMON + [*dict.fromkeys(PLANS.values()), f"scripts/rsi/families/{name}.json", tasks_file],
+            "closure": CLOSURE,
+            "strip": STRIP,
+            "scene_exclude": SCENE_EXCLUDE,
+        },
+    }
+
+
 def write(scene_dir: Path, families_dir: Path = FAMILIES) -> dict:
-    """The four families, gso_all and the tasks file for the scene; returns {family name: task count}."""
+    """The four families, gso_all, gso_pack_all and the tasks file for the scene; returns {family name: task count}."""
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
     gso = meta.get("gso")
     if not gso:
@@ -290,6 +341,10 @@ def write(scene_dir: Path, families_dir: Path = FAMILIES) -> dict:
         out[name] = len(rows[kind])
     name = f"{ALL}_s{seed}"
     fam = family_all(name, scene_rel, seed, tasks_file, rows, meta)
+    (families_dir / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
+    out[name] = len(fam["tasks"])
+    name = f"{PACK_ALL}_s{seed}"
+    fam = family_pack_all(name, scene_rel, seed, tasks_file, rows, meta)
     (families_dir / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
     out[name] = len(fam["tasks"])
     return out

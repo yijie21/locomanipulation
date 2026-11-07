@@ -196,8 +196,13 @@ class Scene:
         z = r.z
         q[self.free : self.free + 7] = z["robot"][i]
         q[self.joints] = z["joints"][i]
-        a = self.obj_qadr(r.key[4:])
-        q[a : a + 7] = z[r.key][i]
+        for k in z:  # every object the trace tracks: a pack round's carton and the shuffled others too (TODO 40.20)
+            if k.startswith("obj_"):
+                try:
+                    a = self.obj_qadr(k[4:])
+                except (KeyError, StopIteration):  # a body this scene copy does not have
+                    continue
+                q[a : a + 7] = z[k][i]
         for s, side in enumerate(("left", "right")):
             # the measured fingers (traces from 2026-10-20 on); before, only the command was kept: it is past the joint
             # limit while gripping (-0.06), so drawn as is the fingers crossed outside the object (TODO 27.14)

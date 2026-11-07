@@ -83,9 +83,11 @@ def test_the_writer_puts_both_families_and_the_tasks_file_in_the_given_directory
     (scene / "scene_meta.json").write_text(json.dumps(META))
     out = GF.write(scene, tmp_path / "families")
     assert out == {"gso_grasp_s7": 1, "gso_bimanual_s7": 2, "gso_pack_s7": 1, "gso_pack_bimanual_s7": 1,
-                   "gso_all_s7": 5}  # fmt: skip
+                   "gso_all_s7": 5, "gso_pack_all_s7": 2}  # fmt: skip
     every = json.loads((tmp_path / "families/gso_all_s7.json").read_text())
-    fams = {k: json.loads((tmp_path / f"families/{k}.json").read_text()) for k in out if k != "gso_all_s7"}
+    packs = json.loads((tmp_path / "families/gso_pack_all_s7.json").read_text())
+    fams = {k: json.loads((tmp_path / f"families/{k}.json").read_text()) for k in out
+            if k not in ("gso_all_s7", "gso_pack_all_s7")}  # fmt: skip
     grasp, both, pack, pack2 = fams.values()
     rows = [json.loads(x) for x in (tmp_path / "families/gso_s7_tasks.jsonl").read_text().splitlines()]
     assert [r["id"] for r in rows] == ["pick_gso_0001", "lift_nor_cal_box", "lift_gso_0002", "pack_gso_0001",
@@ -121,6 +123,21 @@ def test_the_writer_puts_both_families_and_the_tasks_file_in_the_given_directory
     fam = dict(every, rows=by_id)
     assert F.timing(fam, "pick_gso_0001") == {} and F.timing(fam, "pack_gso_0002") == GF.TIMING
     assert F.timing(dict(grasp, rows=by_id, judge_s=3.0), "pick_gso_0001") == {"judge_s": 3.0}  # the family's
+    # gso_pack_all (user 2026-11-07): the two pack kinds' rows, 3 / 4 / 5 starts per task, the pack timing, its own plan
+    assert packs["tasks"] == pack["tasks"] + pack2["tasks"] and packs["tasks_file"] == grasp["tasks_file"]
+    assert {k: p["n"] for k, p in packs["pools"].items()} == {"diag": 6, "accept": 8, "sealed": 10}
+    assert [p["seed"] for p in packs["pools"].values()] == [490_000, 590_000, 690_000]
+    assert not set(p["seed"] for p in packs["pools"].values()) & (
+        set(seeds) | {p["seed"] for p in every["pools"].values()}
+    )
+    assert (packs["hold_s"], packs["judge_s"]) == (2.0, 5.0) and packs["sandbox"]["seed"] is None
+    assert packs["plan"] == "scripts/rsi/plans/gso_pack_all.md" and (ROOT / packs["plan"]).is_file()
+    assert (
+        packs["plan"] in packs["sandbox"]["keep"]
+        and "scripts/rsi/families/gso_pack_all_s7.json" in packs["sandbox"]["keep"]
+    )
+    assert (packs["stop_rate"], packs["max_wall_h"], packs["max_run_iters"]) == (0.8, 5.0, 5)
+    assert "progress stage" in packs["about"] and "red mug" in packs["about"]
 
 
 def test_every_tracked_gso_all_family_is_the_four_families_of_its_instance():
@@ -132,6 +149,9 @@ def test_every_tracked_gso_all_family_is_the_four_families_of_its_instance():
         assert {k: p["n"] for k, p in every["pools"].items()} == {
             k: n * len(every["tasks"]) for k, n in GF.ALL_PER_TASK.items()
         }
+        packs = json.loads((ROOT / f"scripts/rsi/families/gso_pack_all_s{seed}.json").read_text())
+        assert packs["tasks"] == [t for f in fams[2:] for t in f["tasks"]] and len(packs["tasks"]) == 10
+        assert {k: p["n"] for k, p in packs["pools"].items()} == {"diag": 30, "accept": 40, "sealed": 50}
 
 
 def test_a_scene_without_the_gso_block_or_a_kind_is_refused(tmp_path):

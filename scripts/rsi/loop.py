@@ -83,7 +83,7 @@ import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
 import records as RC  # noqa: E402
-from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
+from gate import GATE_RULE, candidate_hash, drop_limit, overrides, stage_of  # noqa: E402
 
 from locomani import paths  # noqa: E402
 
@@ -1303,17 +1303,27 @@ def refresh_diag_pool(inc: dict, base: Path, n: int | None) -> dict | None:
 
 
 def summarize(d: Path) -> dict:
-    """Per task and per failure: what the Reviewer reads first (the round files hold the rest)."""
+    """Per task and per failure: what the Reviewer reads first (the round files hold the rest). On a pack family also
+    `stages`, the rounds at each progress stage (gso_pack_all.md D15: none, picked, over_opening, in_container, goal),
+    and `per_task_stage`, each task's mean stage."""
     out = B.outcomes(d)
     per = collections.defaultdict(lambda: [0, 0])
     why = collections.Counter()
+    stages, per_stage = collections.Counter(), collections.defaultdict(list)
     for r in out.values():
         per[r["task"]][0] += r["ok"]
         per[r["task"]][1] += 1
         if not r["ok"]:
             why[(r.get("plan_why") or r["why"])[:70]] += 1
-    return dict(ok=sum(r["ok"] for r in out.values()), n=len(out), per_task={k: f"{a}/{b}" for k, (a, b) in per.items()},
-                failures=dict(why.most_common()))  # fmt: skip
+        if r.get("stage") is not None:
+            stages[r.get("stage_name") or str(r["stage"])] += 1
+            per_stage[r["task"]].append(r["stage"])
+    res = dict(ok=sum(r["ok"] for r in out.values()), n=len(out), per_task={k: f"{a}/{b}" for k, (a, b) in per.items()},
+               failures=dict(why.most_common()))  # fmt: skip
+    if stages:
+        res["stages"] = dict(stages.most_common())
+        res["per_task_stage"] = {k: round(sum(v) / len(v), 2) for k, v in per_stage.items()}
+    return res
 
 
 def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path) -> list[dict]:
@@ -1324,17 +1334,21 @@ def probe(hyps: list[dict], inc: dict, base: Path, it_dir: Path) -> list[dict]:
         B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
     except Exception as e:
         failed = f"{type(e).__name__}: {e}"
-    before = {k: r["ok"] for k, r in B.outcomes(base).items()}
+    # fixed / broken as the gate counts them (gate.stage_of: a pack round's progress stage, else ok / fail; gso_pack_all.md
+    # D15), so a probe that carries a start further along the chain verifies its hypothesis before any start completes it
+    inc_out = B.outcomes(base)
+    before, ok_before = {k: stage_of(r) for k, r in inc_out.items()}, sum(r["ok"] for r in inc_out.values())
     res = []
     for h in hyps:
-        after = {k: r["ok"] for k, r in B.outcomes(it_dir / "probe" / h["id"]).items()}
+        out = B.outcomes(it_dir / "probe" / h["id"])
+        after = {k: stage_of(r) for k, r in out.items()}
         if failed or not after:
             res.append(dict(id=h["id"], error=failed or "no rounds ran (an unknown parameter? see prober.log)"))
             continue
-        fixed = sorted(k for k in after if after[k] and not before.get(k))
-        broken = sorted(k for k in after if before.get(k) and not after[k])
+        fixed = sorted(k for k in after if after[k] > before.get(k, 0))
+        broken = sorted(k for k in after if after[k] < before.get(k, 0))
         pf, pb = set(h["predicted_fixed"]), set(h["predicted_broken"])
-        res.append(dict(id=h["id"], n=len(after), ok_before=sum(before.values()), ok_after=sum(after.values()),
+        res.append(dict(id=h["id"], n=len(after), ok_before=ok_before, ok_after=sum(r["ok"] for r in out.values()),
                         fixed=fixed, broken=broken, predicted_fixed_hit=len(pf & set(fixed)), predicted_fixed_n=len(pf),
                         predicted_broken_hit=len(pb & set(broken)), predicted_broken_n=len(pb),
                         summary=summarize(it_dir / "probe" / h["id"])))  # fmt: skip
@@ -1869,12 +1883,14 @@ def revert_strays(base_changes: list) -> list[str]:
 
 
 def flips(inc_dir: Path, cand_dir: Path) -> dict:
-    """A candidate's diagnostic rounds against the incumbent's, start by start."""
+    """A candidate's diagnostic rounds against the incumbent's, start by start: `ok` counts the successes, `fixed` /
+    `broken` the starts it reaches a higher / lower stage on (gate.stage_of; ok / fail without stages), as the gate
+    counts its wins and losses."""
     a, b = B.outcomes(inc_dir), B.outcomes(cand_dir)
     both = sorted(set(a) & set(b))
     return dict(ok=sum(bool(b[x]["ok"]) for x in both), incumbent_ok=sum(bool(a[x]["ok"]) for x in both), n=len(both),
-                fixed=[x for x in both if b[x]["ok"] and not a[x]["ok"]],
-                broken=[x for x in both if a[x]["ok"] and not b[x]["ok"]])  # fmt: skip
+                fixed=[x for x in both if stage_of(b[x]) > stage_of(a[x])],
+                broken=[x for x in both if stage_of(b[x]) < stage_of(a[x])])  # fmt: skip
 
 
 # -- the candidate pool (TODO 33.8, D7), recurring hypotheses and the reopen limit (TODO 33.14, D11), names (33.13) --

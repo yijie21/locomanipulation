@@ -177,7 +177,7 @@ def graph_columns(records: list[dict]) -> dict:
 
 def row(rec: dict, start: dict | None, where: str, host: str, family: str, graph: list[dict] | None = None) -> dict:
     out = {"label": rec["label"], "task": rec["task"], "family": family, "ok": int(bool(rec["ok"])),
-           "failure_class": rec.get("failure_class"), "skills": rec.get("skills"),
+           "failure_class": rec.get("failure_class"), "stage": rec.get("stage"), "skills": rec.get("skills"),
            "set": json.dumps(rec.get("set") or {}, sort_keys=True), "motor": rec.get("motor"),
            "controller": rec.get("controller"), "machine": host, "source": where}  # fmt: skip
     if start:

@@ -139,6 +139,8 @@ def run_round(
     try:  # TODO 33.15: the round's failure class and events (failure_class.py); a classifier bug never costs a round
         key = task.objects[0] if task.objects else None
         rec["failure_class"], rec["events"] = FC.classify(rec, arrays, world, key, goal=list(task.goal))
+        if FC.container_of(list(task.goal), key, world) is not None:  # a pack round's progress (gso_pack_all.md D15)
+            rec["stage"], rec["stage_name"] = FC.stage(rec, rec["events"])
     except Exception as e:
         rec["failure_class"], rec["events"] = "unclassified", dict(error=f"{type(e).__name__}: {e}"[:300])
     rec.update(

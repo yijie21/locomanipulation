@@ -211,6 +211,19 @@ def class_lines(rounds: list[dict]) -> list[str]:
     return out
 
 
+def stage_line(rows: list[dict]) -> list[str]:
+    """A pack task's progress stages (gso_pack_all.md D15; `stage` 0-4 on each round, failure_class.STAGES): how many
+    rounds reached each, so the Reviewer sees where the chain breaks before reading the rounds."""
+    st = [r["stage"] for r in rows if r.get("stage") is not None]
+    if not st:
+        return []
+    import failure_class as FC
+
+    counts = collections.Counter(st)
+    return ["Stages reached: " + ", ".join(f"{FC.STAGES[k]} {counts[k]}" for k in sorted(counts, reverse=True))
+            + f" (mean {sum(st) / len(st):.2f} of 4)", ""]  # fmt: skip
+
+
 def _edge_text(edge: list) -> str:
     s, r, o = edge
     return f"{s} {r} {o}" if o is not None else f"{s} {r}"
@@ -328,7 +341,7 @@ def build(diag: Path, family: str) -> str:
         movables = list(F.task(fam, task).objects) if task in fam["rows"] else []
         n_ok = sum(r["ok"] for r in rows)
         out += [f"## {task}: {n_ok}/{len(rows)}", "", f"Goal: {' and '.join(goal)}", ""]
-        out += facts(meta, goal) + [""]
+        out += stage_line(rows) + facts(meta, goal) + [""]
         stages = collections.Counter(
             f"{first_fail(r)[0] or 'goal'}: {shape(first_fail(r)[1])}" for r in rows if not r["ok"]
         )

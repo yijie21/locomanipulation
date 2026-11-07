@@ -91,6 +91,7 @@
    "scripts/rsi/plans/gso_bimanual.md",
    "scripts/rsi/plans/gso_pack.md",
    "scripts/rsi/plans/gso_all.md",
+   "scripts/rsi/plans/gso_pack_all.md",
    "scripts/rsi/families/gso_all_s1.json",
    "scripts/rsi/families/gso_s1_tasks.jsonl"
   ],

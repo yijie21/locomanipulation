@@ -332,6 +332,34 @@ class Pack(unittest.TestCase):
         self.assertIn(ev["lift_class"], ("side_reach", "one_hand_short", "knocked", "no_lift", "slip", "other"))
         self.assertAlmostEqual(ev["x_high_t"], 8.4, delta=0.1)
 
+    def test_the_stage_is_the_highest_point_the_round_ever_reached(self):
+        """gso_pack_all.md D15: 0 none, 1 picked, 2 over the opening, 3 in the container, 4 the goal."""
+        rise = (5.0, 0.5, 0.5, TOP + 0.05)
+        cases = {
+            0: [rise, (8.0, 0.5, 0.5, TOP + 0.09), (10.0, 0.5, 0.5, TOP + 0.05)],  # rose 4 cm: never picked
+            1: [rise, (8.0, 0.5, 0.5, TOP + 0.20), (10.0, 0.5, 0.5, TOP + 0.05)],  # carried below the rim
+            2: [rise, (8.0, 0.5, 0.0, TOP + 0.45), (10.0, 0.5, 0.0, RIM + 0.05)],  # over the opening, left on the rim
+            3: [rise, (8.0, 0.5, 0.0, TOP + 0.45), (10.0, 0.5, 0.0, TOP + 0.06)],  # in the carton, the lift failed
+        }
+        for want, keys in cases.items():
+            cls, ev = self.classify(keys)
+            self.assertEqual(FC.stage(rec(), ev), (want, FC.STAGES[want]), (cls, ev))
+        # in and out again: the stage keeps what the round reached, the class says what it ended as
+        keys = [rise, (8.0, 0.5, 0.0, TOP + 0.45), (10.0, 0.5, 0.0, TOP + 0.06), (12.0, 0.5, 0.0, TOP + 0.45),
+                (14.0, 0.5, 0.9, 0.05)]  # fmt: skip
+        cls, ev = self.classify(keys)
+        self.assertTrue(ev["x_in_ever"] and ev["x_over_opening_ever"])
+        self.assertEqual(FC.stage(rec(), ev), (3, "in_container"))
+        self.assertNotEqual(cls, "in_but_not_lifted")
+        self.assertEqual(FC.stage(rec(ok=True), ev), (4, "goal"))
+        self.assertEqual(FC.stage(rec(), {}), (0, "none"))  # no trace: the pack events are missing
+        # a fall or a time-out after the put-in keeps the stage it reached: the pack events come before the common classes
+        keys = [rise, (8.0, 0.5, 0.0, TOP + 0.45), (10.0, 0.5, 0.0, TOP + 0.06)]
+        cls, ev = self.classify(keys, fell=True, why="[fell] pelvis 0.3 m")
+        self.assertEqual((cls, FC.stage(rec(), ev)), ("fell", (3, "in_container")))
+        cls, ev = self.classify(keys, why="episode time limit 300 s")
+        self.assertEqual((cls, FC.stage(rec(), ev)), ("time_limit", (3, "in_container")))
+
     def test_without_a_pack_goal_the_objects_own_classes_stay(self):
         keys = [(5.0, 0.5, 0.5, TOP + 0.05), (8.0, 0.5, 0.5, TOP + 0.09), (10.0, 0.5, 0.5, TOP + 0.05)]
         cls, ev = FC.classify(rec(steps=[WALK, reach(1.0)]), packtrace(keys), pack_scene(), "X")

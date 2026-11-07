@@ -26,7 +26,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import batch as B  # noqa: E402
 import family as F  # noqa: E402
-from gate import mcnemar_one_sided, overrides, wilson  # noqa: E402
+from gate import mcnemar_one_sided, overrides, stage_of, wilson  # noqa: E402
 
 from locomani.tasks.scene import body  # noqa: E402
 
@@ -70,9 +70,13 @@ def main(argv=None) -> int:
     vs = versions(hidden / "gate")
     # TODO 36 (review 2026-10-22): nothing accepted -> vs[-1] is the seed; it ran twice as [seed, seed]
     order = list(dict.fromkeys([vs[-1], vs[0]] + (vs[1:-1] if a.all else [])))
-    jobs = [B.Job(d / "skills", out / name, overrides(d)) for name, d in order]
+    # with traces (npz): the final video replays the sealed rounds (evolution_media.py --rounds; user 2026-11-07)
+    jobs = [B.Job(d / "skills", out / name, overrides(d), None, True) for name, d in order]
     missing = B.run_jobs(jobs, a.family, pool, a.procs, out / "run.log", a.gpus)
     summary = dict(pool=str(pool), versions={name: tally(B.outcomes(out / name)) for name, _ in order},
+                   # a pack family's progress stages per version (gso_pack_all.md D15): {stage: rounds}
+                   stages={name: dict(sorted(collections.Counter(stage_of(r) for r in B.outcomes(out / name).values()).items()))
+                           for name, _ in order},
                    missing={order[k][0]: v for k, v in missing.items() if v},
                    # TODO 33.1.2: the body model's predictions against the delivered reaches, beside the success rate
                    prediction={name: body.score(B.outcomes(out / name).values()) for name, _ in order})  # fmt: skip

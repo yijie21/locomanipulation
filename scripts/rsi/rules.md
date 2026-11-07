@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 23, 2026-10-30)
+# Rules for the scene RSI loop (TODO 27, version 24, 2026-11-07)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -109,7 +109,12 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     change that fixes one object's 4 acceptance starts could never pass). A candidate rejected under the older rule
     may be judged again; the sealed pool at the end still decides what the run reports. The loop stops for the sealed
     pool when the incumbent wins 70 % of the acceptance pool; a run continued from a strong incumbent sets its own
-    share with `run --stop-rate` (version 15, user 2026-10-22: grasp_atomic continued from 29/40).
+    share with `run --stop-rate` (version 15, user 2026-10-22: grasp_atomic continued from 29/40). On a family whose
+    rounds carry a progress stage (rule 32; the pack families, `gso_pack_all.md` D15; version 24, user 2026-11-07) a
+    win is a start the candidate reaches a higher stage on than the incumbent and a loss a lower one, the same stage a
+    tie; b and c are judged by the same rule, so a change that carries three starts further along the chain is
+    accepted before any start completes it. The verdict reports the stages behind b and c (`stage`). The 80 % stop,
+    `candidate_ok` and the sealed pool count stage 4 (the goal) alone.
 
 26. When task-wide parks cover more than half the acceptance pool, the gate judges on an acceptance pool of the same
     size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a
@@ -173,7 +178,12 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     other) and `events` (the walk's end, the pre-grasp's end, the grip, the lift, the hand's closest approach, the
     object's first move and the hand that moved it), computed by the driver from the trace and the scene file
     (scripts/rsi/failure_class.py, TODO 33.15); the gate reports its tally per class and the digest leads with the
-    classes. `src/locomani/tasks/scene/graspability.py` (and scripts/rsi/graspability.py) says, without simulating,
+    classes. A pack round (a goal with `in(X, C)`) is classed by its put-in (pick_failed, carry_dropped,
+    missed_opening, stuck_on_rim, in_but_not_lifted; the object's own class in `events.pick_class`, the carton lift's
+    in `events.lift_class`) and carries `stage` / `stage_name` (version 24; `gso_pack_all.md` D15): 0 none, 1 picked
+    (rose 8 cm), 2 over the opening (above the rim over the container's inner footprint), 3 in the container (the `in`
+    predicate's box), 4 the goal -- what the round *ever* reached, from the trace (`failure_class.stage`); the gate
+    compares versions on it (rule 25), the digest and the summary count it per task. `src/locomani/tasks/scene/graspability.py` (and scripts/rsi/graspability.py) says, without simulating,
     whether an object fits the open jaw on each side, how far to turn so a side that fits faces the jaw, and which
     preparatory action would make it fit (TODO 33.18, D13). `src/locomani/tasks/scene/body.py` (scripts/rsi/body.py)
     says, from a table of 15,120 measured reaches, how likely the controller is to land a hand 3 cm or more off a
@@ -185,7 +195,8 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     model and the chooser).
 
 33. Each hypothesis gets a `status` from its probe: verified (it fixed a diagnostic start and broke none), refuted (it
-    fixed none), mixed, or hypothesis (not probed: its test needs code). A mechanism Reviewers proposed in two or more
+    fixed none), mixed, or hypothesis (not probed: its test needs code); fixed and broken are counted as the gate
+    counts wins and losses (rule 25: a higher or lower stage on a pack family, ok / fail elsewhere; version 24). A mechanism Reviewers proposed in two or more
     iterations, given to no Engineer and not refuted takes one Engineer slot, unless the Manager's `skip` names the
     check that fails: interface_kept, safety_checks_kept, changed_code_reached or evidence_not_refuting. After a
     rejection the Manager reads the failure classes, the gate's per-class tally and a standing suggestion per class

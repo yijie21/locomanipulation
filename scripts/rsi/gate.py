@@ -27,6 +27,10 @@ died, the incumbent's own round is missing) the call ends with a void verdict (a
 "pairing incomplete: ..."), never a verdict on fewer pairs. A crash still leaves no ledger line (the loop reads that from
 the exit code and the hash).
 A tally also carries `per_class` (TODO 33.15): wins and losses by the round records' failure class, reported, not judged.
+On a pack family (gso_pack_all.md D15, user 2026-11-07) a win is a start the candidate reaches a higher progress stage
+on (`stage` in the round record, 0-4: none, picked, over the opening, in the container, the goal) and a loss a lower
+one, so a change that moves starts along the chain can be accepted before any start completes it; `candidate_ok`, the
+stops' 80 % and the sealed pool still count stage 4 alone. Rounds without a stage are judged on ok / fail as before.
 On acceptance the candidate's rounds become the incumbent's. The verdict JSON is the only output a loop role reads.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -149,11 +153,36 @@ def overrides(cand: Path) -> dict:
     return json.loads((cand / "candidate.json").read_text()).get("set") or {}
 
 
+def stage_of(r: dict) -> int:
+    """A round's progress for the paired comparison (gso_pack_all.md D15, user 2026-11-07): its `stage` (a pack
+    round, 0-4: none, picked, over the opening, in the container, the goal), else 4 for a success and 0 for a failure,
+    so a family without stages is judged on ok / fail as before."""
+    st = r.get("stage")
+    return int(st) if st is not None else (4 if r["ok"] else 0)
+
+
+def stage_tally(cand: dict, inc: dict, keys: list[str]) -> dict | None:
+    """The stages behind b and c when any round carries one: wins, losses, ties, each arm's mean stage and, per task,
+    [incumbent mean, candidate mean]. Reported in the verdict; the rule judges b and c."""
+    if not any(r.get("stage") is not None for k in keys for r in (cand[k], inc[k])):
+        return None
+    sa, si = {k: stage_of(cand[k]) for k in keys}, {k: stage_of(inc[k]) for k in keys}
+    per: dict[str, list] = {}
+    for k in keys:
+        per.setdefault(cand[k].get("task") or k.rsplit("_s", 1)[0], []).append((si[k], sa[k]))
+    mean = lambda xs: round(sum(xs) / len(xs), 2) if xs else None  # noqa: E731
+    return dict(wins=sum(sa[k] > si[k] for k in keys), losses=sum(sa[k] < si[k] for k in keys),
+                ties=sum(sa[k] == si[k] for k in keys), candidate_mean=mean(list(sa.values())),
+                incumbent_mean=mean(list(si.values())),
+                per_task={t: [mean([x[0] for x in v]), mean([x[1] for x in v])] for t, v in sorted(per.items())})  # fmt: skip
+
+
 def per_class(cand: dict, inc: dict, keys: list[str]) -> dict:
     """TODO 33.15 (plan section 3.5): the tally by failure class (`failure_class` in the round records; a record
     without one counts as "unknown"). A win (b) counts under the class the incumbent failed with -- what the candidate
-    fixed --, a loss (c) under the class the candidate fails with -- what it broke; `cand_fail` / `inc_fail` count each
-    arm's failures by class. Reported in the verdict, not judged."""
+    improved --, a loss (c) under the class the candidate fails with -- what it broke; `cand_fail` / `inc_fail` count
+    each arm's failures by class. A win or loss is a higher or lower stage (stage_of; ok / fail without stages).
+    Reported in the verdict, not judged."""
     out: dict[str, dict] = {}
 
     def row(k: str) -> dict:
@@ -166,17 +195,20 @@ def per_class(cand: dict, inc: dict, keys: list[str]) -> dict:
             row(cls(a))["cand_fail"] += 1
         if not i["ok"]:
             row(cls(i))["inc_fail"] += 1
-        if a["ok"] and not i["ok"]:
+        if stage_of(a) > stage_of(i):
             row(cls(i))["b"] += 1
-        elif i["ok"] and not a["ok"]:
+        elif stage_of(i) > stage_of(a):
             row(cls(a))["c"] += 1
     return dict(sorted(out.items()))
 
 
 def tally(cand: dict, inc: dict) -> dict:
+    """The paired comparison over the shared starts: b = starts the candidate reaches a higher stage on, c = a lower
+    one (stage_of: a pack round's 0-4 progress, else ok / fail), `candidate_ok` / `incumbent_ok` the successes (stage
+    4), `stage` the stages behind b and c (stage_tally; None when no round carries one)."""
     keys = sorted(set(cand) & set(inc))
-    b = sum(cand[k]["ok"] and not inc[k]["ok"] for k in keys)
-    c = sum(inc[k]["ok"] and not cand[k]["ok"] for k in keys)
+    b = sum(stage_of(cand[k]) > stage_of(inc[k]) for k in keys)
+    c = sum(stage_of(cand[k]) < stage_of(inc[k]) for k in keys)
     why = {}
     for k in keys:
         if not cand[k]["ok"]:
@@ -188,7 +220,7 @@ def tally(cand: dict, inc: dict) -> dict:
                 candidate_dropped=sum(cand[k]["dropped"] for k in keys),
                 incumbent_dropped=sum(inc[k]["dropped"] for k in keys),
                 candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])),
-                per_class=per_class(cand, inc, keys))  # fmt: skip
+                per_class=per_class(cand, inc, keys), stage=stage_tally(cand, inc, keys))  # fmt: skip
 
 
 def main(argv=None) -> int:
