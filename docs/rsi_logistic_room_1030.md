@@ -21,6 +21,7 @@
 ## 0. 每个新终端先执行
 
 ```bash
+export LOCOMANI_WORKSPACE=$HOME/workspace   # 只在没有 /workspace 的机器上（如 SRA0889）；有 /workspace 的机器省掉这行
 . scripts/paths.sh
 export TMPDIR=$LOCOMANI_TMP NUMPY_MADVISE_HUGEPAGE=0 OMP_NUM_THREADS=2
 export RSI_GPUS=0 RSI_PROCS=6 RSI_SIM_SLOTS=6
@@ -28,7 +29,7 @@ export MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0
 PY=$VENV_SIM_PY
 ```
 
-做什么：和物流间 runbook 第 0 节一样，多一行 `MUJOCO_GL`：预览图和 pytest 里的渲染测试要离屏 GL。前提也一样（[安装](setup.md)“场景 RSI”一列、`git lfs pull` 取到场景包 `assets/scene/logistics_room_box_v1/`、`bash scripts/setup_sonic.sh`）。
+做什么：和物流间 runbook 第 0 节一样，多一行 `MUJOCO_GL`：预览图和 pytest 里的渲染测试要离屏 GL。`paths.sh` 默认工作区是 `/workspace`；机器上没有它时要先设 `LOCOMANI_WORKSPACE`，否则载入 ScaleBFM 报 `FileNotFoundError: /workspace/models/scalebfm/...`，`gate.py` / `loop.py` 建目录时报 `PermissionError: '/workspace'`。前提也一样（[安装](setup.md)“场景 RSI”一列、`git lfs pull` 取到场景包 `assets/scene/logistics_room_box_v1/`、`bash scripts/setup_sonic.sh`）。
 
 ## 1. 装物体库、建目录（每台机器一次）
 
@@ -131,8 +132,9 @@ $PY scripts/gso_pack_check.py --family gso_pack_bimanual_s0
 ## 6. 封存集与视频
 
 ```bash
-cd $S && $PY scripts/rsi/sealed.py gso_grasp_s0; cd -
-cat $S/outputs/scene_rsi_20261016_hidden/gso_grasp_s0/sealed/summary.json
+cd $S && nohup setsid $PY scripts/rsi/sealed.py gso_grasp_s0 > sealed.log 2>&1 &   # 1–2 h，后台跑，关终端不会杀掉它
+cd -
+cat $S/outputs/scene_rsi_20261016_hidden/gso_grasp_s0/sealed/summary.json         # sealed.log 打印出 summary 之后
 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_grasp_s0 --out outputs/scene_rsi_20261016/gso_grasp_s0_media --only task --versions final
 ```
 
@@ -147,6 +149,18 @@ $PY scripts/rsi/report/evolution_media.py --sandbox $S --family gso_pack_all_s0 
 
 每个任务一段 `final_NN_<task>.mp4`：有成功局取最短的一局，否则取最短的失败局；回放现在摆回轨迹里每个物体（纸箱和重摆过的其余物体），不只任务物体。
 
+同一批视频的 Unreal 版（关卡要先按第 7 节建好；编辑器已开着就跳过第一行）：
+
+```bash
+bash scripts/start_unreal.sh --gpu 0
+PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" scripts/rsi/report/report_unreal.py all \
+  --media outputs/scene_rsi_20261016/gso_pack_all_s0_media --out outputs/scene_rsi_20261016/gso_pack_all_s0_media_unreal
+bash scripts/stop_unreal.sh
+```
+
+做什么：读上一条输出目录的 `tasks_final.json` 和 `media.json`（场景名 `logistics_room_1030_s0` 从这里来，不加 `--scene`），把每段视频的那一局回放进 `/Game/Levels/logistics_room_1030_s0`，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍，再合成同样的字幕卡；`all` 或点名一段（如 `final_05_pack_gso_0558`）。回放摆的是 MuJoCo 回放同一组姿态，所以纸箱和其余物体也跟着轨迹动。
+得到什么：`--out` 下每段 `<名字>.mp4`、`previews/`、海报、`<名字>/panel0/NNNNN.jpg` 逐帧和 `compare_*.jpg`（同一时刻 Unreal 与 MuJoCo 上下对照，先看它确认对齐）；约 1 分钟一段。渲染期间不跑别的重任务（封存集也不行）：编辑器的守护脚本在 CPU 占满时会杀掉它，日志在 `$UNREAL_ROOT/logs/`。关卡的 `source.json` 哈希和场景 XML 不一致时会拒绝渲染，按第 7 节重建关卡。换实例就把命令里的 `s0` 换掉。
+
 ## 7. Unreal 关卡（每个实例一个）
 
 ```bash
@@ -157,7 +171,7 @@ PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 --build
 
 做什么：按 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `unreal.build` 建关卡：把场景的会动部分（机器人、纸箱、10 件物体和它们的扫描纹理）导出成 URLab 的 MJCF 导入进 `/Game/Levels/logistics_room_1030_s0`（房间是 warehouse 的关卡）。导出器剥掉碰撞壳之前先把每件物体的质量和惯量烤成显式 `<inertial>`，不然扫描物体没有质量、编译失败。s1–s9 换名字各建一次（每个实例一份关卡，10 件物体各不相同）；重建场景实例后关卡要重建（`source.json` 记着场景 XML 的哈希，不一致 `run_context.unreal_scene` 会拒绝）。
 第三条给每个实例出一张 Unreal 图（用户 11-04）：把关卡里的第三视角机位（1280 × 960、fovy 45）依次放到平台正上方 2 m 和房间远角（和 MuJoCo 预览图同样的两个视角），各拍一帧静止场景（沉降后的物体、机器人在起点），图下列出物体；`--build` 让它先给缺关卡或关卡过期（场景哈希不符）的实例建关卡，不加就报错停下。
-得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 39–97 s（s0–s9 的 11-05 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 十张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 15–31 s（主要是载关卡、起 PIE）。之后 Unreal 视频按物流间 runbook 第 7 节用 `scripts/rsi/report/report_unreal.py`，场景名从沙盒的 `media.json` 来。
+得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 39–97 s（s0–s9 的 11-05 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 十张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 15–31 s（主要是载关卡、起 PIE）。之后 Unreal 视频见第 6 节最后一段（`report_unreal.py --media`，场景名从 `media.json` 来）。
 
 ## 8. 评测没见过的物体
 
