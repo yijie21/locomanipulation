@@ -34,7 +34,7 @@ OUT = REPO / "outputs" / "scene_rsi_20261016" / "body" / "reach_samples.npz"
 REACH_STEPS = ("pre", "pregrasp", "entry", "insert", "descend", "hand_entry", "raise")
 FIRST = ("pre", "pregrasp")  # the step that carries the hand to the pre-grasp: the predictor's main target
 FIELDS = [
-    ("sandbox", "U40"), ("label", "U48"), ("task", "U32"), ("skills", "U16"), ("ok", "?"), ("failure_class", "U16"),
+    ("sandbox", "U40"), ("label", "U48"), ("task", "U32"), ("skills", "U16"), ("ok", "?"), ("failure_class", "U24"),
     ("step", "U12"), ("first", "?"), ("t0", "f4"), ("dur", "f4"), ("hand", "i1"), ("pinch", "?"),
     ("pelvis_z0", "f4"), ("tx", "f4"), ("ty", "f4"), ("tz", "f4"), ("dist", "f4"),
     ("wx0", "f4"), ("wy0", "f4"), ("wz0", "f4"), ("drift_xy", "f4"), ("drift_z", "f4"), ("mode", "f4"),

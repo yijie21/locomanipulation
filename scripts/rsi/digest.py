@@ -172,7 +172,9 @@ def round_line(r: dict, tr: dict) -> str:
     flags = "".join(f for f, on in (("F", r.get("fell")), ("D", r.get("dropped"))) if on)
     head = f"{r['label']} {'OK  ' if r['ok'] else 'fail'}{(' ' + flags) if flags else ''} t {r.get('t_end', 0):.0f}s"
     if not r["ok"] and r.get("failure_class"):
-        head += f" [{r['failure_class']}]"
+        ev = r.get("events") or {}
+        sub = ev.get("lift_class") or ev.get("pick_class")  # a pack round's class keeps the lift's or the pick's
+        head += f" [{r['failure_class']}{f' < {sub}' if sub else ''}]"
     step, why = first_fail(r) if not r["ok"] else ("", "")
     lines = [head + (f" | first fail {step}: {why}" if step else (f" | {why}" if not r["ok"] else ""))]
     if not r["ok"] and r.get("why"):
@@ -201,7 +203,8 @@ def class_lines(rounds: list[dict]) -> list[str]:
     cls = lambda r: r.get("failure_class") or "unknown"  # noqa: E731
     counts = collections.Counter(cls(r) for r in fails)
     out = ["Failure classes: " + ", ".join(f"{k} {n}" for k, n in counts.most_common()), ""]
-    odd = [r for r in fails if cls(r) in UNPLACED]
+    sub = lambda r: (r.get("events") or {}).get("lift_class") or (r.get("events") or {}).get("pick_class")  # noqa: E731
+    odd = [r for r in fails if cls(r) in UNPLACED or sub(r) in UNPLACED]  # a pack round's own class may be the odd one
     if odd:
         out += ["Rounds no class fits (look at these first):"]
         out += [f"- {r['label']}: {first_fail(r)[0] or 'goal'}: {shape(first_fail(r)[1])[:90]}" for r in odd] + [""]

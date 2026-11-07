@@ -96,6 +96,24 @@ class DigestFacts(unittest.TestCase):
         self.assertTrue(lines[1].startswith("- nor_cal_box:") and "0.60 kg" in lines[1] and "container:" in lines[1])
 
 
+class DigestRoundLine(unittest.TestCase):
+    def test_a_pack_rounds_class_shows_the_picks_or_the_lifts_class_under_it(self):
+        r = dict(
+            label="pack_x_s1", ok=False, t_end=40.0, failure_class="pick_failed", events=dict(pick_class="knocked")
+        )
+        self.assertIn("[pick_failed < knocked]", DG.round_line(r, {}))
+        r.update(failure_class="in_but_not_lifted", events=dict(pick_class="slip", lift_class="no_lift"))
+        self.assertIn("[in_but_not_lifted < no_lift]", DG.round_line(r, {}))
+        r.update(failure_class="slip", events={})
+        self.assertIn("[slip]", DG.round_line(r, {}))
+
+    def test_a_pack_round_whose_pick_no_class_fits_is_listed_with_the_odd_ones(self):
+        r = dict(label="pack_x_s1", ok=False, failure_class="pick_failed", events=dict(pick_class="other"), steps=[])
+        lines = DG.class_lines([r, dict(r, label="pack_x_s2", events=dict(pick_class="knocked"))])
+        self.assertIn("Rounds no class fits (look at these first):", lines)
+        self.assertEqual([x for x in lines if x.startswith("- pack_x")], [x for x in lines if "pack_x_s1" in x])
+
+
 class Cli(unittest.TestCase):
     def test_show_prints_steps_edges_events_and_expectations(self):
         with tempfile.TemporaryDirectory() as d:

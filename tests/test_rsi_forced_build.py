@@ -207,6 +207,10 @@ class RepairNotes(_LoopCase):
         self.assertIsNone(lp.repair_notes(acc, d, 9))
         self.assertIsNone(lp.repair_notes([], d, 9))
 
+    def test_every_pack_class_has_a_suggestion(self):
+        pack = ("pick_failed", "carry_dropped", "missed_opening", "stuck_on_rim", "in_but_not_lifted")
+        self.assertEqual([c for c in pack if c not in self.lp.CLASS_SUGGEST], [])
+
 
 class GateAndDigest(unittest.TestCase):
     def test_gate_tally_by_failure_class(self):

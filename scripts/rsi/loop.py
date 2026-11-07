@@ -145,6 +145,17 @@ CLASS_SUGGEST = {
     "(stand up fully, raise the hands more), checked by the measured lowest corner before the window starts",
     "tilted": "the box's bottom tipped past the goal's limit: the two hands at unequal heights, or the grasp off the "
     "box's centre of mass along the walls; level the hands while lifting and check the tilt",
+    # the put-in's classes of a pack round (gso_pack.md D14; events.pick_class / lift_class keep the object's)
+    "pick_failed": "the object never rose 8 cm: the pick failed before any put-in; repair it as its events.pick_class "
+    "says (the one-hand or the two-hand set)",
+    "carry_dropped": "the object rose and was lost below the rim or far from the carton: check the hold while raising "
+    "and walking (lift_check, bimanual_lift_check), raise before moving, re-grip through stage()",
+    "missed_opening": "last above the rim beside the opening: aim the put-in at the opening's centre from the carton's "
+    "measured pose, and check the object is over the opening before letting go",
+    "stuck_on_rim": "over the opening and not in: it rests on the rim or is wedged; let go centred and lower, the "
+    "object's long side along the opening's, and check it dropped below the rim",
+    "in_but_not_lifted": "the object is in the carton and the carton's lift failed: repair it as its events.lift_class "
+    "says (the two-hand set)",
     "dropped_hold": "the whole goal held at some moment, then failed inside the judging window: the box slid in the "
     "hands or the body sagged; keep pressing (squeeze), stop moving before the window, or a re-grip",
 }
