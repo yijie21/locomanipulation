@@ -275,6 +275,8 @@ class RunFlags(unittest.TestCase):
             dict(
                 candidates=3,
                 scoped_review=False,
+                reviewers=1,
+                repair=False,
                 max_wall_h=6.0,
                 stop_rate=0.70,
                 engineer_late_min=10.0,
@@ -292,6 +294,8 @@ class RunFlags(unittest.TestCase):
                 dict(
                     candidates=1,
                     scoped_review=True,
+                    reviewers=1,
+                    repair=False,
                     max_wall_h=5.0,
                     stop_rate=0.70,
                     engineer_late_min=10.0,

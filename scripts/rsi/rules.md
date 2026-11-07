@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 27, 2026-11-06)
+# Rules for the scene RSI loop (TODO 27, version 28, 2026-11-06)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -253,3 +253,9 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     summary of the pool, and the round directory has mode 000 while the Reviewer runs. To look closer at a round the
     Reviewer runs it again with try.py. The Prober and the later roles read the rounds as before (code: loop.py
     reviewer_cards, rounds_locked; prompt) (version 27).
+38. A draft says where it acts and the driver measures it (TODO 44). The Engineer returns `scope`: the condition in
+    measured quantities and the diagnostic starts it expects to change. Rounds being deterministic, a round that
+    differs from the one the draft started from in any step or timing is a round the code reached; the driver records
+    that as the draft's `footprint` for the Composer (code: loop.py footprint; prompt). With `run --repair`, a draft that
+    breaks a start the incumbent finishes gets one more turn in its own session with that run's result; the repair
+    replaces it only if it breaks fewer starts without losing net ones (code: loop.py repair_draft; prompt) (version 28).

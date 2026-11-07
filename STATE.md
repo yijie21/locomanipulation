@@ -20,7 +20,8 @@
   （没换的 37 个起点 30 → 30），它分支上的提交 e1325906、1c47a609。旧的视觉数字都是旧地图上的。
 
 ## 当前进度（已确认）
-- Reviewer 改读失败卡片（TODO 43.1，规则 37，`rules.md` version 27）：两次真实回放跑通到 Prober，完整一轮只用桩跑过。下一步 43.2：两个并行的 Reviewer。
+- Reviewer 读失败卡片（TODO 43.1，规则 37）已在提交 a338c209。TODO 43.2、44 做完并验证，已提交（`rules.md` version 28，算一次人工干预）。沙盒从 HEAD 导出，新运行会带上 `scope` 和 `footprint`。
+- grasp_floor 上完整一轮（卡片、1 个 Reviewer）闸门 36、37、35、35 / 40；2 个 Reviewer 35、34、33、35，所以 `--reviewers` 默认 1。`--repair` 默认关。报告 `outputs/scene_rsi_20261016/engineer_audit_20261104/remaining_steps_20261106/REPORT.md`。第三个 Engineer 常被 `--engineer-late-min`（默认 10 分钟）停掉：2 个 Reviewer 的 5 轮里 3 轮。这个默认值是用户 10-23 定的，没动，等用户看。
 - grasp_atomic 现任仍是 run C 的 `5cba2fa49d31`。新地图（TODO 42）上 120 个位置赢 88（旧图 86），走路摔倒 7 → 0
   （`outputs/scene_rsi_20261016/walkmap_20261027/README.md`）。旧图上的封存 38 / 50 照旧算数，只是地图更准了（用户 10-27）。
 - 场景文件已改（42.1）：sha256 主场景 `abe78c1f…`、可移动变体 `3395c67c…`；旧文件 `outputs/scene_discovery/<场景>.bak_20261027_before_walkmap/`。

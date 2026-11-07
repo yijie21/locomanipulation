@@ -111,6 +111,11 @@ ENGINEER_LATE_MIN = ENGINEER_LATE_MIN_DEFAULT  # this run's (`run --engineer-lat
 # to the gate in the same iteration (one more gate call, 3-5 min, instead of another 60-80 min iteration)
 SECOND_SHOT_DEFAULT = True
 SECOND_SHOT = SECOND_SHOT_DEFAULT  # this run's (`run --second-shot / --no-second-shot`, resolve_settings)
+REPAIR = (
+    False  # run --repair: a draft that broke a start the incumbent finishes gets one more turn (rule 38, TODO 44.2)
+)
+REPAIR_MIN = 20.0  # minutes of that turn; its own clock: --engineer-late-min is for a draft still missing, and a
+# replay's second repair lost 13 minutes of work to it with its first draft already in
 # TODO 33.23 (plan section 3.8, D21; user 2026-10-23): the diagnostic pool is re-drawn when the incumbent fails fewer
 # than DIAG_MIN_FAILS of its starts (run C's incumbent was 30/30 on it while 19 of 90 hidden-pool starts failed, so the
 # roles saw no failure at all): fresh starts from the family's diagnostic seed range, the incumbent runs on them, the
@@ -162,6 +167,8 @@ LOOP = HIDDEN = STATE = GATE_DIR = Path()
 EFFORT: dict = dict(reviewer="high", manager="xhigh", engineer="xhigh", composer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
 SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
+REVIEWERS = 1  # run --reviewers N: N Reviewers on the same inputs, no scopes, MAX_HYPOTHESES each (TODO 43.2: not the
+# default, the gate gave 34.25 / 40 against 35.75 with one, and a cause hidden from one Reviewer was hidden from both)
 CANDIDATES = 3  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step); 3 by
 # default since TODO 32.15 (user 2026-10-22: "设置成默认的吧"), --candidates 1 is the one-Engineer loop, no Composer
 LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience library
@@ -193,6 +200,11 @@ SCOPED_NOTE = (  # TODO 33.3: what the Manager reads when the scoped Reviewers r
     "(a different way of doing it: another stance, handling the object first, two hands, the other hand). S hypotheses "
     "mostly need code, so their probes are often empty: judge them by the body model's prediction their evidence "
     "cites, not by a missing probe result.\n"
+)
+TWIN_NOTE = (  # TODO 43.2: what the Manager reads when several Reviewers ran
+    "Hypotheses come from several Reviewers who worked independently on the same inputs (the first letter of an id says "
+    "which). The same mechanism from two of them is agreement, not two mechanisms: give it one slot, and spend the "
+    "other slots on what only one of them found when its evidence holds.\n"
 )
 CANDIDATES_NOTE = (  # TODO 32.9: what the Manager reads when an iteration builds several candidates
     "This iteration builds {K} candidates at once: with `engineer`, list up to {K} hypothesis ids in `hypotheses`, best "
@@ -346,12 +358,20 @@ COMPOSER_SCHEMA = {  # TODO 32.9
 
 ENGINEER_SCHEMA = {
     "type": "object",
-    "required": ["mechanism", "files_changed", "set", "tests"],
+    "required": ["mechanism", "files_changed", "set", "tests", "scope"],
     "properties": {
         "mechanism": {"type": "string"},
         "files_changed": {"type": "array", "items": {"type": "string"}},
         "set": {"type": "object"},
         "tests": {"type": "string"},
+        "scope": {  # rule 38: what the draft says it changes; the driver measures what it did change (footprint)
+            "type": "object",
+            "required": ["when", "starts"],
+            "properties": {
+                "when": {"type": "string"},
+                "starts": {"type": "array", "items": {"type": "string"}},
+            },
+        },
     },
 }
 
@@ -382,7 +402,8 @@ def prompt_vars() -> dict:
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         CANDIDATES_NOTE=(CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "")
-        + (SCOPED_NOTE if SCOPED else ""),
+        + (SCOPED_NOTE if SCOPED else "")
+        + (TWIN_NOTE if REVIEWERS > 1 else ""),
         LIBRARY=LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "",
     )
 
@@ -850,12 +871,16 @@ def undo_commits(head0: str) -> dict | None:
 
 
 def claude(
-    role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None, stop: threading.Event | None = None
-) -> tuple[dict, dict]:
+    role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None, stop: threading.Event | None = None,
+    resume: str | None = None,
+) -> tuple[dict, dict]:  # fmt: skip
     """One role call. `stop` (TODO 37.3): an event the driver sets to give the role up; run_role then kills the
-    session and raises RoleLate."""
-    prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role))
-    (it_dir / f"{role}_prompt.md").write_text(prompt)
+    session and raises RoleLate. `resume` (rule 38): one more turn in that finished session, under the same role, so
+    it keeps what it read and its try.py budget; its prompt and raw answer go to <role>_repair_*."""
+    if resume is None:
+        prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role))
+    name = f"{role}_repair" if resume else role
+    (it_dir / f"{name}_prompt.md").write_text(prompt)
     if stub is not None:
         return stub, dict(cost_usd=0.0, session=None, seconds=0.0)
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_SSE")}
@@ -873,13 +898,16 @@ def claude(
         *(["--add-dir", *allowed_dirs()] if allowed_dirs() else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
     ]  # fmt: skip
-    session = str(uuid.uuid4())
+    session = resume or str(uuid.uuid4())
+    how = ["--resume", session] if resume else ["--session-id", session]
+    before = transcript(session)
+    seen = before.read_text(errors="replace").count(ANSWERED) if before is not None else 0
     t0 = time.time()
     head0 = git_head()
     with hidden_locked():
-        stdout, stderr, rc, killed = run_role([*cmd, "--session-id", session], prompt, env, session, stop=stop)
+        stdout, stderr, rc, killed = run_role([*cmd, *how], prompt, env, session, stop=stop, seen=seen)
     committed = undo_commits(head0)
-    (it_dir / f"{role}_raw.json").write_text(stdout or stderr)
+    (it_dir / f"{name}_raw.json").write_text(stdout or stderr)
     try:
         out = json.loads(stdout)
     except json.JSONDecodeError as e:
@@ -895,15 +923,19 @@ def claude(
     return so, acct
 
 
+ANSWERED = "Structured output provided successfully"  # in a session's transcript once it has answered
+
+
 def run_role(
     cmd: list[str], prompt: str, env: dict, session: str, grace: float = ROLE_GRACE_S, poll: float = 10.0,
-    stop: threading.Event | None = None,
+    stop: threading.Event | None = None, seen: int = 0,
 ) -> tuple[str, str, int, list[str]]:  # fmt: skip
     """Run a role's `claude -p` to its end. claude -p does not exit while a background shell it started still runs,
     and a role once left `until ! pgrep -f "<dir>"; do sleep 10; done`, which matches itself and never ends (iteration
     2, 2026-10-16: the driver stalled until a human killed it). So once the transcript shows the structured answer,
     the role's leftover processes get `grace` seconds, then the driver kills them (listed in the ledger). `stop` set
-    (TODO 37.3): the session and everything under it are killed and RoleLate is raised."""
+    (TODO 37.3): the session and everything under it are killed and RoleLate is raised. `seen`: the answers already in
+    the transcript when a finished session takes another turn (rule 38)."""
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             cwd=REPO, env=env)  # fmt: skip
     t0, answered, killed, feed = time.time(), None, [], prompt
@@ -925,10 +957,10 @@ def run_role(
                     pass
             proc.kill()
             proc.communicate()
-            raise RoleLate(f"stopped by the driver {int(time.time() - t0)} s in (--engineer-late-min)")
+            raise RoleLate(f"stopped by the driver {int(time.time() - t0)} s in")
         if answered is None:
             p = transcript(session)
-            if p is not None and "Structured output provided successfully" in p.read_text(errors="replace"):
+            if p is not None and p.read_text(errors="replace").count(ANSWERED) > seen:
                 answered = time.time()
         elif time.time() - answered > grace:
             for pid in descendants(proc.pid):
@@ -1566,6 +1598,8 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     with rounds_locked(base):
         if SCOPED:
             hyps, acct = scoped_review(prompt, it_dir, stub_h if stub else None)
+        elif REVIEWERS > 1:
+            hyps, acct = twin_review(prompt, it_dir, stub_h if stub else None)
         else:
             hyps, acct = claude(
                 "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
@@ -1582,36 +1616,39 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
-def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, dict]:
-    """Two Reviewers in parallel on the same inputs, each held to a scope (SCOPES) and two hypotheses; their
-    hypotheses are merged with the scope letter before the id (P1, O1, ...), their claims and notes joined. The
-    accounting sums cost and keeps the longer wall time; `session` is the first one's (the leak check reads both)."""
+def joint_review(prompts: dict, it_dir: Path, stub: dict | None, per: int) -> tuple[dict, dict]:
+    """Several Reviewers in parallel, one per prompt ({tag: prompt}); at most `per` hypotheses of each are kept. Their
+    hypotheses and claims are merged with short ids, the tag and the position (AH1, BH2: a Reviewer's own id may be
+    anything, and the Manager has to repeat these), the Reviewer's own in `own_id`; their notes are joined. The
+    accounting sums cost and keeps the longer wall time; `session` is the first one's (the leak check reads them all)."""
     out: dict = {}
 
     def one(tag):
-        text = prompt.replace("propose at most 4 interventions", "propose at most 2 interventions, within your scope")
-        text += "\n\n" + SCOPES[tag] + "\n"
         try:
-            out[tag] = claude(f"reviewer_{tag}", text, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub)
+            out[tag] = claude(
+                f"reviewer_{tag}", prompts[tag], HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub
+            )
         except RoleFailed as e:
             out[tag] = e
 
-    ts = [threading.Thread(target=one, args=(t,)) for t in SCOPES]
+    ts = [threading.Thread(target=one, args=(t,)) for t in prompts]
     for t in ts:
         t.start()
     for t in ts:
         t.join()
-    for tag in SCOPES:  # a failed call reaches cmd_run as the RoleFailed it raised, not a KeyError
+    for tag in prompts:  # a failed call reaches cmd_run as the RoleFailed it raised, not a KeyError
         if isinstance(out.get(tag), RoleFailed):
             raise out[tag]
     hyps = dict(notes="", hypotheses=[], infeasible=[])
-    for tag in SCOPES:
+    for tag in prompts:
         h, _ = out[tag]
         hyps["notes"] += f"[{tag}] {h.get('notes', '')}\n"
-        for x in h["hypotheses"][:2]:
-            hyps["hypotheses"].append(dict(x, id=f"{tag}{x['id']}", scope=tag))
-        hyps["infeasible"] += [c for c in h.get("infeasible") or [] if isinstance(c, dict)]
-    accts = [out[t][1] for t in SCOPES]
+        for i, x in enumerate(h["hypotheses"][:per], 1):
+            hyps["hypotheses"].append(dict(x, id=f"{tag}H{i}", own_id=x["id"], scope=tag))
+        hyps["infeasible"] += [
+            dict(c, id=f"{tag}{c.get('id')}") for c in h.get("infeasible") or [] if isinstance(c, dict)
+        ]
+    accts = [out[t][1] for t in prompts]
     acct = dict(cost_usd=sum(a["cost_usd"] for a in accts), session=accts[0]["session"],
                 seconds=max(a["seconds"] for a in accts), sessions=[a["session"] for a in accts])  # fmt: skip
     if any(a.get("committed") for a in accts):
@@ -1619,10 +1656,22 @@ def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, d
     return hyps, acct
 
 
+def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, dict]:
+    """Reviewers held to a scope each (SCOPES) and two hypotheses."""
+    text = prompt.replace("propose at most 4 interventions", "propose at most 2 interventions, within your scope")
+    return joint_review({t: f"{text}\n\n{SCOPES[t]}\n" for t in SCOPES}, it_dir, stub, 2)
+
+
+def twin_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, dict]:
+    """TODO 43.2: REVIEWERS Reviewers on the same prompt. Repeats of one iteration differ more than the Reviewer's
+    inputs ever moved the result (reviewer_card/REPORT_ab.md), so the independent readings are the point."""
+    return joint_review({chr(65 + k): prompt for k in range(REVIEWERS)}, it_dir, stub, MAX_HYPOTHESES)
+
+
 def hypothesis_cap() -> int:
-    """How many hypotheses the Prober runs: MAX_HYPOTHESES, or two per scope with the scoped Reviewers (TODO 33.3:
-    three scopes, six, the plan's 4 -> 6; the probes are cheap since the speed-up)."""
-    return 2 * len(SCOPES) if SCOPED else MAX_HYPOTHESES
+    """How many hypotheses the Prober runs: MAX_HYPOTHESES a Reviewer, or two per scope with the scoped Reviewers
+    (TODO 33.3: three scopes, six, the plan's 4 -> 6; the probes are cheap since the speed-up)."""
+    return 2 * len(SCOPES) if SCOPED else REVIEWERS * MAX_HYPOTHESES
 
 
 def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
@@ -1661,7 +1710,8 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     jdump(ctx, dict(lead, **body))
     prompt = fill((HERE / "prompts" / "manager.md").read_text(), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
-    dec, acct = claude("manager", prompt, manager_schema(may_reopen), it_dir, "Edit,Write,NotebookEdit,Agent,Bash",
+    ids = [h["id"] for h in hyps["hypotheses"]]
+    dec, acct = claude("manager", prompt, manager_schema(may_reopen, ids), it_dir, "Edit,Write,NotebookEdit,Agent,Bash",
                        stub_m if stub else None)  # fmt: skip
     jdump(it_dir / "manager.json", dec)
     leaks = transcript_leaks(acct["session"])
@@ -1733,7 +1783,7 @@ def engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> 
     prompt = fill((HERE / "prompts" / "engineer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **common)
     start_set = overrides(Path(bentry["dir"])) if bentry else inc["set"]
     stub_e = dict(mechanism="stub", files_changed=[], set={**start_set, **(chosen or {}).get("delta", {}).get("set", {})},
-                  tests="none")  # fmt: skip
+                  tests="none", scope=dict(when="stub", starts=["all"]))  # fmt: skip
     eng, acct = claude("engineer", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_e if stub else None)
     return after_engineer(n, it_dir, inc, eng, acct, base_changes, stub, reopen)
 
@@ -1747,7 +1797,7 @@ def after_engineer(
     stray = [f for f in now_changed if f not in base_changes and not f.startswith(rel)]
     leaks = transcript_leaks(acct["session"])
     ledger(dict(step="engineer", iter=n, changed=changed, stray=stray, mechanism=eng["mechanism"], set=eng["set"],
-                void=bool(leaks), leaks=leaks, **acct))  # fmt: skip
+                scope=eng.get("scope"), void=bool(leaks), leaks=leaks, **acct))  # fmt: skip
     cand = it_dir / "candidate"
     if cand.exists():
         shutil.rmtree(cand)
@@ -2321,10 +2371,15 @@ def reopen_allowed(es: list[dict]) -> bool:
     return not (len(recent) == MAX_REOPEN_RUN and all(d == "reopen" for d in recent))
 
 
-def manager_schema(allow_reopen: bool) -> dict:
+def manager_schema(allow_reopen: bool, ids: list | None = None) -> dict:
+    """`ids`: this iteration's hypotheses, the only ids the Manager can name. multi_engineer_step keeps the ids it knows,
+    so one the Manager shortened was dropped without a word: a replay gave its three Engineers one hypothesis."""
     sch = json.loads(json.dumps(MANAGER_SCHEMA))
     if not allow_reopen:
         sch["properties"]["decision"]["enum"] = [d for d in sch["properties"]["decision"]["enum"] if d != "reopen"]
+    if ids:
+        sch["properties"]["hypothesis"]["enum"] = list(ids)
+        sch["properties"]["hypotheses"]["items"]["enum"] = list(ids)
     return sch
 
 
@@ -2401,6 +2456,110 @@ def early_diag(k: int, w: Path, eng: dict, inc: dict, it_dir: Path) -> None:
                    LOOP / "pool_diag", PROCS, it_dir / f"diag_{k}.log", GPUS)  # fmt: skip
     except Exception as e:  # noqa: BLE001 -- the main step repeats the run
         print(f"early diag of draft {k}: {type(e).__name__}: {e}", flush=True)
+
+
+def round_path(r: dict) -> list:
+    """What a round did, step by step. Rounds are deterministic, so two rounds of a start with different paths mean
+    the code reached this one."""
+    return [[s.get("step"), s.get("ok"), s.get("t0"), s.get("t1")] for s in r.get("steps") or []]
+
+
+def same_round(a: dict, b: dict) -> bool:
+    return (
+        round_path(a) == round_path(b) and bool(a.get("ok")) == bool(b.get("ok")) and a.get("t_end") == b.get("t_end")
+    )
+
+
+def footprint(ref: Path, cand: Path, scope: dict | None) -> dict:
+    """Rule 38: the diagnostic rounds a draft changed against the rounds it started from (`ref`), measured, beside what
+    its Engineer said: `outside` changed and not declared, `missed` declared and left as they were."""
+    a, b = B.outcomes(ref), B.outcomes(cand)
+    both = sorted(set(a) & set(b))
+    changed = [x for x in both if not same_round(a[x], b[x])]
+    declared = list((scope or {}).get("starts") or [])
+    return dict(n=len(both), changed=changed, declared=declared,
+                outside=[] if "all" in declared else [x for x in changed if x not in declared],
+                missed=[x for x in declared if x in both and x not in changed])  # fmt: skip
+
+
+def first_difference(a: dict, b: dict) -> dict:
+    """Where round `b` left round `a`'s path: the first step that differs, as each round has it."""
+    pa, pb = round_path(a), round_path(b)
+    k = next((i for i, (x, y) in enumerate(zip(pa, pb)) if x != y), min(len(pa), len(pb)))
+    keys = ("step", "ok", "t0", "t1")
+    return dict(index=k, incumbent=dict(zip(keys, pa[k])) if k < len(pa) else None,
+                draft=dict(zip(keys, pb[k])) if k < len(pb) else None)  # fmt: skip
+
+
+def repair_brief(inc_rounds: Path, cand_rounds: Path, was: dict, fp: dict) -> dict:
+    """What a repair turn reads of the draft's run on all the diagnostic starts."""
+    a, b = B.outcomes(inc_rounds), B.outcomes(cand_rounds)
+    broken = [dict(label=x, why=b[x].get("why"), failure_class=b[x].get("failure_class"),
+                   first_difference=first_difference(a[x], b[x])) for x in was["broken"]]  # fmt: skip
+    return dict(draft_rounds=str(cand_rounds), incumbent_rounds=str(inc_rounds), ok=was["ok"], incumbent_ok=was["incumbent_ok"],
+                n=was["n"], fixed=was["fixed"], broken=broken, changed=fp["changed"], outside=fp["outside"], missed=fp["missed"])  # fmt: skip
+
+
+def repair_draft(
+    n: int, k: int, w: Path, res: tuple[dict, dict], inc: dict, ref: Path, it_dir: Path, common: dict
+) -> tuple[dict, dict]:  # fmt: skip
+    """Rule 38 (TODO 44.2, `run --repair`): an Engineer checks its draft on the starts it means to fix, so it may never
+    see a success it broke; only the Composer does, and the Composer cannot ask for a repair. A draft that broke one of
+    the incumbent's successes gets one more turn in its own session with that run's result. The repair stands when it
+    breaks fewer starts without losing net ones; otherwise the first draft goes on (its rounds are kept, hash-keyed)."""
+    eng, acct = res
+    cand = it_dir / f"candidate_{k}"
+    if not cand.exists():  # early_diag failed before it copied the draft
+        return res
+    inc_rounds = LOOP / "diag" / f"incumbent_{inc['hash']}"
+    rounds = LOOP / "diag" / f"candidate_{candidate_hash(cand)}"
+    if not B.outcomes(rounds):
+        return res
+    was = flips(inc_rounds, rounds)
+    if not was["broken"]:
+        return res
+    first = w / "skills_first"
+    shutil.copytree(w / "skills", first, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    brief = w / "repair_brief.json"
+    jdump(brief, repair_brief(inc_rounds, rounds, was, footprint(ref, rounds, eng.get("scope"))))
+    prompt = fill(
+        (HERE / "prompts" / "repair.md").read_text(), BRIEF=brief, ITER=w, **dict(common, SKILLS=w / "skills")
+    )
+    row = dict(
+        step="repair",
+        iter=n,
+        candidate=k,
+        session=acct["session"],
+        before=dict(fixed=len(was["fixed"]), broken=was["broken"]),
+    )
+    stop = threading.Event()
+    timer = threading.Timer(REPAIR_MIN * 60, stop.set)
+    timer.start()
+    try:
+        eng2, acct2 = claude(f"engineer_{k}", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stop=stop,
+                             resume=acct["session"])  # fmt: skip
+    except RoleFailed as e:
+        timer.cancel()
+        shutil.rmtree(w / "skills")
+        shutil.copytree(first, w / "skills")
+        early_diag(k, w, eng, inc, it_dir)
+        ledger(dict(row, kept="first", error=str(e)[:300], late=isinstance(e, RoleLate)))
+        return res
+    timer.cancel()
+    early_diag(k, w, eng2, inc, it_dir)
+    rounds2 = LOOP / "diag" / f"candidate_{candidate_hash(cand)}"
+    now_ = flips(inc_rounds, rounds2) if B.outcomes(rounds2) else None
+    net = lambda f: len(f["fixed"]) - len(f["broken"])  # noqa: E731
+    better = now_ is not None and len(now_["broken"]) < len(was["broken"]) and net(now_) >= net(was)
+    total = dict(acct, cost_usd=acct["cost_usd"] + acct2["cost_usd"], seconds=acct["seconds"] + acct2["seconds"])
+    ledger(dict(row, kept="repair" if better else "first", cost_usd=acct2["cost_usd"], seconds=acct2["seconds"],
+                after=dict(fixed=len(now_["fixed"]), broken=now_["broken"]) if now_ else None))  # fmt: skip
+    if better:
+        return eng2, total
+    shutil.rmtree(w / "skills")
+    shutil.copytree(first, w / "skills")
+    early_diag(k, w, eng, inc, it_dir)  # candidate_k back to the first draft; its rounds are done
+    return eng, total
 
 
 def second_shot_pick(cands: list[dict], gated_hash: str, rejected: set) -> dict | None:
@@ -2490,7 +2649,8 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
             ITER=w,
             **dict(common, SKILLS=w / "skills", TMP=role_dir(f"engineer_{k}")),
         )
-        stub_e = dict(mechanism=f"stub {k}", files_changed=[], set={**overrides(src)}, tests="none")
+        stub_e = dict(mechanism=f"stub {k}", files_changed=[], set={**overrides(src)}, tests="none",
+                      scope=dict(when="stub", starts=["all"]))  # fmt: skip
         if stub:  # a stub draft must differ from the incumbent, or the plumbing after it never runs
             with (w / "skills" / "__init__.py").open("a") as fh:
                 fh.write(f"\n# stub draft {k}\n")
@@ -2498,6 +2658,9 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     out: dict = {}
 
     stops = {k: threading.Event() for k, *_ in calls}
+    inc_rounds = LOOP / "diag" / f"incumbent_{inc['hash']}"
+    pooled = LOOP / "diag" / f"candidate_{bentry['hash']}" if bentry else None
+    ref = pooled if pooled is not None and pooled.is_dir() else inc_rounds  # the rounds the drafts start from
 
     def one(k, w, prompt, stub_e):
         try:
@@ -2508,6 +2671,8 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
             return
         if not stub:
             early_diag(k, w, out[k][0], inc, it_dir)
+            if REPAIR:
+                out[k] = repair_draft(n, k, w, out[k], inc, ref, it_dir, common)
 
     threads = {k: threading.Thread(target=one, args=(k, w, pr_, se)) for k, _, w, pr_, se in calls}
     for t in threads.values():
@@ -2537,7 +2702,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         void = bool(leaks) or bool(stray) or h == inc["hash"] or bool(named)
         dup = first.get(h) if not void else None  # TODO 36 (review 2026-10-22, L5): the first of identical drafts stays
         ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, changed=sorted(set(PATCHED.findall(patch))),
-                    stray=stray, mechanism=eng["mechanism"], set=eng["set"], void=void, leaks=leaks,
+                    stray=stray, mechanism=eng["mechanism"], set=eng["set"], scope=eng.get("scope"), void=void, leaks=leaks,
                     **({"named_objects": named} if named else {}), **({"base": bentry["hash"]} if bentry else {}),
                     **({"duplicate_of": dup["number"]} if dup else {}), **acct))  # fmt: skip
         if leaks:
@@ -2547,7 +2712,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         if dup:
             dup.setdefault("duplicate_drafts", []).append(k)
         elif not void:
-            cands.append(dict(number=k, hypothesis=hid, mechanism=eng["mechanism"], dir=str(cand),
+            cands.append(dict(number=k, hypothesis=hid, mechanism=eng["mechanism"], scope=eng.get("scope"), dir=str(cand),
                               patch=str(it_dir / f"code_{k}.patch"), hash=h,
                               diag=str(LOOP / "diag" / f"candidate_{h}")))  # fmt: skip
             first[h] = cands[-1]
@@ -2563,7 +2728,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
     base = LOOP / "diag" / f"incumbent_{inc['hash']}"
     for c in cands:
-        c.update(flips(base, Path(c["diag"])))
+        c.update(flips(base, Path(c["diag"])), footprint=footprint(ref, Path(c["diag"]), c["scope"]))
     jdump(it_dir / "candidates.json", cands)
     # the Composer
     wc = it_dir / "compose" / "skills"
@@ -2767,6 +2932,8 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
     return dict(
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
+        reviewers=max(1, int(pick(getattr(a, "reviewers", None), "reviewers", REVIEWERS))),
+        repair=bool(pick(True if getattr(a, "repair", None) else None, "repair", REPAIR)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", WALL_DEFAULT_H)),
         stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", STOP_RATE_DEFAULT)),
         engineer_late_min=float(
@@ -2833,7 +3000,7 @@ def cmd_run(a) -> int:
 
 
 def _run(a, efforts: dict) -> int:
-    global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT
+    global STOP_AFTER, CANDIDATES, SCOPED, REVIEWERS, REPAIR, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT
     global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
@@ -2841,6 +3008,9 @@ def _run(a, efforts: dict) -> int:
     resume(meta)
     cfg = resolve_settings(a, meta, resuming)
     CANDIDATES, SCOPED, MAX_WALL_H = cfg["candidates"], cfg["scoped_review"], cfg["max_wall_h"]
+    REVIEWERS, REPAIR = cfg["reviewers"], cfg["repair"]
+    if SCOPED and REVIEWERS > 1:
+        raise SystemExit("--scoped-review and --reviewers are two ways of running several Reviewers: choose one")
     STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT = cfg["stop_rate"], cfg["engineer_late_min"], cfg["second_shot"]
     DIAG_MIN_FAILS, DIAG_TARGET_FAILS = cfg["diag_min_fails"], cfg["diag_target_fails"]
     DIAG_DRAW_MAX = cfg["diag_draw_max"]
@@ -2948,6 +3118,9 @@ def main(argv=None) -> int:
         "a resumed run keeps its recorded value unless given)",
     )
     r.add_argument("--scoped-review", action="store_true", default=None, help="two scoped Reviewers (TODO 32.11)")
+    r.add_argument("--reviewers", type=int, help="N independent Reviewers on the same inputs (TODO 43.2; default 1)")
+    r.add_argument("--repair", action="store_true", default=None, help="a draft that broke a start the incumbent "
+                   "finishes gets one more turn (TODO 44.2, rule 38; off by default)")  # fmt: skip
     r.add_argument("--stop-rate", type=float, default=None, help="stop when the incumbent wins this share of the "
                    "acceptance pool (default 0.70; a resumed run keeps its recorded value unless given)")  # fmt: skip
     r.add_argument("--engineer-late-min", type=float, default=None, help="minutes a straggler Engineer gets once half "

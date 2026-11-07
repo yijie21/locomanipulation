@@ -1328,4 +1328,12 @@
 对照回放（2026-11-05，30 次：grasp_floor 2 轮各 2 次、grasp_atomic 6 轮各 1 次，每种读法 10 次；grasp_floor 的 12 次由不知分组的评审打分）：诊断质量没有变好（盲评 3.75 / 3.5 / 4.0，同组重复的差别比组间大）；只看卡片的 Reviewer 合计花费少约 20%（$42.8 比 $55.1）、自写脚本少约 40%，grasp_atomic 上用时中位 40 比 64 分钟，grasp_floor 上不省时间。报告 `outputs/scene_rsi_20261016/engineer_audit_20261104/reviewer_card/REPORT_ab.md`。
 
 - [x] 43.1 卡片进主循环：`scripts/rsi/cards.py`（从实验目录移来，grasp_floor 上的输出和实验版逐字节相同）；`loop.py` 每轮写 `iter_NN/cards`，Reviewer 读卡片，运行期间逐局目录是 mode 000（`rounds_locked`，崩溃后 `unlock_rounds` 复原）；规则 37（version 27）；`reviewer.md` 去掉 `--ref`；诊断池重抽时候选也留轨迹（否则升为现任后只有“no trace”卡片）。`digest.py` 留给 `try.py`。
-- [ ] 43.2 两个并行的“只看卡片” Reviewer：同轮两次合并后找到第二原因 4 / 6，单次 5 / 12，只是现有数据的推算，还没单独验证；`scoped_review` 已有并行的骨架。
+- [x] 43.2 两个并行的 Reviewer：做了 `run --reviewers N`（`joint_review`，和 `--scoped-review` 共用），验证后默认仍是 1。完整一轮回放（grasp_floor 第 0、1 轮，闸门 40 个起点）：1 个 Reviewer 36、37、35、35，2 个 35、34、33、35。第二原因（前臂压盘子）不是运气：第 0 轮单个 0 / 6、成对 0 / 3，第 1 轮单个 6 / 6、成对 3 / 3，同一轮的两个 Reviewer 要么都找到要么都找不到，因为第 0 轮手过不了椅子，盘子根本显现不出来。原来“4 / 6 比 5 / 12”的推算把这种遮蔽当成了随机。报告 `outputs/scene_rsi_20261016/engineer_audit_20261104/remaining_steps_20261106/REPORT.md`。
+
+## 44. Engineer 自由写代码 + 声明作用范围（用户 2026-11-04 的提议 1 的落地；2026-11-06：“开始做问题 1，2 剩下的两步”）
+
+更正：原来说规则接口更安全是因为 `when` 限定了新代码跑在哪些回合，这个解释不对。同一条假设，两种写法改动的回合数相同（H1 20 / 20、H2 20 / 20、H3 5 / 5），全部 7 次弄坏都是同一个起点 s430176，两边的新动作都在那里触发。
+
+- [x] 44.1 声明和实测（规则 38，`rules.md` version 28）：Engineer 答案加必填的 `scope`（条件和预计改动的起点），驱动程序逐回合比步骤和时间，算出 `footprint`（`loop.py`），和 `candidates.json` 一起给 Composer。回合是确定的，不用多跑。32 个候选里 24 个声明 all，没有一个超出声明；这个任务族一个修复通常碰到全部回合，所以这里声明没有区分度。
+- [x] 44.2 修复轮（`run --repair`，默认关）：草稿弄坏现任能过的起点时，在原会话里多给一轮（`repair_draft`，`prompts/repair.md`，20 分钟时限）。32 份里 3 份触发，1 次跑完（修好 9 坏 1 → 修好 8 坏 0），2 次超时；三次 Composer 都用了别的草稿，闸门没变。
+- [x] 44.3 真实回放查出的问题：Reviewer 可以自由命名假设，Manager 写简称时 `multi_engineer_step` 不声不响丢掉，3 个 Engineer 全做了同一条。现在合并后的 ID 是短的，Manager 的输出只能填本轮已有的 ID。
