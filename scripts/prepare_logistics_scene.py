@@ -102,7 +102,7 @@ def rsi_fields(meta: dict, model, data, body_radius: float, source_scene: str, b
         "room": ROOM,
         "movable": True,
         "graspable": "bimanual",  # 0.32 m across its narrow side: wider than a Dex1 jaw (9.5 cm) either way
-        "mass_kg": BOX_MASS_KG,
+        "mass_kg": (meta.get("gso") or {}).get("carton_mass_kg", BOX_MASS_KG),
         "upright_axis": [0.0, 0.0, 1.0],
         "container": {"is": True, "opening_half_extent": [0.215, 0.15], "rim_height": 0.33},
     }
@@ -159,6 +159,20 @@ def platform_surface(platform_geom: ET.Element) -> dict:
             "approach_edges": ["-x", "+x", "-y", "+y"]}  # fmt: skip
 
 
+def carton_mass(box_body: ET.Element, cap_kg: float) -> float:
+    """The carton of a GSO instance weighs no more than the catalog's heaviest object (user 2026-11-07: no object
+    over 0.3 kg): its `<inertial>` mass and inertia scaled down to `cap_kg` when the pack's BOX_MASS_KG is above it.
+    Returns the carton's mass. The pack's own scenes (no --gso-seed) keep BOX_MASS_KG."""
+    inertial = box_body.find("inertial")
+    mass0 = float(inertial.get("mass"))
+    mass = min(mass0, float(cap_kg))
+    if mass < mass0:
+        inertial.set("mass", f"{mass:.6g}")
+        inertia = [float(x) * mass / mass0 for x in inertial.get("diaginertia").split()]
+        inertial.set("diaginertia", " ".join(f"{x:.6g}" for x in inertia))
+    return mass
+
+
 def add_gso_objects(tree: ET.ElementTree, destination: Path, surface: dict, args) -> dict:
     """Draw the objects, place them and the carton, write them into the MJCF; returns the `gso` block of the scene
     file ({seed, pool, catalog, keys, placed}) with each object's catalog record under `records`."""
@@ -186,6 +200,7 @@ def add_gso_objects(tree: ET.ElementTree, destination: Path, surface: dict, args
         z = surface["top"] - rec["bbox_min_m"][2] + 0.001
         G.add_to_scene(root, destination, args.gso_models, k, rec, [*placed[k]["xy"], z], placed[k]["yaw"])
     box_body = root.find("worldbody").find(f"body[@name='{BOX_BODY}']")
+    carton_kg = carton_mass(box_body, catalog["thresholds"]["mass_range_kg"][1])
     box_z = float(box_body.get("pos").split()[2])
     box_body.set("pos", " ".join(f"{v:.6g}" for v in (*placed[BOX_KEY]["xy"], box_z)))
     box_body.set("quat", " ".join(f"{v:.6g}" for v in G.yaw_quat(placed[BOX_KEY]["yaw"])))
@@ -196,7 +211,7 @@ def add_gso_objects(tree: ET.ElementTree, destination: Path, surface: dict, args
     return {
         "seed": args.gso_seed, "pool": args.pool, "objects": args.objects, "bimanual": args.bimanual,
         "reach_depth_m": args.reach_depth, "carton_placement": CARTON_PLACEMENT, "catalog": str(args.catalog.relative_to(ROOT)) if args.catalog.is_relative_to(ROOT) else str(args.catalog),
-        "catalog_sha256": G.sha256_file(args.catalog), "thresholds": catalog["thresholds"],
+        "catalog_sha256": G.sha256_file(args.catalog), "thresholds": catalog["thresholds"], "carton_mass_kg": carton_kg,
         "draw_attempt": attempt, "keys": keys, "placed": placed, "records": records,
     }  # fmt: skip
 

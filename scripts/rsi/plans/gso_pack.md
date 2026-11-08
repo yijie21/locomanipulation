@@ -112,7 +112,7 @@ Not measured before this run (2026-11-05):
   `walk_to`, but no round has carried a hugged object a step;
 - raising a hugged object until its underside clears a 0.70 m rim (jaw centres at 0.73-0.96 m by X's height) and
   lowering it over the opening;
-- hugging and lifting the carton with 0.05-1.5 kg inside it (the payload of the strict box line was the empty 1.2 kg
+- hugging and lifting the 0.3 kg carton with 0.05-0.3 kg inside it (until 2026-11-07: the 1.2 kg carton with up to 1.5 kg; the payload of the strict box line was the empty 1.2 kg
   carton).
 
 The smoke test in `docs/rsi_logistic_room_1030.md` (one episode of each family on s0) is the first measurement.

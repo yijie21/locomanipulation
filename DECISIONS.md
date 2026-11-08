@@ -3150,3 +3150,11 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 按 `release` 调用定松手时刻：两手放入没有这个调用。
 - 3 cm 算“抓起来了”：见上，抓取失败被归到搬运。
 
+
+## 2026-11-07 logistics_room_1030 所有物体不超过 0.3 kg（用户“修改所有物体的质量，物体质量最大不能超过0.3kg”；依据能力表 `reach_bimanual.hug_lift`）
+
+### 决策
+- 扫描物体质量上限 1.5 → 0.3 kg（`gso_objects.Thresholds.mass_range_kg` = (0.05, 0.3)，`catalog.json` 重建：446 件被截，单手 / 双手分类与放得进纸箱的判断一件没变，所以 s0–s9 抽到的物体和摆放不变）。
+- 1030 实例里的纸箱 1.2 → 0.3 kg：`prepare_logistics_scene.carton_mass` 把纸箱的 `<inertial>` 质量和惯量按目录上限缩小，场景文件 `semantic.mass_kg` 和 `gso.carton_mass_kg` 跟着写；物流间自己的场景（不带 `--gso-seed`）仍是 1.2 kg。
+- 依据：抱举探针（`scripts/rsi/probe_hug_lift.py`）里双手在任何质量下都能把手举到 1.3 m，箱子能否跟着上去取决于质量：主库 0.3 kg 才能把箱底举过箱沿，s1 RSI 的最终技能 0.8 kg，1.5 kg 都不行；而装箱的最后一步是抱起纸箱加里面的物体。
+- s0–s9 十个实例已重建（旧的在 `outputs/scene_discovery/_backup_mass1.5_20261107/`），任务族只有说明里的纸箱质量变了；十个 Unreal 关卡同日重建（`build_scene.sh <实例> --unreal`，source.json 的场景哈希与新 XML 一致）。这是一次人工干预：之前的 RSI 结果（gso_pack_all_s1）是在旧质量下跑的。

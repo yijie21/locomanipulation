@@ -151,7 +151,13 @@ def rows_for(meta: dict, kind: str, reach: float) -> list[dict]:
     return out
 
 
-def _about(kind: str, seed: int, reach: float, names: dict) -> str:
+def carton_mass(meta: dict) -> float:
+    """The carton's mass in the scene file (0.3 kg since 2026-11-07, prepare_logistics_scene.carton_mass); 1.2, the
+    pack's own, when the file does not say."""
+    return float(((meta["objects"].get(CARTON) or {}).get("semantic") or {}).get("mass_kg", 1.2))
+
+
+def _about(kind: str, seed: int, reach: float, names: dict, carton_kg: float = 1.2) -> str:
     stem, lift = KINDS[kind], LIFT_M[KINDS[kind]]
     objects = "; objects: " + ", ".join(f"{k} = {v}" for k, v in names.items())
     if kind in ("single", "bimanual"):
@@ -159,7 +165,7 @@ def _about(kind: str, seed: int, reach: float, names: dict) -> str:
         return (
             f"logistics_room_1030 (user 2026-11-03): held(X) and lifted(X, {lift:.2f}, {TILT_DEG}) with {hands} on the "
             f"Google Scanned Objects drawn with seed {seed} onto the 0.371 m pallet platform (catalog.json {kind} "
-            f"objects{', plus the 1.2 kg open carton' if kind == 'bimanual' else ''}); every task object starts within "
+            f"objects{f', plus the {carton_kg:g} kg open carton' if kind == 'bimanual' else ''}); every task object starts within "
             f"{reach} m of a platform edge"
             + ("" if kind == "single" else f", {HANDS_CLEAR_M} m free beside the walls the hug squeezes and in front")
             + ", the robot anywhere in the room it can walk from"
@@ -169,7 +175,7 @@ def _about(kind: str, seed: int, reach: float, names: dict) -> str:
     return (
         f"logistics_room_1030 pack line (user 2026-11-05): in(X, {CARTON}), then held({CARTON}) and lifted({CARTON}, "
         f"{lift:.2f}, {TILT_DEG}) with both hands -- X, a {hands} Google Scanned Object of the instance drawn with seed "
-        f"{seed} (every drawn object fits the carton's 0.43 x 0.30 x 0.33 m inside), is put into the 1.2 kg open carton "
+        f"{seed} (every drawn object fits the carton's 0.43 x 0.30 x 0.33 m inside), is put into the {carton_kg:g} kg open carton "
         f"on the 0.371 m pallet platform, which is then lifted; each episode starts with the carton empty, X within "
         f"{reach} m of a platform edge{' with its wide side along it' if kind == 'pack_bimanual' else ''}, the carton "
         f"0.18-0.31 m in from an edge with its long side along it, {HANDS_CLEAR_M} m free beside the walls each hug "
@@ -198,7 +204,7 @@ def family(name: str, kind: str, scene_rel: str, seed: int, tasks_file: str, row
     names = {r["id"].split("_", 1)[1]: meta["objects"][r["id"].split("_", 1)[1]]["semantic"]["phrase"] for r in rows}
     return {
         "name": name,
-        "about": _about(kind, seed, rows[0]["placement"]["depth_m"][1], names),
+        "about": _about(kind, seed, rows[0]["placement"]["depth_m"][1], names, carton_mass(meta)),
         "scene": scene_rel,
         "scene_note": (
             "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m "

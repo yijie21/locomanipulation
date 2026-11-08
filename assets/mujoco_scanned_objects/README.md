@@ -89,7 +89,7 @@ keyed `gso_<4-digit index in sorted directory order>`:
 | `category` | the dataset's label from `categories.json` (`null` when it has none) |
 | `extent_m`, `bbox_min_m`, `bbox_max_m` | the visual mesh's axis-aligned box (the scans stand on z = 0, origin at the bottom centre) |
 | `hull_volume_m3`, `n_hulls`, `n_vertices` | the V-HACD hulls' summed volume (the mass's volume) |
-| `mass_kg` | `hull_volume_m3` x 300 kg/m^3, clamped to 0.05-1.5 kg (one fixed mass per object, user Q3) |
+| `mass_kg` | `hull_volume_m3` x 300 kg/m^3, clamped to 0.05-0.3 kg (one fixed mass per object, user Q3; the cap was 1.5 until 2026-11-07) |
 | `grasp_height_m` | the predicted single-hand grasp point above the floor: platform top 0.371 m + half the height (Q10) |
 | `rest` | a 24 s drop test on a plane: `tilt_deg`, `slid_mm`, `dz_mm`, `stands` |
 | `graspable`, `why` | `single` (narrow side fits the 9.5 cm Dex1 jaw, 3 cm or taller, grasp point 0.40 m or higher, stands), `bimanual` (wide side 0.20-0.45 m, 10 cm or taller, stands; untested, Q17), or `none` (also every object of a category not used: `why` says `category Shoe: not among the used categories`) |

@@ -20,7 +20,7 @@ is one task family, `gso_bimanual_s<seed>`, one task per two-hand object of the 
 The objects come from `assets/mujoco_scanned_objects/catalog.json`: an object is `bimanual` when its wide side is
 0.20-0.45 m, it stands 0.10 m or more and it stands at rest in a 24 s drop test (user Q17, 2026-11-03: the band was
 widened from the jaw-based rule and these objects are untested; the first run tells which of them two Dex1 hands can
-hold). The carton (`nor_cal_box`, 0.45 x 0.32 x 0.33 m, 1.2 kg, open top) is drawn into every instance. The robot
+hold). The carton (`nor_cal_box`, 0.45 x 0.32 x 0.33 m, 0.3 kg since 2026-11-07 (was 1.2), open top) is drawn into every instance. The robot
 starts anywhere in the room it can walk from, facing a random way, 0.5 m or more from the object; the task object is
 moved to a random spot and yaw within `reach_depth_m` (0.35 m) of a platform edge (the `placement` row option, D13),
 and then every other object on the platform is moved to a random spot clear of the task objects and of the hands'
@@ -74,7 +74,7 @@ The scene (the logistics room of box_bimanual's plan, plus the objects):
   occupancy map carries them as obstacles. The platform collides.
 - The platform (surface `A`): 1.2 x 0.9 m, top 0.371 m, centre (0, -0.105); all four edges are approach edges, with
   1.05-1.63 m of clear floor in front of each. Its middle is out of reach from every edge (D13).
-- The scanned objects: 0.05-1.5 kg (hull volume x 300 kg/m^3, clamped), friction 0.8, collision by the dataset's
+- The scanned objects: 0.05-0.3 kg (hull volume x 300 kg/m^3, clamped; the cap was 1.5 until 2026-11-07), friction 0.8, collision by the dataset's
   convex hulls (up to 32 per object), so a side wall may be curved or stepped where the carton's is flat.
   `scene_meta.json` gives each one `box.half_extent` and `box.centre` (the body origin is the mesh origin, not the
   bottom centre), `semantic.phrase`, `semantic.graspable` (`bimanual` here), `semantic.mass_kg`,

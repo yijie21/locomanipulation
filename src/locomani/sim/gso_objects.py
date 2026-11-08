@@ -97,7 +97,9 @@ class Thresholds:
     bimanual_width_m: tuple[float, float] = (0.20, 0.45)
     bimanual_min_height_m: float = 0.10
     density_kg_m3: float = 300.0  # a hull is hollow-ish scanned plastic, cardboard, cloth: well under water
-    mass_range_kg: tuple[float, float] = (0.05, 1.5)  # the upper bound is the single arm's measured mass_lifted_max
+    # the upper bound: user 2026-11-07, no object over 0.3 kg -- the two-hand hug lifts a box past the carton's rim only
+    # up to about 0.3-0.8 kg (capability reach_bimanual.hug_lift); it was 1.5, the single arm's mass_lifted_max
+    mass_range_kg: tuple[float, float] = (0.05, 0.3)
     held_out_fraction: float = 0.10
     used_categories: tuple[str, ...] | None = USED_CATEGORIES
     carton_inner_m: tuple[float, float] = CARTON_INNER_M

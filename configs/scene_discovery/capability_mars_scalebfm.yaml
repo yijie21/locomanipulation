@@ -826,7 +826,355 @@ reach_bimanual:
     status: untested
     note: 'the two-hand hug (skills/bimanual.py, ported from the warehouse box line 2026-11-05) is in the library but no gate
       has measured it: once on the carton in the warehouse (lifts of 3-16 cm), once on a scanned object (gso_0945, pregrasps
-      15 cm off, the pack line''s smoke test); a loaded carton (an object inside) was never lifted. ADT holds one bimanual object.'
+      15 cm off, the pack line''s smoke test); a loaded carton (an object inside) was never lifted. ADT holds one bimanual
+      object.'
+  hug_lift:
+    status: measured_one
+    setting: 'a library''s hug pick (bimanual.pick) at a set mass on the logistics_room_1030_s1 platform (0.371 m), then both
+      jaw centres raised rung by rung to absolute heights (world z) with the put-in''s raise move (wrists as they are, squeeze
+      kept, no pelvis target, the library''s raise speed, no re-squeeze, no retry), 1 s hold per rung; a rung is held when
+      both hands still touch the box and the robot stands. hand_dz_cm: the lower hand''s height miss (achieved - asked); hand_dxy_cm:
+      the hands'' larger horizontal drift; box_rise_cm: the underside since the hug; slip_cm: the box''s centre against the
+      hands'' midpoint since the hug. Medians over the rounds that reached the rung; the same 5 starts per object at every
+      mass and in every library.'
+    by_library:
+      main:
+        by_object:
+          gso_0356:
+            0.3 kg:
+              hugged: 0/5
+              top_rung_held: []
+              rungs: {}
+            0.8 kg:
+              hugged: 0/5
+              top_rung_held: []
+              rungs: {}
+            1.5 kg:
+              hugged: 0/5
+              top_rung_held: []
+              rungs: {}
+          nor_cal_box:
+            0.3 kg:
+              hugged: 5/5
+              top_rung_held:
+              - 0.8
+              - 1.0
+              - 1.1
+              - 1.3
+              - 1.3
+              rungs:
+                '0.80':
+                  held: 5/5
+                  hand_dz_cm: -0.08
+                  hand_dxy_cm: 5.11
+                  attitude_err_deg: 0.8
+                  box_rise_cm: 4.49
+                  slip_cm: 0.77
+                  tilt_deg: 34.9
+                  underside_z: 0.45
+                '0.90':
+                  held: 4/5
+                  hand_dz_cm: 0.22
+                  hand_dxy_cm: 6.05
+                  attitude_err_deg: 3.6
+                  box_rise_cm: 14.17
+                  slip_cm: 1.89
+                  tilt_deg: 37.0
+                  underside_z: 0.55
+                '1.00':
+                  held: 4/4
+                  hand_dz_cm: 0.27
+                  hand_dxy_cm: 5.73
+                  attitude_err_deg: 6.6
+                  box_rise_cm: 23.73
+                  slip_cm: 2.39
+                  tilt_deg: 36.35
+                  underside_z: 0.65
+                '1.10':
+                  held: 3/4
+                  hand_dz_cm: -0.1
+                  hand_dxy_cm: 7.8
+                  attitude_err_deg: 11.3
+                  box_rise_cm: 31.88
+                  slip_cm: 3.93
+                  tilt_deg: 39.3
+                  underside_z: 0.71
+                '1.20':
+                  held: 2/3
+                  hand_dz_cm: -0.49
+                  hand_dxy_cm: 8.23
+                  attitude_err_deg: 13.1
+                  box_rise_cm: 39.85
+                  slip_cm: 4.73
+                  tilt_deg: 33.5
+                  underside_z: 0.77
+                '1.30':
+                  held: 2/2
+                  hand_dz_cm: -1.59
+                  hand_dxy_cm: 9.14
+                  attitude_err_deg: 15.2
+                  box_rise_cm: 48.7
+                  slip_cm: 5.66
+                  tilt_deg: 28.0
+                  underside_z: 0.88
+            0.8 kg:
+              hugged: 4/5
+              top_rung_held:
+              - 0.8
+              - 0.8
+              - 0.8
+              - 0.8
+              rungs:
+                '0.80':
+                  held: 4/4
+                  hand_dz_cm: -1.81
+                  hand_dxy_cm: 5.19
+                  attitude_err_deg: 1.45
+                  box_rise_cm: 0.01
+                  slip_cm: 6.67
+                  tilt_deg: 44.8
+                  underside_z: 0.37
+                '0.90':
+                  held: 0/4
+                  hand_dz_cm: 0.74
+                  hand_dxy_cm: 6.36
+                  attitude_err_deg: 4.4
+                  box_rise_cm: -6.78
+                  slip_cm: 32.69
+                  tilt_deg: 49.05
+                  underside_z: 0.3
+            1.5 kg:
+              hugged: 2/5
+              top_rung_held:
+              - null
+              - null
+              rungs:
+                '0.80':
+                  held: 0/2
+                  hand_dz_cm: -0.2
+                  hand_dxy_cm: 5.92
+                  attitude_err_deg: 2.85
+                  box_rise_cm: 0.0
+                  slip_cm: 13.6
+                  tilt_deg: 0.0
+                  underside_z: 0.37
+        source: outputs/scene_rsi_20261016/capability/hug_lift
+      c48fe0c240b9 (gso_pack_all_s1):
+        by_object:
+          gso_0356:
+            0.3 kg:
+              hugged: 3/5
+              top_rung_held:
+              - 0.9
+              - 1.3
+              - 1.3
+              rungs:
+                '0.80':
+                  held: 2/2
+                  hand_dz_cm: -0.53
+                  hand_dxy_cm: 5.12
+                  attitude_err_deg: 0.6
+                  box_rise_cm: 1.34
+                  slip_cm: 0.73
+                  tilt_deg: 33.8
+                  underside_z: 0.64
+                '0.90':
+                  held: 2/2
+                  hand_dz_cm: -0.51
+                  hand_dxy_cm: 5.49
+                  attitude_err_deg: 1.1
+                  box_rise_cm: 6.87
+                  slip_cm: 3.38
+                  tilt_deg: 57.7
+                  underside_z: 0.7
+                '1.00':
+                  held: 2/3
+                  hand_dz_cm: -0.22
+                  hand_dxy_cm: 6.55
+                  attitude_err_deg: 4.1
+                  box_rise_cm: 14.04
+                  slip_cm: 2.78
+                  tilt_deg: 68.9
+                  underside_z: 0.78
+                '1.10':
+                  held: 2/2
+                  hand_dz_cm: -0.21
+                  hand_dxy_cm: 6.02
+                  attitude_err_deg: 9.55
+                  box_rise_cm: 20.07
+                  slip_cm: 2.59
+                  tilt_deg: 76.5
+                  underside_z: 0.87
+                '1.20':
+                  held: 2/2
+                  hand_dz_cm: -0.12
+                  hand_dxy_cm: 6.39
+                  attitude_err_deg: 9.55
+                  box_rise_cm: 28.98
+                  slip_cm: 3.59
+                  tilt_deg: 78.15
+                  underside_z: 0.96
+                '1.30':
+                  held: 2/2
+                  hand_dz_cm: -0.26
+                  hand_dxy_cm: 8.38
+                  attitude_err_deg: 11.85
+                  box_rise_cm: 38.73
+                  slip_cm: 4.48
+                  tilt_deg: 80.45
+                  underside_z: 1.06
+            0.8 kg:
+              hugged: 1/5
+              top_rung_held:
+              - 0.8
+              rungs:
+                '0.80':
+                  held: 1/1
+                  hand_dz_cm: -1.09
+                  hand_dxy_cm: 7.13
+                  attitude_err_deg: 0.7
+                  box_rise_cm: 1.41
+                  slip_cm: 1.19
+                  tilt_deg: 45.8
+                  underside_z: 0.59
+                '0.90':
+                  held: 0/1
+                  hand_dz_cm: -0.31
+                  hand_dxy_cm: 9.48
+                  attitude_err_deg: 4.4
+                  box_rise_cm: -57.87
+                  slip_cm: 99.1
+                  tilt_deg: 0.8
+                  underside_z: -0.0
+            1.5 kg:
+              hugged: 0/5
+              top_rung_held: []
+              rungs: {}
+          nor_cal_box:
+            0.3 kg:
+              hugged: 4/5
+              top_rung_held:
+              - 1.1
+              - 1.1
+              - 1.3
+              - 1.3
+              rungs:
+                '1.00':
+                  held: 2/2
+                  hand_dz_cm: -0.25
+                  hand_dxy_cm: 4.41
+                  attitude_err_deg: 2.7
+                  box_rise_cm: 2.93
+                  slip_cm: 0.71
+                  tilt_deg: 27.15
+                  underside_z: 0.69
+                '1.10':
+                  held: 4/4
+                  hand_dz_cm: -0.14
+                  hand_dxy_cm: 8.12
+                  attitude_err_deg: 6.7
+                  box_rise_cm: 8.3
+                  slip_cm: 1.46
+                  tilt_deg: 43.95
+                  underside_z: 0.74
+                '1.20':
+                  held: 2/4
+                  hand_dz_cm: -0.57
+                  hand_dxy_cm: 14.39
+                  attitude_err_deg: 13.8
+                  box_rise_cm: -23.55
+                  slip_cm: 54.77
+                  tilt_deg: 58.5
+                  underside_z: 0.42
+                '1.30':
+                  held: 2/2
+                  hand_dz_cm: -0.66
+                  hand_dxy_cm: 9.1
+                  attitude_err_deg: 12.3
+                  box_rise_cm: 26.03
+                  slip_cm: 5.9
+                  tilt_deg: 29.55
+                  underside_z: 0.93
+            0.8 kg:
+              hugged: 4/5
+              top_rung_held:
+              - null
+              - null
+              - 1.2
+              - 1.3
+              rungs:
+                '1.00':
+                  held: 2/2
+                  hand_dz_cm: -0.18
+                  hand_dxy_cm: 5.0
+                  attitude_err_deg: 2.4
+                  box_rise_cm: 3.0
+                  slip_cm: 0.86
+                  tilt_deg: 33.2
+                  underside_z: 0.66
+                '1.10':
+                  held: 2/4
+                  hand_dz_cm: -0.04
+                  hand_dxy_cm: 13.72
+                  attitude_err_deg: 8.6
+                  box_rise_cm: -6.24
+                  slip_cm: 23.19
+                  tilt_deg: 62.85
+                  underside_z: 0.55
+                '1.20':
+                  held: 2/2
+                  hand_dz_cm: -0.38
+                  hand_dxy_cm: 8.2
+                  attitude_err_deg: 10.8
+                  box_rise_cm: 18.11
+                  slip_cm: 4.71
+                  tilt_deg: 37.25
+                  underside_z: 0.81
+                '1.30':
+                  held: 1/2
+                  hand_dz_cm: -0.72
+                  hand_dxy_cm: 13.48
+                  attitude_err_deg: 13.95
+                  box_rise_cm: -17.52
+                  slip_cm: 57.15
+                  tilt_deg: 66.2
+                  underside_z: 0.45
+            1.5 kg:
+              hugged: 1/5
+              top_rung_held:
+              - 1.0
+              rungs:
+                '1.00':
+                  held: 1/1
+                  hand_dz_cm: -0.32
+                  hand_dxy_cm: 5.44
+                  attitude_err_deg: 1.2
+                  box_rise_cm: -0.85
+                  slip_cm: 3.08
+                  tilt_deg: 27.4
+                  underside_z: 0.64
+                '1.10':
+                  held: 0/1
+                  hand_dz_cm: 0.33
+                  hand_dxy_cm: 8.23
+                  attitude_err_deg: 11.8
+                  box_rise_cm: -37.17
+                  slip_cm: 50.57
+                  tilt_deg: 61.8
+                  underside_z: 0.27
+        source: outputs/scene_rsi_20261016/capability/hug_lift_c48fe0c240b9
+    note: '2026-11-07 (after gso_pack_all_s1''s sealed pool put 0 of 20 two-hand objects into the carton): the limit is the
+      load''s mass, not the hands'' height. The hands reach every asked height up to 1.3 m (the lower hand within 3 cm, IK
+      under 1 cm) at every mass; what changes with mass is whether the box comes along. Main library: the carton at 0.3 kg
+      rose with the hands (2 of 5 cleared the put-in''s underside line, rim + 6 cm = 0.76 m), at 0.8 kg it never left the
+      platform (4 hugged, pivoted on its bottom edge, dropped by the 0.9 m rung), at 1.5 kg no rung was held; its hug never
+      closed on the 14 cm paper bag (entry check). gso_pack_all_s1''s final skills (harder press on a wall, the low-box entry
+      fixed): carton 2 of 5 cleared at 0.3 and at 0.8 kg, 0 at 1.5 kg; bag 2 of 5 at 0.3 kg, 0 at 0.8 and 1.5 kg. The scanned
+      objects of the two-hand pack tasks weigh 0.93-1.5 kg (mass clipped at 1.5). Height is a second-order limit: above a
+      1.1 m jaw height the wrist attitude error reaches 10-22 deg and the hands drift 10-20 cm, and light boxes that were
+      held lower slid out at the 1.1-1.2 m rungs; the box hangs tilted 20-80 deg in every held rung (the grip is a line above
+      its centre of mass).'
+    source: scripts/rsi/probe_hug_lift.py; outputs/scene_rsi_20261016/capability/hug_lift*/
 carry:
   single_arm:
     status: measured_one

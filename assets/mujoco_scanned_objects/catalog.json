@@ -19,7 +19,7 @@
   "density_kg_m3": 300.0,
   "mass_range_kg": [
    0.05,
-   1.5
+   0.3
   ],
   "held_out_fraction": 0.1,
   "used_categories": [
@@ -84,7 +84,7 @@
     0.1179
    ],
    "hull_volume_m3": 0.0013096,
-   "mass_kg": 0.3929,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.43,
    "n_vertices": 12175,
    "n_hulls": 32,
@@ -121,7 +121,7 @@
     0.2921
    ],
    "hull_volume_m3": 0.0016365,
-   "mass_kg": 0.491,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.517,
    "n_vertices": 5249,
    "n_hulls": 32,
@@ -158,7 +158,7 @@
     0.207
    ],
    "hull_volume_m3": 0.0012947,
-   "mass_kg": 0.3884,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4745,
    "n_vertices": 15358,
    "n_hulls": 32,
@@ -269,7 +269,7 @@
     0.2099
    ],
    "hull_volume_m3": 0.0010354,
-   "mass_kg": 0.3106,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.476,
    "n_vertices": 1815,
    "n_hulls": 32,
@@ -565,7 +565,7 @@
     0.1106
    ],
    "hull_volume_m3": 0.0019678,
-   "mass_kg": 0.5903,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4263,
    "n_vertices": 7028,
    "n_hulls": 32,
@@ -639,7 +639,7 @@
     0.2253
    ],
    "hull_volume_m3": 0.0023301,
-   "mass_kg": 0.699,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4836,
    "n_vertices": 18098,
    "n_hulls": 32,
@@ -787,7 +787,7 @@
     0.1796
    ],
    "hull_volume_m3": 0.0021454,
-   "mass_kg": 0.6436,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4608,
    "n_vertices": 13386,
    "n_hulls": 32,
@@ -824,7 +824,7 @@
     0.1231
    ],
    "hull_volume_m3": 0.0015091,
-   "mass_kg": 0.4527,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4325,
    "n_vertices": 20718,
    "n_hulls": 32,
@@ -861,7 +861,7 @@
     0.1237
    ],
    "hull_volume_m3": 0.0015009,
-   "mass_kg": 0.4503,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4329,
    "n_vertices": 21956,
    "n_hulls": 32,
@@ -898,7 +898,7 @@
     0.1336
    ],
    "hull_volume_m3": 0.0019105,
-   "mass_kg": 0.5731,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4378,
    "n_vertices": 27351,
    "n_hulls": 32,
@@ -935,7 +935,7 @@
     0.0981
    ],
    "hull_volume_m3": 0.0012052,
-   "mass_kg": 0.3615,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4201,
    "n_vertices": 21713,
    "n_hulls": 32,
@@ -972,7 +972,7 @@
     0.1145
    ],
    "hull_volume_m3": 0.0012087,
-   "mass_kg": 0.3626,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4283,
    "n_vertices": 16788,
    "n_hulls": 32,
@@ -1009,7 +1009,7 @@
     0.1149
    ],
    "hull_volume_m3": 0.002049,
-   "mass_kg": 0.6147,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4285,
    "n_vertices": 18925,
    "n_hulls": 32,
@@ -1046,7 +1046,7 @@
     0.1096
    ],
    "hull_volume_m3": 0.001221,
-   "mass_kg": 0.3663,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4258,
    "n_vertices": 24075,
    "n_hulls": 32,
@@ -1083,7 +1083,7 @@
     0.1414
    ],
    "hull_volume_m3": 0.0020099,
-   "mass_kg": 0.603,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4417,
    "n_vertices": 20811,
    "n_hulls": 32,
@@ -1120,7 +1120,7 @@
     0.1201
    ],
    "hull_volume_m3": 0.001597,
-   "mass_kg": 0.4791,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4311,
    "n_vertices": 18421,
    "n_hulls": 32,
@@ -1157,7 +1157,7 @@
     0.1326
    ],
    "hull_volume_m3": 0.0015239,
-   "mass_kg": 0.4572,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4373,
    "n_vertices": 20274,
    "n_hulls": 32,
@@ -1194,7 +1194,7 @@
     0.1143
    ],
    "hull_volume_m3": 0.001933,
-   "mass_kg": 0.5799,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4282,
    "n_vertices": 20472,
    "n_hulls": 32,
@@ -1231,7 +1231,7 @@
     0.1218
    ],
    "hull_volume_m3": 0.0013797,
-   "mass_kg": 0.4139,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4319,
    "n_vertices": 15980,
    "n_hulls": 32,
@@ -1342,7 +1342,7 @@
     0.1243
    ],
    "hull_volume_m3": 0.0017758,
-   "mass_kg": 0.5327,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4332,
    "n_vertices": 26218,
    "n_hulls": 32,
@@ -1379,7 +1379,7 @@
     0.1306
    ],
    "hull_volume_m3": 0.0019761,
-   "mass_kg": 0.5928,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4363,
    "n_vertices": 28736,
    "n_hulls": 32,
@@ -1675,7 +1675,7 @@
     0.1999
    ],
    "hull_volume_m3": 0.0016864,
-   "mass_kg": 0.5059,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4709,
    "n_vertices": 12953,
    "n_hulls": 32,
@@ -1712,7 +1712,7 @@
     0.0642
    ],
    "hull_volume_m3": 0.0021958,
-   "mass_kg": 0.6587,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4031,
    "n_vertices": 909,
    "n_hulls": 32,
@@ -1749,7 +1749,7 @@
     0.1693
    ],
    "hull_volume_m3": 0.0012767,
-   "mass_kg": 0.383,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4556,
    "n_vertices": 1613,
    "n_hulls": 32,
@@ -1786,7 +1786,7 @@
     0.1483
    ],
    "hull_volume_m3": 0.001108,
-   "mass_kg": 0.3324,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4452,
    "n_vertices": 12388,
    "n_hulls": 32,
@@ -1823,7 +1823,7 @@
     0.2389
    ],
    "hull_volume_m3": 0.0069462,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4904,
    "n_vertices": 11041,
    "n_hulls": 32,
@@ -1860,7 +1860,7 @@
     0.2672
    ],
    "hull_volume_m3": 0.0041198,
-   "mass_kg": 1.2359,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5046,
    "n_vertices": 8716,
    "n_hulls": 32,
@@ -1897,7 +1897,7 @@
     0.268
    ],
    "hull_volume_m3": 0.0060872,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.505,
    "n_vertices": 5100,
    "n_hulls": 32,
@@ -1934,7 +1934,7 @@
     0.2774
    ],
    "hull_volume_m3": 0.0075308,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5097,
    "n_vertices": 999,
    "n_hulls": 32,
@@ -1971,7 +1971,7 @@
     0.2764
    ],
    "hull_volume_m3": 0.0078932,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5092,
    "n_vertices": 1911,
    "n_hulls": 32,
@@ -2008,7 +2008,7 @@
     0.2761
    ],
    "hull_volume_m3": 0.0077233,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5091,
    "n_vertices": 1638,
    "n_hulls": 32,
@@ -2045,7 +2045,7 @@
     0.2694
    ],
    "hull_volume_m3": 0.0064684,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5057,
    "n_vertices": 2088,
    "n_hulls": 32,
@@ -2082,7 +2082,7 @@
     0.2678
    ],
    "hull_volume_m3": 0.0059513,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5048,
    "n_vertices": 3216,
    "n_hulls": 32,
@@ -2119,7 +2119,7 @@
     0.1896
    ],
    "hull_volume_m3": 0.0041431,
-   "mass_kg": 1.2429,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4658,
    "n_vertices": 18086,
    "n_hulls": 32,
@@ -2156,7 +2156,7 @@
     0.1835
    ],
    "hull_volume_m3": 0.004771,
-   "mass_kg": 1.4313,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4628,
    "n_vertices": 9561,
    "n_hulls": 32,
@@ -2193,7 +2193,7 @@
     0.1325
    ],
    "hull_volume_m3": 0.0014189,
-   "mass_kg": 0.4257,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4373,
    "n_vertices": 6655,
    "n_hulls": 32,
@@ -2489,7 +2489,7 @@
     0.1538
    ],
    "hull_volume_m3": 0.0015009,
-   "mass_kg": 0.4503,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4479,
    "n_vertices": 5349,
    "n_hulls": 32,
@@ -2526,7 +2526,7 @@
     0.1714
    ],
    "hull_volume_m3": 0.0016196,
-   "mass_kg": 0.4859,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4567,
    "n_vertices": 7356,
    "n_hulls": 32,
@@ -2674,7 +2674,7 @@
     0.0243
    ],
    "hull_volume_m3": 0.0013912,
-   "mass_kg": 0.4174,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3832,
    "n_vertices": 9513,
    "n_hulls": 32,
@@ -2896,7 +2896,7 @@
     0.3463
    ],
    "hull_volume_m3": 0.0019524,
-   "mass_kg": 0.5857,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5442,
    "n_vertices": 5743,
    "n_hulls": 32,
@@ -2933,7 +2933,7 @@
     0.269
    ],
    "hull_volume_m3": 0.0030378,
-   "mass_kg": 0.9113,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5055,
    "n_vertices": 820,
    "n_hulls": 32,
@@ -3118,7 +3118,7 @@
     0.0962
    ],
    "hull_volume_m3": 0.0012125,
-   "mass_kg": 0.3637,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4191,
    "n_vertices": 7075,
    "n_hulls": 32,
@@ -3155,7 +3155,7 @@
     0.1001
    ],
    "hull_volume_m3": 0.0011992,
-   "mass_kg": 0.3598,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4211,
    "n_vertices": 6433,
    "n_hulls": 32,
@@ -3266,7 +3266,7 @@
     0.3369
    ],
    "hull_volume_m3": 0.0130368,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5395,
    "n_vertices": 16635,
    "n_hulls": 32,
@@ -3303,7 +3303,7 @@
     0.1889
    ],
    "hull_volume_m3": 0.013743,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4654,
    "n_vertices": 33066,
    "n_hulls": 32,
@@ -3377,7 +3377,7 @@
     0.2574
    ],
    "hull_volume_m3": 0.0043571,
-   "mass_kg": 1.3071,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4997,
    "n_vertices": 1108,
    "n_hulls": 32,
@@ -3414,7 +3414,7 @@
     0.1508
    ],
    "hull_volume_m3": 0.001612,
-   "mass_kg": 0.4836,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4464,
    "n_vertices": 1368,
    "n_hulls": 32,
@@ -3451,7 +3451,7 @@
     0.2997
    ],
    "hull_volume_m3": 0.0042557,
-   "mass_kg": 1.2767,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5209,
    "n_vertices": 2513,
    "n_hulls": 32,
@@ -3488,7 +3488,7 @@
     0.1907
    ],
    "hull_volume_m3": 0.0066011,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4664,
    "n_vertices": 19715,
    "n_hulls": 32,
@@ -3747,7 +3747,7 @@
     0.1295
    ],
    "hull_volume_m3": 0.0068292,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4358,
    "n_vertices": 1936,
    "n_hulls": 32,
@@ -3858,7 +3858,7 @@
     0.1203
    ],
    "hull_volume_m3": 0.0015735,
-   "mass_kg": 0.4721,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4311,
    "n_vertices": 2807,
    "n_hulls": 32,
@@ -3969,7 +3969,7 @@
     0.1419
    ],
    "hull_volume_m3": 0.0016184,
-   "mass_kg": 0.4855,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4419,
    "n_vertices": 13471,
    "n_hulls": 32,
@@ -4006,7 +4006,7 @@
     0.1949
    ],
    "hull_volume_m3": 0.0013826,
-   "mass_kg": 0.4148,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4685,
    "n_vertices": 5972,
    "n_hulls": 32,
@@ -4191,7 +4191,7 @@
     0.1157
    ],
    "hull_volume_m3": 0.0013368,
-   "mass_kg": 0.401,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4289,
    "n_vertices": 26300,
    "n_hulls": 32,
@@ -4265,7 +4265,7 @@
     0.1107
    ],
    "hull_volume_m3": 0.001235,
-   "mass_kg": 0.3705,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4263,
    "n_vertices": 16169,
    "n_hulls": 32,
@@ -4302,7 +4302,7 @@
     0.1347
    ],
    "hull_volume_m3": 0.0012959,
-   "mass_kg": 0.3888,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4383,
    "n_vertices": 3064,
    "n_hulls": 32,
@@ -4339,7 +4339,7 @@
     0.1926
    ],
    "hull_volume_m3": 0.0024379,
-   "mass_kg": 0.7314,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4673,
    "n_vertices": 10236,
    "n_hulls": 32,
@@ -4413,7 +4413,7 @@
     0.1462
    ],
    "hull_volume_m3": 0.0020985,
-   "mass_kg": 0.6295,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4441,
    "n_vertices": 4289,
    "n_hulls": 32,
@@ -4450,7 +4450,7 @@
     0.1485
    ],
    "hull_volume_m3": 0.0012578,
-   "mass_kg": 0.3773,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4452,
    "n_vertices": 3443,
    "n_hulls": 32,
@@ -4746,7 +4746,7 @@
     0.1215
    ],
    "hull_volume_m3": 0.0012504,
-   "mass_kg": 0.3751,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4318,
    "n_vertices": 25179,
    "n_hulls": 32,
@@ -5042,7 +5042,7 @@
     0.1174
    ],
    "hull_volume_m3": 0.0014245,
-   "mass_kg": 0.4273,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4297,
    "n_vertices": 15927,
    "n_hulls": 32,
@@ -5116,7 +5116,7 @@
     0.2891
    ],
    "hull_volume_m3": 0.0056367,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5156,
    "n_vertices": 6767,
    "n_hulls": 32,
@@ -5153,7 +5153,7 @@
     0.2603
    ],
    "hull_volume_m3": 0.0056929,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5012,
    "n_vertices": 2656,
    "n_hulls": 32,
@@ -5301,7 +5301,7 @@
     0.1078
    ],
    "hull_volume_m3": 0.0015732,
-   "mass_kg": 0.472,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4249,
    "n_vertices": 2451,
    "n_hulls": 32,
@@ -5449,7 +5449,7 @@
     0.1317
    ],
    "hull_volume_m3": 0.0018226,
-   "mass_kg": 0.5468,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4369,
    "n_vertices": 5393,
    "n_hulls": 32,
@@ -5745,7 +5745,7 @@
     0.2168
    ],
    "hull_volume_m3": 0.0020083,
-   "mass_kg": 0.6025,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4794,
    "n_vertices": 3075,
    "n_hulls": 32,
@@ -5893,7 +5893,7 @@
     0.148
    ],
    "hull_volume_m3": 0.0011815,
-   "mass_kg": 0.3545,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.445,
    "n_vertices": 3694,
    "n_hulls": 32,
@@ -5930,7 +5930,7 @@
     0.0458
    ],
    "hull_volume_m3": 0.0010495,
-   "mass_kg": 0.3148,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3939,
    "n_vertices": 2261,
    "n_hulls": 32,
@@ -6115,7 +6115,7 @@
     0.1585
    ],
    "hull_volume_m3": 0.0019818,
-   "mass_kg": 0.5945,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4502,
    "n_vertices": 16738,
    "n_hulls": 32,
@@ -6152,7 +6152,7 @@
     0.2697
    ],
    "hull_volume_m3": 0.0052464,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5058,
    "n_vertices": 1444,
    "n_hulls": 32,
@@ -6226,7 +6226,7 @@
     0.2696
    ],
    "hull_volume_m3": 0.0049539,
-   "mass_kg": 1.4862,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5058,
    "n_vertices": 1370,
    "n_hulls": 32,
@@ -6337,7 +6337,7 @@
     0.1751
    ],
    "hull_volume_m3": 0.0022538,
-   "mass_kg": 0.6761,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4586,
    "n_vertices": 21011,
    "n_hulls": 32,
@@ -6448,7 +6448,7 @@
     0.137
    ],
    "hull_volume_m3": 0.0019457,
-   "mass_kg": 0.5837,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4395,
    "n_vertices": 1719,
    "n_hulls": 32,
@@ -6559,7 +6559,7 @@
     0.2175
    ],
    "hull_volume_m3": 0.0011203,
-   "mass_kg": 0.3361,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4798,
    "n_vertices": 2277,
    "n_hulls": 32,
@@ -6596,7 +6596,7 @@
     0.2175
    ],
    "hull_volume_m3": 0.0010767,
-   "mass_kg": 0.323,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4798,
    "n_vertices": 1542,
    "n_hulls": 32,
@@ -6633,7 +6633,7 @@
     0.1477
    ],
    "hull_volume_m3": 0.0015985,
-   "mass_kg": 0.4795,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4448,
    "n_vertices": 4106,
    "n_hulls": 32,
@@ -6744,7 +6744,7 @@
     0.2139
    ],
    "hull_volume_m3": 0.0024384,
-   "mass_kg": 0.7315,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.478,
    "n_vertices": 14143,
    "n_hulls": 32,
@@ -6781,7 +6781,7 @@
     0.1708
    ],
    "hull_volume_m3": 0.002205,
-   "mass_kg": 0.6615,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4564,
    "n_vertices": 23835,
    "n_hulls": 32,
@@ -6818,7 +6818,7 @@
     0.1711
    ],
    "hull_volume_m3": 0.0021293,
-   "mass_kg": 0.6388,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4565,
    "n_vertices": 13466,
    "n_hulls": 32,
@@ -6892,7 +6892,7 @@
     0.1838
    ],
    "hull_volume_m3": 0.0023712,
-   "mass_kg": 0.7113,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4629,
    "n_vertices": 5147,
    "n_hulls": 32,
@@ -6966,7 +6966,7 @@
     0.164
    ],
    "hull_volume_m3": 0.0013025,
-   "mass_kg": 0.3908,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.453,
    "n_vertices": 2001,
    "n_hulls": 32,
@@ -7003,7 +7003,7 @@
     0.134
    ],
    "hull_volume_m3": 0.001077,
-   "mass_kg": 0.3231,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.438,
    "n_vertices": 59856,
    "n_hulls": 32,
@@ -7114,7 +7114,7 @@
     0.1526
    ],
    "hull_volume_m3": 0.0010509,
-   "mass_kg": 0.3153,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4473,
    "n_vertices": 8433,
    "n_hulls": 32,
@@ -7262,7 +7262,7 @@
     0.1433
    ],
    "hull_volume_m3": 0.0022605,
-   "mass_kg": 0.6782,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4426,
    "n_vertices": 12500,
    "n_hulls": 32,
@@ -7299,7 +7299,7 @@
     0.0527
    ],
    "hull_volume_m3": 0.0015752,
-   "mass_kg": 0.4726,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3974,
    "n_vertices": 18716,
    "n_hulls": 32,
@@ -7336,7 +7336,7 @@
     0.1717
    ],
    "hull_volume_m3": 0.0025641,
-   "mass_kg": 0.7692,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4569,
    "n_vertices": 41163,
    "n_hulls": 32,
@@ -7373,7 +7373,7 @@
     0.1078
    ],
    "hull_volume_m3": 0.0010667,
-   "mass_kg": 0.32,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4249,
    "n_vertices": 10382,
    "n_hulls": 32,
@@ -7410,7 +7410,7 @@
     0.1673
    ],
    "hull_volume_m3": 0.0018685,
-   "mass_kg": 0.5606,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4547,
    "n_vertices": 17495,
    "n_hulls": 32,
@@ -7447,7 +7447,7 @@
     0.1717
    ],
    "hull_volume_m3": 0.0021798,
-   "mass_kg": 0.6539,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4569,
    "n_vertices": 27010,
    "n_hulls": 32,
@@ -7484,7 +7484,7 @@
     0.1719
    ],
    "hull_volume_m3": 0.0020727,
-   "mass_kg": 0.6218,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.457,
    "n_vertices": 26215,
    "n_hulls": 32,
@@ -7521,7 +7521,7 @@
     0.1345
    ],
    "hull_volume_m3": 0.0018519,
-   "mass_kg": 0.5556,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4383,
    "n_vertices": 20511,
    "n_hulls": 32,
@@ -7706,7 +7706,7 @@
     0.1993
    ],
    "hull_volume_m3": 0.0021737,
-   "mass_kg": 0.6521,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4707,
    "n_vertices": 1441,
    "n_hulls": 32,
@@ -7780,7 +7780,7 @@
     0.1387
    ],
    "hull_volume_m3": 0.0066501,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4404,
    "n_vertices": 1114,
    "n_hulls": 32,
@@ -7817,7 +7817,7 @@
     0.2187
    ],
    "hull_volume_m3": 0.0082445,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4803,
    "n_vertices": 9586,
    "n_hulls": 32,
@@ -7965,7 +7965,7 @@
     0.0794
    ],
    "hull_volume_m3": 0.0010225,
-   "mass_kg": 0.3068,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4107,
    "n_vertices": 13795,
    "n_hulls": 32,
@@ -8002,7 +8002,7 @@
     0.1993
    ],
    "hull_volume_m3": 0.0030146,
-   "mass_kg": 0.9044,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4706,
    "n_vertices": 56002,
    "n_hulls": 32,
@@ -8039,7 +8039,7 @@
     0.141
    ],
    "hull_volume_m3": 0.0012004,
-   "mass_kg": 0.3601,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4415,
    "n_vertices": 4888,
    "n_hulls": 32,
@@ -8187,7 +8187,7 @@
     0.163
    ],
    "hull_volume_m3": 0.0022678,
-   "mass_kg": 0.6803,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4525,
    "n_vertices": 19836,
    "n_hulls": 32,
@@ -8224,7 +8224,7 @@
     0.2104
    ],
    "hull_volume_m3": 0.0010455,
-   "mass_kg": 0.3136,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4762,
    "n_vertices": 2769,
    "n_hulls": 32,
@@ -8335,7 +8335,7 @@
     0.1344
    ],
    "hull_volume_m3": 0.0013525,
-   "mass_kg": 0.4057,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4382,
    "n_vertices": 5051,
    "n_hulls": 32,
@@ -8409,7 +8409,7 @@
     0.2867
    ],
    "hull_volume_m3": 0.0023789,
-   "mass_kg": 0.7137,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5144,
    "n_vertices": 4380,
    "n_hulls": 32,
@@ -8779,7 +8779,7 @@
     0.2827
    ],
    "hull_volume_m3": 0.0011673,
-   "mass_kg": 0.3502,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5123,
    "n_vertices": 2881,
    "n_hulls": 32,
@@ -8927,7 +8927,7 @@
     0.2411
    ],
    "hull_volume_m3": 0.0021067,
-   "mass_kg": 0.632,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4916,
    "n_vertices": 3707,
    "n_hulls": 32,
@@ -9704,7 +9704,7 @@
     0.2705
    ],
    "hull_volume_m3": 0.0035607,
-   "mass_kg": 1.0682,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5063,
    "n_vertices": 28762,
    "n_hulls": 32,
@@ -9741,7 +9741,7 @@
     0.1956
    ],
    "hull_volume_m3": 0.0089449,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4688,
    "n_vertices": 13994,
    "n_hulls": 32,
@@ -9778,7 +9778,7 @@
     0.0373
    ],
    "hull_volume_m3": 0.0017471,
-   "mass_kg": 0.5241,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3897,
    "n_vertices": 12922,
    "n_hulls": 32,
@@ -10148,7 +10148,7 @@
     0.108
    ],
    "hull_volume_m3": 0.0011663,
-   "mass_kg": 0.3499,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.425,
    "n_vertices": 8785,
    "n_hulls": 32,
@@ -10185,7 +10185,7 @@
     0.1059
    ],
    "hull_volume_m3": 0.0014563,
-   "mass_kg": 0.4369,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.424,
    "n_vertices": 11266,
    "n_hulls": 32,
@@ -10222,7 +10222,7 @@
     0.1185
    ],
    "hull_volume_m3": 0.0012879,
-   "mass_kg": 0.3864,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4302,
    "n_vertices": 7910,
    "n_hulls": 32,
@@ -10259,7 +10259,7 @@
     0.2231
    ],
    "hull_volume_m3": 0.0018795,
-   "mass_kg": 0.5638,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4826,
    "n_vertices": 14826,
    "n_hulls": 32,
@@ -10592,7 +10592,7 @@
     0.1761
    ],
    "hull_volume_m3": 0.0028371,
-   "mass_kg": 0.8511,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4591,
    "n_vertices": 18309,
    "n_hulls": 32,
@@ -10629,7 +10629,7 @@
     0.1743
    ],
    "hull_volume_m3": 0.0022876,
-   "mass_kg": 0.6863,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4582,
    "n_vertices": 21207,
    "n_hulls": 32,
@@ -10740,7 +10740,7 @@
     0.2736
    ],
    "hull_volume_m3": 0.0070145,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5079,
    "n_vertices": 1030,
    "n_hulls": 32,
@@ -10777,7 +10777,7 @@
     0.2678
    ],
    "hull_volume_m3": 0.0023375,
-   "mass_kg": 0.7012,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5049,
    "n_vertices": 1119,
    "n_hulls": 32,
@@ -10962,7 +10962,7 @@
     0.1297
    ],
    "hull_volume_m3": 0.0068632,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4358,
    "n_vertices": 1849,
    "n_hulls": 32,
@@ -10999,7 +10999,7 @@
     0.272
    ],
    "hull_volume_m3": 0.0040141,
-   "mass_kg": 1.2042,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.507,
    "n_vertices": 814,
    "n_hulls": 32,
@@ -11073,7 +11073,7 @@
     0.2712
    ],
    "hull_volume_m3": 0.0037555,
-   "mass_kg": 1.1266,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5066,
    "n_vertices": 801,
    "n_hulls": 32,
@@ -11554,7 +11554,7 @@
     0.1225
    ],
    "hull_volume_m3": 0.0019695,
-   "mass_kg": 0.5908,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4323,
    "n_vertices": 36205,
    "n_hulls": 32,
@@ -11591,7 +11591,7 @@
     0.1061
    ],
    "hull_volume_m3": 0.0018155,
-   "mass_kg": 0.5447,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.424,
    "n_vertices": 35199,
    "n_hulls": 32,
@@ -11628,7 +11628,7 @@
     0.1237
    ],
    "hull_volume_m3": 0.0019485,
-   "mass_kg": 0.5846,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4329,
    "n_vertices": 35853,
    "n_hulls": 32,
@@ -11665,7 +11665,7 @@
     0.2695
    ],
    "hull_volume_m3": 0.0041229,
-   "mass_kg": 1.2369,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5058,
    "n_vertices": 6782,
    "n_hulls": 32,
@@ -11702,7 +11702,7 @@
     0.2657
    ],
    "hull_volume_m3": 0.0062177,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5039,
    "n_vertices": 2595,
    "n_hulls": 32,
@@ -11739,7 +11739,7 @@
     0.2672
    ],
    "hull_volume_m3": 0.0064146,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5046,
    "n_vertices": 13943,
    "n_hulls": 32,
@@ -11776,7 +11776,7 @@
     0.1295
    ],
    "hull_volume_m3": 0.0017826,
-   "mass_kg": 0.5348,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4358,
    "n_vertices": 20978,
    "n_hulls": 32,
@@ -11813,7 +11813,7 @@
     0.136
    ],
    "hull_volume_m3": 0.0019255,
-   "mass_kg": 0.5777,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.439,
    "n_vertices": 25875,
    "n_hulls": 32,
@@ -11924,7 +11924,7 @@
     0.1204
    ],
    "hull_volume_m3": 0.0013429,
-   "mass_kg": 0.4029,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4312,
    "n_vertices": 12497,
    "n_hulls": 32,
@@ -12109,7 +12109,7 @@
     0.1131
    ],
    "hull_volume_m3": 0.0014656,
-   "mass_kg": 0.4397,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4276,
    "n_vertices": 10244,
    "n_hulls": 32,
@@ -12146,7 +12146,7 @@
     0.117
    ],
    "hull_volume_m3": 0.001585,
-   "mass_kg": 0.4755,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4295,
    "n_vertices": 13222,
    "n_hulls": 32,
@@ -12183,7 +12183,7 @@
     0.1137
    ],
    "hull_volume_m3": 0.0014331,
-   "mass_kg": 0.4299,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4279,
    "n_vertices": 13144,
    "n_hulls": 32,
@@ -12220,7 +12220,7 @@
     0.1185
    ],
    "hull_volume_m3": 0.0015543,
-   "mass_kg": 0.4663,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4303,
    "n_vertices": 10469,
    "n_hulls": 32,
@@ -12257,7 +12257,7 @@
     0.0837
    ],
    "hull_volume_m3": 0.0018208,
-   "mass_kg": 0.5463,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4129,
    "n_vertices": 4769,
    "n_hulls": 32,
@@ -12368,7 +12368,7 @@
     0.1206
    ],
    "hull_volume_m3": 0.0010684,
-   "mass_kg": 0.3205,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4313,
    "n_vertices": 8352,
    "n_hulls": 32,
@@ -12553,7 +12553,7 @@
     0.1965
    ],
    "hull_volume_m3": 0.0010674,
-   "mass_kg": 0.3202,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4692,
    "n_vertices": 1390,
    "n_hulls": 32,
@@ -12590,7 +12590,7 @@
     0.272
    ],
    "hull_volume_m3": 0.0027743,
-   "mass_kg": 0.8323,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.507,
    "n_vertices": 835,
    "n_hulls": 32,
@@ -12627,7 +12627,7 @@
     0.2728
    ],
    "hull_volume_m3": 0.0094288,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5074,
    "n_vertices": 648,
    "n_hulls": 32,
@@ -12664,7 +12664,7 @@
     0.0974
    ],
    "hull_volume_m3": 0.00341,
-   "mass_kg": 1.023,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4197,
    "n_vertices": 5560,
    "n_hulls": 32,
@@ -12701,7 +12701,7 @@
     0.2722
    ],
    "hull_volume_m3": 0.0069814,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5071,
    "n_vertices": 696,
    "n_hulls": 32,
@@ -12738,7 +12738,7 @@
     0.2796
    ],
    "hull_volume_m3": 0.0041342,
-   "mass_kg": 1.2403,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5108,
    "n_vertices": 2625,
    "n_hulls": 32,
@@ -12775,7 +12775,7 @@
     0.271
    ],
    "hull_volume_m3": 0.0032199,
-   "mass_kg": 0.966,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5065,
    "n_vertices": 2428,
    "n_hulls": 32,
@@ -12849,7 +12849,7 @@
     0.3002
    ],
    "hull_volume_m3": 0.0042421,
-   "mass_kg": 1.2726,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5211,
    "n_vertices": 14918,
    "n_hulls": 32,
@@ -12923,7 +12923,7 @@
     0.1721
    ],
    "hull_volume_m3": 0.0011397,
-   "mass_kg": 0.3419,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4571,
    "n_vertices": 6738,
    "n_hulls": 32,
@@ -13034,7 +13034,7 @@
     0.0978
    ],
    "hull_volume_m3": 0.0012125,
-   "mass_kg": 0.3637,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4199,
    "n_vertices": 6709,
    "n_hulls": 32,
@@ -13071,7 +13071,7 @@
     0.0886
    ],
    "hull_volume_m3": 0.0011951,
-   "mass_kg": 0.3585,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4153,
    "n_vertices": 6827,
    "n_hulls": 32,
@@ -13182,7 +13182,7 @@
     0.3295
    ],
    "hull_volume_m3": 0.0085876,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5358,
    "n_vertices": 2216,
    "n_hulls": 32,
@@ -13219,7 +13219,7 @@
     0.3313
    ],
    "hull_volume_m3": 0.0084771,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5366,
    "n_vertices": 2286,
    "n_hulls": 32,
@@ -13256,7 +13256,7 @@
     0.1396
    ],
    "hull_volume_m3": 0.009047,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4409,
    "n_vertices": 2808,
    "n_hulls": 32,
@@ -13293,7 +13293,7 @@
     0.2371
    ],
    "hull_volume_m3": 0.0044045,
-   "mass_kg": 1.3213,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4896,
    "n_vertices": 16131,
    "n_hulls": 32,
@@ -13441,7 +13441,7 @@
     0.1689
    ],
    "hull_volume_m3": 0.0020381,
-   "mass_kg": 0.6114,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4554,
    "n_vertices": 4811,
    "n_hulls": 32,
@@ -13478,7 +13478,7 @@
     0.3092
    ],
    "hull_volume_m3": 0.004684,
-   "mass_kg": 1.4052,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5256,
    "n_vertices": 10315,
    "n_hulls": 32,
@@ -13552,7 +13552,7 @@
     0.1843
    ],
    "hull_volume_m3": 0.0027057,
-   "mass_kg": 0.8117,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4631,
    "n_vertices": 20101,
    "n_hulls": 32,
@@ -13663,7 +13663,7 @@
     0.44
    ],
    "hull_volume_m3": 0.0407985,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5911,
    "n_vertices": 18490,
    "n_hulls": 32,
@@ -14218,7 +14218,7 @@
     0.1513
    ],
    "hull_volume_m3": 0.0010421,
-   "mass_kg": 0.3126,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4466,
    "n_vertices": 4351,
    "n_hulls": 32,
@@ -14255,7 +14255,7 @@
     0.1722
    ],
    "hull_volume_m3": 0.0034166,
-   "mass_kg": 1.025,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4571,
    "n_vertices": 8219,
    "n_hulls": 32,
@@ -14477,7 +14477,7 @@
     0.0887
    ],
    "hull_volume_m3": 0.0013244,
-   "mass_kg": 0.3973,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4153,
    "n_vertices": 15187,
    "n_hulls": 32,
@@ -14662,7 +14662,7 @@
     0.2616
    ],
    "hull_volume_m3": 0.0053899,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5019,
    "n_vertices": 62528,
    "n_hulls": 32,
@@ -14699,7 +14699,7 @@
     0.2838
    ],
    "hull_volume_m3": 0.0148484,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5129,
    "n_vertices": 3602,
    "n_hulls": 32,
@@ -14736,7 +14736,7 @@
     0.2619
    ],
    "hull_volume_m3": 0.0065754,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5019,
    "n_vertices": 1121,
    "n_hulls": 1,
@@ -14810,7 +14810,7 @@
     0.2751
    ],
    "hull_volume_m3": 0.0081188,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5085,
    "n_vertices": 1613,
    "n_hulls": 32,
@@ -14847,7 +14847,7 @@
     0.217
    ],
    "hull_volume_m3": 0.002791,
-   "mass_kg": 0.8373,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4795,
    "n_vertices": 41497,
    "n_hulls": 32,
@@ -14884,7 +14884,7 @@
     0.1597
    ],
    "hull_volume_m3": 0.001043,
-   "mass_kg": 0.3129,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4509,
    "n_vertices": 14968,
    "n_hulls": 32,
@@ -14921,7 +14921,7 @@
     0.1946
    ],
    "hull_volume_m3": 0.003785,
-   "mass_kg": 1.1355,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4683,
    "n_vertices": 2482,
    "n_hulls": 1,
@@ -14958,7 +14958,7 @@
     0.2637
    ],
    "hull_volume_m3": 0.0070258,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5029,
    "n_vertices": 1603,
    "n_hulls": 32,
@@ -14995,7 +14995,7 @@
     0.1102
    ],
    "hull_volume_m3": 0.0012417,
-   "mass_kg": 0.3725,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4261,
    "n_vertices": 15230,
    "n_hulls": 32,
@@ -15180,7 +15180,7 @@
     0.2328
    ],
    "hull_volume_m3": 0.0023518,
-   "mass_kg": 0.7055,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4874,
    "n_vertices": 979,
    "n_hulls": 32,
@@ -15217,7 +15217,7 @@
     0.2634
    ],
    "hull_volume_m3": 0.0071954,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5027,
    "n_vertices": 1193,
    "n_hulls": 32,
@@ -15328,7 +15328,7 @@
     0.1799
    ],
    "hull_volume_m3": 0.0021435,
-   "mass_kg": 0.6431,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4609,
    "n_vertices": 2477,
    "n_hulls": 32,
@@ -15365,7 +15365,7 @@
     0.1734
    ],
    "hull_volume_m3": 0.0025538,
-   "mass_kg": 0.7661,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4577,
    "n_vertices": 1618,
    "n_hulls": 32,
@@ -15402,7 +15402,7 @@
     0.1395
    ],
    "hull_volume_m3": 0.0025989,
-   "mass_kg": 0.7797,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4408,
    "n_vertices": 1393,
    "n_hulls": 32,
@@ -15439,7 +15439,7 @@
     0.1123
    ],
    "hull_volume_m3": 0.0011918,
-   "mass_kg": 0.3575,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4272,
    "n_vertices": 1291,
    "n_hulls": 32,
@@ -15513,7 +15513,7 @@
     0.2607
    ],
    "hull_volume_m3": 0.0021701,
-   "mass_kg": 0.651,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5013,
    "n_vertices": 2763,
    "n_hulls": 32,
@@ -15550,7 +15550,7 @@
     0.1237
    ],
    "hull_volume_m3": 0.0050206,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4329,
    "n_vertices": 117587,
    "n_hulls": 32,
@@ -15698,7 +15698,7 @@
     0.2054
    ],
    "hull_volume_m3": 0.002412,
-   "mass_kg": 0.7236,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4737,
    "n_vertices": 16750,
    "n_hulls": 32,
@@ -15883,7 +15883,7 @@
     0.1676
    ],
    "hull_volume_m3": 0.0020542,
-   "mass_kg": 0.6163,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4549,
    "n_vertices": 15211,
    "n_hulls": 32,
@@ -15994,7 +15994,7 @@
     0.174
    ],
    "hull_volume_m3": 0.0014259,
-   "mass_kg": 0.4278,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.458,
    "n_vertices": 10839,
    "n_hulls": 32,
@@ -16142,7 +16142,7 @@
     0.1559
    ],
    "hull_volume_m3": 0.0036289,
-   "mass_kg": 1.0887,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.449,
    "n_vertices": 2800,
    "n_hulls": 32,
@@ -16438,7 +16438,7 @@
     0.1129
    ],
    "hull_volume_m3": 0.0010628,
-   "mass_kg": 0.3188,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4275,
    "n_vertices": 13300,
    "n_hulls": 32,
@@ -16512,7 +16512,7 @@
     0.2917
    ],
    "hull_volume_m3": 0.0010139,
-   "mass_kg": 0.3042,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5168,
    "n_vertices": 13548,
    "n_hulls": 32,
@@ -16660,7 +16660,7 @@
     0.0697
    ],
    "hull_volume_m3": 0.0026119,
-   "mass_kg": 0.7836,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4058,
    "n_vertices": 5914,
    "n_hulls": 32,
@@ -16697,7 +16697,7 @@
     0.0265
    ],
    "hull_volume_m3": 0.0012316,
-   "mass_kg": 0.3695,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3843,
    "n_vertices": 6590,
    "n_hulls": 32,
@@ -16734,7 +16734,7 @@
     0.0438
    ],
    "hull_volume_m3": 0.001836,
-   "mass_kg": 0.5508,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.393,
    "n_vertices": 23310,
    "n_hulls": 32,
@@ -16808,7 +16808,7 @@
     0.0309
    ],
    "hull_volume_m3": 0.0011551,
-   "mass_kg": 0.3465,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3865,
    "n_vertices": 3332,
    "n_hulls": 32,
@@ -16845,7 +16845,7 @@
     0.179
    ],
    "hull_volume_m3": 0.0018965,
-   "mass_kg": 0.569,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4605,
    "n_vertices": 8117,
    "n_hulls": 32,
@@ -16882,7 +16882,7 @@
     0.2404
    ],
    "hull_volume_m3": 0.0035164,
-   "mass_kg": 1.0549,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4912,
    "n_vertices": 4526,
    "n_hulls": 32,
@@ -16919,7 +16919,7 @@
     0.0601
    ],
    "hull_volume_m3": 0.0021911,
-   "mass_kg": 0.6573,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4011,
    "n_vertices": 5118,
    "n_hulls": 32,
@@ -16956,7 +16956,7 @@
     0.2171
    ],
    "hull_volume_m3": 0.0032563,
-   "mass_kg": 0.9769,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4795,
    "n_vertices": 8989,
    "n_hulls": 32,
@@ -16993,7 +16993,7 @@
     0.1072
    ],
    "hull_volume_m3": 0.0014023,
-   "mass_kg": 0.4207,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4246,
    "n_vertices": 12235,
    "n_hulls": 32,
@@ -17030,7 +17030,7 @@
     0.1058
    ],
    "hull_volume_m3": 0.0014834,
-   "mass_kg": 0.445,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4239,
    "n_vertices": 11421,
    "n_hulls": 32,
@@ -17067,7 +17067,7 @@
     0.1178
    ],
    "hull_volume_m3": 0.001402,
-   "mass_kg": 0.4206,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4299,
    "n_vertices": 21796,
    "n_hulls": 32,
@@ -17104,7 +17104,7 @@
     0.0905
    ],
    "hull_volume_m3": 0.0010913,
-   "mass_kg": 0.3274,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4163,
    "n_vertices": 19734,
    "n_hulls": 32,
@@ -17215,7 +17215,7 @@
     0.1017
    ],
    "hull_volume_m3": 0.0011145,
-   "mass_kg": 0.3344,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4219,
    "n_vertices": 11184,
    "n_hulls": 32,
@@ -17252,7 +17252,7 @@
     0.089
    ],
    "hull_volume_m3": 0.0011384,
-   "mass_kg": 0.3415,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4155,
    "n_vertices": 10925,
    "n_hulls": 32,
@@ -17289,7 +17289,7 @@
     0.0958
    ],
    "hull_volume_m3": 0.0011334,
-   "mass_kg": 0.34,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4189,
    "n_vertices": 13440,
    "n_hulls": 32,
@@ -17326,7 +17326,7 @@
     0.1049
    ],
    "hull_volume_m3": 0.0013459,
-   "mass_kg": 0.4038,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4235,
    "n_vertices": 13509,
    "n_hulls": 32,
@@ -17363,7 +17363,7 @@
     0.1071
    ],
    "hull_volume_m3": 0.0012882,
-   "mass_kg": 0.3864,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4246,
    "n_vertices": 11264,
    "n_hulls": 32,
@@ -17400,7 +17400,7 @@
     0.0982
    ],
    "hull_volume_m3": 0.0010255,
-   "mass_kg": 0.3077,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4201,
    "n_vertices": 10350,
    "n_hulls": 32,
@@ -17437,7 +17437,7 @@
     0.1108
    ],
    "hull_volume_m3": 0.0013372,
-   "mass_kg": 0.4011,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4264,
    "n_vertices": 10380,
    "n_hulls": 32,
@@ -17474,7 +17474,7 @@
     0.1055
    ],
    "hull_volume_m3": 0.0013793,
-   "mass_kg": 0.4138,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4238,
    "n_vertices": 17513,
    "n_hulls": 32,
@@ -17511,7 +17511,7 @@
     0.0991
    ],
    "hull_volume_m3": 0.0013457,
-   "mass_kg": 0.4037,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4205,
    "n_vertices": 13201,
    "n_hulls": 32,
@@ -17548,7 +17548,7 @@
     0.1014
    ],
    "hull_volume_m3": 0.001166,
-   "mass_kg": 0.3498,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4217,
    "n_vertices": 14617,
    "n_hulls": 32,
@@ -17585,7 +17585,7 @@
     0.1021
    ],
    "hull_volume_m3": 0.0012338,
-   "mass_kg": 0.3702,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4221,
    "n_vertices": 13284,
    "n_hulls": 32,
@@ -17622,7 +17622,7 @@
     0.1065
    ],
    "hull_volume_m3": 0.0012889,
-   "mass_kg": 0.3867,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4243,
    "n_vertices": 10618,
    "n_hulls": 32,
@@ -17659,7 +17659,7 @@
     0.0894
    ],
    "hull_volume_m3": 0.0012603,
-   "mass_kg": 0.3781,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4157,
    "n_vertices": 10225,
    "n_hulls": 32,
@@ -17696,7 +17696,7 @@
     0.0988
    ],
    "hull_volume_m3": 0.0012222,
-   "mass_kg": 0.3666,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4205,
    "n_vertices": 12225,
    "n_hulls": 32,
@@ -17770,7 +17770,7 @@
     0.0984
    ],
    "hull_volume_m3": 0.0012204,
-   "mass_kg": 0.3661,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4202,
    "n_vertices": 10439,
    "n_hulls": 32,
@@ -17807,7 +17807,7 @@
     0.0976
    ],
    "hull_volume_m3": 0.0010439,
-   "mass_kg": 0.3132,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4199,
    "n_vertices": 10574,
    "n_hulls": 32,
@@ -17955,7 +17955,7 @@
     0.101
    ],
    "hull_volume_m3": 0.0013331,
-   "mass_kg": 0.3999,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4215,
    "n_vertices": 16519,
    "n_hulls": 32,
@@ -17992,7 +17992,7 @@
     0.0927
    ],
    "hull_volume_m3": 0.0010079,
-   "mass_kg": 0.3024,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4174,
    "n_vertices": 16358,
    "n_hulls": 32,
@@ -18029,7 +18029,7 @@
     0.0927
    ],
    "hull_volume_m3": 0.0010026,
-   "mass_kg": 0.3008,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4174,
    "n_vertices": 25172,
    "n_hulls": 32,
@@ -18103,7 +18103,7 @@
     0.1082
    ],
    "hull_volume_m3": 0.0010506,
-   "mass_kg": 0.3152,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4251,
    "n_vertices": 13658,
    "n_hulls": 32,
@@ -18214,7 +18214,7 @@
     0.233
    ],
    "hull_volume_m3": 0.0070813,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4876,
    "n_vertices": 2350,
    "n_hulls": 32,
@@ -18362,7 +18362,7 @@
     0.2319
    ],
    "hull_volume_m3": 0.0010062,
-   "mass_kg": 0.3018,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.487,
    "n_vertices": 26709,
    "n_hulls": 32,
@@ -18399,7 +18399,7 @@
     0.2724
    ],
    "hull_volume_m3": 0.0056881,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5072,
    "n_vertices": 753,
    "n_hulls": 32,
@@ -18621,7 +18621,7 @@
     0.1226
    ],
    "hull_volume_m3": 0.0017707,
-   "mass_kg": 0.5312,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4323,
    "n_vertices": 1647,
    "n_hulls": 32,
@@ -18732,7 +18732,7 @@
     0.1857
    ],
    "hull_volume_m3": 0.0011718,
-   "mass_kg": 0.3515,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4639,
    "n_vertices": 4746,
    "n_hulls": 32,
@@ -18769,7 +18769,7 @@
     0.163
    ],
    "hull_volume_m3": 0.0012826,
-   "mass_kg": 0.3848,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4525,
    "n_vertices": 1797,
    "n_hulls": 32,
@@ -18880,7 +18880,7 @@
     0.1951
    ],
    "hull_volume_m3": 0.0019404,
-   "mass_kg": 0.5821,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4685,
    "n_vertices": 1145,
    "n_hulls": 32,
@@ -18991,7 +18991,7 @@
     0.1361
    ],
    "hull_volume_m3": 0.0045578,
-   "mass_kg": 1.3673,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.439,
    "n_vertices": 2135,
    "n_hulls": 32,
@@ -19028,7 +19028,7 @@
     0.1391
    ],
    "hull_volume_m3": 0.0043838,
-   "mass_kg": 1.3151,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4405,
    "n_vertices": 1751,
    "n_hulls": 32,
@@ -19102,7 +19102,7 @@
     0.1646
    ],
    "hull_volume_m3": 0.0012542,
-   "mass_kg": 0.3763,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4533,
    "n_vertices": 2581,
    "n_hulls": 32,
@@ -19139,7 +19139,7 @@
     0.2596
    ],
    "hull_volume_m3": 0.007374,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5008,
    "n_vertices": 36245,
    "n_hulls": 32,
@@ -19176,7 +19176,7 @@
     0.2658
    ],
    "hull_volume_m3": 0.0052494,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5039,
    "n_vertices": 1114,
    "n_hulls": 32,
@@ -19213,7 +19213,7 @@
     0.2943
    ],
    "hull_volume_m3": 0.0099613,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5182,
    "n_vertices": 1861,
    "n_hulls": 32,
@@ -19435,7 +19435,7 @@
     0.2668
    ],
    "hull_volume_m3": 0.0060152,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5044,
    "n_vertices": 2272,
    "n_hulls": 32,
@@ -19583,7 +19583,7 @@
     0.1971
    ],
    "hull_volume_m3": 0.00159,
-   "mass_kg": 0.477,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4696,
    "n_vertices": 1366,
    "n_hulls": 32,
@@ -19694,7 +19694,7 @@
     0.0999
    ],
    "hull_volume_m3": 0.0014447,
-   "mass_kg": 0.4334,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.421,
    "n_vertices": 8296,
    "n_hulls": 32,
@@ -21211,7 +21211,7 @@
     0.2142
    ],
    "hull_volume_m3": 0.0048426,
-   "mass_kg": 1.4528,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4781,
    "n_vertices": 7788,
    "n_hulls": 32,
@@ -21248,7 +21248,7 @@
     0.2695
    ],
    "hull_volume_m3": 0.0074677,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5057,
    "n_vertices": 8512,
    "n_hulls": 32,
@@ -21285,7 +21285,7 @@
     0.3207
    ],
    "hull_volume_m3": 0.0151702,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5314,
    "n_vertices": 16119,
    "n_hulls": 32,
@@ -21322,7 +21322,7 @@
     0.3857
    ],
    "hull_volume_m3": 0.0195737,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5639,
    "n_vertices": 17192,
    "n_hulls": 32,
@@ -21359,7 +21359,7 @@
     0.2651
    ],
    "hull_volume_m3": 0.0077219,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5036,
    "n_vertices": 9977,
    "n_hulls": 32,
@@ -21396,7 +21396,7 @@
     0.0949
    ],
    "hull_volume_m3": 0.0012077,
-   "mass_kg": 0.3623,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4184,
    "n_vertices": 6027,
    "n_hulls": 32,
@@ -21433,7 +21433,7 @@
     0.2094
    ],
    "hull_volume_m3": 0.0051503,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4757,
    "n_vertices": 8733,
    "n_hulls": 32,
@@ -21470,7 +21470,7 @@
     0.261
    ],
    "hull_volume_m3": 0.0071911,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5015,
    "n_vertices": 9503,
    "n_hulls": 32,
@@ -21507,7 +21507,7 @@
     0.3143
    ],
    "hull_volume_m3": 0.0152653,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5282,
    "n_vertices": 17045,
    "n_hulls": 32,
@@ -21544,7 +21544,7 @@
     0.3801
    ],
    "hull_volume_m3": 0.0180301,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5611,
    "n_vertices": 12833,
    "n_hulls": 32,
@@ -21581,7 +21581,7 @@
     0.2202
    ],
    "hull_volume_m3": 0.0045857,
-   "mass_kg": 1.3757,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4811,
    "n_vertices": 8049,
    "n_hulls": 32,
@@ -21618,7 +21618,7 @@
     0.2677
    ],
    "hull_volume_m3": 0.0078763,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5049,
    "n_vertices": 9125,
    "n_hulls": 32,
@@ -21655,7 +21655,7 @@
     0.3143
    ],
    "hull_volume_m3": 0.0154313,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5281,
    "n_vertices": 17669,
    "n_hulls": 32,
@@ -21692,7 +21692,7 @@
     0.321
    ],
    "hull_volume_m3": 0.0145123,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5315,
    "n_vertices": 15509,
    "n_hulls": 32,
@@ -21729,7 +21729,7 @@
     0.0904
    ],
    "hull_volume_m3": 0.0012446,
-   "mass_kg": 0.3734,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4162,
    "n_vertices": 6830,
    "n_hulls": 32,
@@ -21766,7 +21766,7 @@
     0.0957
    ],
    "hull_volume_m3": 0.0012223,
-   "mass_kg": 0.3667,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4189,
    "n_vertices": 6883,
    "n_hulls": 32,
@@ -21803,7 +21803,7 @@
     0.3763
    ],
    "hull_volume_m3": 0.0224573,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5591,
    "n_vertices": 28690,
    "n_hulls": 32,
@@ -21840,7 +21840,7 @@
     0.2884
    ],
    "hull_volume_m3": 0.0063665,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5152,
    "n_vertices": 10103,
    "n_hulls": 32,
@@ -21877,7 +21877,7 @@
     0.1194
    ],
    "hull_volume_m3": 0.0015267,
-   "mass_kg": 0.458,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4307,
    "n_vertices": 6738,
    "n_hulls": 32,
@@ -21914,7 +21914,7 @@
     0.1691
    ],
    "hull_volume_m3": 0.0020414,
-   "mass_kg": 0.6124,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4555,
    "n_vertices": 4908,
    "n_hulls": 32,
@@ -21951,7 +21951,7 @@
     0.1699
    ],
    "hull_volume_m3": 0.0020559,
-   "mass_kg": 0.6168,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4559,
    "n_vertices": 4995,
    "n_hulls": 32,
@@ -21988,7 +21988,7 @@
     0.1903
    ],
    "hull_volume_m3": 0.0026777,
-   "mass_kg": 0.8033,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4662,
    "n_vertices": 17123,
    "n_hulls": 32,
@@ -22025,7 +22025,7 @@
     0.1959
    ],
    "hull_volume_m3": 0.0027534,
-   "mass_kg": 0.826,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.469,
    "n_vertices": 14711,
    "n_hulls": 32,
@@ -22062,7 +22062,7 @@
     0.2658
    ],
    "hull_volume_m3": 0.0083343,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5039,
    "n_vertices": 14609,
    "n_hulls": 32,
@@ -22099,7 +22099,7 @@
     0.1954
    ],
    "hull_volume_m3": 0.0023366,
-   "mass_kg": 0.701,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4688,
    "n_vertices": 67327,
    "n_hulls": 32,
@@ -22247,7 +22247,7 @@
     0.1292
    ],
    "hull_volume_m3": 0.0064604,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4356,
    "n_vertices": 1309,
    "n_hulls": 32,
@@ -22321,7 +22321,7 @@
     0.1133
    ],
    "hull_volume_m3": 0.0013588,
-   "mass_kg": 0.4076,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4277,
    "n_vertices": 20120,
    "n_hulls": 32,
@@ -22432,7 +22432,7 @@
     0.1138
    ],
    "hull_volume_m3": 0.0021605,
-   "mass_kg": 0.6481,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4279,
    "n_vertices": 7643,
    "n_hulls": 32,
@@ -22469,7 +22469,7 @@
     0.1396
    ],
    "hull_volume_m3": 0.0021703,
-   "mass_kg": 0.6511,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4408,
    "n_vertices": 11540,
    "n_hulls": 32,
@@ -22506,7 +22506,7 @@
     0.231
    ],
    "hull_volume_m3": 0.0076047,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4865,
    "n_vertices": 1240,
    "n_hulls": 32,
@@ -22580,7 +22580,7 @@
     0.2704
    ],
    "hull_volume_m3": 0.0031718,
-   "mass_kg": 0.9515,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5062,
    "n_vertices": 2402,
    "n_hulls": 32,
@@ -22617,7 +22617,7 @@
     0.232
    ],
    "hull_volume_m3": 0.0046832,
-   "mass_kg": 1.405,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.487,
    "n_vertices": 9419,
    "n_hulls": 32,
@@ -22691,7 +22691,7 @@
     0.129
    ],
    "hull_volume_m3": 0.0063877,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4355,
    "n_vertices": 1279,
    "n_hulls": 32,
@@ -22728,7 +22728,7 @@
     0.1293
    ],
    "hull_volume_m3": 0.0065639,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4357,
    "n_vertices": 1985,
    "n_hulls": 32,
@@ -22765,7 +22765,7 @@
     0.1285
    ],
    "hull_volume_m3": 0.0067752,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4353,
    "n_vertices": 2009,
    "n_hulls": 32,
@@ -22802,7 +22802,7 @@
     0.1282
    ],
    "hull_volume_m3": 0.0067856,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4351,
    "n_vertices": 6217,
    "n_hulls": 32,
@@ -22950,7 +22950,7 @@
     0.1225
    ],
    "hull_volume_m3": 0.0024094,
-   "mass_kg": 0.7228,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4322,
    "n_vertices": 801,
    "n_hulls": 32,
@@ -23246,7 +23246,7 @@
     0.1808
    ],
    "hull_volume_m3": 0.0039688,
-   "mass_kg": 1.1906,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4614,
    "n_vertices": 1225,
    "n_hulls": 32,
@@ -23801,7 +23801,7 @@
     0.0936
    ],
    "hull_volume_m3": 0.0019674,
-   "mass_kg": 0.5902,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4178,
    "n_vertices": 1310,
    "n_hulls": 32,
@@ -23838,7 +23838,7 @@
     0.175
    ],
    "hull_volume_m3": 0.0029178,
-   "mass_kg": 0.8754,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4585,
    "n_vertices": 920,
    "n_hulls": 32,
@@ -23875,7 +23875,7 @@
     0.1498
    ],
    "hull_volume_m3": 0.0011673,
-   "mass_kg": 0.3502,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4459,
    "n_vertices": 1192,
    "n_hulls": 32,
@@ -23912,7 +23912,7 @@
     0.1198
    ],
    "hull_volume_m3": 0.0010085,
-   "mass_kg": 0.3026,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4309,
    "n_vertices": 4686,
    "n_hulls": 32,
@@ -23949,7 +23949,7 @@
     0.1197
    ],
    "hull_volume_m3": 0.0012404,
-   "mass_kg": 0.3721,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4308,
    "n_vertices": 3619,
    "n_hulls": 32,
@@ -23986,7 +23986,7 @@
     0.1685
    ],
    "hull_volume_m3": 0.0013771,
-   "mass_kg": 0.4131,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4552,
    "n_vertices": 1180,
    "n_hulls": 32,
@@ -24023,7 +24023,7 @@
     0.159
    ],
    "hull_volume_m3": 0.0016223,
-   "mass_kg": 0.4867,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4505,
    "n_vertices": 693,
    "n_hulls": 32,
@@ -24208,7 +24208,7 @@
     0.258
    ],
    "hull_volume_m3": 0.0023545,
-   "mass_kg": 0.7064,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5,
    "n_vertices": 820,
    "n_hulls": 32,
@@ -24282,7 +24282,7 @@
     0.2416
    ],
    "hull_volume_m3": 0.0040611,
-   "mass_kg": 1.2183,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4918,
    "n_vertices": 1220,
    "n_hulls": 32,
@@ -24504,7 +24504,7 @@
     0.0903
    ],
    "hull_volume_m3": 0.0012689,
-   "mass_kg": 0.3807,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4161,
    "n_vertices": 6337,
    "n_hulls": 32,
@@ -24615,7 +24615,7 @@
     0.2243
    ],
    "hull_volume_m3": 0.0110535,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4832,
    "n_vertices": 5052,
    "n_hulls": 32,
@@ -25022,7 +25022,7 @@
     0.1208
    ],
    "hull_volume_m3": 0.001173,
-   "mass_kg": 0.3519,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4314,
    "n_vertices": 13029,
    "n_hulls": 32,
@@ -25059,7 +25059,7 @@
     0.1127
    ],
    "hull_volume_m3": 0.0011214,
-   "mass_kg": 0.3364,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4273,
    "n_vertices": 14392,
    "n_hulls": 32,
@@ -25207,7 +25207,7 @@
     0.0882
    ],
    "hull_volume_m3": 0.0068925,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4151,
    "n_vertices": 56990,
    "n_hulls": 32,
@@ -25244,7 +25244,7 @@
     0.13
    ],
    "hull_volume_m3": 0.0019527,
-   "mass_kg": 0.5858,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.436,
    "n_vertices": 21997,
    "n_hulls": 32,
@@ -25281,7 +25281,7 @@
     0.1142
    ],
    "hull_volume_m3": 0.0014396,
-   "mass_kg": 0.4319,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4281,
    "n_vertices": 20902,
    "n_hulls": 32,
@@ -25318,7 +25318,7 @@
     0.1134
    ],
    "hull_volume_m3": 0.0012616,
-   "mass_kg": 0.3785,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4277,
    "n_vertices": 16174,
    "n_hulls": 32,
@@ -25355,7 +25355,7 @@
     0.1335
    ],
    "hull_volume_m3": 0.0019835,
-   "mass_kg": 0.595,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4378,
    "n_vertices": 19643,
    "n_hulls": 32,
@@ -25392,7 +25392,7 @@
     0.1233
    ],
    "hull_volume_m3": 0.0015535,
-   "mass_kg": 0.466,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4326,
    "n_vertices": 18254,
    "n_hulls": 32,
@@ -25429,7 +25429,7 @@
     0.1196
    ],
    "hull_volume_m3": 0.0015724,
-   "mass_kg": 0.4717,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4308,
    "n_vertices": 15093,
    "n_hulls": 32,
@@ -25614,7 +25614,7 @@
     0.1491
    ],
    "hull_volume_m3": 0.0015207,
-   "mass_kg": 0.4562,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4456,
    "n_vertices": 14933,
    "n_hulls": 32,
@@ -25836,7 +25836,7 @@
     0.2112
    ],
    "hull_volume_m3": 0.003112,
-   "mass_kg": 0.9336,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4766,
    "n_vertices": 67275,
    "n_hulls": 32,
@@ -25873,7 +25873,7 @@
     0.1261
    ],
    "hull_volume_m3": 0.0021666,
-   "mass_kg": 0.65,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4341,
    "n_vertices": 45632,
    "n_hulls": 32,
@@ -25910,7 +25910,7 @@
     0.2007
    ],
    "hull_volume_m3": 0.0016798,
-   "mass_kg": 0.5039,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4714,
    "n_vertices": 6749,
    "n_hulls": 32,
@@ -25984,7 +25984,7 @@
     0.0936
    ],
    "hull_volume_m3": 0.0030058,
-   "mass_kg": 0.9017,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4178,
    "n_vertices": 17360,
    "n_hulls": 32,
@@ -26021,7 +26021,7 @@
     0.0485
    ],
    "hull_volume_m3": 0.0026618,
-   "mass_kg": 0.7985,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3953,
    "n_vertices": 17296,
    "n_hulls": 32,
@@ -26058,7 +26058,7 @@
     0.0469
    ],
    "hull_volume_m3": 0.0018692,
-   "mass_kg": 0.5608,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3945,
    "n_vertices": 16927,
    "n_hulls": 32,
@@ -26132,7 +26132,7 @@
     0.2586
    ],
    "hull_volume_m3": 0.0059903,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5003,
    "n_vertices": 4517,
    "n_hulls": 32,
@@ -26169,7 +26169,7 @@
     0.2902
    ],
    "hull_volume_m3": 0.0010406,
-   "mass_kg": 0.3122,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5161,
    "n_vertices": 16809,
    "n_hulls": 32,
@@ -26354,7 +26354,7 @@
     0.1588
    ],
    "hull_volume_m3": 0.0023121,
-   "mass_kg": 0.6936,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4505,
    "n_vertices": 22093,
    "n_hulls": 32,
@@ -26428,7 +26428,7 @@
     0.1425
    ],
    "hull_volume_m3": 0.0010732,
-   "mass_kg": 0.3219,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4423,
    "n_vertices": 17061,
    "n_hulls": 32,
@@ -26502,7 +26502,7 @@
     0.1415
    ],
    "hull_volume_m3": 0.0012794,
-   "mass_kg": 0.3838,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4418,
    "n_vertices": 13919,
    "n_hulls": 32,
@@ -26576,7 +26576,7 @@
     0.2128
    ],
    "hull_volume_m3": 0.002834,
-   "mass_kg": 0.8502,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4774,
    "n_vertices": 14435,
    "n_hulls": 32,
@@ -26613,7 +26613,7 @@
     0.1688
    ],
    "hull_volume_m3": 0.0019218,
-   "mass_kg": 0.5765,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4554,
    "n_vertices": 19272,
    "n_hulls": 32,
@@ -26650,7 +26650,7 @@
     0.1164
    ],
    "hull_volume_m3": 0.001856,
-   "mass_kg": 0.5568,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4292,
    "n_vertices": 15347,
    "n_hulls": 32,
@@ -26687,7 +26687,7 @@
     0.1151
    ],
    "hull_volume_m3": 0.0015695,
-   "mass_kg": 0.4708,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4286,
    "n_vertices": 13623,
    "n_hulls": 32,
@@ -26761,7 +26761,7 @@
     0.1355
    ],
    "hull_volume_m3": 0.0015999,
-   "mass_kg": 0.48,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4388,
    "n_vertices": 12195,
    "n_hulls": 32,
@@ -26798,7 +26798,7 @@
     0.1311
    ],
    "hull_volume_m3": 0.0019837,
-   "mass_kg": 0.5951,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4366,
    "n_vertices": 16005,
    "n_hulls": 32,
@@ -26835,7 +26835,7 @@
     0.1365
    ],
    "hull_volume_m3": 0.0020585,
-   "mass_kg": 0.6175,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4393,
    "n_vertices": 15584,
    "n_hulls": 32,
@@ -26872,7 +26872,7 @@
     0.1321
    ],
    "hull_volume_m3": 0.0014707,
-   "mass_kg": 0.4412,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.437,
    "n_vertices": 9654,
    "n_hulls": 32,
@@ -26909,7 +26909,7 @@
     0.1403
    ],
    "hull_volume_m3": 0.0015776,
-   "mass_kg": 0.4733,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4412,
    "n_vertices": 16619,
    "n_hulls": 32,
@@ -26946,7 +26946,7 @@
     0.1288
    ],
    "hull_volume_m3": 0.0012309,
-   "mass_kg": 0.3693,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4354,
    "n_vertices": 13874,
    "n_hulls": 32,
@@ -26983,7 +26983,7 @@
     0.1182
    ],
    "hull_volume_m3": 0.0015666,
-   "mass_kg": 0.47,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4301,
    "n_vertices": 15545,
    "n_hulls": 32,
@@ -27020,7 +27020,7 @@
     0.1283
    ],
    "hull_volume_m3": 0.0019018,
-   "mass_kg": 0.5705,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4351,
    "n_vertices": 14647,
    "n_hulls": 32,
@@ -27057,7 +27057,7 @@
     0.1361
    ],
    "hull_volume_m3": 0.0019146,
-   "mass_kg": 0.5744,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.439,
    "n_vertices": 15856,
    "n_hulls": 32,
@@ -27094,7 +27094,7 @@
     0.1177
    ],
    "hull_volume_m3": 0.0011213,
-   "mass_kg": 0.3364,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4299,
    "n_vertices": 22572,
    "n_hulls": 32,
@@ -27131,7 +27131,7 @@
     0.19
    ],
    "hull_volume_m3": 0.0023909,
-   "mass_kg": 0.7173,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.466,
    "n_vertices": 13592,
    "n_hulls": 32,
@@ -27168,7 +27168,7 @@
     0.1668
    ],
    "hull_volume_m3": 0.0024471,
-   "mass_kg": 0.7341,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4544,
    "n_vertices": 29794,
    "n_hulls": 32,
@@ -27205,7 +27205,7 @@
     0.1301
    ],
    "hull_volume_m3": 0.0016652,
-   "mass_kg": 0.4996,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.436,
    "n_vertices": 15676,
    "n_hulls": 32,
@@ -27242,7 +27242,7 @@
     0.1071
    ],
    "hull_volume_m3": 0.0012788,
-   "mass_kg": 0.3836,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4246,
    "n_vertices": 12217,
    "n_hulls": 32,
@@ -27316,7 +27316,7 @@
     0.1291
    ],
    "hull_volume_m3": 0.0016752,
-   "mass_kg": 0.5026,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4356,
    "n_vertices": 17923,
    "n_hulls": 32,
@@ -27353,7 +27353,7 @@
     0.1083
    ],
    "hull_volume_m3": 0.0013773,
-   "mass_kg": 0.4132,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4251,
    "n_vertices": 19881,
    "n_hulls": 32,
@@ -27390,7 +27390,7 @@
     0.1633
    ],
    "hull_volume_m3": 0.0023077,
-   "mass_kg": 0.6923,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4527,
    "n_vertices": 16554,
    "n_hulls": 32,
@@ -27427,7 +27427,7 @@
     0.1213
    ],
    "hull_volume_m3": 0.0012164,
-   "mass_kg": 0.3649,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4317,
    "n_vertices": 10900,
    "n_hulls": 32,
@@ -27464,7 +27464,7 @@
     0.106
    ],
    "hull_volume_m3": 0.0010242,
-   "mass_kg": 0.3073,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.424,
    "n_vertices": 13040,
    "n_hulls": 32,
@@ -27538,7 +27538,7 @@
     0.1666
    ],
    "hull_volume_m3": 0.0017794,
-   "mass_kg": 0.5338,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4543,
    "n_vertices": 12775,
    "n_hulls": 32,
@@ -27575,7 +27575,7 @@
     0.1221
    ],
    "hull_volume_m3": 0.0014855,
-   "mass_kg": 0.4457,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4321,
    "n_vertices": 31272,
    "n_hulls": 32,
@@ -27612,7 +27612,7 @@
     0.116
    ],
    "hull_volume_m3": 0.0016379,
-   "mass_kg": 0.4914,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.429,
    "n_vertices": 19019,
    "n_hulls": 32,
@@ -27649,7 +27649,7 @@
     0.1056
    ],
    "hull_volume_m3": 0.0013663,
-   "mass_kg": 0.4099,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4238,
    "n_vertices": 17877,
    "n_hulls": 32,
@@ -27686,7 +27686,7 @@
     0.1176
    ],
    "hull_volume_m3": 0.0012789,
-   "mass_kg": 0.3837,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4298,
    "n_vertices": 8240,
    "n_hulls": 32,
@@ -27723,7 +27723,7 @@
     0.1255
    ],
    "hull_volume_m3": 0.001939,
-   "mass_kg": 0.5817,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4337,
    "n_vertices": 16445,
    "n_hulls": 32,
@@ -27797,7 +27797,7 @@
     0.1197
    ],
    "hull_volume_m3": 0.0019113,
-   "mass_kg": 0.5734,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4308,
    "n_vertices": 22872,
    "n_hulls": 32,
@@ -27834,7 +27834,7 @@
     0.1445
    ],
    "hull_volume_m3": 0.002252,
-   "mass_kg": 0.6756,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4433,
    "n_vertices": 23985,
    "n_hulls": 32,
@@ -27871,7 +27871,7 @@
     0.1302
    ],
    "hull_volume_m3": 0.0016539,
-   "mass_kg": 0.4962,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4361,
    "n_vertices": 20231,
    "n_hulls": 32,
@@ -27945,7 +27945,7 @@
     0.1136
    ],
    "hull_volume_m3": 0.0010721,
-   "mass_kg": 0.3216,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4278,
    "n_vertices": 13586,
    "n_hulls": 32,
@@ -27982,7 +27982,7 @@
     0.1206
    ],
    "hull_volume_m3": 0.0018076,
-   "mass_kg": 0.5423,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4313,
    "n_vertices": 17547,
    "n_hulls": 32,
@@ -28093,7 +28093,7 @@
     0.0896
    ],
    "hull_volume_m3": 0.0015179,
-   "mass_kg": 0.4554,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4158,
    "n_vertices": 45987,
    "n_hulls": 32,
@@ -28167,7 +28167,7 @@
     0.118
    ],
    "hull_volume_m3": 0.0022714,
-   "mass_kg": 0.6814,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.43,
    "n_vertices": 9594,
    "n_hulls": 32,
@@ -28204,7 +28204,7 @@
     0.1236
    ],
    "hull_volume_m3": 0.0011943,
-   "mass_kg": 0.3583,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4328,
    "n_vertices": 8477,
    "n_hulls": 32,
@@ -28241,7 +28241,7 @@
     0.1252
    ],
    "hull_volume_m3": 0.0028892,
-   "mass_kg": 0.8667,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4336,
    "n_vertices": 27426,
    "n_hulls": 32,
@@ -28426,7 +28426,7 @@
     0.08
    ],
    "hull_volume_m3": 0.0049253,
-   "mass_kg": 1.4776,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.411,
    "n_vertices": 17825,
    "n_hulls": 32,
@@ -28463,7 +28463,7 @@
     0.2848
    ],
    "hull_volume_m3": 0.0028331,
-   "mass_kg": 0.8499,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5134,
    "n_vertices": 6689,
    "n_hulls": 32,
@@ -28500,7 +28500,7 @@
     0.0784
    ],
    "hull_volume_m3": 0.0019653,
-   "mass_kg": 0.5896,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4102,
    "n_vertices": 29772,
    "n_hulls": 32,
@@ -28648,7 +28648,7 @@
     0.1206
    ],
    "hull_volume_m3": 0.0034299,
-   "mass_kg": 1.029,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4313,
    "n_vertices": 27897,
    "n_hulls": 32,
@@ -28685,7 +28685,7 @@
     0.1095
    ],
    "hull_volume_m3": 0.001388,
-   "mass_kg": 0.4164,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4258,
    "n_vertices": 16167,
    "n_hulls": 32,
@@ -28722,7 +28722,7 @@
     0.1315
    ],
    "hull_volume_m3": 0.0016065,
-   "mass_kg": 0.4819,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4368,
    "n_vertices": 15774,
    "n_hulls": 32,
@@ -28870,7 +28870,7 @@
     0.2725
    ],
    "hull_volume_m3": 0.002929,
-   "mass_kg": 0.8787,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5073,
    "n_vertices": 9204,
    "n_hulls": 32,
@@ -29092,7 +29092,7 @@
     0.128
    ],
    "hull_volume_m3": 0.0017529,
-   "mass_kg": 0.5259,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.435,
    "n_vertices": 14624,
    "n_hulls": 32,
@@ -29166,7 +29166,7 @@
     0.1356
    ],
    "hull_volume_m3": 0.0015041,
-   "mass_kg": 0.4512,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4387,
    "n_vertices": 11011,
    "n_hulls": 32,
@@ -29314,7 +29314,7 @@
     0.0935
    ],
    "hull_volume_m3": 0.0010149,
-   "mass_kg": 0.3045,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4178,
    "n_vertices": 6061,
    "n_hulls": 32,
@@ -29425,7 +29425,7 @@
     0.1166
    ],
    "hull_volume_m3": 0.0015169,
-   "mass_kg": 0.4551,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4294,
    "n_vertices": 27939,
    "n_hulls": 32,
@@ -29499,7 +29499,7 @@
     0.1139
    ],
    "hull_volume_m3": 0.0017023,
-   "mass_kg": 0.5107,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.428,
    "n_vertices": 14717,
    "n_hulls": 32,
@@ -29536,7 +29536,7 @@
     0.1845
    ],
    "hull_volume_m3": 0.0053422,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4633,
    "n_vertices": 1146,
    "n_hulls": 32,
@@ -29573,7 +29573,7 @@
     0.1039
    ],
    "hull_volume_m3": 0.0014225,
-   "mass_kg": 0.4268,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.423,
    "n_vertices": 11721,
    "n_hulls": 32,
@@ -29610,7 +29610,7 @@
     0.1013
    ],
    "hull_volume_m3": 0.0015502,
-   "mass_kg": 0.465,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4217,
    "n_vertices": 11404,
    "n_hulls": 32,
@@ -29647,7 +29647,7 @@
     0.1059
    ],
    "hull_volume_m3": 0.0014217,
-   "mass_kg": 0.4265,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.424,
    "n_vertices": 11591,
    "n_hulls": 32,
@@ -29684,7 +29684,7 @@
     0.1026
    ],
    "hull_volume_m3": 0.001455,
-   "mass_kg": 0.4365,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4223,
    "n_vertices": 11366,
    "n_hulls": 32,
@@ -29721,7 +29721,7 @@
     0.1065
    ],
    "hull_volume_m3": 0.0014824,
-   "mass_kg": 0.4447,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4243,
    "n_vertices": 16386,
    "n_hulls": 32,
@@ -30276,7 +30276,7 @@
     0.0459
    ],
    "hull_volume_m3": 0.0012427,
-   "mass_kg": 0.3728,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.394,
    "n_vertices": 9283,
    "n_hulls": 32,
@@ -30350,7 +30350,7 @@
     0.1611
    ],
    "hull_volume_m3": 0.0029241,
-   "mass_kg": 0.8772,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4516,
    "n_vertices": 11789,
    "n_hulls": 32,
@@ -30387,7 +30387,7 @@
     0.0605
    ],
    "hull_volume_m3": 0.0013617,
-   "mass_kg": 0.4085,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4013,
    "n_vertices": 16087,
    "n_hulls": 32,
@@ -30646,7 +30646,7 @@
     0.2688
    ],
    "hull_volume_m3": 0.0101096,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5054,
    "n_vertices": 77630,
    "n_hulls": 32,
@@ -30720,7 +30720,7 @@
     0.2422
    ],
    "hull_volume_m3": 0.0040508,
-   "mass_kg": 1.2152,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4921,
    "n_vertices": 978,
    "n_hulls": 32,
@@ -30757,7 +30757,7 @@
     0.2304
    ],
    "hull_volume_m3": 0.0042602,
-   "mass_kg": 1.2781,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4862,
    "n_vertices": 23117,
    "n_hulls": 32,
@@ -30868,7 +30868,7 @@
     0.2074
    ],
    "hull_volume_m3": 0.0031803,
-   "mass_kg": 0.9541,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4747,
    "n_vertices": 30265,
    "n_hulls": 32,
@@ -30905,7 +30905,7 @@
     0.1448
    ],
    "hull_volume_m3": 0.0032297,
-   "mass_kg": 0.9689,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4434,
    "n_vertices": 19385,
    "n_hulls": 32,
@@ -30942,7 +30942,7 @@
     0.2738
    ],
    "hull_volume_m3": 0.0069021,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5079,
    "n_vertices": 967,
    "n_hulls": 32,
@@ -31016,7 +31016,7 @@
     0.1887
    ],
    "hull_volume_m3": 0.0014102,
-   "mass_kg": 0.4231,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4653,
    "n_vertices": 8280,
    "n_hulls": 32,
@@ -31053,7 +31053,7 @@
     0.1886
    ],
    "hull_volume_m3": 0.0016733,
-   "mass_kg": 0.502,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4653,
    "n_vertices": 7143,
    "n_hulls": 32,
@@ -31386,7 +31386,7 @@
     0.2343
    ],
    "hull_volume_m3": 0.0058088,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4882,
    "n_vertices": 10269,
    "n_hulls": 32,
@@ -31423,7 +31423,7 @@
     0.0538
    ],
    "hull_volume_m3": 0.0010053,
-   "mass_kg": 0.3016,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3979,
    "n_vertices": 4699,
    "n_hulls": 32,
@@ -31460,7 +31460,7 @@
     0.0555
    ],
    "hull_volume_m3": 0.0027625,
-   "mass_kg": 0.8287,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3988,
    "n_vertices": 3963,
    "n_hulls": 32,
@@ -31571,7 +31571,7 @@
     0.1083
    ],
    "hull_volume_m3": 0.0011656,
-   "mass_kg": 0.3497,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4251,
    "n_vertices": 38896,
    "n_hulls": 32,
@@ -31608,7 +31608,7 @@
     0.2749
    ],
    "hull_volume_m3": 0.0054782,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5085,
    "n_vertices": 5410,
    "n_hulls": 32,
@@ -31682,7 +31682,7 @@
     0.099
    ],
    "hull_volume_m3": 0.0014029,
-   "mass_kg": 0.4209,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4205,
    "n_vertices": 2293,
    "n_hulls": 32,
@@ -31867,7 +31867,7 @@
     0.1314
    ],
    "hull_volume_m3": 0.0018489,
-   "mass_kg": 0.5547,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4367,
    "n_vertices": 24038,
    "n_hulls": 32,
@@ -31904,7 +31904,7 @@
     0.1547
    ],
    "hull_volume_m3": 0.0022607,
-   "mass_kg": 0.6782,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4484,
    "n_vertices": 21460,
    "n_hulls": 32,
@@ -31941,7 +31941,7 @@
     0.1606
    ],
    "hull_volume_m3": 0.0026793,
-   "mass_kg": 0.8038,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4513,
    "n_vertices": 15248,
    "n_hulls": 32,
@@ -31978,7 +31978,7 @@
     0.1694
    ],
    "hull_volume_m3": 0.0024083,
-   "mass_kg": 0.7225,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4557,
    "n_vertices": 21270,
    "n_hulls": 32,
@@ -32015,7 +32015,7 @@
     0.1622
    ],
    "hull_volume_m3": 0.002227,
-   "mass_kg": 0.6681,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4521,
    "n_vertices": 21235,
    "n_hulls": 32,
@@ -32089,7 +32089,7 @@
     0.1202
    ],
    "hull_volume_m3": 0.0013151,
-   "mass_kg": 0.3945,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4311,
    "n_vertices": 20836,
    "n_hulls": 32,
@@ -32274,7 +32274,7 @@
     0.1455
    ],
    "hull_volume_m3": 0.0019623,
-   "mass_kg": 0.5887,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4438,
    "n_vertices": 22684,
    "n_hulls": 32,
@@ -32496,7 +32496,7 @@
     0.2175
    ],
    "hull_volume_m3": 0.0075844,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4798,
    "n_vertices": 53836,
    "n_hulls": 32,
@@ -32570,7 +32570,7 @@
     0.2921
    ],
    "hull_volume_m3": 0.0125382,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5171,
    "n_vertices": 4431,
    "n_hulls": 32,
@@ -32607,7 +32607,7 @@
     0.267
    ],
    "hull_volume_m3": 0.0070803,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5045,
    "n_vertices": 1789,
    "n_hulls": 32,
@@ -32644,7 +32644,7 @@
     0.1479
    ],
    "hull_volume_m3": 0.0020914,
-   "mass_kg": 0.6274,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.445,
    "n_vertices": 3118,
    "n_hulls": 32,
@@ -32977,7 +32977,7 @@
     0.1476
    ],
    "hull_volume_m3": 0.0032057,
-   "mass_kg": 0.9617,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4448,
    "n_vertices": 42370,
    "n_hulls": 32,
@@ -33125,7 +33125,7 @@
     0.0512
    ],
    "hull_volume_m3": 0.0016348,
-   "mass_kg": 0.4904,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3966,
    "n_vertices": 12305,
    "n_hulls": 32,
@@ -33162,7 +33162,7 @@
     0.1033
    ],
    "hull_volume_m3": 0.0087222,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4227,
    "n_vertices": 35861,
    "n_hulls": 32,
@@ -33236,7 +33236,7 @@
     0.2784
    ],
    "hull_volume_m3": 0.0043768,
-   "mass_kg": 1.313,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5102,
    "n_vertices": 4988,
    "n_hulls": 32,
@@ -33347,7 +33347,7 @@
     0.1364
    ],
    "hull_volume_m3": 0.0024856,
-   "mass_kg": 0.7457,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4392,
    "n_vertices": 4431,
    "n_hulls": 32,
@@ -33458,7 +33458,7 @@
     0.0575
    ],
    "hull_volume_m3": 0.0056819,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.3997,
    "n_vertices": 22932,
    "n_hulls": 32,
@@ -33643,7 +33643,7 @@
     0.0896
    ],
    "hull_volume_m3": 0.0010591,
-   "mass_kg": 0.3177,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4158,
    "n_vertices": 13823,
    "n_hulls": 32,
@@ -33680,7 +33680,7 @@
     0.0844
    ],
    "hull_volume_m3": 0.0010995,
-   "mass_kg": 0.3299,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4132,
    "n_vertices": 14932,
    "n_hulls": 32,
@@ -33791,7 +33791,7 @@
     0.099
    ],
    "hull_volume_m3": 0.0011402,
-   "mass_kg": 0.3421,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4205,
    "n_vertices": 11523,
    "n_hulls": 32,
@@ -33828,7 +33828,7 @@
     0.2123
    ],
    "hull_volume_m3": 0.0028387,
-   "mass_kg": 0.8516,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4771,
    "n_vertices": 10031,
    "n_hulls": 32,
@@ -33865,7 +33865,7 @@
     0.1157
    ],
    "hull_volume_m3": 0.0014954,
-   "mass_kg": 0.4486,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4289,
    "n_vertices": 10574,
    "n_hulls": 32,
@@ -33902,7 +33902,7 @@
     0.1114
    ],
    "hull_volume_m3": 0.0014622,
-   "mass_kg": 0.4387,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4267,
    "n_vertices": 10587,
    "n_hulls": 32,
@@ -33939,7 +33939,7 @@
     0.1288
    ],
    "hull_volume_m3": 0.0017078,
-   "mass_kg": 0.5123,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4354,
    "n_vertices": 17337,
    "n_hulls": 32,
@@ -34050,7 +34050,7 @@
     0.1497
    ],
    "hull_volume_m3": 0.0016486,
-   "mass_kg": 0.4946,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4458,
    "n_vertices": 14344,
    "n_hulls": 32,
@@ -34198,7 +34198,7 @@
     0.2959
    ],
    "hull_volume_m3": 0.0024788,
-   "mass_kg": 0.7436,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.519,
    "n_vertices": 3763,
    "n_hulls": 32,
@@ -34272,7 +34272,7 @@
     0.18
    ],
    "hull_volume_m3": 0.0011247,
-   "mass_kg": 0.3374,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.461,
    "n_vertices": 5239,
    "n_hulls": 32,
@@ -34309,12 +34309,12 @@
     0.1534
    ],
    "hull_volume_m3": 0.0021398,
-   "mass_kg": 0.6419,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4477,
    "n_vertices": 4740,
    "n_hulls": 32,
    "rest": {
-    "tilt_deg": 0.16,
+    "tilt_deg": 0.18,
     "slid_mm": 0.0,
     "dz_mm": -2.8,
     "stands": true
@@ -34383,7 +34383,7 @@
     0.2678
    ],
    "hull_volume_m3": 0.0014784,
-   "mass_kg": 0.4435,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5049,
    "n_vertices": 48670,
    "n_hulls": 32,
@@ -34420,7 +34420,7 @@
     0.3242
    ],
    "hull_volume_m3": 0.0069734,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5332,
    "n_vertices": 63392,
    "n_hulls": 32,
@@ -34457,7 +34457,7 @@
     0.1939
    ],
    "hull_volume_m3": 0.0014943,
-   "mass_kg": 0.4483,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4679,
    "n_vertices": 5177,
    "n_hulls": 32,
@@ -34531,7 +34531,7 @@
     0.3297
    ],
    "hull_volume_m3": 0.0188302,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5359,
    "n_vertices": 13460,
    "n_hulls": 32,
@@ -34605,7 +34605,7 @@
     0.2586
    ],
    "hull_volume_m3": 0.0048714,
-   "mass_kg": 1.4614,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5003,
    "n_vertices": 6537,
    "n_hulls": 32,
@@ -34642,7 +34642,7 @@
     0.2589
    ],
    "hull_volume_m3": 0.0050967,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5005,
    "n_vertices": 6143,
    "n_hulls": 32,
@@ -34679,7 +34679,7 @@
     0.2592
    ],
    "hull_volume_m3": 0.0050935,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5006,
    "n_vertices": 5175,
    "n_hulls": 32,
@@ -34790,7 +34790,7 @@
     0.2404
    ],
    "hull_volume_m3": 0.0034574,
-   "mass_kg": 1.0372,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4912,
    "n_vertices": 17185,
    "n_hulls": 32,
@@ -34827,7 +34827,7 @@
     0.3357
    ],
    "hull_volume_m3": 0.0043306,
-   "mass_kg": 1.2992,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5389,
    "n_vertices": 11701,
    "n_hulls": 32,
@@ -34864,7 +34864,7 @@
     0.2373
    ],
    "hull_volume_m3": 0.003319,
-   "mass_kg": 0.9957,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4897,
    "n_vertices": 13185,
    "n_hulls": 32,
@@ -34901,7 +34901,7 @@
     0.2161
    ],
    "hull_volume_m3": 0.0029983,
-   "mass_kg": 0.8995,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4791,
    "n_vertices": 22882,
    "n_hulls": 32,
@@ -34938,7 +34938,7 @@
     0.332
    ],
    "hull_volume_m3": 0.0043132,
-   "mass_kg": 1.294,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.537,
    "n_vertices": 10646,
    "n_hulls": 32,
@@ -34975,7 +34975,7 @@
     0.3299
    ],
    "hull_volume_m3": 0.0036999,
-   "mass_kg": 1.11,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.536,
    "n_vertices": 11272,
    "n_hulls": 32,
@@ -35012,7 +35012,7 @@
     0.2528
    ],
    "hull_volume_m3": 0.0024042,
-   "mass_kg": 0.7212,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4974,
    "n_vertices": 15299,
    "n_hulls": 32,
@@ -35049,7 +35049,7 @@
     0.2738
    ],
    "hull_volume_m3": 0.0079248,
-   "mass_kg": 1.5,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5079,
    "n_vertices": 8790,
    "n_hulls": 32,
@@ -35086,7 +35086,7 @@
     0.1882
    ],
    "hull_volume_m3": 0.0029384,
-   "mass_kg": 0.8815,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4651,
    "n_vertices": 1953,
    "n_hulls": 32,
@@ -35123,7 +35123,7 @@
     0.1464
    ],
    "hull_volume_m3": 0.0014108,
-   "mass_kg": 0.4232,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4442,
    "n_vertices": 3636,
    "n_hulls": 32,
@@ -35308,7 +35308,7 @@
     0.2092
    ],
    "hull_volume_m3": 0.0016164,
-   "mass_kg": 0.4849,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4756,
    "n_vertices": 1094,
    "n_hulls": 32,
@@ -35382,7 +35382,7 @@
     0.2816
    ],
    "hull_volume_m3": 0.002879,
-   "mass_kg": 0.8637,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5118,
    "n_vertices": 799,
    "n_hulls": 32,
@@ -35419,7 +35419,7 @@
     0.2364
    ],
    "hull_volume_m3": 0.0032401,
-   "mass_kg": 0.972,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4892,
    "n_vertices": 11229,
    "n_hulls": 32,
@@ -35456,7 +35456,7 @@
     0.118
    ],
    "hull_volume_m3": 0.0011512,
-   "mass_kg": 0.3453,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.43,
    "n_vertices": 12047,
    "n_hulls": 32,
@@ -35493,7 +35493,7 @@
     0.1175
    ],
    "hull_volume_m3": 0.0021443,
-   "mass_kg": 0.6433,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4298,
    "n_vertices": 18338,
    "n_hulls": 32,
@@ -35530,7 +35530,7 @@
     0.2334
    ],
    "hull_volume_m3": 0.0016573,
-   "mass_kg": 0.4972,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4877,
    "n_vertices": 12084,
    "n_hulls": 32,
@@ -35641,7 +35641,7 @@
     0.2685
    ],
    "hull_volume_m3": 0.0019873,
-   "mass_kg": 0.5962,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.5053,
    "n_vertices": 5494,
    "n_hulls": 32,
@@ -35789,7 +35789,7 @@
     0.1552
    ],
    "hull_volume_m3": 0.00238,
-   "mass_kg": 0.714,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4486,
    "n_vertices": 1411,
    "n_hulls": 32,
@@ -35826,7 +35826,7 @@
     0.1561
    ],
    "hull_volume_m3": 0.0023849,
-   "mass_kg": 0.7155,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.449,
    "n_vertices": 1917,
    "n_hulls": 32,
@@ -35863,7 +35863,7 @@
     0.169
    ],
    "hull_volume_m3": 0.0020225,
-   "mass_kg": 0.6068,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4555,
    "n_vertices": 6292,
    "n_hulls": 32,
@@ -35900,7 +35900,7 @@
     0.1556
    ],
    "hull_volume_m3": 0.0024117,
-   "mass_kg": 0.7235,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4488,
    "n_vertices": 1511,
    "n_hulls": 32,
@@ -36011,7 +36011,7 @@
     0.1768
    ],
    "hull_volume_m3": 0.0013881,
-   "mass_kg": 0.4164,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4594,
    "n_vertices": 3718,
    "n_hulls": 32,
@@ -36122,7 +36122,7 @@
     0.2476
    ],
    "hull_volume_m3": 0.0046368,
-   "mass_kg": 1.391,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4948,
    "n_vertices": 567,
    "n_hulls": 32,
@@ -36159,7 +36159,7 @@
     0.0945
    ],
    "hull_volume_m3": 0.0011838,
-   "mass_kg": 0.3551,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4183,
    "n_vertices": 6476,
    "n_hulls": 32,
@@ -36529,7 +36529,7 @@
     0.1126
    ],
    "hull_volume_m3": 0.0010011,
-   "mass_kg": 0.3003,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4273,
    "n_vertices": 12865,
    "n_hulls": 32,
@@ -36603,7 +36603,7 @@
     0.0891
    ],
    "hull_volume_m3": 0.0010608,
-   "mass_kg": 0.3182,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4156,
    "n_vertices": 15850,
    "n_hulls": 32,
@@ -37158,7 +37158,7 @@
     0.1868
    ],
    "hull_volume_m3": 0.0015882,
-   "mass_kg": 0.4765,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4644,
    "n_vertices": 15131,
    "n_hulls": 32,
@@ -37195,7 +37195,7 @@
     0.1878
    ],
    "hull_volume_m3": 0.0016242,
-   "mass_kg": 0.4872,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4649,
    "n_vertices": 13589,
    "n_hulls": 32,
@@ -37232,7 +37232,7 @@
     0.1925
    ],
    "hull_volume_m3": 0.0018279,
-   "mass_kg": 0.5484,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4673,
    "n_vertices": 11605,
    "n_hulls": 32,
@@ -37269,7 +37269,7 @@
     0.1932
    ],
    "hull_volume_m3": 0.0015476,
-   "mass_kg": 0.4643,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4676,
    "n_vertices": 11579,
    "n_hulls": 32,
@@ -37380,7 +37380,7 @@
     0.1134
    ],
    "hull_volume_m3": 0.0010563,
-   "mass_kg": 0.3169,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4277,
    "n_vertices": 14230,
    "n_hulls": 32,
@@ -37676,7 +37676,7 @@
     0.1912
    ],
    "hull_volume_m3": 0.0020162,
-   "mass_kg": 0.6049,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4666,
    "n_vertices": 10629,
    "n_hulls": 32,
@@ -37713,7 +37713,7 @@
     0.1911
    ],
    "hull_volume_m3": 0.0021012,
-   "mass_kg": 0.6304,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4666,
    "n_vertices": 11095,
    "n_hulls": 32,
@@ -37750,7 +37750,7 @@
     0.1232
    ],
    "hull_volume_m3": 0.0014237,
-   "mass_kg": 0.4271,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4326,
    "n_vertices": 8834,
    "n_hulls": 32,
@@ -37787,7 +37787,7 @@
     0.229
    ],
    "hull_volume_m3": 0.0020449,
-   "mass_kg": 0.6135,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4855,
    "n_vertices": 1394,
    "n_hulls": 32,
@@ -37824,7 +37824,7 @@
     0.1471
    ],
    "hull_volume_m3": 0.0011464,
-   "mass_kg": 0.3439,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4446,
    "n_vertices": 2886,
    "n_hulls": 32,
@@ -37898,7 +37898,7 @@
     0.1372
    ],
    "hull_volume_m3": 0.0017803,
-   "mass_kg": 0.5341,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4396,
    "n_vertices": 15990,
    "n_hulls": 32,
@@ -37935,7 +37935,7 @@
     0.1319
    ],
    "hull_volume_m3": 0.0018326,
-   "mass_kg": 0.5498,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.437,
    "n_vertices": 19346,
    "n_hulls": 32,
@@ -37972,7 +37972,7 @@
     0.1314
    ],
    "hull_volume_m3": 0.0018866,
-   "mass_kg": 0.566,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4367,
    "n_vertices": 18099,
    "n_hulls": 32,
@@ -38009,7 +38009,7 @@
     0.1607
    ],
    "hull_volume_m3": 0.0019779,
-   "mass_kg": 0.5934,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4514,
    "n_vertices": 15698,
    "n_hulls": 32,
@@ -38083,7 +38083,7 @@
     0.1233
    ],
    "hull_volume_m3": 0.0018625,
-   "mass_kg": 0.5587,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4327,
    "n_vertices": 19342,
    "n_hulls": 32,
@@ -38120,7 +38120,7 @@
     0.1543
    ],
    "hull_volume_m3": 0.0015621,
-   "mass_kg": 0.4686,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4482,
    "n_vertices": 16872,
    "n_hulls": 32,
@@ -38157,7 +38157,7 @@
     0.1092
    ],
    "hull_volume_m3": 0.0012154,
-   "mass_kg": 0.3646,
+   "mass_kg": 0.3,
    "grasp_height_m": 0.4256,
    "n_vertices": 13650,
    "n_hulls": 32,

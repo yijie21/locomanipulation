@@ -54,6 +54,72 @@ def reach_ok(r: dict) -> bool:
                 and r.get("attitude_after_hold_deg", 99) <= REACH_ATT_DEG)  # fmt: skip
 
 
+HUG_LIFT_NOTE = (
+    "2026-11-07 (after gso_pack_all_s1's sealed pool put 0 of 20 two-hand objects into the carton): the limit is the "
+    "load's mass, not the hands' height. The hands reach every asked height up to 1.3 m (the lower hand within 3 cm, "
+    "IK under 1 cm) at every mass; what changes with mass is whether the box comes along. Main library: the carton at "
+    "0.3 kg rose with the hands (2 of 5 cleared the put-in's underside line, rim + 6 cm = 0.76 m), at 0.8 kg it never "
+    "left the platform (4 hugged, pivoted on its bottom edge, dropped by the 0.9 m rung), at 1.5 kg no rung was held; "
+    "its hug never closed on the 14 cm paper bag (entry check). gso_pack_all_s1's final skills (harder press on a wall, "
+    "the low-box entry fixed): carton 2 of 5 cleared at 0.3 and at 0.8 kg, 0 at 1.5 kg; bag 2 of 5 at 0.3 kg, 0 at 0.8 "
+    "and 1.5 kg. The scanned objects of the two-hand pack tasks weigh 0.93-1.5 kg (mass clipped at 1.5). Height is a "
+    "second-order limit: above a 1.1 m jaw height the wrist attitude error reaches 10-22 deg and the hands drift 10-20 cm, "
+    "and light boxes that were held lower slid out at the 1.1-1.2 m rungs; the box hangs tilted 20-80 deg in every held "
+    "rung (the grip is a line above its centre of mass)."
+)
+
+
+def hug_lift(root: Path | None = None) -> dict:
+    """reach_bimanual.hug_lift from scripts/rsi/probe_hug_lift.py's summaries (the two-hand raise against the box's
+    mass and the hands' height), one per skills library probed (<root>/hug_lift*/summary.json); untested when the
+    probe has not run. Per library, object and mass: the rounds the hug pick left in both hands, each such round's
+    highest rung still held, and per rung the rounds held / reached with the medians of the lower hand's height miss,
+    the hands' horizontal drift, the reach's attitude error, the box's rise, slip against the hands and tilt, and its
+    underside's height."""
+    root = root or OUT
+    paths = sorted(root.glob("hug_lift*/summary.json"))
+    if not paths:
+        return dict(status="untested", note="scripts/rsi/probe_hug_lift.py has not run")
+
+    def med(st):
+        return None if st is None else st["median"]
+
+    by_library = {}
+    for path in paths:
+        s = json.loads(path.read_text())
+        lib = s.get("library", "main")
+        name = "main" if lib == "main" else f"{Path(lib).parent.name} ({Path(lib).parents[2].name})"
+        by_object = {}
+        for task, by_mass in s["table"].items():
+            key = task.removeprefix("lift_")
+            by_object[key] = {}
+            for mass, t in by_mass.items():
+                by_object[key][f"{float(mass):.1f} kg"] = dict(
+                    hugged=f"{t['hugged']}/{t['rounds']}",
+                    top_rung_held=sorted(t["top_rung"], key=lambda x: -1 if x is None else x),
+                    rungs={z: dict(held=f"{r['held']}/{r['reached']}", hand_dz_cm=med(r.get("hand_dz_cm")),
+                                   hand_dxy_cm=med(r.get("hand_dxy_cm")), attitude_err_deg=med(r["attitude_err_deg"]),
+                                   box_rise_cm=med(r.get("box_rise_cm")), slip_cm=med(r["slip_cm"]),
+                                   tilt_deg=med(r["tilt_deg"]), underside_z=med(r["under_z"]))
+                           for z, r in t["per_rung"].items()},
+                )  # fmt: skip
+        src = path.parent.relative_to(REPO) if path.parent.is_relative_to(REPO) else path.parent
+        by_library[name] = dict(by_object=by_object, source=str(src))
+    return dict(
+        status="measured_one",
+        setting="a library's hug pick (bimanual.pick) at a set mass on the logistics_room_1030_s1 platform (0.371 m), "
+        "then both jaw centres raised rung by rung to absolute heights (world z) with the put-in's raise move (wrists as "
+        "they are, squeeze kept, no pelvis target, the library's raise speed, no re-squeeze, no retry), 1 s hold per "
+        "rung; a rung is held when both hands still touch the box and the robot stands. hand_dz_cm: the lower hand's "
+        "height miss (achieved - asked); hand_dxy_cm: the hands' larger horizontal drift; box_rise_cm: the underside "
+        "since the hug; slip_cm: the box's centre against the hands' midpoint since the hug. Medians over the rounds "
+        "that reached the rung; the same 5 starts per object at every mass and in every library.",
+        by_library=by_library,
+        note=HUG_LIFT_NOTE,
+        source="scripts/rsi/probe_hug_lift.py; outputs/scene_rsi_20261016/capability/hug_lift*/",
+    )
+
+
 def reach_table() -> dict:
     """Per side and wrist attitude: the heights some probed posture reached within the tolerance at a forward
     distance of 0.40-0.60 m, and per height the farthest forward reach (standing, level)."""
@@ -511,6 +577,7 @@ def build(
                 status="untested",
                 note="the two-hand hug (skills/bimanual.py, ported from the warehouse box line 2026-11-05) is in the library but no gate has measured it: once on the carton in the warehouse (lifts of 3-16 cm), once on a scanned object (gso_0945, pregrasps 15 cm off, the pack line's smoke test); a loaded carton (an object inside) was never lifted. ADT holds one bimanual object.",
             ),
+            "hug_lift": hug_lift(),
         },
         "carry": {
             "single_arm": dict(

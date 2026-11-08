@@ -67,11 +67,11 @@ The scene (the logistics room of box_bimanual's plan, plus the objects):
 - The platform (surface `A`): 1.2 x 0.9 m, top 0.371 m, centre (0, -0.105); all four edges are approach edges, with
   1.05-1.63 m of clear floor in front of each. Its middle is out of reach from every edge (D13).
 - The objects: scanned household items (boxes of games and food, bottles, bags, electronics, household goods; no shoes, toys, Legos or hats) with their scan
-  texture, 0.05-1.5 kg (hull volume x 300 kg/m^3, clamped), friction 0.8, collision by the dataset's convex hulls (up
+  texture, 0.05-0.3 kg (hull volume x 300 kg/m^3, clamped; the cap was 1.5 until 2026-11-07), friction 0.8, collision by the dataset's convex hulls (up
   to 32 per object). `scene_meta.json` gives each one `box.half_extent` and `box.centre` (the body origin is the mesh
   origin, not the bottom centre), `semantic.phrase`, `semantic.graspable` (`single` here), `semantic.mass_kg`,
   `semantic.upright_axis`, and `gso.grasp_height_m` (the catalog's predicted grasp point above the floor).
-- The carton (`nor_cal_box`, 0.45 x 0.32 x 0.33 m, 1.2 kg) sits on the same platform as a distractor of this family.
+- The carton (`nor_cal_box`, 0.45 x 0.32 x 0.33 m, 0.3 kg since 2026-11-07 (was 1.2)) sits on the same platform as a distractor of this family.
 - The default start (`robot_start`) stands 1.1 m from the platform's -y edge facing it; the pools spawn anywhere.
 
 Measured ScaleBFM facts (controller comparison, 2026-10-13): with the right mode, keyframe clips that reach the jaw
