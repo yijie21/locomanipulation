@@ -10,6 +10,11 @@ toggle keeps only what flipped or missed its expectation. `--compare` puts a sec
 primitive kind (as `past.py compare`), the edges whose values differ marked in both. `--frames` adds a MuJoCo frame of
 each step's start and end from the round's .npz (needs EGL; on SRA0889 MUJOCO_EGL_DEVICE_ID=0).
 
+Schema 0.2 records (2026-11-06) carry each object's `affordance`: the page opens with one row per object (the scene
+file's labels, the one-hand jaw check with its angles in the object's frame, the hug's spans and mass, a container's
+opening, the scene grasp height and capability, each field's source), the map's tooltips name an object's grasp kind
+and mass, and a step lists the objects whose one-hand check is stale (tilted since the start). 0.1 records show none.
+
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/report/past_view.py <diag dir>/<label> [--compare <round>] [--frames] [--out <page.html>]
 
@@ -132,6 +137,25 @@ LANG = {
         f_start="开始",
         f_end="结束",
         f_cap="{step} {which}（拍 {k}）",
+        afford="物体可供性",
+        afford_note="来自场景文件和几何检查（每个物体取它第一次出现的那一步）；夹爪角度在物体坐标系，从物体 +x 轴方向接近为 0°。",
+        afford_head=("物体", "可抓方式", "单手夹爪", "双手抱", "容器口", "抓取高度", "能力表", "来源"),
+        grasp={"single": "单手", "bimanual": "双手", "none": "不可抓"},
+        jaw_below="夹爪高度处没有截面",
+        jaw_fits="可从 {runs}° 夹",
+        jaw_none="任何方向都夹不下",
+        narrowest="最窄 {w} cm @ {deg:+d}°（每侧 {m:+.1f} cm）",
+        rim_pinch="可夹沿（壁厚 {w} cm）",
+        top_pinch="可从顶部夹 {w} cm",
+        grasp_z="抓取点高出原点 {z:+.2f} m",
+        oh_error="单手检查失败：{e}",
+        hug="跨度 x {x} / y {y} cm，高 {h} cm",
+        opening="{x}×{y} cm",
+        rim_h="沿高 {r:.2f} m",
+        in_band="在伸手高度带内",
+        out_band="不在伸手高度带内",
+        stale="可供性已过时（物体倾斜了，单手检查用的是开始时的位姿）：",
+        stale_item="{e} 倾斜 {d:.0f}°",
     ),
     "en": dict(
         html_lang="en",
@@ -222,6 +246,34 @@ LANG = {
         f_start="start",
         f_end="end",
         f_cap="{step} {which} (tick {k})",
+        afford="Object affordances",
+        afford_note="From the scene file and the geometry checks (each object from the first step it appears in); jaw angles in the object's frame, an approach from its +x axis is 0°.",
+        afford_head=(
+            "object",
+            "grasp",
+            "one-hand jaw",
+            "two-hand hug",
+            "opening",
+            "grasp height",
+            "capability",
+            "source",
+        ),
+        grasp={"single": "one hand", "bimanual": "two hands", "none": "not graspable"},
+        jaw_below="nothing at the jaw height",
+        jaw_fits="jaw fits from {runs}°",
+        jaw_none="jaw fits from no approach",
+        narrowest="narrowest {w} cm at {deg:+d}° ({m:+.1f} cm a side)",
+        rim_pinch="rim pinch ({w} cm wall)",
+        top_pinch="top pinch {w} cm",
+        grasp_z="grasp point {z:+.2f} m above the origin",
+        oh_error="one-hand check failed: {e}",
+        hug="spans x {x} / y {y} cm, {h} cm tall",
+        opening="{x}×{y} cm",
+        rim_h="rim at {r:.2f} m",
+        in_band="in the reach band",
+        out_band="outside the reach band",
+        stale="Affordance stale (the object tilted; the one-hand check is from the start pose): ",
+        stale_item="{e} tilted {d:.0f}°",
     ),
 }
 T = LANG["zh"]
@@ -487,7 +539,7 @@ def step_svg(rec: dict, meta: dict, vb_round: str, diff: set) -> str:
                 continue
             after[eid] = a
             shapes_step.append(a)
-            name = f"{eid}{T['lp']}{T['type'].get(typ, typ)}{T['rp']}"
+            name = f"{eid}{T['lp']}{T['type'].get(typ, typ)}{T['rp']}" + afford_tip(ent)
             moving = typ in ("object", "effector", "robot")
             if moving and b and math.dist(centre(a), centre(b)) > 0.01:
                 parts.append(svg_shape(b, typ, f"{name} {T['at_start']}", True))
@@ -648,10 +700,99 @@ def step_head(r: dict) -> str:
         if a.get("check")
         else ""
     )
+    stale = T["sep"].join(T["stale_item"].format(e=e, d=float(ent["affordance"].get("tilt_deg") or 0.0))
+                          for e, ent in (r.get("entities") or {}).items() if (ent.get("affordance") or {}).get("stale"))  # fmt: skip
+    stale = f"<div class='bad'>{esc(T['stale'] + stale)}</div>" if stale else ""
     g = T["gap"]
     verdict = T["ok"] if a.get("ok") else f"<span class=bad>{T['fail']}</span>"
     return (f"<h2>{r['step_index']}.{r['attempt']} {esc(r['step'])} [{esc(k)}]{g}{a.get('t0', 0):.1f}–{a.get('t1', 0):.1f} s{g}"
-            f"{verdict}{why}</h2><div class='dim'>{T['roles']}{T['colon']}{esc(roles)}</div>{chk}")  # fmt: skip
+            f"{verdict}{why}</h2><div class='dim'>{T['roles']}{T['colon']}{esc(roles)}</div>{chk}{stale}")  # fmt: skip
+
+
+# -- affordances (schema 0.2) -----------------------------------------------------------------------------------------
+def _cm(m) -> str:
+    return f"{float(m) * 100:.1f}"
+
+
+def affordances(recs: list[dict]) -> dict:
+    """Each object entity's `affordance`, from the first record it appears in (as `past.py show`)."""
+    seen: dict = {}
+    for r in recs:
+        for eid, ent in (r.get("entities") or {}).items():
+            if ent.get("type") == "object" and ent.get("affordance") and eid not in seen:
+                seen[eid] = ent["affordance"]
+    return seen
+
+
+def grasp_word(a: dict) -> str:
+    g = a.get("graspable")
+    return T["unknown"] if g is None else T["grasp"].get(str(g), str(g))
+
+
+def afford_tip(ent: dict) -> str:
+    """The map tooltip's tail for an object with an affordance: its grasp kind and mass."""
+    a = ent.get("affordance") if ent.get("type") == "object" else None
+    if not a:
+        return ""
+    mass = (a.get("hug") or {}).get("mass_kg")
+    return f"{T['semi']}{grasp_word(a)}" + (f"{T['sep']}{mass} kg" if mass is not None else "")
+
+
+def jaw_cell(a: dict) -> str:
+    oh = a.get("one_hand")
+    if not oh:
+        return T["oh_error"].format(e=a["one_hand_error"]) if a.get("one_hand_error") else ""
+    if oh.get("below_jaw"):
+        parts = [T["jaw_below"]]
+    elif oh.get("side_fits_deg"):
+        parts = [T["jaw_fits"].format(runs=" ".join(f"[{lo:+.0f}, {hi:+.0f}]" for lo, hi in oh["side_fits_deg"]))]
+    else:
+        parts = [T["jaw_none"]]
+    n = oh.get("narrowest")
+    if n:
+        deg = int(round(n["approach_deg"])) or 0  # no "-0"
+        parts.append(T["narrowest"].format(w=_cm(n["width_m"]), deg=deg, m=float(n["margin_m"]) * 100))
+    if (oh.get("rim") or {}).get("available"):
+        parts.append(T["rim_pinch"].format(w=_cm(oh["rim"]["wall_m"])))
+    if (oh.get("top_pinch") or {}).get("fits"):
+        parts.append(T["top_pinch"].format(w=_cm(oh["top_pinch"]["width_m"])))
+    if oh.get("grasp_z_above_origin_m") is not None:
+        parts.append(T["grasp_z"].format(z=float(oh["grasp_z_above_origin_m"])))
+    return T["sep"].join(parts)
+
+
+def afford_row(key: str, a: dict) -> str:
+    name = esc(key) + (f"<div class='dim'>{esc(a['phrase'])}</div>" if a.get("phrase") else "")
+    if a.get("category"):
+        name += f"<div class='dim'>[{esc(a['category'])}]</div>"
+    h = a.get("hug")
+    hug = ""
+    if h:
+        hug = T["hug"].format(x=_cm(h["span_x_m"]), y=_cm(h["span_y_m"]), h=_cm(h["height_m"]))
+        hug += f"{T['sep']}{h['mass_kg']} kg" if h.get("mass_kg") is not None else ""
+    opening = ""
+    if a.get("opening_half_extent_m"):
+        o = a["opening_half_extent_m"]
+        opening = T["opening"].format(x=_cm(2 * o[0]), y=_cm(2 * o[1]))
+        opening += T["sep"] + T["rim_h"].format(r=float(a["rim_height_m"])) if a.get("rim_height_m") is not None else ""
+    height = "" if a.get("grasp_height_m") is None else f"{float(a['grasp_height_m']):.2f} m"
+    if a.get("in_reach_band") is not None:
+        height += (T["sep"] if height else "") + (T["in_band"] if a["in_reach_band"] else T["out_band"])
+    src = "<br>".join(f"{esc(k)}={esc(v)}" for k, v in (a.get("src") or {}).items())
+    cells = (name, esc(grasp_word(a)), esc(jaw_cell(a)), esc(hug), esc(opening), esc(height),
+             esc(a.get("capability") or ""), f"<span class='dim'>{src}</span>")  # fmt: skip
+    return "<tr>" + "".join(f"<td class='wrap'>{c}</td>" for c in cells) + "</tr>"
+
+
+def afford_table(recs: list[dict]) -> str:
+    """The round's object affordances as one card, or "" for records without them (schema 0.1)."""
+    seen = affordances(recs)
+    if not seen:
+        return ""
+    head = "".join(f"<th>{h}</th>" for h in T["afford_head"])
+    rows = "".join(afford_row(k, a) for k, a in seen.items())
+    return (f"<div class='card afford'><h2 style='margin-top:0'>{T['afford']}</h2><div class='dim'>{T['afford_note']}</div>"
+            f"<div class='tw'><table><tr>{head}</tr>{rows}</table></div></div>")  # fmt: skip
 
 
 def step_block(r: dict, meta: dict, vb: str, diff: set, fr) -> str:
@@ -698,7 +839,9 @@ def single(path: Path, meta: dict, frames: dict | None = None) -> str:
     steps = "".join(f"<div class='step{' on' if i == 0 else ''}'>{step_block(r, meta, vb, set(), (frames or {}).get(r['record_id']))}</div>"
                     for i, r in enumerate(recs))  # fmt: skip
     return page(
-        recs[0]["label"], outcome_line(recs), f"<section id='s'><div class='bar steps'>{bar}</div>{steps}</section>"
+        recs[0]["label"],
+        outcome_line(recs),
+        f"{afford_table(recs)}<section id='s'><div class='bar steps'>{bar}</div>{steps}</section>",
     )
 
 
@@ -748,10 +891,13 @@ def compare(a: Path, b: Path, meta: dict, frames: dict | None = None) -> str:
         blocks.append(f"<div class='step{' on' if n == 0 else ''}'><div class='pair'><div><h2 class='dim'>A{T['gap']}{esc(ra[0]['label'] if ra else a)}</h2>{cell(x, va)}</div>"
                       f"<div><h2 class='dim'>B{T['gap']}{esc(rb[0]['label'] if rb else b)}</h2>{cell(y, vbb)}</div></div></div>")  # fmt: skip
     sub = f"A{T['colon']}{outcome_line(ra)}<br>B{T['colon']}{outcome_line(rb)}<br>{T['cmp_note']}"
+    afford = ""
+    if affordances(ra) or affordances(rb):
+        afford = f"<div class='pair'><div>{afford_table(ra)}</div><div>{afford_table(rb)}</div></div>"
     return page(
         f"{ra[0]['label'] if ra else a} vs {rb[0]['label'] if rb else b}",
         sub,
-        f"<section id='c'><div class='bar steps'>{''.join(bar)}</div>{''.join(blocks)}</section>",
+        f"{afford}<section id='c'><div class='bar steps'>{''.join(bar)}</div>{''.join(blocks)}</section>",
     )
 
 

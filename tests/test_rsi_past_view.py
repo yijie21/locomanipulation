@@ -133,6 +133,64 @@ class Page(unittest.TestCase):
             self.assertGreater(out.stat().st_size, 2000)
 
 
+AFFORD = {"graspable": "single", "phrase": "coq10", "grasp_height_m": 0.4132, "in_reach_band": True,
+          "capability": "measured_envelope", "hug": {"span_x_m": 0.0474, "span_y_m": 0.0476, "height_m": 0.0844, "mass_kg": 0.05},
+          "one_hand": {"jaw_open_m": 0.095, "grasp_z_above_origin_m": 0.0394, "flat": False, "below_jaw": False,
+                       "side_fits_deg": [[-177.3, 177.7]], "narrowest": {"approach_deg": 0.7, "width_m": 0.0466, "margin_m": 0.0242}},
+          "src": {"graspable": "rule", "hug": "derived:box", "one_hand": "derived:graspability"}, "tilt_deg": 0.0, "stale": False}  # fmt: skip
+BOX = {"graspable": "bimanual", "opening_half_extent_m": [0.215, 0.15], "rim_height_m": 0.33,
+       "one_hand": {"below_jaw": False, "side_fits_deg": [], "grasp_z_above_origin_m": 0.039,
+                    "rim": {"available": True, "wall_m": 0.01, "margin_m": 0.0425, "fits": True}}}  # fmt: skip
+
+
+def with_affordance(label, ok, stale_in_grip=False):
+    """walk_and_grip with schema 0.2 object entities: Mug and a carton, the carton tilted in the grip step if asked."""
+    recs = walk_and_grip(label, ok)
+    for i, r in enumerate(recs):
+        ents = dict(r["entities"])
+        stale = stale_in_grip and i == 1
+        ents["Mug"] = dict(ents["Mug"], affordance=AFFORD)
+        ents["Carton"] = {"type": "object", "half_extent_m": [0.2, 0.15, 0.16],
+                          "affordance": dict(BOX, stale=stale, tilt_deg=23.0 if stale else 0.0)}  # fmt: skip
+        r["entities"], r["schema"] = ents, "PAST-locomani-0.2"
+    return recs
+
+
+class Affordance(unittest.TestCase):
+    def tearDown(self):
+        PV.set_lang("zh")
+
+    def test_the_page_opens_with_one_row_per_object(self):
+        with tempfile.TemporaryDirectory() as d:
+            text = PV.single(write(d, "pick_Mug_s1", with_affordance("pick_Mug_s1", ok=True)), META)
+        self.assertEqual(text.count("<div class='card afford'>"), 1)
+        for s in ("物体可供性", "coq10", "单手", "可从 [-177, +178]° 夹", "最窄 4.7 cm @ +1°（每侧 +2.4 cm）",
+                  "0.05 kg", "0.41 m，在伸手高度带内", "measured_envelope", "one_hand=derived:graspability",
+                  "双手", "任何方向都夹不下", "可夹沿（壁厚 1.0 cm）", "43.0×30.0 cm，沿高 0.33 m"):  # fmt: skip
+            self.assertIn(s, text, s)
+        self.assertIn("Mug（物体）；单手，0.05 kg", text)  # the map's tooltip
+
+    def test_a_stale_check_is_flagged_on_its_step(self):
+        recs = with_affordance("pick_Mug_s1", ok=True, stale_in_grip=True)
+        self.assertNotIn("可供性已过时", PV.step_head(recs[0]))
+        self.assertIn("Carton 倾斜 23°", PV.step_head(recs[1]))
+
+    def test_records_without_affordances_have_no_card(self):
+        self.assertEqual(PV.afford_table(walk_and_grip("pick_Mug_s1", ok=True)), "")
+        self.assertEqual(PV.afford_tip({"type": "object"}), "")
+
+    def test_compare_shows_both_rounds_cards_and_english_has_no_chinese(self):
+        PV.set_lang("en")
+        with tempfile.TemporaryDirectory() as d:
+            a = write(d, "pick_Mug_s1", with_affordance("pick_Mug_s1", ok=False, stale_in_grip=True))
+            b = write(d, "pick_Mug_s2", with_affordance("pick_Mug_s2", ok=True))
+            text = PV.compare(a, b, META)
+        self.assertEqual(text.count("<div class='card afford'>"), 2)
+        self.assertIn("jaw fits from [-177, +178]°", text)
+        self.assertIn("Carton tilted 23°", text)
+        self.assertEqual([ch for ch in text if "一" <= ch <= "鿿"], [])
+
+
 class English(unittest.TestCase):
     def tearDown(self):
         PV.set_lang("zh")
