@@ -69,6 +69,7 @@ COMMAND_DOCUMENTS = (
     "docs/running.md",
     "docs/object_grasp.md",
     "docs/rsi.md",  # 2026-10-20: the main line's runbook
+    "docs/selfwm.md",  # 2026-11-11: the self-model grasp line's runbook (branch selfwm)
 )
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")

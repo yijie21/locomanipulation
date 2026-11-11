@@ -10,6 +10,7 @@ Each kind of material has one home; other documents link to it. Moved here from
 | Shared mechanics of the archived VLA line: experiment files, CLI arguments, skip/resume, parallel runs, the stack, the eval clock | [Running](../running.md) (archived) |
 | **Why the main line is built this way**, its extra troubleshooting, and detail the runbook leaves out | [Scene RSI design](../rsi_design.md); the dated decisions stay in the [plan](../handoff/scene-rsi-plan-20261016.md) |
 | **What a run produced on a given day** | Scene RSI: the [progress report](../handoff/scene-rsi-report-20261019.md) and the plan; the archived lines' ledgers ([bottle](../ledger/bottle.md), [crate and warehouse](../ledger/crate.md)) |
+| The self-model grasp line (branch `selfwm`): commands; why it is built this way; what a run produced | [Runbook](../selfwm.md); [design](../selfwm_design.md); [dated record](../handoff/selfwm-20261029.md) |
 | Installation | [Setup](../setup.md): each step is the command, what it does and how to verify it; pitfalls go in its closing troubleshooting section |
 | A term the guides use without explaining | [Glossary](../reference/glossary.md); define it once and link it |
 | Configuration fields and defaults | Owning code; regenerate the [field reference](../reference/config_fields.md) with `make config-doc` |

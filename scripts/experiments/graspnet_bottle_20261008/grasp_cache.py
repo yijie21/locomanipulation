@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -55,7 +56,10 @@ from grasp_planned import (  # noqa: E402
 )
 
 REPO = HERE.parents[2]
-ROOT = REPO / "outputs" / "graspnet_bottle_20261008"
+ROOT = Path(
+    os.environ.get("GRASP_CACHE_ROOT", REPO / "outputs" / "graspnet_bottle_20261008")
+)  # env: another object set in the same layout (2026-11-09, reachwm_20261030/simready)
+PAIR_FAR = bool(int(os.environ.get("GRASP_PAIR_FAR", "0")))
 BODY = "water_bottle_object"
 TABLE_TOP = 0.62
 OFFSET = np.array([0.1515, 0.0, 0.0])  # tool (grip centre) in the wrist frame, ready_grasp_policy.OFFSET for dex1
@@ -141,6 +145,15 @@ def antipodal_pairs(first, pts, nrm, tree):
         off = np.linalg.norm(rel - np.outer(along, -n1), axis=1)
         ok = (along >= CLOSED_GAP) & (off < PAIR_RADIUS)
         if not ok.any():
+            continue
+        if (
+            PAIR_FAR
+        ):  # 2026-11-09: hollow objects (cups, bottles): the farthest point with an opposed normal, not the inner wall
+            anti = np.degrees(np.arccos(np.clip(nrm[near[ok]] @ (-n1), -1, 1))) <= ANTIPODAL_DEG
+            if not anti.any():
+                continue
+            j = np.flatnonzero(anti)[np.argmax(along[ok][anti])]
+            out.append((i, near[ok][j], float(along[ok][j])))
             continue
         k = near[ok][np.argmin(along[ok])]
         width = float(along[ok].min())

@@ -295,6 +295,7 @@ class Policy:
         self.mode = torch.tensor([MODE], dtype=torch.long, device=device)
         self.isel = {n: i for i, n in enumerate(self.sel)}
         self.graph = self.cfg.cuda_graph and str(device).startswith("cuda")
+        self.root_source = None  # optional (state, targets) -> the pelvis position the policy is told, an onboard estimate; None: as cfg.reference_forcing says
         self.eager_calls, self.g = 0, None
         # one host buffer for every input, each part starting on a 512-byte boundary as a tensor of its own would
         # (cuBLAS may choose its kernel by alignment, and the outputs must stay bit for bit those of the eager path)
@@ -373,9 +374,13 @@ class Policy:
             pw[:, self.isel[n]] = p
             qw[:, self.isel[n]] = q
         h = self.host
+        if self.root_source is not None:
+            root_pos = self.root_source(st, targets)
+        else:
+            root_pos = targets["pelvis"][0][0] if self.cfg.reference_forcing and "pelvis" in targets else st["root_pos"]
         for k, a in (("rq", self.buf["root_quat"]), ("av", self.buf["ang_vel"]), ("dp", self.buf["dof_pos"]),
                      ("dv", self.buf["dof_vel"]), ("ac", self.buf["action"]), ("pw", pw), ("qw", qw),
-                     ("rp", st["root_pos"])):  # fmt: skip
+                     ("rp", root_pos)):  # fmt: skip
             o, sh = self.parts[k]
             h[o : o + int(np.prod(sh))] = np.asarray(a, dtype=np.float32).reshape(-1)
         out = self.net(h)

@@ -365,7 +365,7 @@ class Motor:
             w = WRIST[side]
             p_ref, R_ref = fut[w][0][0], R.mat(fut[w][1][0])
             jaw_ref = self.servo_target.get(side, p_ref + R_ref @ R.OFF)
-            p_meas, R_meas = self.jaw_centre(side)
+            p_meas, R_meas = (getattr(self, "jaw_source", None) or self.jaw_centre)(side)
             turn = self.servo.get(("turn", side), np.zeros(3)) + cfg.servo_ki_rot * R.DT * rotvec(R_ref @ R_meas.T)
             n = float(np.linalg.norm(turn))
             turn = turn * (cfg.servo_cap_rot / n) if n > cfg.servo_cap_rot else turn
@@ -518,11 +518,16 @@ class Motor:
         return self.walk_to(goal, yaw, face="fixed")
 
     # -- whole-body IK ----------------------------------------------------------------------------------------------
-    def _solver(self, pelvis_height_target=None) -> WholeBodyIK:
+    def _solver(self, pelvis_height_target=None, at: Pose | None = None) -> WholeBodyIK:
+        """The whole-body IK of the current state, or built on the reference pose `at` and seeded exactly there."""
         if self.ik is None:
             raise RuntimeError("Motor needs model_xml for whole-body IK (posture, reach)")
-        pos, quat = self.pelvis()
-        state = dict(joints=self.joints(), pelvis=dict(pos=pos, quat=quat))
+        if at is None:
+            pos, quat = self.pelvis()
+            joints = self.joints()
+        else:
+            pos, quat, joints = at.pos.copy(), at.quat.copy(), at.joints.copy()
+        state = dict(joints=joints, pelvis=dict(pos=pos, quat=quat))
         cfg = self.cfg
         solver = WholeBodyIK(
             self.ik,
@@ -538,6 +543,8 @@ class Motor:
             # WholeBodyIK bounds the pelvis at most 2 cm above where it stands (a crouch solver); a posture that rises
             # back needs the bound at its target (motor_check posture_low, 2026-10-16: 0.58 -> 0.74 stayed at 0.58)
             solver.hi[2] = max(solver.hi[2], pelvis_height_target + 0.01)
+        if at is not None:
+            solver.seed = np.clip(solver.initial, solver.lo, solver.hi)
         return solver
 
     def _solve(self, solver, positions, rotations, *, weights=None, torso=None, seed=None, rotation_weight=None):
@@ -670,16 +677,31 @@ class Motor:
         rotation_weight: float | None = None,
         servo: bool = True,
         pelvis_z: float | None = None,
+        start=None,
+        start_rot=None,
+        ik_from_ref: bool = False,
     ) -> Outcome:
         """Move `side`'s jaw centre to `pos` (world) with wrist rotation `rot` (3x3 world; None keeps the current one)
         through the points `via`, legs straight at `speed`, whole-body IK at waypoints reach_step_m apart, feet
         planted. side "both": `pos`, `rot` and each via point are pairs (left, right). The other jaw centre stays where it
         is in the world (IK weight 0.3). The servo integrates the jaw-centre
-        error from the start and settles up to reach_settle_s at the end."""
+        error from the start and settles up to reach_settle_s at the end.
+
+        `start` / `start_rot` (one side only): the path starts at this point / attitude instead of the measured ones.
+        ik_from_ref: the whole-body IK is built on the current reference pose and seeded there, not on the measured joints
+        with its waist-forward seed. The reference is what the first leg blends from, so the plan stays in its posture
+        family; from a measured posture far from the reference the IK can land in another family and the joint-space
+        blend swings the reference jaw tens of cm (grasp_exp.py, top shelf, 2026-11-08)."""
         cfg = self.cfg
         sides = SIDES if side == "both" else (side,)
-        solver = self._solver(pelvis_height_target=pelvis_z)
+        solver = self._solver(pelvis_height_target=pelvis_z, at=self.ref(self.t) if ik_from_ref else None)
         cur = {s: self.jaw_centre(s) for s in SIDES}
+        if start is not None or start_rot is not None:
+            assert side != "both", "reach: start / start_rot are for one side"
+            cur[side] = (
+                cur[side][0] if start is None else np.asarray(start, float),
+                cur[side][1] if start_rot is None else np.asarray(start_rot, float),
+            )
         if side == "both":
             goal_p = {s: np.asarray(pos[i], float) for i, s in enumerate(SIDES)}
             goal_R = {s: cur[s][1] if rot is None else np.asarray(rot[i], float) for i, s in enumerate(SIDES)}
