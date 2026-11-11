@@ -100,7 +100,83 @@ MUJOCO_GL=egl $PY $R/room_grasp_video.py
 
 做什么：第一条重跑指定的局，每个控制拍记录手、物体和接触；第二条把一个摆放的两种做法并排录成视频。参数见各自脚本开头的说明。
 
-## 5. 常见错误
+## 5. 更难的房间
+
+```bash
+GRASP_ROOM_HARD=1 GRASP_ROOM_OUT=$I/grasp_room_hard $PY $R/grasp_room.py build --layouts 7
+export GRASP_ROOM_OUT=$I/grasp_room_hard
+```
+
+做什么：物体放到台面里 0.10 到 0.50 m 深，矮柜和台面上方加一块板，多一个 1.10 m 的高架。7 个房间共 203 个摆放。第二行之后，第 2、3 节的命令都在这套摆放上跑。
+
+得到什么：`$I/grasp_room_hard/`，其中 `stations.json` 记着家具，评测时不用再设 `GRASP_ROOM_HARD`。连续伺服预期 203 局里成功 103 上下。
+
+## 6. 从视觉得到抓取
+
+把特权的抓取缓存换成相机看到的。四步，前三步各在自己的环境里跑，最后一步是第 2 节的评测加一个开关。下面是用腕部相机在 1 m 处看一眼的配置。
+
+前提：main 的 `third_party/` 下有 `GraspGenX`、`sam3`、`lingbot-depth` 三份代码，`sam3d` conda 环境可用。安装和踩过的坑见[开发记录](handoff/selfwm-20261029.md)的 11-11 一节。
+
+```bash
+M=/workspace/code/locomanipulation        # main 的检出，第三方代码和 Dex1 夹爪配置在那里
+S3=/workspace/miniconda3/envs/sam3d/bin/python
+export HF_HOME=/workspace/huggingface_cache PYTHONNOUSERSITE=1
+```
+
+**第一步，看。**
+
+```bash
+for L in 0,1 2,3 4,5 6; do
+  ROOM_GRASP_LOOK=1.0 VISION_CALIB=1 MUJOCO_GL=egl $PY $R/vision_grasp.py see --pose wrist100 --layouts $L &
+done; wait
+```
+
+做什么：每个摆放上，机器人站在离物体 1 m 处，抬起要抓的那只手，用腕部相机拍一张彩色图和深度图。深度带 RealSense 式的缺陷，`VISION_CALIB=1` 再加标定残差。`--pose` 写别的名字，比如 `look100`，就改用头部相机。
+
+得到什么：`$GRASP_ROOM_OUT/vision/see_wrist100_L*_s*.npz`。约 4 分钟。
+
+**第二步，补深度，找物体。**
+
+```bash
+(cd $M && PYTHONPATH=third_party/lingbot-depth CUDA_VISIBLE_DEVICES=0 $S3 -s $OLDPWD/$R/vision_depth_fix.py $GRASP_ROOM_OUT/vision --pose wrist100)
+CUDA_VISIBLE_DEVICES=1 PYTHONPATH=src:$M/third_party/sam3 HF_HUB_OFFLINE=1 $S3 -s scripts/rsi/sam3_server.py --port 18832 &
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 $S3 -s $R/vision_seg.py $GRASP_ROOM_OUT --objects $GRASP_ROOM_OBJECTS/objects.json \
+    --how refer --pose wrist100 --depth lb --tag w100
+kill %1
+```
+
+做什么：第一条用 LingBot-Depth 把深度的洞补上。第二条在后台起 SAM 3 服务。第三条对每张图，让 SAM 3 按类别出候选，让 Qwen3-VL 按“某某，左数第几个，在哪件家具上”给框，取重合最多的候选，再把它的深度像素变成点云。最后一条停掉 SAM 3 服务。
+
+得到什么：`vision/see_w100_L*_s*.npz` 是物体点云，`vision/seg_w100.json` 记着每个摆放找对没有。预期 203 个里找对 185 个上下。约 5 分钟。
+
+**第三步，出抓取。**
+
+```bash
+(cd $M && CUDA_VISIBLE_DEVICES=0 third_party/GraspGenX/.venv/bin/python $OLDPWD/$R/vision_grasp_infer.py $GRASP_ROOM_OUT/vision \
+    --pose w100 --assets-dir outputs/scene_rsi_20261016/graspgenx_20261026/gripper_assets)
+```
+
+做什么：GraspGen-X 用 Dex1 的夹爪配置，从每个物体的点云出 716 个带分数的抓取。
+
+得到什么：`vision/grasp_w100_L*_s*.npz`。约 1 分钟。不要在 `GraspGenX` 目录里跑 `uv sync`，它会装回不支持这块显卡的旧 torch。
+
+**第四步，抓。**
+
+```bash
+export ROOM_GRASP_CONT=1 ROOM_GRASP_LIFT_CONT=1 ROOM_GRASP_FB_SERVO=1 ROOM_GRASP_SERVO_SRC=odo
+export ROOM_GRASP_LOOK=1.0 ROOM_GRASP_HAND_LOOK=1 ROOM_GRASP_VISION=w100
+$PY $R/room_grasp.py h --procs 6 --layouts 0,1,2,3,4,5,6 --methods feedback --tag _w100
+$PY $R/room_grasp.py d --tag _w100
+```
+
+做什么：每局先抬手看、放下手，再走过去抓，抓取用第三步的结果。之后不再看。
+
+得到什么：203 局里成功 89 上下。同样条件下特权抓取是 104，去掉 `ROOM_GRASP_VISION` 就是它。
+
+## 7. 常见错误
+
+- 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。
+- SAM 3 服务用 18832 端口，18822 是视觉线的，不要占。
 
 - 成功数比预期低一大截：检查 `BFM_ROOT=odo` 和 `OMP_NUM_THREADS=1` 是否设了。模型是在腿部里程计下训练的，线程数会改变仿真结局。
 - 后台跑到 10 分钟被杀：用 `nohup setsid` 启动，不要用工具自带的后台模式。

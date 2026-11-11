@@ -76,6 +76,15 @@ Feedback controls, 11-10 evening (the "is the learned model needed" check; tags 
                                              servo alone 220 (true pose 233; paired +9 -22), walk model + PICK + servo 235 (239; +10 -14).
                                              Development 199 and 225 of 294 (203 and 232). The arm IK still reads the true pelvis.
 
+The harder room and vision, 11-11 (docs/handoff/selfwm-20261029.md, last section; the set carries its stations.json):
+
+  ROOM_GRASP_STANCE_REACH=0.45               stand so that the object is this far ahead of the pelvis (no gain: 99-107 against 103)
+  ROOM_GRASP_VISION=<tag>                    grasps from vision/grasp_<tag>_L<k>_s<j>.npz (vision_grasp.py, vision_seg.py,
+                                             vision_grasp_infer.py) in place of the mesh grasp cache
+  ROOM_GRASP_LOOK=1.0                        the episode starts with the pelvis this far from the object (the last look)
+  ROOM_GRASP_HAND_LOOK=1                     the episode opens with the wrist-camera look (hand_look), then stands and walks
+  ROOM_GRASP_LOOK_SPEED / _LOOK_HOME / _LOOK_REST, ROOM_GRASP_PRESTEP, ROOM_GRASP_AZ_W_ROOF    tried, no gain; off by default
+
 Held out, two sets of 7 new layouts (GRASP_ROOM_SEED 9200000 and 9300000), 294 episodes, first try: direct 56 (19 %), _v3 161 (55 %),
 PICK+FIXes 197 (67 %), jaw error 1.12 cm (p90 3.47). With RETRY=2: 205 above 0.5 m only (3 falls, as without), 210 everywhere (10 falls,
 the 7 new ones at the tray and the low cabinet). Direct with the same retry: 65.
@@ -241,6 +250,26 @@ STANCE_BACK_LOW, STANCE_LOW_Z = 0.42, 0.50  # surfaces lower than this: stand th
 STANCE_BACK_LOW = float(
     os.environ.get("ROOM_GRASP_STANCE_BACK_LOW", STANCE_BACK_LOW)
 )  # 2026-11-10: knees met the low cabinet in the entry
+# geometric stance rule (0 = off): stand so that the object is this far ahead of the pelvis, as near as the furniture lets
+# the body come (STANCE_MIN upright, STANCE_MIN_LOW in a crouch); never further back than the fixed distances
+STANCE_REACH = float(os.environ.get("ROOM_GRASP_STANCE_REACH", 0.0))
+STANCE_MIN = float(os.environ.get("ROOM_GRASP_STANCE_MIN", 0.20))
+STANCE_MIN_LOW = float(os.environ.get("ROOM_GRASP_STANCE_MIN_LOW", STANCE_BACK_LOW))
+# the last look (0 = off): the episode starts with the pelvis this far in front of the object, on the stance's line, and
+# walks the rest in legs of at most the walk data's 1 m; the start's heading draw stays
+LOOK = float(os.environ.get("ROOM_GRASP_LOOK", 0.0))
+# standing widens ScaleBFM's stance (25 cm at the reset, about 0.5 cm more per second), and a walk from a wide stance stops
+# 1-2 cm off to the side; the look costs 6-8 s of standing. PRESTEP: the walk's first leg is this short (m)
+PRESTEP = float(os.environ.get("ROOM_GRASP_PRESTEP", 0.0))
+LOOK_REST = float(os.environ.get("ROOM_GRASP_LOOK_REST", 1.0))  # s of standing after the hand is back down
+LOOK_SPEED = float(
+    os.environ.get("ROOM_GRASP_LOOK_SPEED", 0.0)
+)  # m/s of the hand on its way to the look (0: the motor's)
+LOOK_HOME = float(
+    os.environ.get("ROOM_GRASP_LOOK_HOME", 0.0)
+)  # s: the way back down and its settle, each (0: gen_reach's 1 s)
+AZ_W_ROOF = float(os.environ.get("ROOM_GRASP_AZ_W_ROOF", 0.2))  # the heading-offset penalty for a grasp under a board
+HAND_LOOK = int(os.environ.get("ROOM_GRASP_HAND_LOOK", 0))  # 1: the episode opens with the hand-camera look (hand_look)
 STANCE_BACK_TRAY = 0.22  # the tray is 8 cm high, knees clear it; the hand reaches the floor band only 0.3-0.5 m ahead (select_eval map)
 LIFT_CABINET = 0.06  # a 10 cm lift meets the board above (grasp_pilot v1 too)
 CLEAR_OUT = 0.10  # the first waypoint this far outside the furniture front, m
@@ -274,7 +303,51 @@ def station_frame(name: str):
 
 def surfaces_above(st: dict, surf: float) -> float:
     tops = sorted(st["tops"])
-    return next((t for t in tops if t > surf + 1e-6), 1.22 if st["name"] == "cabinet" else 9.0)
+    return next((t for t in tops if t > surf + 1e-6), 1.22 if st["name"] == "cabinet" else st.get("over", 9.0))
+
+
+def roofed(st: dict) -> bool:
+    """A board over the surface: the cabinet, or a hard-room station with `over`."""
+    return st["name"] == "cabinet" or bool(st.get("over"))
+
+
+LOOK_AHEAD, LOOK_SIDE, LOOK_DOWN, LOOK_DEEP = (
+    0.38,
+    0.20,
+    20.0,
+    0.22,
+)  # hand ahead / beside the pelvis, m; view down, deg
+CAM_TILT, CAM_UP = 30.0, 0.06  # the wrist camera looks this far below the hand's axis and sits this far over it
+
+
+def hand_look(env, slot: dict):
+    """Raise the grasping side's hand so that its wrist camera looks at the station's surface LOOK_DEEP behind the front, from
+    LOOK_DOWN above it where the wrist can go. Uses where the station is and how high its surface is (the map's knowledge),
+    not the object. -> camera name, (hand position, pitch deg) or None."""
+    m = env.m
+    st, c, a, ax, perp = station_frame(slot["station"])
+    lat = float(perp @ (np.array(slot["pos"])[:2] - c))
+    side, sd = ("right", 1.0) if lat < 0 else ("left", -1.0)
+    pv, Rp = env.pelvis()
+    yaw = E.yaw_of(Rp)
+    f, l_ = np.array([math.cos(yaw), math.sin(yaw)]), np.array([-math.sin(yaw), math.cos(yaw)])
+    hand = pv[:2] + f * LOOK_AHEAD - l_ * sd * LOOK_SIDE
+    aim = np.r_[c + ax * LOOK_DEEP, slot["surf"] + 0.06]
+    d = float(np.linalg.norm(aim[:2] - hand))
+    z = float(np.clip(aim[2] + d * math.tan(math.radians(LOOK_DOWN)) - CAM_UP, 0.50, 1.20))
+    down = math.degrees(math.atan2(z + CAM_UP - aim[2], d))
+    pitch = float(np.clip(down - CAM_TILT, -25.0, 60.0))
+    az = math.atan2(aim[1] - hand[1], aim[0] - hand[0])
+    R = E.rot_z(az) @ np.array([[math.cos(math.radians(pitch)), 0, math.sin(math.radians(pitch))], [0, 1, 0],
+                                   [-math.sin(math.radians(pitch)), 0, math.cos(math.radians(pitch))]])  # fmt: skip
+    pz = AE.pelvis_for(z)
+    out = m.reach(
+        side, np.r_[hand, z], R, pelvis_z=None if pz < 0 else float(pz), servo=False, speed=LOOK_SPEED or None
+    )
+    if m.fell_at is not None:
+        return f"{side}_wrist", None
+    m.hold(0.5)
+    return f"{side}_wrist", (np.r_[hand, z], pitch, bool(out.ok))
 
 
 def pitch_band(z: float) -> tuple[float, float]:
@@ -289,7 +362,7 @@ def grasp_options(
     """Every validated grasp inside the trained wrist commands and clear of the station: (index, info, tool position, tool rotation)."""
     st, _, a0, _, _ = station_frame(slot["station"])
     Rs = E.rot_z(a0).T
-    above = surfaces_above(st, slot["surf"]) if st["name"] == "cabinet" else 9.0
+    above = surfaces_above(st, slot["surf"]) if roofed(st) else 9.0
     rob_ = ROB_OF.get(id(tool_b))
     for i in np.flatnonzero(held):
         Rt = R_o @ R_b[i]
@@ -315,7 +388,8 @@ def grasp_options(
         if lo < slot["surf"] + 0.035 or hi > WRIST_CEILING or hi > above - 0.07:
             continue
         # the reach model corrects the position only; the wrist's attitude error grows with the pitch (30-38 deg near 90)
-        s = float(score[i]) - 0.2 * abs(yaw) / MAX_AZ - 0.2 * roll / MAX_ROLL - 0.3 * max(0.0, pitch - 65.0) / 30.0
+        az_w = AZ_W_ROOF if roofed(st) else 0.2  # under a board the hand has no room to come in at an angle
+        s = float(score[i]) - az_w * abs(yaw) / MAX_AZ - 0.2 * roll / MAX_ROLL - 0.3 * max(0.0, pitch - 65.0) / 30.0
         s += ROBUST_W * (rob - 1.0)
         yield (
             int(i),
@@ -446,9 +520,15 @@ def episode(
     side, sd = ("right", 1.0) if lat < 0 else ("left", -1.0)
     # a crouch brings the knees and torso forward: 0.30 m put them into the solid low cabinet and the cabinet's plinth
     back = STANCE_BACK_TRAY if st["name"] == "tray" else STANCE_BACK_LOW if slot["surf"] < STANCE_LOW_Z else STANCE_BACK
+    if STANCE_REACH > 0 and st["name"] != "tray":
+        near = STANCE_MIN_LOW if slot["surf"] < STANCE_LOW_Z else STANCE_MIN
+        back = min(back, max(near, STANCE_REACH - float(ax @ (p_slot[:2] - c))))
+    res["back"] = back
     stance = c - ax * back + perp * (lat + sd * HAND_Y)
     p_start = stance - ax * float(rng.uniform(0.45, 0.90)) + perp * float(rng.uniform(-0.10, 0.10))
     yaw_start = a + math.radians(float(rng.uniform(-8.0, 8.0)))
+    if LOOK > 0:
+        p_start = stance - ax * max(0.0, LOOK - back - float(ax @ (p_slot[:2] - c)))
     con.n, con.phase, con.parts = {}, "walk", {}
     m.reset((float(p_start[0]), float(p_start[1])), yaw_start)
     for s in layout["slots"]:
@@ -460,6 +540,45 @@ def episode(
     b = sim.m.body(slot["object"]).id
     p_o, R_o = sim.d.xpos[b].copy(), quat_mat(sim.d.xquat[b])
     z0_others = {s["object"]: sim.d.xpos[sim.m.body(s["object"]).id].copy() for s in layout["slots"]}
+    look_fix = None
+    if (
+        HAND_LOOK
+    ):  # the look vision_grasp.py's wrist pass took: raise the hand, (the frame), back to standing; the pelvis
+        # is followed by the leg odometry over it, and the grasp is placed from where the robot believes it stands now
+        from locomani.backends.scalebfm import motor as MM
+
+        pA, RA = env.pelvis()
+        feet = [sim.m.body(n).id for n in ("left_ankle_roll_link", "right_ankle_roll_link")]
+        fA = sim.d.xpos[feet, :2].copy()
+        if jf is not None:
+            jf.anchor(pA, E.yaw_of(RA), MM.WRIST, MM.R.OFF)
+        con.phase = "look"
+        hand_look(env, slot)
+        if m.fell_at is None:
+            if LOOK_HOME > 0:
+                GR.HOME_S = GR.HOME_SETTLE_S = LOOK_HOME
+            GR.home(m)
+        if m.fell_at is not None:
+            return dict(res, fell="look", success=False)
+        rec.start(side)
+        m.hold(LOOK_REST)
+        con.phase = "walk"
+        pB, RB = env.pelvis()
+        Ra_ = E.rot_z(E.yaw_of(RA)).T
+        res["look_moved"] = dict(  # what the look left behind, in the start's heading frame: cm, deg, rad
+            pelvis=(100 * (Ra_ @ (pB - pA))).round(2).tolist(),
+            yaw=round(math.degrees(E.yaw_of(RB) - E.yaw_of(RA)), 2),
+            feet=(100 * ((sim.d.xpos[feet, :2] - fA) @ Ra_[:2, :2].T)).round(2).tolist(),
+            joints=round(float(np.abs(m.joints() - m.stand_pose.joints).max()), 3),
+            joint_at=int(np.abs(m.joints() - m.stand_pose.joints).argmax()),
+        )
+        if jf is not None:
+            (pe, Re), (pt, Rt) = jf.pelvis(), env.pelvis()
+            jf.on = False
+            look_fix = (pe, pt, E.rot_z(E.yaw_of(Rt) - E.yaw_of(Re)))
+            res["look_est_cm"] = (100 * (pe - pt)).round(3).tolist() + [
+                round(math.degrees(E.yaw_of(Re) - E.yaw_of(Rt)), 3)
+            ]
     g = cache[slot["object"]]
     i, info = choose_grasp(slot, g["tool"], g["R"], g["score"], g["held"], p_o, R_o)
     if i is None:
@@ -467,6 +586,8 @@ def episode(
     tool_w, R_w = p_o + R_o @ g["tool"][i], R_o @ g["R"][i]
     if info["flip"]:
         R_w = R_w @ np.diag([1.0, -1.0, -1.0])  # the same grasp with the fingers swapped
+    if look_fix is not None:  # the grasp relative to the believed pelvis, laid on the true one
+        tool_w, R_w = look_fix[1] + look_fix[2] @ (tool_w - look_fix[0]), look_fix[2] @ R_w
     res.update(grasp=int(i), side=side, **info)
     p0, Rp0 = env.pelvis()
     yaw0 = E.yaw_of(Rp0)
@@ -474,7 +595,11 @@ def episode(
     start = np.r_[p0, yaw0].astype(np.float32)
     lo, hi = GR.APPROACH_BOX
     w = R0.T @ np.r_[stance - p0[:2], 0.0]
-    walk = np.r_[np.clip(w[0], lo[0], hi[0]), np.clip(w[1], lo[1], hi[1]), 0.0]
+    walk = np.r_[np.clip(w[0], lo[0], hi[0] if LOOK <= 0 else 9.0), np.clip(w[1], lo[1], hi[1]), 0.0]
+    legs = max(1, math.ceil(walk[0] / hi[0]))
+    parts = [1.0 / legs] * legs
+    if PRESTEP > 0 and legs == 1 and walk[0] > 2 * PRESTEP:  # a short first leg: the feet come back under the hips
+        parts = [PRESTEP / walk[0], 1.0 - PRESTEP / walk[0]]
     k_pre = len(rec.S) - 1
     x0_pre = AE.x0_here(rec, sd, False, start)
     gs = R0.T @ (tool_w - p0)
@@ -482,7 +607,10 @@ def episode(
     Rs = R0.T @ R_w
     if method == "feedback":
         odo.begin()
-    GR.open_walk(m, float(walk[0]), float(walk[1]), 0.0)
+    for f_ in parts:
+        GR.open_walk(m, float(walk[0]) * f_, float(walk[1]) * f_, 0.0)
+        if m.fell_at is not None:
+            break
     res["walk"] = walk.tolist()
     if m.fell_at is not None:
         return dict(res, fell="walk", success=False)
@@ -590,7 +718,7 @@ def episode(
     # the first move lifts the hand clear: outside the front face, at or above the pre-grasp height (grasp_pilot's lesson: a
     # hand going straight from where it hangs passes under the board's edge)
     z_clear = max(float(pre_w[2]), slot["surf"] + 0.10)
-    if st["name"] == "cabinet":
+    if roofed(st):
         z_clear = min(z_clear, surfaces_above(st, slot["surf"]) - 0.10)
     clear_w = np.r_[c + perp * float(perp @ (tool_w[:2] - c)) - ax * CLEAR_OUT, z_clear]
     res["clear"] = reach("clear", clear_w, 0, False)
@@ -831,12 +959,12 @@ def episode(
 
             m.tick = traced
         con.phase = "lift"
-        lift = m.jaw_centre(side)[0] + np.array([0.0, 0.0, LIFT_CABINET if st["name"] == "cabinet" else LIFT_M])
+        lift = m.jaw_centre(side)[0] + np.array([0.0, 0.0, LIFT_CABINET if roofed(st) else LIFT_M])
         if GRIP_SETTLE > 0:
             m.hold(GRIP_SETTLE)
         lkw: dict = {"speed": LIFT_SPEED} if LIFT_SPEED > 0 else {}
         if LIFT_CONT:
-            lift = last_cmd + np.array([0.0, 0.0, LIFT_CABINET if st["name"] == "cabinet" else LIFT_M])
+            lift = last_cmd + np.array([0.0, 0.0, LIFT_CABINET if roofed(st) else LIFT_M])
             lkw.update(start=last_cmd.copy(), start_rot=rot_w.copy(), ik_from_ref=True)
         m.reach(side, lift, rot_w, pelvis_z=None if pz < 0 else float(pz), servo=False, **lkw)
         held_15 = False
@@ -912,7 +1040,7 @@ def episode(
             grasp_w, rot_w, pre_w, pz = to_cmd(tool_w, R_w)
             res["pz"] = pz
             z2 = max(float(pre_w[2]), slot["surf"] + 0.10)
-            if st["name"] == "cabinet":
+            if roofed(st):
                 z2 = min(z2, surfaces_above(st, slot["surf"]) - 0.10)
             res["clear"] = reach(
                 "clear", np.r_[c + perp * float(perp @ (tool_w[:2] - c)) - ax * CLEAR_OUT, z2], 0, False
@@ -926,10 +1054,22 @@ def episode(
     return out
 
 
-def load_cache(layout: dict) -> dict:
+VISION = os.environ.get("ROOM_GRASP_VISION", "")  # "start": grasps from the head camera's point cloud (vision_grasp.py)
+
+
+def load_cache(layout: dict, k: int = 0) -> dict:
     root = ROOM.GN / "scenes"
     out = {}
-    for s in layout["slots"]:
+    for j, s in enumerate(layout["slots"]):
+        if VISION:  # GraspGen-X on what the head camera saw of this placement; nothing seen leaves no grasp
+            f = ROOM.OUT / "vision" / f"grasp_{VISION}_L{k}_s{j}.npz"
+            z = np.load(f) if f.exists() else dict(tool=np.zeros((0, 3)), R=np.zeros((0, 3, 3)), score=np.zeros(0))
+            n = len(z["score"])
+            held = (
+                z["held"].astype(bool) if "held" in getattr(z, "files", ()) else np.ones(n, bool)
+            )  # vision_validate.py
+            out[s["object"]] = dict(tool=z["tool"], R=z["R"], score=z["score"], held=held, width=np.full(n, 0.05))
+            continue
         z = np.load(root / f"obj_{s['id']:03d}" / "grasp_cache.npz", allow_pickle=True)
         out[s["object"]] = dict(
             tool=z["tool"], R=z["R"], score=z["score"], held=z["held"].astype(bool), width=z["width"]
@@ -956,7 +1096,7 @@ def worker(wid: int, jobs: list, methods, tag: str) -> None:
     for k, slots in by.items():
         env = ROOM.make_env(k)
         layout = json.load(open(ROOM.OUT / f"layout_{k}" / "layout.json"))
-        cache = load_cache(layout)
+        cache = load_cache(layout, k)
         rec = GR.Recorder(env)
         con = Contacts(env)
         odo = None

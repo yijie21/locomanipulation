@@ -65,6 +65,25 @@ STATIONS = (
     dict(name="cabinet", ang=300.0, W=0.90, D=0.40, tops=(0.30, 0.62, 0.94), depth=(0.12, 0.20), n=2, h_max=0.16),
 )
 LATERAL = {3: (-0.28, 0.0, 0.28), 2: (-0.18, 0.18)}
+# The hard room (2026-11-11, GRASP_ROOM_HARD=1 at build; a set's stations.json then travels with it): targets at the edge of
+# what the body can do, where a fixed stance and grasp rule should stop working. Deeper (up to 0.50 m from the front, with
+# 0.30 m of stance that is past ScaleBFM's forward reach of 0.6-0.7 m), the floor tray at 4 cm and the shelf at 1.10 m (the
+# wrist tops out near 1.26), four objects a surface 22 cm apart, the cabinet 10 cm deeper, and a board over the low cabinet
+# and over the counter (`over`: its underside's height; it starts 10 cm behind the front). The shallow end of each depth
+# range is the plain room's, so success against depth can be read off one set.
+STATIONS_HARD = (
+    dict(name="tray", ang=0.0, W=0.90, D=0.70, tops=(0.04,), depth=(0.12, 0.45), n=4, h_max=0.26),
+    dict(name="low", ang=60.0, W=0.90, D=0.60, tops=(0.32,), depth=(0.12, 0.42), n=4, h_max=0.22, over=0.70),
+    dict(name="table", ang=120.0, W=1.00, D=0.70, tops=(0.62,), depth=(0.12, 0.50), n=4, h_max=0.26),
+    dict(name="counter", ang=180.0, W=1.00, D=0.65, tops=(0.86,), depth=(0.12, 0.48), n=4, h_max=0.22, over=1.22),
+    dict(name="high", ang=240.0, W=0.90, D=0.40, tops=(1.10,), depth=(0.10, 0.28), n=4, h_max=0.12),
+    dict(name="cabinet", ang=300.0, W=0.90, D=0.50, tops=(0.30, 0.62, 0.94), depth=(0.12, 0.34), n=3, h_max=0.16),
+)
+LATERAL[4] = (-0.33, -0.11, 0.11, 0.33)
+if (OUT / "stations.json").exists():
+    STATIONS = tuple(json.load(open(OUT / "stations.json")))
+elif os.environ.get("GRASP_ROOM_HARD"):
+    STATIONS = STATIONS_HARD
 MATERIALS = """
     <material name="room_wood" rgba="0.62 0.47 0.32 1" specular="0.2" shininess="0.3"/>
     <material name="room_white" rgba="0.86 0.85 0.81 1" specular="0.1" shininess="0.2"/>
@@ -83,6 +102,11 @@ def furniture(st: dict) -> list[str]:
     """The station's geoms, local frame: x into the furniture from the front face, y along it, z up from the floor."""
     n, W, D, tops = st["name"], st["W"], st["D"], st["tops"]
     w, d = W / 2, D / 2
+    if st.get("over"):  # a board over the surface from 10 cm behind the front, held by the back wall
+        z, t = st["over"], 0.03
+        rest = furniture({k: v for k, v in st.items() if k != "over"})
+        return rest + [box(f"{n}_over", (0.05 + d, 0, z + t / 2), (d - 0.05, w, t / 2), "room_wood"),
+                       box(f"{n}_over_back", (D + 0.01, 0, (tops[0] + z) / 2), (0.01, w, (z - tops[0]) / 2), "room_grey")]  # fmt: skip
     if n in ("tray", "low", "counter"):
         mat = {"tray": "room_grey", "low": "room_white", "counter": "room_white"}[n]
         return [box(f"{n}_body", (d, 0, tops[0] / 2), (d, w, tops[0] / 2), mat)]
@@ -198,7 +222,11 @@ def place(rng, slot: dict, o: Obj) -> dict:
     st = by_name(slot["station"])
     c, a = station_pose(st)
     depth = float(rng.uniform(*st["depth"]))
-    lat = LATERAL[st["n"]][slot["k"]] + float(rng.uniform(-0.03, 0.03))
+    lat = (
+        (-0.26, 0.0, 0.26)[slot["k"]]
+        if st["name"] == "cabinet" and st["n"] == 3
+        else LATERAL[st["n"]][slot["k"]] + float(rng.uniform(-0.03, 0.03))
+    )
     xy = c + np.array([math.cos(a) * depth - math.sin(a) * lat, math.sin(a) * depth + math.cos(a) * lat])
     return dict(
         pos=[*xy.tolist(), slot["surf"] + o.half + 0.002],
@@ -330,6 +358,9 @@ def write_scene(k: int, objs: list[Obj], layout: dict) -> Path:
 
 
 def build(n: int) -> None:
+    if STATIONS is STATIONS_HARD:
+        OUT.mkdir(parents=True, exist_ok=True)
+        json.dump(STATIONS, open(OUT / "stations.json", "w"), indent=1)
     objs = load_objects()
     print(f"{len(objs)} objects usable (held > 0, at most {MAX_PIECES} pieces)", flush=True)
     rng = np.random.default_rng(SEED)
