@@ -173,6 +173,16 @@ $PY $R/room_grasp.py d --tag _w100
 
 得到什么：203 局里成功 89 上下。同样条件下特权抓取是 104，去掉 `ROOM_GRASP_VISION` 就是它。
 
+**可选，走路的停点改用视觉估计。**
+
+```bash
+ROOM_GRASP_WALK_EST=vis MUJOCO_GL=egl $PY $R/room_grasp.py h --procs 6 --layouts 0,1,2,3,4,5,6 --methods feedback --tag _w100w
+```
+
+做什么：走路前后各用头部相机拍一张带缺陷的深度图，把两片家具点云配准，得到实际走了多远，代替腿部里程计的估计。`ROOM_GRASP_WALK_EST=log` 只记录不使用。
+
+得到什么：特权抓取从 104 到 118，不抬手时 116 到 125。整条视觉链不变，83 对 89。
+
 ## 7. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

@@ -269,6 +269,9 @@ LOOK_HOME = float(
     os.environ.get("ROOM_GRASP_LOOK_HOME", 0.0)
 )  # s: the way back down and its settle, each (0: gen_reach's 1 s)
 AZ_W_ROOF = float(os.environ.get("ROOM_GRASP_AZ_W_ROOF", 0.2))  # the heading-offset penalty for a grasp under a board
+# "vis": the walk's end from the head camera (vision_walk.py) in place of the leg odometry; "log": computed and recorded only
+WALK_EST = os.environ.get("ROOM_GRASP_WALK_EST", "")
+EYES: dict = {}  # id(env) -> vision_walk.Eye
 HAND_LOOK = int(os.environ.get("ROOM_GRASP_HAND_LOOK", 0))  # 1: the episode opens with the hand-camera look (hand_look)
 STANCE_BACK_TRAY = 0.22  # the tray is 8 cm high, knees clear it; the hand reaches the floor band only 0.3-0.5 m ahead (select_eval map)
 LIFT_CABINET = 0.06  # a 10 cm lift meets the board above (grasp_pilot v1 too)
@@ -607,6 +610,14 @@ def episode(
     Rs = R0.T @ R_w
     if method == "feedback":
         odo.begin()
+    eye = EYES.get(id(env))
+    if WALK_EST and eye is None:
+        import vision_walk as VW
+
+        eye = EYES[id(env)] = VW.Eye(env)
+    if eye is not None:
+        eye.new_episode(100 * k + j)
+        seen0 = eye.cloud()
     for f_ in parts:
         GR.open_walk(m, float(walk[0]) * f_, float(walk[1]) * f_, 0.0)
         if m.fell_at is not None:
@@ -639,6 +650,15 @@ def episode(
         pz_ = odo.odo.pose()
         e = np.r_[100 * (pz_[0] - walk[0]), 100 * (pz_[1] - walk[1]), math.degrees(pz_[2])]
         res["walk_odo_cm"] = e.tolist()
+        if eye is not None:  # the same displacement from the scene in front, started at the legs' estimate
+            import vision_walk as VW
+
+            (vx, vy, vth), vi = VW.register(seen0, eye.cloud(), pz_)
+            ev = np.r_[100 * (vx - walk[0]), 100 * (vy - walk[1]), math.degrees(vth)]
+            res["walk_vis_cm"], res["walk_vis"] = ev.tolist(), vi
+            res["walk_yaw_deg"] = math.degrees(yaw1 - yaw0)
+            if WALK_EST == "vis" and vi["ok"]:
+                e = ev
     else:
         e = np.zeros(3)
     # where the robot believes it stands, then the goal in that frame: the command is relative to the body
