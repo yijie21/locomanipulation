@@ -12,8 +12,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts" / "rsi"))
 
-import records as RC  # noqa: E402
 import knowledge as KN  # noqa: E402
+import records as RC  # noqa: E402
 
 META = {
     "objects": {
@@ -112,7 +112,7 @@ def two_iteration_loop(root: Path) -> Path:
         dict(step="manager", iter=0, decision="engineer", hypotheses=["H1_hang"], repeats=[]),
         dict(step="engineer", iter=0, candidate=1, hypothesis="H1_hang"),
         dict(step="gate", iter=0, hash="aaa", accepted=False, b=1, c=0),
-        dict(step="probe", iter=1, results=[dict(id="H4_hang_again", fixed=[], broken=["pick_Plant4_1_s3"], status="refuted"),
+        dict(step="probe", iter=1, results=[dict(id="H4_hang_again", fixed=["pick_Wolf_1_s1"], broken=["pick_Plant4_1_s3"], status="refuted"),
                                             dict(id="H5_other", fixed=[], broken=[], status="hypothesis")]),
         dict(step="manager", iter=1, decision="engineer", hypotheses=["H4_hang_again"],
              repeats=[dict(now="H4_hang_again", same_as=["00:H1_hang"])]),
@@ -125,10 +125,14 @@ def two_iteration_loop(root: Path) -> Path:
             "reviewer_context.json": dict(incumbent=dict(hash="inc0"))},
         1: {"hypotheses.json": dict(hypotheses=[dict(id="H4_hang_again", claim="same", instead="same"),
                                                 dict(id="H5_other", claim="x", instead="y")]),
-            "candidates.json": [dict(number=1, hypothesis="H4_hang_again", hash="bbb", fixed=["pick_Wolf_1_s1", "pick_Wolf_1_s2"], broken=[], mechanism="m1")],
+            "candidates.json": [dict(number=1, hypothesis="H4_hang_again", hash="bbb", fixed=["pick_Wolf_1_s2"], broken=["pick_Wolf_1_s1"], mechanism="m1")],
             "reviewer_context.json": dict(incumbent=dict(hash="inc1"))},
     }  # fmt: skip
     return write_loop(root, ledger, per_iter)
+
+
+def jl_rows(loop: Path) -> list[dict]:
+    return [json.loads(x) for x in (loop / "ledger.jsonl").read_text().splitlines()]
 
 
 class Mechanisms(unittest.TestCase):
@@ -145,7 +149,7 @@ class Mechanisms(unittest.TestCase):
     def test_flips_merge_probe_and_drafts_last_wins(self):
         with tempfile.TemporaryDirectory() as d:
             m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)))}["H1_hang"]
-        self.assertEqual(m["flips"], {"pick_Wolf_1_s1": "fixed", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"})
+        self.assertEqual(m["flips"], {"pick_Wolf_1_s1": "broken", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"})
         self.assertEqual([x["hash"] for x in m["drafts"]], ["aaa", "bbb"])
         self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True))
 
@@ -159,6 +163,32 @@ class Mechanisms(unittest.TestCase):
             m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)), iters={0})}["H1_hang"]
         self.assertEqual(m["ids"], [(0, "H1_hang")])
         self.assertEqual(m["gate"], dict(b=1, c=0, accepted=False))
+
+    def test_void_gate_row_leaves_gate_none(self):
+        with tempfile.TemporaryDirectory() as d:
+            loop = two_iteration_loop(Path(d))
+            rows = [json.loads(x) for x in (loop / "ledger.jsonl").read_text().splitlines()]
+            for r in rows:
+                if r["step"] == "gate":
+                    r["void"] = True
+            (loop / "ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+            m = {x["slug"]: x for x in KN.mechanisms(loop)}["H1_hang"]
+        self.assertIsNone(m["gate"])
+
+    def test_same_as_outside_iters_does_not_crash(self):
+        with tempfile.TemporaryDirectory() as d:
+            ms = KN.mechanisms(two_iteration_loop(Path(d)), iters={1})
+        m = {x["slug"]: x for x in ms}["H4_hang_again"]
+        self.assertEqual(m["ids"], [(1, "H4_hang_again")])
+
+    def test_probe_result_without_hypothesis_is_ignored(self):
+        with tempfile.TemporaryDirectory() as d:
+            loop = two_iteration_loop(Path(d))
+            ledger = jl_rows(loop) + [dict(step="probe", iter=1, results=[dict(id="H99_ghost", fixed=["pick_Ghost_1_s9"], broken=[], status="verified")])]
+            (loop / "ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in ledger))
+            ms = KN.mechanisms(loop)
+        self.assertNotIn("H99_ghost", {m["slug"] for m in ms})
+        self.assertTrue(all("pick_Ghost_1_s9" not in m["flips"] for m in ms))
 
 
 if __name__ == "__main__":
