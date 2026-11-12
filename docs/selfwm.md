@@ -261,6 +261,20 @@ BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY scripts/experiments/simple_eval_2
 
 得到什么：每局一行，最后一行是成功数。XMovePick 站位参数 0.27 时 30 局全成，0.30 时 25 局；XMoveBendPick 在 0.30 时 30 局全成。每局 12 到 14 秒，约 8 分钟跑完一个任务。
 
+**从头部相机的深度出抓取。**
+
+```bash
+E=scripts/experiments/simple_eval_20261112; G=$M/third_party/GraspGenX
+BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/see.py XMovePickTeleop
+CUDA_VISIBLE_DEVICES=0 $G/.venv/bin/python $E/grasps_graspgen.py outputs/simple_eval_20261112/cloud \
+    --assets-dir $G/ext/gripper_descriptions/gripper_descriptions/assets
+BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/pick.py XMovePickTeleop --grasp graspgen --squeeze 0
+```
+
+做什么：`$M` 是 main 的检出目录。第一条让机器人在每局起点站 1 秒，用 SIMPLE 的头部相机渲染一张 640×360 的深度图，取出目标的点云；目标的像素来自仿真的分割，这是特权。第二条用 GraspGen-X 自带的 Unitree G1 三指手配置出 716 个带分数的手掌位姿，手指的张开和握拢姿势也取自这份配置。第三条按分数从高到低取第一个右手做得到的抓取，也就是手指朝前、手背朝上，然后走到让手掌目标在身前 0.27 m、偏右 0.22 m 的位置去抓。
+
+得到什么：`outputs/simple_eval_20261112/cloud/` 下每局一个点云和一个抓取文件。XMovePick 28 / 30，XMoveBendPick 30 / 30。三条合计约 10 分钟一个任务。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

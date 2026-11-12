@@ -3,7 +3,7 @@
 Each episode of `USC-PSI-Lab/psi-data` simple-eval stores its layout: the table slab, the target and the distractors with
 their poses, the robot's start. `build` writes that layout as a scene directory the ScaleBFM runtime loads
 (scene_locomani.xml, scene_meta.json), with SIMPLE's own robot (G1 with Dex3 hands), object and table contact settings and
-solver options (third_party/SIMPLE/src/simple/engines/mujoco.py). `lifted` is SIMPLE's success check for the pick tasks.
+solver options (third_party/SIMPLE/src/simple/engines/mujoco.py), and SIMPLE's head camera on the torso. `lifted` is SIMPLE's success check for the pick tasks.
 
     python episodes.py XMovePickTeleop        # lists the task's 30 episodes
 """
@@ -26,6 +26,13 @@ OBJ_PULL = (
     -9.81 * 0.1
 )  # N on every object besides its weight (SIMPLE's "pseudo gravity"; a 0.1 kg object weighs double)
 LIFT = {"XMovePickTeleop": 0.09, "XMoveBendPickTeleop": 0.09, "BendPickMP": 0.09, "TabletopGraspMP": 0.018}  # m
+
+
+HEAD_CAM = "head"
+HEAD_CAM_POS = [0.05366004 + 0.0039635, 0.01752999, 0.4738702 - 0.044]  # in torso_link
+HEAD_CAM_QUAT = [0.91496, 0.0, 0.40355, 0.0]  # the camera's x forward, z up frame in torso_link
+HEAD_CAM_WH = (640, 360)
+HEAD_CAM_FOVY = float(np.degrees(2 * np.arctan(np.tan(np.radians(110) / 2) * 360 / 640)))  # 110 deg across the width
 
 
 def episodes(task: str) -> list[dict]:
@@ -56,6 +63,9 @@ def build(ep: dict, out: Path | None = None) -> dict:
         if "hand" in (g.name or g.meshname):
             g.solimp[:3] = [0.9, 0.99, 0.0001]
             g.solref[:2] = [0.005, 1]
+    q = np.zeros(4)  # SIMPLE's head camera (engines/mujoco.py, mount eye_in_head): on the torso, pitched down 47.6 deg
+    mujoco.mju_mulQuat(q, np.array(HEAD_CAM_QUAT), np.array([0.5, 0.5, -0.5, -0.5]))
+    spec.body("torso_link").add_camera(name=HEAD_CAM, pos=HEAD_CAM_POS, quat=q, fovy=HEAD_CAM_FOVY)
     w = spec.worldbody
     w.add_geom(name="ground", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[0, 0, 1], friction=[1.0, 0.005, 0.0001],
                rgba=[0.75, 0.75, 0.72, 1])  # fmt: skip
