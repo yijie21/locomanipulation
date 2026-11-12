@@ -631,5 +631,24 @@ class Wiring(unittest.TestCase):
         self.assertIn("knowledge_refs", LP.KNOWLEDGE_NOTE)
 
 
+class Report(unittest.TestCase):
+    def test_report_row_from_a_replayed_iteration(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            loop = write_loop(root, [
+                dict(step="review", iter=4, n_hypotheses=2, cost_usd=1.5, seconds=300),
+                dict(step="probe", iter=4, results=[
+                    dict(id="A", status="verified", fixed=["x", "y"], broken=[], predicted_fixed_hit=2, predicted_fixed_n=3),
+                    dict(id="B", status="refuted", fixed=[], broken=["z"], predicted_fixed_hit=0, predicted_fixed_n=1)]),
+            ], {4: {"hypotheses.json": dict(hypotheses=[dict(id="A", knowledge_refs=["fam/H1_hang"]), dict(id="B")]),
+                    "knowledge_hits.json": []}})  # fmt: skip
+            sb = loop.parents[3]
+            row = KN.report([sb])[0]
+        self.assertEqual((row["n_hyp"], row["verified"], row["refuted"], row["net_fixed"]), (2, 1, 1, 1))
+        self.assertEqual((row["pred_hit"], row["pred_n"], row["cites"]), (2, 4, 1))
+        self.assertTrue(row["with_knowledge"])
+        self.assertAlmostEqual(row["review_cost_usd"], 1.5)
+
+
 if __name__ == "__main__":
     unittest.main()

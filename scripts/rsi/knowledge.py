@@ -635,6 +635,38 @@ def write_hits(root: Path, rounds_dir: Path, out_dir: Path, family: str, pool: P
     return sum(h["failed"] > 0 for h in hs)
 
 
+def report(sandboxes: list[Path]) -> list[dict]:
+    """Plan section 7.2: per replayed sandbox, the last iteration's Reviewer and Prober numbers."""
+    out = []
+    for sb in sandboxes:
+        fams = (
+            [d for d in sorted((sb / VISIBLE).iterdir()) if d.is_dir() and d.name not in ("body", "records")]
+            if (sb / VISIBLE).exists()
+            else []
+        )
+        if not fams:
+            continue
+        loop = fams[0] / "loop"
+        es = jl(loop / "ledger.jsonl")
+        rev = next((e for e in reversed(es) if e.get("step") == "review"), {})
+        probe = next((e for e in reversed(es) if e.get("step") == "probe"), {})
+        n = probe.get("iter", rev.get("iter"))
+        if n is None:  # no review or probe row yet: nothing to compare
+            continue
+        res = probe.get("results") or []
+        hyps = (jload(loop / f"iter_{n:02d}" / "hypotheses.json", {}) or {}).get("hypotheses") or []
+        st = Counter(r.get("status") for r in res)
+        out.append(dict(sandbox=sb.name, with_knowledge=(loop / f"iter_{n:02d}" / "knowledge_hits.json").exists(),
+                        n_hyp=len(res), verified=st.get("verified", 0), refuted=st.get("refuted", 0),
+                        mixed=st.get("mixed", 0), hypothesis=st.get("hypothesis", 0),
+                        net_fixed=sum(len(r.get("fixed") or []) - len(r.get("broken") or []) for r in res),
+                        pred_hit=sum(r.get("predicted_fixed_hit") or 0 for r in res),
+                        pred_n=sum(r.get("predicted_fixed_n") or 0 for r in res),
+                        cites=sum(bool(h.get("knowledge_refs")) for h in hyps if isinstance(h, dict)),
+                        review_cost_usd=rev.get("cost_usd"), review_s=rev.get("seconds")))  # fmt: skip
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -657,7 +689,17 @@ def main(argv=None) -> int:
     ev2.add_argument("rounds", type=Path, help="the incumbent's diagnostic rounds directory")
     ev2.add_argument("family")
     ev2.add_argument("--out", type=Path, required=True)
+    rp = sub.add_parser("report")
+    rp.add_argument("sandboxes", type=Path, nargs="+")
     a = ap.parse_args(argv)
+    if a.cmd == "report":
+        rows = report([p.resolve() for p in a.sandboxes])
+        keys = ["sandbox", "with_knowledge", "n_hyp", "verified", "refuted", "mixed", "hypothesis", "net_fixed", "pred_hit", "pred_n", "cites", "review_cost_usd", "review_s"]  # fmt: skip
+        print("| " + " | ".join(keys) + " |")
+        print("|" + "---|" * len(keys))
+        for r in rows:
+            print("| " + " | ".join(str(r.get(k)) for k in keys) + " |")
+        return 0
     if a.cmd == "evidence":
         iters = None
         if a.iters:

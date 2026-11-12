@@ -78,7 +78,7 @@ def rebuild_parks(loop: Path, n: int) -> dict:
     return parked
 
 
-def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD") -> None:
+def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD", knowledge: Path | None = None) -> None:
     SB.build(dst, family, ref)
     s_loop, d_loop = src / VISIBLE / family, dst / VISIBLE / family
     s_hid, d_hid = src / HIDDEN / family, dst / HIDDEN / family
@@ -188,6 +188,12 @@ def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD") -> None:
                     f.write_text(u)
     print(f"{dst}: {family} as iteration {n} began (incumbent {running}, {len(calls)} gate calls, "
           f"{'snapshot' if snap.exists() else 'rebuilt from the ledger'})")  # fmt: skip
+    if knowledge is not None:  # plan docs/handoff/shared-knowledge-plan-20261111.md section 7.2: the library under test
+        lib = dst / "scripts" / "rsi" / "knowledge"
+        if lib.exists():
+            shutil.rmtree(lib)
+        shutil.copytree(knowledge, lib)
+        SB.knowledge_without(dst, family)
 
 
 def report(sandboxes: list[Path], family: str | None) -> list[dict]:
@@ -226,13 +232,14 @@ def main(argv=None) -> int:
     s.add_argument("iter", type=int)
     s.add_argument("dst", type=Path)
     s.add_argument("--ref", default="HEAD", help="the commit the sandbox is built from")
+    s.add_argument("--knowledge", type=Path, help="a knowledge library directory to put in the replay sandbox")
     r = sub.add_parser("report")
     r.add_argument("sandboxes", type=Path, nargs="+")
     r.add_argument("--family")
     r.add_argument("--out", type=Path)
     a = ap.parse_args(argv)
     if a.cmd == "setup":
-        setup(a.src.resolve(), a.family, a.iter, a.dst.resolve(), a.ref)
+        setup(a.src.resolve(), a.family, a.iter, a.dst.resolve(), a.ref, a.knowledge and a.knowledge.resolve())
     else:
         rows = report([p.resolve() for p in a.sandboxes], a.family)
         text = json.dumps(rows, indent=1, ensure_ascii=False)

@@ -186,6 +186,8 @@ def summarise(space: Space, rows: list[dict], threshold: float | None) -> dict:
             cites, worded, sims = [], [], []
             for h in r["hyps"]:
                 c = cited(h, names) if r["lib"] else []
+                if isinstance(h, dict) and h.get("knowledge_refs"):  # an explicit knowledge-library citation
+                    c = sorted(set(c) | set(map(str, h["knowledge_refs"])))
                 if c:
                     cites.append(dict(hypothesis=h.get("id"), names=c))
                     entries_cited.update(c)
