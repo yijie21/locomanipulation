@@ -1543,6 +1543,22 @@ def snapshot(n: int) -> None:
     )
 
 
+def knowledge_step(n: int, base: Path, it_dir: Path) -> None:
+    """Plan docs/handoff/shared-knowledge-plan-20261111.md section 5.1: the knowledge library's hits on the
+    incumbent's diagnostic rounds (`base`, after refresh_diag_pool), as scripts/rsi/knowledge/HITS.md (gitignored, so
+    changed_files() never counts it as a stray) and it_dir/knowledge_hits.json. The previous HITS.md is removed first,
+    so a failure never leaves another incumbent's hits for the Reviewer. One `knowledge` ledger row every iteration
+    (hits may be 0); a library bug is logged, never raised."""
+    (REPO / "scripts" / "rsi" / "knowledge" / "HITS.md").unlink(missing_ok=True)
+    try:
+        import knowledge as KN
+
+        n_hits = KN.write_hits(REPO, base, it_dir, FAMILY, LOOP / "pool_diag")
+        ledger(dict(step="knowledge", iter=n, hits=int(n_hits)))
+    except Exception as e:  # a library bug never stops an iteration
+        ledger(dict(step="knowledge", iter=n, error=f"{type(e).__name__}: {e}"[:200]))
+
+
 def iterate(n: int, meta: dict, stub: bool) -> str | None:
     it_dir = STATE / f"iter_{n:02d}"
     it_dir.mkdir(parents=True, exist_ok=True)
@@ -1551,16 +1567,9 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
-    try:  # plan docs/handoff/shared-knowledge-plan-20261111.md section 5.1: the knowledge library's hits for this incumbent
-        import knowledge as KN
-
-        n_hits = KN.write_hits(REPO, base, it_dir, FAMILY, LOOP / "pool_diag")
-        if n_hits:
-            ledger(dict(step="knowledge", iter=n, hits=n_hits))
-    except Exception as e:  # a library bug never stops an iteration
-        ledger(dict(step="knowledge", iter=n, error=f"{type(e).__name__}: {e}"[:200]))
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
+    knowledge_step(n, base, it_dir)  # after the redraw: the hits are on the rounds the Reviewer reads
     attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
     digest = it_dir / "diag_digest.md"  # what every Reviewer rebuilt by hand (plan §12)
     digest.write_text(DG.build(base, FAMILY))

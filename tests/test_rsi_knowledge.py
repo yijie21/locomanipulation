@@ -630,6 +630,109 @@ class Wiring(unittest.TestCase):
         self.assertIn("HITS.md", LP.KNOWLEDGE_NOTE)
         self.assertIn("knowledge_refs", LP.KNOWLEDGE_NOTE)
 
+    def test_hits_md_is_gitignored_so_it_is_never_a_stray(self):
+        """C1: changed_files() is `git status --porcelain -uall`; HITS.md written after the sandbox's commit must not
+        show up there, or after_engineer / revert_strays void every draft."""
+        import subprocess
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            git = lambda *a: subprocess.run(["git", *a], cwd=root, check=True, capture_output=True, text=True)  # noqa: E731
+            git("init", "-q")
+            (root / ".gitignore").write_text((REPO / ".gitignore").read_text())
+            git("add", ".gitignore")
+            git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+            (root / "scripts/rsi/knowledge").mkdir(parents=True)
+            (root / "scripts/rsi/knowledge/HITS.md").write_text("hits\n")
+            self.assertEqual(git("status", "--porcelain", "-uall").stdout, "")
+
+    def _hook_fixture(self, root: Path) -> Path:
+        """A tiny library and one failing diag round under a temp REPO; returns the rounds directory."""
+        (root / "scripts/rsi/knowledge/fam").mkdir(parents=True)
+        (root / "scripts/rsi/knowledge/fam/H1_hang.json").write_text(json.dumps(ENTRY))
+        (root / "scripts/rsi/families").mkdir(parents=True)
+        (root / "scripts/rsi/families/fam.json").write_text(json.dumps({"scene": "outputs/scene"}))
+        (root / "outputs/scene").mkdir(parents=True)
+        (root / "outputs/scene/scene_meta.json").write_text(json.dumps(META))
+        loop = root / "fam" / "loop"
+        rounds = root / "fam" / "diag" / "incumbent_x"
+        rounds.mkdir(parents=True)
+        (rounds / "pick_Wolf_1_s1.json").write_text(
+            json.dumps(dict(label="pick_Wolf_1_s1", task="pick_Wolf_1", ok=False, steps=[]))
+        )
+        (rounds / "pick_Wolf_1_s1.past.jsonl").write_text(json.dumps(past_record()) + "\n")
+        (loop / "pool_diag").mkdir(parents=True)
+        (loop / "pool_diag" / "pick_Wolf_1_s1.json").write_text(json.dumps(START))
+        return rounds
+
+    def _with_loop_globals(self, root: Path, rows: list[dict]):
+        saved = {k: getattr(LP, k) for k in ("REPO", "LOOP", "FAMILY", "ledger")}
+        LP.REPO, LP.LOOP, LP.FAMILY, LP.ledger = root, root / "fam" / "loop", "fam", rows.append
+        return saved
+
+    def test_knowledge_step_writes_hits_and_a_ledger_row(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            rounds = self._hook_fixture(root)
+            rows: list[dict] = []
+            saved = self._with_loop_globals(root, rows)
+            try:
+                LP.knowledge_step(3, rounds, root / "it")
+            finally:
+                for k, v in saved.items():
+                    setattr(LP, k, v)
+            self.assertIn("fam/H1_hang", (root / "scripts/rsi/knowledge/HITS.md").read_text())
+            self.assertTrue((root / "it/knowledge_hits.json").exists())
+            self.assertEqual(list((root / "scripts/rsi/knowledge").glob("*.tmp")), [])
+        self.assertEqual(rows, [dict(step="knowledge", iter=3, hits=1)])
+
+    def test_knowledge_step_logs_zero_hits_too(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            rounds = self._hook_fixture(root)
+            e = dict(ENTRY, condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 5}]})
+            (root / "scripts/rsi/knowledge/fam/H1_hang.json").write_text(json.dumps(e))
+            rows: list[dict] = []
+            saved = self._with_loop_globals(root, rows)
+            try:
+                LP.knowledge_step(0, rounds, root / "it")
+            finally:
+                for k, v in saved.items():
+                    setattr(LP, k, v)
+        self.assertEqual(rows, [dict(step="knowledge", iter=0, hits=0)])
+
+    def test_knowledge_step_error_removes_stale_hits_and_never_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            rounds = self._hook_fixture(root)
+            (root / "scripts/rsi/knowledge/HITS.md").write_text("an earlier incumbent's hits\n")
+            rows: list[dict] = []
+            saved = self._with_loop_globals(root, rows)
+            orig = KN.write_hits
+
+            def boom(*a, **k):
+                raise ValueError("bad entry")
+
+            KN.write_hits = boom
+            try:
+                LP.knowledge_step(2, rounds, root / "it")
+            finally:
+                KN.write_hits = orig
+                for k, v in saved.items():
+                    setattr(LP, k, v)
+            self.assertFalse((root / "scripts/rsi/knowledge/HITS.md").exists())
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["step"], rows[0]["iter"]), ("knowledge", 2))
+        self.assertIn("bad entry", rows[0]["error"])
+        self.assertNotIn("hits", rows[0])
+
+    def test_iterate_runs_the_knowledge_step_after_the_pool_redraw(self):
+        import inspect
+
+        src = inspect.getsource(LP.iterate)
+        self.assertLess(src.index("refresh_diag_pool("), src.index("knowledge_step("))
+        self.assertLess(src.index("unpark("), src.index("knowledge_step("))
+
 
 class Report(unittest.TestCase):
     def test_report_row_from_a_replayed_iteration(self):

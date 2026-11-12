@@ -630,9 +630,16 @@ def write_hits(root: Path, rounds_dir: Path, out_dir: Path, family: str, pool: P
     rows = RC.scan([(rounds_dir, family), (pool, family)], RC.machine(), RC.scene_meta(root, family))
     hs = hits(ents, rows)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "knowledge_hits.json").write_text(json.dumps(hs, indent=1) + "\n")
-    (lib / "HITS.md").write_text(render_hits(hs, {e["id"]: e for e in ents}))
+    _write_atomic(out_dir / "knowledge_hits.json", json.dumps(hs, indent=1) + "\n")
+    _write_atomic(lib / "HITS.md", render_hits(hs, {e["id"]: e for e in ents}))
     return sum(h["failed"] > 0 for h in hs)
+
+
+def _write_atomic(p: Path, text: str) -> None:
+    """Write to <p>.tmp beside it, then rename: a reader never sees half a file."""
+    tmp = p.with_name(p.name + ".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, p)
 
 
 def report(sandboxes: list[Path]) -> list[dict]:
