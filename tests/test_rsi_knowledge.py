@@ -73,6 +73,18 @@ class Columns(unittest.TestCase):
             self.assertEqual(RC.scene_meta(root, "fam")["surfaces"]["Shelf__1"]["top"], 0.8405)
             self.assertIsNone(RC.scene_meta(root, "nope"))
 
+    def test_scene_meta_none_for_incomplete_family_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            fams = root / "scripts/rsi/families"
+            fams.mkdir(parents=True)
+            (fams / "empty.json").write_text("{}")
+            (fams / "listy.json").write_text("[]")
+            (fams / "nometa.json").write_text(json.dumps({"scene": "outputs/bare"}))
+            (root / "outputs/bare").mkdir(parents=True)
+            for fam in ("empty", "listy", "nometa"):
+                self.assertIsNone(RC.scene_meta(root, fam), fam)
+
     def test_row_carries_start_columns_when_meta_given(self):
         rec = dict(label="pick_Wolf_1_s1", task="pick_Wolf_1", ok=False, steps=[])
         r = RC.row(rec, START, "/x", "host", "fam", graph=[past_record()], meta=META)

@@ -97,9 +97,12 @@ def scene_meta(root: Path, family: str) -> dict | None:
     if not fam.exists():
         return None
     try:
-        scene = json.loads(fam.read_text()).get("scene")
+        spec = json.loads(fam.read_text())
+        scene = spec.get("scene") if isinstance(spec, dict) else None
+        if not isinstance(scene, str) or not scene:
+            return None
         p = root / scene / "scene_meta.json"
-        return json.loads(p.read_text()) if scene and p.exists() else None
+        return json.loads(p.read_text()) if p.exists() else None
     except (ValueError, OSError):
         return None
 
