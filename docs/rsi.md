@@ -276,6 +276,20 @@ xdg-open outputs/scene_rsi_20261016/past_view/ga-past-b__incumbent_0fa018936751/
 
 得到什么：输出目录里每局一页 `<label>.en.html`（中文版是 `<label>.html`），和一个 `index.html`——每局一行：局名、任务、结果、失败类型、步骤数、页面链接，上方是总成功数。终端逐局打印 `[i/N] <label>`，最后打印索引页路径和成功数。带帧时每局要重新加载一次 MuJoCo 场景，约 10 秒；`ga-past-b` 一个诊断目录 22 局约 3.5 分钟、8 MB，不带帧约 5 秒、2 MB。某一局生成失败时，终端打印 `FAILED` 和日志位置（输出目录下的 `.log_<label>`），索引里那一行标 `page failed`，其余局照做，最后退出码 1。也可以对验收池或封存集的目录用（隐藏目录 `…_hidden/<任务族>/gate/<NN_hash>/candidate/`、`sealed/<版本>/`），只是那里的局只给人看。
 
+### 5.6 知识库
+
+```bash
+PYTHONPATH=src $PY scripts/rsi/knowledge.py build <沙盒> <任务族> --iters 0-3
+```
+
+做什么：从这个沙盒的账本和场景图记录抽知识条目，写到 `scripts/rsi/` 下的 `knowledge/<任务族>/`，加 `BUILD.md`（每个机制进了还是丢了、为什么）和 `INDEX.md`。约每个机制 1 USD，10 到 15 分钟。
+
+```bash
+PYTHONPATH=src $PY scripts/rsi/knowledge.py eval <沙盒> <沙盒>/outputs/scene_rsi_20261016/<任务族>/diag/incumbent_<hash> <任务族> --out /tmp/hits
+```
+
+做什么：把库里每条条目在这版现任的诊断局上求值，写 `/tmp/hits/knowledge_hits.json` 和沙盒里的 `<沙盒>/scripts/rsi/knowledge/HITS.md`；打印命中失败局的条目数。内环每轮 Reviewer 之前自动做这一步。
+
 
 ## 6. L2：一轮外环
 

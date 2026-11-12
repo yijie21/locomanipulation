@@ -72,6 +72,8 @@ RSI 是 recursive self-improvement 的缩写：系统自己提出任务，自己
 
 **经验库**（`scripts/rsi/experience/`，TODO 32.10）：每个跑完的任务族一条，由 `reflect.py` 读那次运行的账本写成——每个改动的判定（有用、有害、没看到效果、混在一起分不清）、至多一条可迁移的经验和它的触发线索、最后代码对种子的 diff。`sandbox.py` 建沙盒时带上它，但去掉这个任务族自己的那条和任务族文件 `library_exclude` 点名的条目，重建索引；从空种子开始的任务族（有 `sandbox` 块）只拿到经验，不拿代码 diff（第 27 条）；Reviewer 和 Engineer 的提示词指向它。`outer_run.py` 每个任务族跑完封存集后加一条（留在工作区，提交后下一轮的沙盒才看得到）。它会不会把搜索收窄由 `scripts/rsi/report/library_monitor.py` 盯着（TODO 33.11）：到 10-23 的三次有库运行里四成假设点名经验库，但用词不像原文、每轮假设数没变少，多数是拿身体和夹爪的事实当证据。
 
+**知识库**（`scripts/rsi/knowledge/`，[方案](handoff/shared-knowledge-plan-20261111.md)）：经验库的结构化版本。`knowledge.py build` 读一次跑完的运行：按 Manager 的 `repeats` 把跨轮的同一机制聚起来，取它在诊断池上救回和弄坏的局，join 这些局的场景图列和开局可知的物体列（支撑高度、物体高度、最窄宽度、质量、是否容器），由 Claude 写一个只用这些列的条件、失败签名和修法方向，程序再求值、分层、收窄：条件在两个以上物体上触发且每个物体净不为负是 `shared`，只在一个物体上成立或别的物体上为负是 `local`（条件补上正例物体的特征区间，不写名字）。建沙盒和每轮 Reviewer 之前，驱动程序把每条条目的条件在现任的诊断局上求值，只把命中的写进 `HITS.md`；没命中时角色看到的和没有库一样。技能不许读它（规则第 39 条）。
+
 Claude 由 `claude -p` 调用，模型由 `RSI_MODEL` 指定，默认 `claude-opus-5-5`。调用带 `--permission-mode bypassPermissions`：角色在沙盒里不经确认就能读写和运行命令，越界由上面的记录检查和文件还原兜底。
 
 ### 验收门的规则
