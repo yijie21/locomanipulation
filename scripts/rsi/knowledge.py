@@ -208,6 +208,105 @@ def render_evidence(mech: dict, table: list[dict], ranked: list[dict], top: int 
     return "\n".join(lines) + "\n"
 
 
+def _clause(c: dict, row: dict) -> bool:
+    f, op, v = c.get("feature"), c.get("op"), c.get("value")
+    if f not in row or op not in RC.OPS:
+        return False
+    try:
+        return bool(RC.OPS[op](row[f], v))
+    except TypeError:
+        return False
+
+
+def holds(condition: dict, row: dict) -> bool:
+    """The condition on one record-library row: every `all` clause, one of `any` (when given), every `narrowed_by`
+    clause. A missing column or a type mismatch is false, never unknown-as-true."""
+    if not all(_clause(c, row) for c in condition.get("all") or []):
+        return False
+    anys = condition.get("any") or []
+    if anys and not any(_clause(c, row) for c in anys):
+        return False
+    return all(_clause(c, row) for c in condition.get("narrowed_by") or [])
+
+
+def trigger(condition: dict, rows: list[dict]) -> list[dict]:
+    return [r for r in rows if holds(condition, r)]
+
+
+def object_of(task: str) -> str:
+    """The task's object key: the id without its verb prefix (pick_Wolf_1 -> Wolf_1)."""
+    return task.split("_", 1)[1] if "_" in task else task
+
+
+def by_object(triggered: list[dict], flips: dict[str, str]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for r in triggered:
+        o = out.setdefault(object_of(r["task"]), dict(triggered=0, fixed=0, broken=0))
+        o["triggered"] += 1
+        f = flips.get(r["label"])
+        if f in ("fixed", "broken"):
+            o[f] += 1
+    return out
+
+
+def scope_of(bo: dict[str, dict]) -> tuple[str, str]:
+    """Plan section 4.1: shared, local or drop, with the reason."""
+    flipped = sum(o["fixed"] + o["broken"] for o in bo.values())
+    if flipped < MIN_FLIPS:
+        return "drop", f"{flipped} triggered flipped round(s), fewer than {MIN_FLIPS}"
+    net = {k: o["fixed"] - o["broken"] for k, o in bo.items()}
+    negative = sorted(k for k, v in net.items() if v < 0)
+    positive = sorted(k for k, v in net.items() if v > 0)
+    if negative:
+        return "local", f"net negative on {', '.join(negative)}; positive on {', '.join(positive) or 'none'}"
+    if len(bo) >= 2 and positive:
+        return "shared", f"net non-negative on {len(bo)} objects, positive on {', '.join(positive)}"
+    if len(bo) == 1 and positive:
+        return "local", f"positive on one object ({positive[0]})"
+    return "drop", "no object is net positive"
+
+
+def separation(condition: dict, table: list[dict]) -> dict:
+    """Does the condition pick out the flipped rounds? Fisher's exact p on triggered x flipped."""
+    hit = [holds(condition, r) for r in table]
+    fl = [r["flip"] != "unchanged" for r in table]
+    a = sum(h and f for h, f in zip(hit, fl, strict=True))
+    b = sum(h and not f for h, f in zip(hit, fl, strict=True))
+    c = sum(f and not h for h, f in zip(hit, fl, strict=True))
+    d = len(table) - a - b - c
+    return dict(n_in=a + b, flipped_in=a, n_out=c + d, flipped_out=c, p=round(RC.fisher(a, b, c, d), 4))
+
+
+def narrow(condition: dict, table: list[dict], flips: dict[str, str]) -> dict:
+    """Plan section 4.2: when an object is net negative, add start.* ranges taken from the net-positive objects'
+    triggered rounds (padded by PAD) one column at a time until every negative object leaves the trigger set."""
+    cond = dict(condition)
+    cond.pop("narrowed_by", None)
+    bo = by_object(trigger(cond, table), flips)
+    negative = {k for k, o in bo.items() if o["fixed"] - o["broken"] < 0}
+    positive = {k for k, o in bo.items() if o["fixed"] - o["broken"] > 0}
+    if not negative or not positive:
+        return condition
+    pos_rows = [r for r in trigger(cond, table) if object_of(r["task"]) in positive]
+    added = []
+    for col in START_COLS:
+        vals = [r[col] for r in pos_rows if isinstance(r.get(col), (int, float))]
+        if not vals:
+            continue
+        lo, hi = min(vals), max(vals)
+        pad = PAD * (hi - lo) if hi > lo else PAD * abs(hi) or PAD
+        clauses = [dict(feature=col, op=">=", value=round(lo - pad, 4), why="positives' range"),
+                   dict(feature=col, op="<=", value=round(hi + pad, 4), why="positives' range")]  # fmt: skip
+        trial = dict(cond, narrowed_by=added + clauses)
+        still = {k for k, o in by_object(trigger(trial, table), flips).items() if o["fixed"] - o["broken"] < 0}
+        if len(still) < len(negative):
+            added += clauses
+            negative = still
+        if not negative:
+            return dict(cond, narrowed_by=added)
+    return condition
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)

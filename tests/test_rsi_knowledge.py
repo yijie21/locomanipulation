@@ -302,5 +302,73 @@ class Evidence(unittest.TestCase):
         self.assertIn("walk.blocking.role", md)
 
 
+COND = {"all": [{"feature": "start.support_top_m", "op": ">=", "value": 0.8},
+                {"feature": "walk.blocking.role", "op": "==", "value": "own_support"}]}  # fmt: skip
+
+
+class Conditions(unittest.TestCase):
+    def test_holds_all_and_missing_column_is_false(self):
+        self.assertTrue(KN.holds(COND, ROWS[0]))
+        self.assertFalse(KN.holds(COND, ROWS[2]))  # other_furniture
+        self.assertFalse(KN.holds(COND, ROWS[4]))  # no blocking.role column
+
+    def test_holds_any_and_narrowed_by(self):
+        c = dict(COND, any=[{"feature": "start.support_top_m", "op": "<", "value": 0.9}])
+        self.assertTrue(KN.holds(c, ROWS[0]))
+        self.assertFalse(KN.holds(c, ROWS[3]))  # 1.08
+        c2 = dict(COND, narrowed_by=[{"feature": "start.support_top_m", "op": "<=", "value": 0.9}])
+        self.assertFalse(KN.holds(c2, ROWS[3]))
+
+    def test_type_mismatch_is_false_not_an_error(self):
+        c = {"all": [{"feature": "walk.blocking.role", "op": ">", "value": 1}]}
+        self.assertFalse(KN.holds(c, ROWS[0]))
+
+    def test_separation_counts_and_p(self):
+        s = KN.separation(COND, KN.evidence_table(MECH, ROWS))
+        self.assertEqual((s["n_in"], s["flipped_in"], s["n_out"], s["flipped_out"]), (3, 3, 1, 0))
+        self.assertLessEqual(s["p"], 1.0)
+
+
+class Scope(unittest.TestCase):
+    def test_object_of(self):
+        self.assertEqual(KN.object_of("pick_Wolf_1"), "Wolf_1")
+        self.assertEqual(KN.object_of("place_Mug_2_on_Table__0"), "Mug_2_on_Table__0")
+
+    def test_shared_when_two_objects_net_non_negative(self):
+        bo = {"Wolf_1": dict(triggered=3, fixed=3, broken=0), "Vase_2": dict(triggered=2, fixed=0, broken=0)}
+        self.assertEqual(KN.scope_of(bo)[0], "shared")
+
+    def test_local_when_one_object(self):
+        self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=2, broken=0)})[0], "local")
+
+    def test_drop_when_too_few_flips(self):
+        self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=1, broken=0)})[0], "drop")
+
+    def test_negative_object_makes_it_local_with_why(self):
+        bo = {"Wolf_1": dict(triggered=3, fixed=3, broken=0), "Plant4_1": dict(triggered=2, fixed=0, broken=1)}
+        scope, why = KN.scope_of(bo)
+        self.assertEqual(scope, "local")
+        self.assertIn("Plant4_1", why)
+
+    def test_by_object_from_triggered_rows(self):
+        t = KN.evidence_table(MECH, ROWS)
+        bo = KN.by_object(KN.trigger(COND, t), MECH["flips"])
+        self.assertEqual(bo["Wolf_1"], dict(triggered=2, fixed=2, broken=0))
+        self.assertEqual(bo["Plant4_1"], dict(triggered=1, fixed=0, broken=1))
+
+    def test_narrow_adds_a_start_range_that_drops_the_negative_object(self):
+        t = KN.evidence_table(MECH, ROWS)
+        c = KN.narrow(COND, t, MECH["flips"])
+        self.assertTrue(c.get("narrowed_by"))
+        bo = KN.by_object(KN.trigger(c, t), MECH["flips"])
+        self.assertNotIn("Plant4_1", bo)
+        self.assertEqual(KN.scope_of(bo)[0], "local")  # one positive object remains
+
+    def test_narrow_returns_the_condition_unchanged_when_nothing_separates(self):
+        rows = [dict(r, **{"start.support_top_m": 0.84}) for r in ROWS]
+        c = KN.narrow(COND, KN.evidence_table(MECH, rows), MECH["flips"])
+        self.assertNotIn("narrowed_by", c)
+
+
 if __name__ == "__main__":
     unittest.main()
