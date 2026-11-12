@@ -202,8 +202,8 @@ class Mechanisms(unittest.TestCase):
         self.assertTrue(all("pick_Ghost_1_s9" not in m["flips"] for m in ms))
 
 
-def diag_row(label, task, ok, skills, **cols):
-    return dict(label=label, task=task, ok=int(ok), skills=skills, **cols)
+def diag_row(label, task, ok, version, **cols):
+    return dict(label=label, task=task, ok=int(ok), version=version, **cols)
 
 
 ROWS = [
@@ -235,6 +235,39 @@ class Evidence(unittest.TestCase):
         self.assertEqual(ranked["walk.blocking.role"]["flipped"], {"own_support": 3})
         self.assertEqual(ranked["start.support_top_m"]["kind"], "num")
         self.assertEqual(len(ranked["start.support_top_m"]["flipped"]), 2)
+
+    def test_version_of_dir(self):
+        self.assertEqual(KN.version_of_dir("/x/diag/incumbent_abc"), "abc")
+        self.assertEqual(KN.version_of_dir("/x/diag/candidate_abc"), "abc")
+        self.assertIsNone(KN.version_of_dir("/x/pool_diag"))
+
+    def test_scan_skips_retired_rounds_unless_asked(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "_retired_x.json").write_text(json.dumps(dict(label="x", task="t", ok=True, steps=[])))
+            self.assertEqual(RC.scan([(Path(d), "fam")], "h"), [])
+            self.assertEqual([r["label"] for r in RC.scan([(Path(d), "fam")], "h", retired=True)], ["x"])
+
+    def test_diag_rows_reads_retired_rounds_with_version_and_start_columns(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "scripts/rsi/families").mkdir(parents=True)
+            (root / "scripts/rsi/families/fam.json").write_text(json.dumps({"scene": "outputs/scene"}))
+            (root / "outputs/scene").mkdir(parents=True)
+            (root / "outputs/scene/scene_meta.json").write_text(json.dumps(META))
+            fam = root / "outputs/scene_rsi_20261016/fam"
+            for sub in ("diag/incumbent_inc0", "pool_diag", "pool_diag_retired"):
+                (fam / sub).mkdir(parents=True)
+            rnd = lambda lab: json.dumps(dict(label=lab, task="pick_Wolf_1", ok=False, steps=[], skills="pkg"))  # noqa: E731
+            (fam / "diag/incumbent_inc0/pick_Wolf_1_s1.json").write_text(rnd("pick_Wolf_1_s1"))
+            (fam / "diag/incumbent_inc0/_retired_pick_Wolf_1_s2.json").write_text(rnd("pick_Wolf_1_s2"))
+            for lab in ("pick_Wolf_1_s1", "pick_Wolf_1_s2"):
+                sub = "pool_diag" if lab.endswith("s1") else "pool_diag_retired"
+                (fam / sub / f"{lab}.json").write_text(json.dumps(dict(START, label=lab)))
+            rows = {r["label"]: r for r in KN.diag_rows(root, "fam")}
+            self.assertEqual(sorted(rows), ["pick_Wolf_1_s1", "pick_Wolf_1_s2"])
+            for r in rows.values():
+                self.assertEqual(r["version"], "inc0")
+                self.assertIn("start.support_top_m", r)
 
     def test_render_evidence_names_the_mechanism_and_the_flips(self):
         t = KN.evidence_table(MECH, ROWS)

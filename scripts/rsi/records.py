@@ -281,14 +281,15 @@ def side_records(f: Path) -> list[dict]:
         return []
 
 
-def scan(dirs: list[tuple[Path, str]], host: str, meta: dict | None = None) -> list[dict]:
-    """Round records and start files under each (directory, family), outside any hidden tree."""
+def scan(dirs: list[tuple[Path, str]], host: str, meta: dict | None = None, retired: bool = False) -> list[dict]:
+    """Round records and start files under each (directory, family), outside any hidden tree. With `retired`,
+    `_retired_*` files are read too: rounds retired by a pool redraw were in the pool when their flips were measured."""
     recs, starts = [], {}
     for d, family in dirs:
         if not d.exists():
             continue
         for f in d.rglob("*.json"):
-            if HIDDEN in str(f) or f.name.startswith("_"):
+            if HIDDEN in str(f) or (f.name.startswith("_") and not (retired and f.name.startswith("_retired_"))):
                 continue
             try:
                 j = json.loads(f.read_text())

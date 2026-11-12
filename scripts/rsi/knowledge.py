@@ -123,11 +123,23 @@ def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
     return out
 
 
+def version_of_dir(source: str) -> str | None:
+    """The skills version a diag round was run under, from its directory: diag/incumbent_<hash> or candidate_<hash>."""
+    name = Path(source).name
+    return name.split("_", 1)[1] if name.startswith(("incumbent_", "candidate_")) and "_" in name else None
+
+
 def diag_rows(sandbox: Path, family: str) -> list[dict]:
-    """Every visible diagnostic round of the family in the sandbox, as record-library rows with the scene columns.
-    pool_diag is scanned too: records.scan takes the start files (start.* columns) from the directories it is given."""
+    """Every visible diagnostic round of the family in the sandbox, as record-library rows with the scene columns
+    and `version` (the incumbent or candidate hash of the directory the round sits in; a round's `skills` field is
+    the package hash, a different value). Retired rounds (`_retired_*.json`, pool_diag_retired) count too: they
+    were in the pool when the flips were measured. records.scan takes the start files from the directories given."""
     fam = sandbox / VISIBLE / family
-    return RC.scan([(fam / "diag", family), (fam / "pool_diag", family)], RC.machine(), RC.scene_meta(sandbox, family))
+    dirs = [(fam / d, family) for d in ("diag", "pool_diag", "pool_diag_retired")]
+    rows = RC.scan(dirs, RC.machine(), RC.scene_meta(sandbox, family), retired=True)
+    for r in rows:
+        r["version"] = version_of_dir(r["source"])
+    return rows
 
 
 def evidence_table(mech: dict, rows: list[dict]) -> list[dict]:
@@ -137,7 +149,7 @@ def evidence_table(mech: dict, rows: list[dict]) -> list[dict]:
     tasks = {r["task"] for r in rows if r["label"] in mech["flips"]}
     out = []
     for r in rows:
-        if r["task"] in tasks and r.get("skills") in versions:
+        if r["task"] in tasks and r.get("version") in versions:
             out.append(dict(r, flip=mech["flips"].get(r["label"], "unchanged")))
     return out
 
