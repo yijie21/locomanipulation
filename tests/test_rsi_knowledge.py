@@ -344,6 +344,9 @@ class Scope(unittest.TestCase):
     def test_drop_when_too_few_flips(self):
         self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=1, broken=0)})[0], "drop")
 
+    def test_drop_when_every_object_is_net_negative(self):
+        self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=0, broken=2)})[0], "drop")
+
     def test_negative_object_makes_it_local_with_why(self):
         bo = {"Wolf_1": dict(triggered=3, fixed=3, broken=0), "Plant4_1": dict(triggered=2, fixed=0, broken=1)}
         scope, why = KN.scope_of(bo)

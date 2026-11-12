@@ -257,8 +257,10 @@ def scope_of(bo: dict[str, dict]) -> tuple[str, str]:
     net = {k: o["fixed"] - o["broken"] for k, o in bo.items()}
     negative = sorted(k for k, v in net.items() if v < 0)
     positive = sorted(k for k, v in net.items() if v > 0)
+    if not positive:
+        return "drop", "no object is net positive"
     if negative:
-        return "local", f"net negative on {', '.join(negative)}; positive on {', '.join(positive) or 'none'}"
+        return "local", f"net negative on {', '.join(negative)}; positive on {', '.join(positive)}"
     if len(bo) >= 2 and positive:
         return "shared", f"net non-negative on {len(bo)} objects, positive on {', '.join(positive)}"
     if len(bo) == 1 and positive:
