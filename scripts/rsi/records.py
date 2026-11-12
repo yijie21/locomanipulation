@@ -91,8 +91,73 @@ def start_features(start: dict, task: str) -> dict:
             "start.obj_yaw_deg": round(math.degrees(_yaw(q)), 1), "start.seed": float(s.get("seed", -1))}  # fmt: skip
 
 
+def scene_meta(root: Path, family: str) -> dict | None:
+    """The family's scene file (`scene` in scripts/rsi/families/<family>.json) under `root`, or None."""
+    fam = root / "scripts" / "rsi" / "families" / f"{family}.json"
+    if not fam.exists():
+        return None
+    try:
+        scene = json.loads(fam.read_text()).get("scene")
+        p = root / scene / "scene_meta.json"
+        return json.loads(p.read_text()) if scene and p.exists() else None
+    except (ValueError, OSError):
+        return None
+
+
+def affordance_columns(meta: dict | None, task: str, start: dict | None, records: list[dict] | None) -> dict:
+    """Knowledge-library columns known before the round runs (plan docs/handoff/shared-knowledge-plan-20261111.md
+    section 3.2): the target's support top, height, narrowest width, mass, container flag, its centre height at the
+    start and that height over the support. The target is the PAST records' `roles.target`, else the start's only
+    placement. `start.side_fits_n` comes from a schema 0.2 record's `affordance.one_hand`; 0.1 records lack it."""
+    if not meta or not start:
+        return {}
+    placements = (start.get("start") or {}).get("placements") or {}
+    target = next((r["roles"]["target"] for r in records or [] if isinstance(r, dict) and (r.get("roles") or {}).get("target")), None)
+    if target is None and len(placements) == 1:
+        target = next(iter(placements))
+    o = (meta.get("objects") or {}).get(target)
+    if not o:
+        return {}
+    half = (o.get("box") or {}).get("half_extent") or [0, 0, 0]
+    sem = o.get("semantic") or {}
+    cont = sem.get("container") if isinstance(sem.get("container"), dict) else {}
+    sup = (meta.get("surfaces") or {}).get(o.get("surface")) or {}
+    out = {"start.obj_height_m": 2 * float(half[2]), "start.obj_min_width_m": 2 * float(min(half[0], half[1])),
+           "start.container": float(bool(o.get("container") or cont.get("is")))}  # fmt: skip
+    if sem.get("mass_kg") is not None:
+        out["start.obj_mass_kg"] = float(sem["mass_kg"])
+    if sup.get("top") is not None:
+        out["start.support_top_m"] = float(sup["top"])
+    if target in placements:
+        out["start.grasp_z_m"] = float(placements[target][0][2])
+        if "start.support_top_m" in out:
+            out["start.over_support_m"] = out["start.grasp_z_m"] - out["start.support_top_m"]
+    for r in records or []:
+        aff = ((r.get("entities") or {}).get(target) or {}).get("affordance") or {}
+        fits = (aff.get("one_hand") or {}).get("side_fits_deg")
+        if isinstance(fits, list):
+            out["start.side_fits_n"] = float(len(fits))
+            break
+    return out
+
+
 def _first_edge(edges: list[dict], r: str, s: str | None = None) -> dict | None:
     return next((e for e in edges if e.get("r") == r and (s is None or e.get("s") == s)), None)
+
+
+def _blocking_role(body: str, rec: dict) -> str:
+    """What blocks the stance or corridor, as a role that holds across scenes: the target's own support (or another
+    surface of the same furniture), another piece of furniture, or a free object."""
+    ents = rec.get("entities") or {}
+    support = (rec.get("roles") or {}).get("support")
+    if body == support:
+        return "own_support"
+    e, s = ents.get(body) or {}, ents.get(support) or {}
+    if e.get("type") == "object":
+        return "free_object"
+    if s.get("of") and e.get("of") == s.get("of"):
+        return "own_support"
+    return "other_furniture"
 
 
 def graph_columns(records: list[dict]) -> dict:
@@ -141,7 +206,9 @@ def graph_columns(records: list[dict]) -> dict:
             hits = [e for e in blocking if e.get("v")]
             cols["blocking.depth_m"] = max((float(e.get("depth_m") or 0.0) for e in hits), default=0.0)
             if hits:
-                cols["blocking.what"] = max(hits, key=lambda e: float(e.get("depth_m") or 0.0))["s"]
+                worst = max(hits, key=lambda e: float(e.get("depth_m") or 0.0))
+                cols["blocking.what"] = worst["s"]
+                cols["blocking.role"] = _blocking_role(worst["s"], r)
         above = [e for e in eb if e.get("r") == "above" and e.get("v") and isinstance(e.get("gap_m"), (int, float))]
         if above:
             cols["above.gap_m"] = min(e["gap_m"] for e in above)
@@ -175,7 +242,8 @@ def graph_columns(records: list[dict]) -> dict:
     return out
 
 
-def row(rec: dict, start: dict | None, where: str, host: str, family: str, graph: list[dict] | None = None) -> dict:
+def row(rec: dict, start: dict | None, where: str, host: str, family: str, graph: list[dict] | None = None,
+        meta: dict | None = None) -> dict:  # fmt: skip
     out = {"label": rec["label"], "task": rec["task"], "family": family, "ok": int(bool(rec["ok"])),
            "failure_class": rec.get("failure_class"), "stage": rec.get("stage"), "skills": rec.get("skills"),
            "set": json.dumps(rec.get("set") or {}, sort_keys=True), "motor": rec.get("motor"),
@@ -192,6 +260,7 @@ def row(rec: dict, start: dict | None, where: str, host: str, family: str, graph
             _flat(f"{s['step']}.", {k: v for k, v in s.items() if k not in META_KEYS}, out)
     if graph:
         out.update(graph_columns(graph))
+    out.update(affordance_columns(meta, rec["task"], start, graph))
     return out
 
 
@@ -206,7 +275,7 @@ def side_records(f: Path) -> list[dict]:
         return []
 
 
-def scan(dirs: list[tuple[Path, str]], host: str) -> list[dict]:
+def scan(dirs: list[tuple[Path, str]], host: str, meta: dict | None = None) -> list[dict]:
     """Round records and start files under each (directory, family), outside any hidden tree."""
     recs, starts = [], {}
     for d, family in dirs:
@@ -225,7 +294,7 @@ def scan(dirs: list[tuple[Path, str]], host: str) -> list[dict]:
                 recs.append((j, str(f.parent), family, side_records(f)))
             elif "start" in j and "task" in j:
                 starts.setdefault(f.stem, j)
-    return dedupe([row(j, starts.get(j["label"]), where, host, fam, graph) for j, where, fam, graph in recs])
+    return dedupe([row(j, starts.get(j["label"]), where, host, fam, graph, meta) for j, where, fam, graph in recs])
 
 
 def dedupe(rows: list[dict]) -> list[dict]:
@@ -253,7 +322,7 @@ def load(root: Path = REPO, scratch_root: Path = SCRATCH_ROOT) -> list[dict]:
         base = root / "outputs" / "scene_rsi_20261016"
         dirs = [(d, d.name) for d in sorted(base.iterdir()) if d.is_dir() and d.name not in ("body", "records")]
         fam = dirs[0][1] if len(dirs) == 1 else ""
-        rows += scan(dirs + [(scratch_root / f"rsi_scene_{root.name}", fam)], machine())
+        rows += scan(dirs + [(scratch_root / f"rsi_scene_{root.name}", fam)], machine(), scene_meta(root, fam))
     return dedupe(rows)
 
 
@@ -340,7 +409,7 @@ def build(sandboxes: list[Path], out: Path, scratch_root: Path = SCRATCH_ROOT) -
         base = sb / "outputs" / "scene_rsi_20261016"
         dirs = [(d, d.name) for d in sorted(base.iterdir()) if d.is_dir() and d.name not in ("body", "records")]
         fam = dirs[0][1] if len(dirs) == 1 else ""
-        rows += scan(dirs + [(scratch_root / f"rsi_scene_{sb.name}", fam)], host)
+        rows += scan(dirs + [(scratch_root / f"rsi_scene_{sb.name}", fam)], host, scene_meta(sb, fam))
     kept = [r for r in dedupe(rows) if not any(a <= seed_of(r) < b for a, b in ranges.get(r["family"], []))]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("".join(json.dumps(r) + "\n" for r in kept))
