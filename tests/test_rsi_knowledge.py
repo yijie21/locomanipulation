@@ -454,6 +454,45 @@ class Consolidate(unittest.TestCase):
         self.assertTrue(any("nope.x" in p for p in problems))
         self.assertTrue(any("~" in p for p in problems))
 
+    def test_validate_rejects_columns_outside_the_spec(self):
+        """I5 (spec section 3.2): a skill-given step column never exists in another family."""
+        t = [dict(r, **{"pregrasp.jaw_err_cm": 1.0, "reach.at.err_cm": 2.0, "start.obj_mass_kg": 0.15}) for r in KN.evidence_table(MECH, ROWS)]
+        so = dict(SO, condition={"all": [{"feature": "pregrasp.jaw_err_cm", "op": ">=", "value": 0.5}]})
+        entry, problems = KN.validate(so, t, MECH["flips"], NAMES)
+        self.assertIsNone(entry)
+        self.assertTrue(any("pregrasp.jaw_err_cm" in p and "3.2" in p for p in problems), problems)
+        for col in ("start.obj_mass_kg", "reach.at.err_cm"):
+            so = dict(SO, condition={"all": [*SO["condition"]["all"], {"feature": col, "op": ">=", "value": 0.0}]})
+            self.assertEqual(KN.validate(so, t, MECH["flips"], NAMES)[1], [], col)
+
+    def test_condition_columns_cover_the_generators_and_no_step_columns(self):
+        allowed = RC.CONDITION_COLUMNS
+        for c in ("start.obj_mass_kg", "start.spawn_dist_m", "reach.at.err_cm", "walk.blocking.role",
+                  "grip.moved_before_grip", "first_bad.kind", "first_bad.edge", "n_unexpected", "failure_class"):  # fmt: skip
+            self.assertIn(c, allowed)
+        for c in ("pregrasp.jaw_err_cm", "choose.d_m", "events.reach_err_cm", "pregrasp.ok"):
+            self.assertNotIn(c, allowed)
+        rec = past_record(entities={"Shelf__1": {"type": "surface", "of": "Shelf"},
+                                    "Wolf_1": {"type": "object", "affordance": {"one_hand": {"side_fits_deg": [[0, 30]]}}}})  # fmt: skip
+        emitted = {**RC.affordance_columns(META, "pick_Wolf_1", START, [rec]), **RC.start_features(START, "pick_Wolf_1"),
+                   **RC.graph_columns([rec])}  # fmt: skip
+        self.assertEqual(set(emitted) - allowed, set())
+
+    def test_graph_kinds_match_the_recorder(self):
+        from locomani.tasks.scene import past as P
+
+        self.assertEqual(set(RC.GRAPH_KINDS), set(P.KIND_OF_CALL.values()) | {"mixed"})
+
+    def test_columns_txt_lists_only_condition_columns(self):
+        t = [dict(r, **{"pregrasp.jaw_err_cm": 1.0}) for r in KN.evidence_table(MECH, ROWS)]
+        ranked = KN.rank_columns(t, RC.CONDITION_COLUMNS)
+        self.assertNotIn("pregrasp.jaw_err_cm", {c["col"] for c in ranked})
+        with tempfile.TemporaryDirectory() as d:
+            KN.consolidate(MECH, t, ranked, Path(d) / "c", "in a scene", stub={})
+            cols = (Path(d) / "c" / "columns.txt").read_text()
+        self.assertNotIn("pregrasp", cols)
+        self.assertIn("walk.blocking.role", cols)
+
     def test_validate_rejects_object_names_in_text(self):
         so = json.loads(json.dumps(SO))
         so["repair"]["works"] = "filter stances for Wolf_1"
@@ -542,11 +581,18 @@ class Consolidate(unittest.TestCase):
                     )
                 )
             out = root / "knowledge"
+            (out / "fam").mkdir(parents=True)
+            (out / "fam" / "old.json").write_text(json.dumps(dict(ENTRY, id="fam/old")))  # a dropped mechanism's entry
+            (out / "other").mkdir()
+            (out / "other" / "e.json").write_text(json.dumps(dict(ENTRY, id="other/e")))
             summary = KN.build(root, "fam", out, stub=True, ctx_root=root / "ctx")
             self.assertEqual(summary["entries"], 1)
             self.assertTrue((out / "fam" / "H1_hang.json").exists())
+            self.assertFalse((out / "fam" / "old.json").exists())  # I6: a rebuild leaves no stale entry
+            self.assertTrue((out / "other" / "e.json").exists())  # only this family's directory is cleared
             self.assertTrue((out / "fam" / "BUILD.md").exists())
             self.assertIn("H1_hang", (out / "INDEX.md").read_text())
+            self.assertNotIn("fam/old", (out / "INDEX.md").read_text())
 
 
 ENTRY = dict(id="fam/H1_hang", version=1, status="candidate", scope="shared", scope_why="positive on Wolf_1",

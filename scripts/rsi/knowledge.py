@@ -173,15 +173,15 @@ def _pct(xs: list[float], q: float) -> float:
     return xs[min(len(xs) - 1, max(0, int(round(q * (len(xs) - 1)))))]
 
 
-def rank_columns(table: list[dict]) -> list[dict]:
-    """Per column, how differently the flipped and the unchanged rounds are distributed, as a score in [0, 1]:
+def rank_columns(table: list[dict], allowed: set[str] | frozenset[str] | None = None) -> list[dict]:
+    """Per column (every dotted column, or those in `allowed`), how differently the flipped and the unchanged rounds are distributed, as a score in [0, 1]:
     numeric columns d / (d + IQR) with d the difference of the group medians and IQR the pooled interquartile range
     (with each group's [p10, p90]); categorical ones the share of the flipped rounds' majority category minus its
     share among the unchanged rounds, floored at 0 (with counts). A column with no unchanged rounds scores 0.0:
     there is nothing to separate from. Best first, ties by column name."""
     flipped = [r for r in table if r["flip"] != "unchanged"]
     rest = [r for r in table if r["flip"] == "unchanged"]
-    cols = {k for r in table for k in r if "." in k}
+    cols = {k for r in table for k in r if (k in allowed if allowed is not None else "." in k)}
     out = []
     for k in sorted(cols):
         fv = [r[k] for r in flipped if k in r]
@@ -436,15 +436,18 @@ def _texts(so: dict) -> list[str]:
 
 
 def validate(so: dict, table: list[dict], flips: dict[str, str], names: set[str]) -> tuple[dict | None, list[str]]:
-    """Plan section 3.4: syntax against the table's columns, no object names, the condition separates (p <=
-    SEPARATION_P) and triggers at least MIN_FLIPS flipped rounds; then scope (4.1) after narrowing (4.2)."""
+    """Plan section 3.4: syntax against the table's columns, only the columns of section 3.2
+    (records.CONDITION_COLUMNS), no object names, the condition separates (p <= SEPARATION_P) and triggers at least
+    MIN_FLIPS flipped rounds; then scope (4.1) after narrowing (4.2)."""
     problems: list[str] = []
     if so.get("decline"):
         return None, [f"declined: {so['decline']}"]
     cond = so.get("condition") or {}
-    cols = {k for r in table for k in r if "." in k}
+    cols = {k for r in table for k in r}
     for c in (cond.get("all") or []) + (cond.get("any") or []):
-        if c.get("feature") not in cols:
+        if c.get("feature") not in RC.CONDITION_COLUMNS:
+            problems.append(f"column {c.get('feature')!r} is not a condition column (plan section 3.2)")
+        elif c.get("feature") not in cols:
             problems.append(f"unknown column {c.get('feature')!r}")
         if c.get("op") not in RC.OPS:
             problems.append(f"unknown op {c.get('op')!r}")
@@ -486,7 +489,7 @@ def slugify(s: str) -> str:
 def _stub_output(table: list[dict]) -> dict:
     """A test double: a condition over the flipped rounds' first separating categorical column, else an always-true
     numeric clause."""
-    ranked = rank_columns(table)
+    ranked = rank_columns(table, RC.CONDITION_COLUMNS)
     cat = next((c for c in ranked if c["kind"] == "cat"), None)
     if cat:
         top = max(cat["flipped"], key=cat["flipped"].get)
@@ -522,6 +525,8 @@ def build(
         )
     dest = out / family
     dest.mkdir(parents=True, exist_ok=True)
+    for stale in dest.glob("*.json"):  # a rebuild replaces the family's entries: a dropped mechanism keeps none
+        stale.unlink()
     log = [f"# build {family} from {sandbox} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
     kept, cost = 0, 0.0
     for m in mechanisms(loop, iters):
@@ -529,7 +534,7 @@ def build(
         if not table:
             log.append(f"- {m['slug']}: no diagnostic rows under its incumbent version -- skipped")
             continue
-        ranked = rank_columns(table)
+        ranked = rank_columns(table, RC.CONDITION_COLUMNS)  # the Consolidator sees only section 3.2's columns
         entry, problems, outside = None, [], []
         for attempt in range(2):
             so, acct = consolidate(
@@ -731,7 +736,7 @@ def main(argv=None) -> int:
         rows = diag_rows(a.sandbox, a.family)
         for m in mechanisms(loop, iters):
             t = evidence_table(m, rows)
-            md = render_evidence(m, t, rank_columns(t))
+            md = render_evidence(m, t, rank_columns(t, RC.CONDITION_COLUMNS))
             if a.out:
                 a.out.mkdir(parents=True, exist_ok=True)
                 (a.out / f"{m['slug']}.md").write_text(md)
