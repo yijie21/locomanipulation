@@ -13,6 +13,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts" / "rsi"))
 
 import records as RC  # noqa: E402
+import knowledge as KN  # noqa: E402
 
 META = {
     "objects": {
@@ -90,6 +91,74 @@ class Columns(unittest.TestCase):
         r = RC.row(rec, START, "/x", "host", "fam", graph=[past_record()], meta=META)
         self.assertAlmostEqual(r["start.support_top_m"], 0.8405)
         self.assertEqual(r["walk.blocking.role"], "own_support")
+
+
+def write_loop(root: Path, ledger: list[dict], per_iter: dict[int, dict]) -> Path:
+    """A synthetic loop directory: ledger.jsonl and iter_NN/{hypotheses,candidates,reviewer_context}.json."""
+    loop = root / "outputs/scene_rsi_20261016/fam/loop"
+    loop.mkdir(parents=True)
+    (loop / "ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in ledger))
+    for n, files in per_iter.items():
+        d = loop / f"iter_{n:02d}"
+        d.mkdir()
+        for name, content in files.items():
+            (d / name).write_text(json.dumps(content))
+    return loop
+
+
+def two_iteration_loop(root: Path) -> Path:
+    ledger = [
+        dict(step="probe", iter=0, results=[dict(id="H1_hang", fixed=["pick_Wolf_1_s1"], broken=[], status="verified")]),
+        dict(step="manager", iter=0, decision="engineer", hypotheses=["H1_hang"], repeats=[]),
+        dict(step="engineer", iter=0, candidate=1, hypothesis="H1_hang"),
+        dict(step="gate", iter=0, hash="aaa", accepted=False, b=1, c=0),
+        dict(step="probe", iter=1, results=[dict(id="H4_hang_again", fixed=[], broken=["pick_Plant4_1_s3"], status="refuted"),
+                                            dict(id="H5_other", fixed=[], broken=[], status="hypothesis")]),
+        dict(step="manager", iter=1, decision="engineer", hypotheses=["H4_hang_again"],
+             repeats=[dict(now="H4_hang_again", same_as=["00:H1_hang"])]),
+        dict(step="engineer", iter=1, candidate=1, hypothesis="H4_hang_again"),
+        dict(step="gate", iter=1, hash="bbb", accepted=True, b=4, c=0),
+    ]  # fmt: skip
+    per_iter = {
+        0: {"hypotheses.json": dict(hypotheses=[dict(id="H1_hang", claim="hand hooks the slab", instead="filter stances")]),
+            "candidates.json": [dict(number=1, hypothesis="H1_hang", hash="aaa", fixed=["pick_Wolf_1_s1"], broken=[], mechanism="m0")],
+            "reviewer_context.json": dict(incumbent=dict(hash="inc0"))},
+        1: {"hypotheses.json": dict(hypotheses=[dict(id="H4_hang_again", claim="same", instead="same"),
+                                                dict(id="H5_other", claim="x", instead="y")]),
+            "candidates.json": [dict(number=1, hypothesis="H4_hang_again", hash="bbb", fixed=["pick_Wolf_1_s1", "pick_Wolf_1_s2"], broken=[], mechanism="m1")],
+            "reviewer_context.json": dict(incumbent=dict(hash="inc1"))},
+    }  # fmt: skip
+    return write_loop(root, ledger, per_iter)
+
+
+class Mechanisms(unittest.TestCase):
+    def test_repeats_link_two_iterations_into_one_mechanism(self):
+        with tempfile.TemporaryDirectory() as d:
+            ms = KN.mechanisms(two_iteration_loop(Path(d)))
+        slugs = {m["slug"]: m for m in ms}
+        self.assertIn("H1_hang", slugs)
+        self.assertNotIn("H4_hang_again", slugs)
+        m = slugs["H1_hang"]
+        self.assertEqual(m["ids"], [(0, "H1_hang"), (1, "H4_hang_again")])
+        self.assertEqual(m["incumbent"], {0: "inc0", 1: "inc1"})
+
+    def test_flips_merge_probe_and_drafts_last_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)))}["H1_hang"]
+        self.assertEqual(m["flips"], {"pick_Wolf_1_s1": "fixed", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"})
+        self.assertEqual([x["hash"] for x in m["drafts"]], ["aaa", "bbb"])
+        self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True))
+
+    def test_mechanism_without_flips_or_gate_is_dropped(self):
+        with tempfile.TemporaryDirectory() as d:
+            ms = KN.mechanisms(two_iteration_loop(Path(d)))
+        self.assertNotIn("H5_other", {m["slug"] for m in ms})
+
+    def test_iters_limit_cuts_later_evidence(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)), iters={0})}["H1_hang"]
+        self.assertEqual(m["ids"], [(0, "H1_hang")])
+        self.assertEqual(m["gate"], dict(b=1, c=0, accepted=False))
 
 
 if __name__ == "__main__":
