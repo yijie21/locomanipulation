@@ -331,19 +331,8 @@ SCHEMA = {
 
 
 def names_from_meta(meta: dict) -> set[str]:
-    """Names an entry may not contain (mirrors loop.object_names without the loop's globals): every object's key,
-    its body `<key>_object`, its ADT instance name and the key's stem unless the stem is a semantic name."""
-    names: set[str] = set()
-    for key, o in (meta.get("objects") or {}).items():
-        sem = o.get("semantic") or {}
-        adt = sem.get("adt") or {}
-        names |= {key, f"{key}_object"}
-        if adt.get("instance_name"):
-            names.add(adt["instance_name"])
-        stem = re.sub(r"_[^_]+$", "", key)
-        if stem and stem != key and stem not in {adt.get("category"), adt.get("prototype_name")}:
-            names.add(stem)
-    return names
+    """Names an entry may not contain: the loop's rule for a scene (records.object_names_from)."""
+    return RC.object_names_from((meta or {}).get("objects") or {})
 
 
 def _reflect_module():
@@ -355,8 +344,17 @@ def _reflect_module():
     return mod
 
 
+LEAK = re.compile(r"_hidden|rsi_kit|scene_rsi_20261016/kit/")  # the real leak targets (cf. loop.leak_patterns)
+
+
 def consolidate(
-    mech: dict, table: list[dict], ranked: list[dict], ctx: Path, scene_note: str, stub: dict | None = None
+    mech: dict,
+    table: list[dict],
+    ranked: list[dict],
+    ctx: Path,
+    scene_note: str,
+    stub: dict | None = None,
+    problems: list[str] | None = None,
 ) -> tuple[dict, dict]:
     """One `claude -p` call per mechanism in an isolated context directory (reflect.py's way); `stub` skips it."""
     ctx.mkdir(parents=True, exist_ok=True)
@@ -364,6 +362,8 @@ def consolidate(
     (ctx / "mechanism.md").write_text("\n\n".join(f"## iteration {d['iter']} draft {d['number']} ({d['hash']})\n\n{d['mechanism']}"
                                                   for d in mech["drafts"]) or "no draft was built\n")  # fmt: skip
     (ctx / "columns.txt").write_text("".join(f"{c['col']} {c['kind']}\n" for c in ranked))
+    if problems:
+        (ctx / "problems.txt").write_text("\n".join(problems) + "\n")
     if stub is not None:
         return stub, dict(cost_usd=0.0, seconds=0, session="stub", outside=[])
     R = _reflect_module()
@@ -373,6 +373,9 @@ def consolidate(
         .replace("{CONTEXT_DIR}", str(ctx))
         .replace("{SCENE_NOTE}", scene_note)
     )
+    retry = ("A previous attempt was rejected by the driver's checks for the reasons in problems.txt; "
+             "write an entry that passes them.\n\n" if problems else "")  # fmt: skip
+    prompt = prompt.replace("{PROBLEMS}\n\n", retry).replace("{PROBLEMS}", retry)
     session = str(uuid.uuid4())
     cmd = ["claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(SCHEMA),
            "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config", "--effort", "high",
@@ -381,19 +384,31 @@ def consolidate(
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_SSE")}
     env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", CLAUDE_CODE_DISABLE_CLAUDE_MDS="1", TMPDIR=str(ctx.parent))
     t0 = time.time()
-    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=ctx, env=env)
-    out = json.loads(r.stdout)
+    try:
+        r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=ctx, env=env, timeout=1800)
+        err = f"rc {r.returncode}: {(r.stderr or '')[-200:]}"
+        out = json.loads(r.stdout) if r.returncode == 0 else None
+    except subprocess.TimeoutExpired:
+        out, err = None, "timeout after 1800 s"
+    except ValueError:  # JSONDecodeError
+        out = None
+    if out is None:
+        return {"decline": f"call failed: {err}"}, dict(
+            cost_usd=None, seconds=round(time.time() - t0), session=session, outside=[]
+        )
     so = out.get("structured_output") or {}
     named = set()
+    results = f"/{session}/tool-results/"
     for p in Path.home().glob(f".claude/projects/*/{session}.jsonl"):
-        text = p.read_text(errors="replace")
         named |= {
             m
-            for m in R.PATH.findall(text)
+            for m in R.PATH.findall(p.read_text(errors="replace"))
             if not m.startswith((str(ctx.parent), str(Path.home() / ".claude/shell-snapshots")))
+            and not (".claude/projects/" in m and results in m)
         }
-        if R.FORBIDDEN.search(text):
-            so = {"decline": "void: the session named a hidden or forbidden path"}
+    leaked = next((m for m in sorted(named) if LEAK.search(m)), None)
+    if leaked:
+        so = {"decline": f"void: the session reached {leaked}"}
     return so, dict(
         cost_usd=out.get("total_cost_usd"), seconds=round(time.time() - t0), session=session, outside=sorted(named)[:50]
     )
@@ -420,10 +435,13 @@ def validate(so: dict, table: list[dict], flips: dict[str, str], names: set[str]
             problems.append(f"unknown op {c.get('op')!r}")
     if not cond.get("all"):
         problems.append("condition.all is empty")
-    for t in _texts(so):
-        for tok in re.findall(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*", t):
-            if tok in names:
-                problems.append(f"names an object: {tok}")
+    texts = _texts(so) + [
+        c["value"] for c in (cond.get("all") or []) + (cond.get("any") or []) if isinstance(c.get("value"), str)
+    ]
+    for t in texts:
+        for n in sorted(names):
+            if re.search(rf"(?<![A-Za-z0-9]){re.escape(n)}(?![A-Za-z0-9])", t):
+                problems.append(f"names an object: {n}")
     if problems:
         return None, sorted(set(problems))
     cond = narrow(cond, table, flips)
@@ -497,7 +515,7 @@ def build(
             log.append(f"- {m['slug']}: no diagnostic rows under its incumbent version -- skipped")
             continue
         ranked = rank_columns(table)
-        entry, problems = None, []
+        entry, problems, outside = None, [], []
         for attempt in range(2):
             so, acct = consolidate(
                 m,
@@ -506,14 +524,16 @@ def build(
                 ctx_root / slugify(m["slug"]) / str(attempt),
                 scene_note,
                 stub=_stub_output(table) if stub else None,
+                problems=problems or None,
             )
             cost += float(acct.get("cost_usd") or 0.0)
+            outside = acct.get("outside") or []
             entry, problems = validate(so, table, m["flips"], names)
             if entry is not None or problems and problems[0].startswith("declined"):
                 break
-            (ctx_root / slugify(m["slug"]) / str(attempt) / "problems.txt").write_text("\n".join(problems))
+        note = f"; {len(outside)} paths outside the context dir" if outside else ""
         if entry is None:
-            log.append(f"- {m['slug']}: dropped -- " + "; ".join(problems))
+            log.append(f"- {m['slug']}: dropped -- " + "; ".join(problems) + note)
             continue
         entry.update(id=f"{family}/{slugify(m['slug'])}", version=1, status="candidate",
                      source=dict(family=family, sandbox=sandbox.name, iters=sorted({n for n, _ in m["ids"]}),

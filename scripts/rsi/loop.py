@@ -2329,16 +2329,7 @@ def object_names() -> set[str]:
     scene = family_spec().get("scene")
     if scene not in _NAMES:
         objs = (jload(REPO / scene / "scene_meta.json", {}) or {}).get("objects") or {} if scene else {}
-        names, semantic = set(), set()
-        for k, o in objs.items():
-            sem = o.get("semantic") or {}
-            semantic |= {str(x).lower() for x in (*o, *sem)}
-            adt = sem.get("adt") or {}
-            semantic |= {str(x).lower() for x in (adt.get("prototype_name"), adt.get("category")) if x}
-            names |= {k, o.get("body") or "", adt.get("instance_name") or ""}
-        stems = {re.sub(r"_(\d+|[A-Z])$", "", k) for k in objs}
-        names |= {x for x in stems if len(x) >= 3 and x.lower() not in semantic}
-        _NAMES[scene] = {x for x in names if x}
+        _NAMES[scene] = RC.object_names_from(objs)
     return _NAMES[scene]
 
 

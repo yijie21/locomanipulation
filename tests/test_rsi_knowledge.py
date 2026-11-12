@@ -17,9 +17,9 @@ import records as RC  # noqa: E402
 
 META = {
     "objects": {
-        "Wolf_1": {"surface": "Shelf__1", "box": {"half_extent": [0.034, 0.065, 0.0475]}, "container": False,
+        "Wolf_1": {"surface": "Shelf__1", "body": "Wolf_1_object", "box": {"half_extent": [0.034, 0.065, 0.0475]}, "container": False,
                    "semantic": {"mass_kg": 0.15, "container": {"is": False}, "adt": {"instance_name": "Wolf_1"}}},
-        "Mug_2": {"surface": "Table__0", "box": {"half_extent": [0.045, 0.045, 0.05]}, "container": True,
+        "Mug_2": {"surface": "Table__0", "body": "Mug_2_object", "box": {"half_extent": [0.045, 0.045, 0.05]}, "container": True,
                   "semantic": {"mass_kg": 0.3, "container": {"is": True}, "adt": {"instance_name": "Mug_2"}}},
     },
     "surfaces": {"Shelf__1": {"top": 0.8405, "of_object": "Shelf"}, "Table__0": {"top": 0.72, "of_object": "Table"}},
@@ -419,6 +419,35 @@ class Consolidate(unittest.TestCase):
         entry, problems = KN.validate(so, KN.evidence_table(MECH, ROWS), MECH["flips"], NAMES)
         self.assertIsNone(entry)
         self.assertTrue(any("flipped" in p for p in problems))
+
+    def test_validate_rejects_names_inside_identifiers_and_clause_values(self):
+        t = KN.evidence_table(MECH, ROWS)
+        so = json.loads(json.dumps(SO))
+        so["repair"]["does_not"] = ["pick_Wolf_1_s1 broke"]
+        self.assertIsNone(KN.validate(so, t, MECH["flips"], NAMES)[0])
+        so["repair"]["does_not"] = ["Wolfpack broke"]
+        self.assertEqual(KN.validate(so, t, MECH["flips"], NAMES)[1], [])
+        so = dict(SO, condition={"all": [{"feature": "walk.blocking.what", "op": "==", "value": "Wolf_1"}]})
+        entry, problems = KN.validate(so, t, MECH["flips"], NAMES)
+        self.assertIsNone(entry)
+        self.assertIn("names an object: Wolf_1", problems)
+
+    def test_consolidate_declines_when_the_call_fails(self):
+        class Failed:
+            returncode, stdout, stderr = 1, "", "boom"
+
+        orig = KN.subprocess.run
+        KN.subprocess.run = lambda *a, **k: Failed()
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                t = KN.evidence_table(MECH, ROWS)
+                so, acct = KN.consolidate(MECH, t, KN.rank_columns(t), Path(d) / "c", "in a scene", problems=["x"])
+                self.assertTrue((Path(d) / "c" / "problems.txt").exists())
+        finally:
+            KN.subprocess.run = orig
+        self.assertIn("call failed", so["decline"])
+        self.assertIn("boom", so["decline"])
+        self.assertIsNone(acct["cost_usd"])
 
     def test_build_with_stub_writes_entry_build_log_and_index(self):
         with tempfile.TemporaryDirectory() as d:

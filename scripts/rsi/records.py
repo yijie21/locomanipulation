@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import socket
 import sys
 from collections import Counter
@@ -89,6 +90,22 @@ def start_features(start: dict, task: str) -> dict:
     return {"start.spawn_dist_m": round(math.hypot(px - rx, py - ry), 3),
             "start.spawn_bearing_deg": round(math.degrees(bearing), 1), "start.obj_z": round(float(pz), 3),
             "start.obj_yaw_deg": round(math.degrees(_yaw(q)), 1), "start.seed": float(s.get("seed", -1))}  # fmt: skip
+
+
+def object_names_from(objs: dict) -> set[str]:
+    """Names a skills package or a library entry may not use (rules.md 30, TODO 33.13, D10): every object's key, body
+    and ADT instance name, and the key's stem (Mug_2 -> Mug) unless the stem is also a semantic name (prototype,
+    category) or a field of the object records (gso_0050 -> gso, the record's `gso` block)."""
+    names, semantic = set(), set()
+    for k, o in objs.items():
+        sem = o.get("semantic") or {}
+        semantic |= {str(x).lower() for x in (*o, *sem)}
+        adt = sem.get("adt") or {}
+        semantic |= {str(x).lower() for x in (adt.get("prototype_name"), adt.get("category")) if x}
+        names |= {k, o.get("body") or "", adt.get("instance_name") or ""}
+    stems = {re.sub(r"_(\d+|[A-Z])$", "", k) for k in objs}
+    names |= {x for x in stems if len(x) >= 3 and x.lower() not in semantic}
+    return {x for x in names if x}
 
 
 def scene_meta(root: Path, family: str) -> dict | None:
