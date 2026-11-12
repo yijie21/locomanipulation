@@ -189,7 +189,7 @@ ROOM_GRASP_WALK_EST=vis MUJOCO_GL=egl $PY $R/room_grasp.py h --procs 6 --layouts
 ROOM_GRASP_VISION_DEEP=0.03 $PY $R/room_grasp.py h --procs 6 --layouts 0,1,2,3,4,5,6 --methods feedback --tag _w100d3
 ```
 
-做什么：视觉抓取沿夹爪前向往里推 3 cm，补单面点云带来的浅抓。只对 `ROOM_GRASP_VISION` 的抓取起作用。
+做什么：视觉抓取沿夹爪前向往里推 3 cm，GraspGen-X 给 Dex1 的抓取偏浅约 2 cm，这是执行时的深度余量。只对 `ROOM_GRASP_VISION` 的抓取起作用。
 
 得到什么：腕部相机 89 到 103，验收集 82 到 100。
 
