@@ -373,5 +373,105 @@ class Scope(unittest.TestCase):
         self.assertNotIn("narrowed_by", c)
 
 
+SO = dict(
+    condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 0.8},
+                       {"feature": "walk.blocking.role", "op": "==", "value": "own_support"}]},
+    signature=dict(first_bad_kind="reach", first_bad_edge="at", failure_class=["side_reach"],
+                   reads_as="the pre-reach stalls while the wrist presses the slab's front edge"),
+    repair=dict(works="filter stances at choice time so the hanging jaw clears the own support",
+                does_not=["raise D_MIN globally (broke 4)"], where="stance choice", parameters_touched=["pick.D_MIN_M (do not)"]),
+)  # fmt: skip
+NAMES = {"Wolf_1", "Wolf_1_object", "Wolf", "Plant4_1", "Plant4_1_object", "Plant4", "Mug_2", "Mug_2_object", "Mug"}
+
+
+class Consolidate(unittest.TestCase):
+    def test_names_from_meta(self):
+        names = KN.names_from_meta(META)
+        self.assertIn("Wolf_1", names)
+        self.assertIn("Wolf_1_object", names)
+        self.assertIn("Wolf", names)
+        self.assertIn("Mug", names)
+
+    def test_validate_accepts_a_separating_condition_and_scopes_it(self):
+        t = KN.evidence_table(MECH, ROWS)
+        entry, problems = KN.validate(SO, t, MECH["flips"], NAMES)
+        self.assertEqual(problems, [])
+        self.assertIn(entry["scope"], ("shared", "local"))
+        self.assertIn("Wolf_1", entry["evidence"]["by_object"])
+        self.assertIn("separation", entry["evidence"])
+
+    def test_validate_rejects_unknown_column_and_bad_op(self):
+        so = dict(SO, condition={"all": [{"feature": "nope.x", "op": "~", "value": 1}]})
+        entry, problems = KN.validate(so, KN.evidence_table(MECH, ROWS), MECH["flips"], NAMES)
+        self.assertIsNone(entry)
+        self.assertTrue(any("nope.x" in p for p in problems))
+        self.assertTrue(any("~" in p for p in problems))
+
+    def test_validate_rejects_object_names_in_text(self):
+        so = json.loads(json.dumps(SO))
+        so["repair"]["works"] = "filter stances for Wolf_1"
+        entry, problems = KN.validate(so, KN.evidence_table(MECH, ROWS), MECH["flips"], NAMES)
+        self.assertIsNone(entry)
+        self.assertTrue(any("Wolf_1" in p for p in problems))
+
+    def test_validate_rejects_a_condition_that_triggers_too_few_flips(self):
+        so = dict(SO, condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 1.0}]})
+        entry, problems = KN.validate(so, KN.evidence_table(MECH, ROWS), MECH["flips"], NAMES)
+        self.assertIsNone(entry)
+        self.assertTrue(any("flipped" in p for p in problems))
+
+    def test_build_with_stub_writes_entry_build_log_and_index(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            fixed = ["pick_Wolf_1_s1", "pick_Wolf_1_s2"]
+            ledger = [
+                dict(step="probe", iter=0, results=[dict(id="H1_hang", fixed=fixed, broken=["pick_Plant4_1_s3"], status="verified")]),
+                dict(step="manager", iter=0, decision="engineer", hypotheses=["H1_hang"], repeats=[]),
+                dict(step="engineer", iter=0, candidate=1, hypothesis="H1_hang"),
+                dict(step="gate", iter=0, hash="aaa", accepted=False, b=2, c=1),
+            ]  # fmt: skip
+            per_iter = {0: {
+                "hypotheses.json": dict(hypotheses=[dict(id="H1_hang", claim="hand hooks the slab", instead="filter stances")]),
+                "candidates.json": [dict(number=1, hypothesis="H1_hang", hash="aaa", fixed=fixed, broken=["pick_Plant4_1_s3"], mechanism="m0")],
+                "reviewer_context.json": dict(incumbent=dict(hash="inc0")),
+            }}  # fmt: skip
+            loop = write_loop(root, ledger, per_iter)
+            diag = loop.parent / "diag" / "incumbent_inc0"
+            diag.mkdir(parents=True)
+            (root / "scripts/rsi/families").mkdir(parents=True)
+            (root / "scripts/rsi/families/fam.json").write_text(json.dumps({"scene": "outputs/scene"}))
+            (root / "outputs/scene").mkdir(parents=True)
+            (root / "outputs/scene/scene_meta.json").write_text(json.dumps(META))
+            for label, task, ok, role in [("pick_Wolf_1_s1", "pick_Wolf_1", False, "own_support"),
+                                          ("pick_Wolf_1_s2", "pick_Wolf_1", False, "own_support"),
+                                          ("pick_Wolf_1_s9", "pick_Wolf_1", True, "other_furniture"),
+                                          ("pick_Plant4_1_s3", "pick_Plant4_1", True, "own_support")]:  # fmt: skip
+                (diag / f"{label}.json").write_text(
+                    json.dumps(dict(label=label, task=task, ok=ok, steps=[], skills="inc0"))
+                )
+                rec = past_record(blocking_s="Shelf__1" if role == "own_support" else "Sofa__0")
+                (diag / f"{label}.past.jsonl").write_text(json.dumps(rec) + "\n")
+                (loop.parent / "pool_diag").mkdir(exist_ok=True)
+                (loop.parent / "pool_diag" / f"{label}.json").write_text(
+                    json.dumps(
+                        dict(
+                            task=task,
+                            start=dict(
+                                seed=1,
+                                robot_xy=[0, 0],
+                                robot_yaw=0,
+                                placements={KN.object_of(task): [[0, 0, 0.9], [1, 0, 0, 0]]},
+                            ),
+                        )
+                    )
+                )
+            out = root / "knowledge"
+            summary = KN.build(root, "fam", out, stub=True, ctx_root=root / "ctx")
+            self.assertEqual(summary["entries"], 1)
+            self.assertTrue((out / "fam" / "H1_hang.json").exists())
+            self.assertTrue((out / "fam" / "BUILD.md").exists())
+            self.assertIn("H1_hang", (out / "INDEX.md").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

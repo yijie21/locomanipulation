@@ -309,6 +309,244 @@ def narrow(condition: dict, table: list[dict], flips: dict[str, str]) -> dict:
     return condition
 
 
+CLAUSE = {"type": "object", "required": ["feature", "op", "value"],
+          "properties": {"feature": {"type": "string"}, "op": {"enum": sorted(RC.OPS)},
+                         "value": {"type": ["number", "string"]}}}  # fmt: skip
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "condition": {"type": "object", "required": ["all"],
+                      "properties": {"all": {"type": "array", "items": CLAUSE}, "any": {"type": "array", "items": CLAUSE}}},
+        "signature": {"type": "object", "required": ["reads_as"],
+                      "properties": {"first_bad_kind": {"type": "string"}, "first_bad_edge": {"type": "string"},
+                                     "failure_class": {"type": "array", "items": {"type": "string"}},
+                                     "reads_as": {"type": "string"}}},
+        "repair": {"type": "object", "required": ["works", "does_not", "where"],
+                   "properties": {"works": {"type": "string"}, "does_not": {"type": "array", "items": {"type": "string"}},
+                                  "where": {"type": "string"},
+                                  "parameters_touched": {"type": "array", "items": {"type": "string"}}}},
+        "decline": {"type": "string"},
+    },
+}  # fmt: skip
+
+
+def names_from_meta(meta: dict) -> set[str]:
+    """Names an entry may not contain (mirrors loop.object_names without the loop's globals): every object's key,
+    its body `<key>_object`, its ADT instance name and the key's stem unless the stem is a semantic name."""
+    names: set[str] = set()
+    for key, o in (meta.get("objects") or {}).items():
+        sem = o.get("semantic") or {}
+        adt = sem.get("adt") or {}
+        names |= {key, f"{key}_object"}
+        if adt.get("instance_name"):
+            names.add(adt["instance_name"])
+        stem = re.sub(r"_[^_]+$", "", key)
+        if stem and stem != key and stem not in {adt.get("category"), adt.get("prototype_name")}:
+            names.add(stem)
+    return names
+
+
+def _reflect_module():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("rsi_reflect", HERE / "reflect.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def consolidate(
+    mech: dict, table: list[dict], ranked: list[dict], ctx: Path, scene_note: str, stub: dict | None = None
+) -> tuple[dict, dict]:
+    """One `claude -p` call per mechanism in an isolated context directory (reflect.py's way); `stub` skips it."""
+    ctx.mkdir(parents=True, exist_ok=True)
+    (ctx / "evidence.md").write_text(render_evidence(mech, table, ranked))
+    (ctx / "mechanism.md").write_text("\n\n".join(f"## iteration {d['iter']} draft {d['number']} ({d['hash']})\n\n{d['mechanism']}"
+                                                  for d in mech["drafts"]) or "no draft was built\n")  # fmt: skip
+    (ctx / "columns.txt").write_text("".join(f"{c['col']} {c['kind']}\n" for c in ranked))
+    if stub is not None:
+        return stub, dict(cost_usd=0.0, seconds=0, session="stub", outside=[])
+    R = _reflect_module()
+    prompt = (
+        (HERE / "prompts" / "consolidator.md")
+        .read_text()
+        .replace("{CONTEXT_DIR}", str(ctx))
+        .replace("{SCENE_NOTE}", scene_note)
+    )
+    session = str(uuid.uuid4())
+    cmd = ["claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(SCHEMA),
+           "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config", "--effort", "high",
+           "--permission-mode", "bypassPermissions", "--disallowedTools", "Edit,Write,NotebookEdit,Agent,WebFetch,WebSearch",
+           "--session-id", session]  # fmt: skip
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_SSE")}
+    env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", CLAUDE_CODE_DISABLE_CLAUDE_MDS="1", TMPDIR=str(ctx.parent))
+    t0 = time.time()
+    r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, cwd=ctx, env=env)
+    out = json.loads(r.stdout)
+    so = out.get("structured_output") or {}
+    named = set()
+    for p in Path.home().glob(f".claude/projects/*/{session}.jsonl"):
+        text = p.read_text(errors="replace")
+        named |= {
+            m
+            for m in R.PATH.findall(text)
+            if not m.startswith((str(ctx.parent), str(Path.home() / ".claude/shell-snapshots")))
+        }
+        if R.FORBIDDEN.search(text):
+            so = {"decline": "void: the session named a hidden or forbidden path"}
+    return so, dict(
+        cost_usd=out.get("total_cost_usd"), seconds=round(time.time() - t0), session=session, outside=sorted(named)[:50]
+    )
+
+
+def _texts(so: dict) -> list[str]:
+    sig, rep = so.get("signature") or {}, so.get("repair") or {}
+    return [str(sig.get("reads_as", "")), str(rep.get("works", "")), str(rep.get("where", "")),
+            *map(str, rep.get("does_not") or []), *map(str, rep.get("parameters_touched") or [])]  # fmt: skip
+
+
+def validate(so: dict, table: list[dict], flips: dict[str, str], names: set[str]) -> tuple[dict | None, list[str]]:
+    """Plan section 3.4: syntax against the table's columns, no object names, the condition separates (p <=
+    SEPARATION_P) and triggers at least MIN_FLIPS flipped rounds; then scope (4.1) after narrowing (4.2)."""
+    problems: list[str] = []
+    if so.get("decline"):
+        return None, [f"declined: {so['decline']}"]
+    cond = so.get("condition") or {}
+    cols = {k for r in table for k in r if "." in k}
+    for c in (cond.get("all") or []) + (cond.get("any") or []):
+        if c.get("feature") not in cols:
+            problems.append(f"unknown column {c.get('feature')!r}")
+        if c.get("op") not in RC.OPS:
+            problems.append(f"unknown op {c.get('op')!r}")
+    if not cond.get("all"):
+        problems.append("condition.all is empty")
+    for t in _texts(so):
+        for tok in re.findall(r"[A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*", t):
+            if tok in names:
+                problems.append(f"names an object: {tok}")
+    if problems:
+        return None, sorted(set(problems))
+    cond = narrow(cond, table, flips)
+    sep = separation(cond, table)
+    if sep["flipped_in"] < MIN_FLIPS:
+        problems.append(f"triggers {sep['flipped_in']} flipped round(s), fewer than {MIN_FLIPS}")
+    if len(table) >= RC.MIN_REFUTE and sep["p"] > SEPARATION_P:  # a smaller table cannot reach the threshold
+        problems.append(f"does not separate flipped from unchanged rounds (p {sep['p']})")
+    if problems:
+        return None, problems
+    bo = by_object(trigger(cond, table), flips)
+    scope, why = scope_of(bo)
+    if scope == "drop":
+        return None, [f"dropped: {why}"]
+    entry = dict(condition=cond, signature=so.get("signature") or {}, repair=so.get("repair") or {},
+                 evidence=dict(by_object=bo, separation=sep,
+                               diag_rounds=sorted(r["label"] for r in trigger(cond, table) if r["flip"] != "unchanged"),
+                               counterexamples=sorted(r["label"] for r in table if r["flip"] == "broken")),
+                 scope=scope, scope_why=why)  # fmt: skip
+    return entry, []
+
+
+def slugify(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_")[:60] or "entry"
+
+
+def _stub_output(table: list[dict]) -> dict:
+    """A test double: a condition over the flipped rounds' first separating categorical column, else an always-true
+    numeric clause."""
+    ranked = rank_columns(table)
+    cat = next((c for c in ranked if c["kind"] == "cat"), None)
+    if cat:
+        top = max(cat["flipped"], key=cat["flipped"].get)
+        cond = {"all": [dict(feature=cat["col"], op="==", value=top)]}
+    else:
+        num = ranked[0]
+        cond = {"all": [dict(feature=num["col"], op=">=", value=num["flipped"][0])]}
+    return dict(condition=cond, signature=dict(reads_as="stub"), repair=dict(works="stub", does_not=[], where="stub"))
+
+
+def build(
+    sandbox: Path,
+    family: str,
+    out: Path,
+    iters: set[int] | None = None,
+    stub: bool = False,
+    ctx_root: Path | None = None,
+) -> dict:
+    """Plan section 3: mechanisms -> evidence tables -> the Consolidator -> validation, scope -> entries,
+    BUILD.md and INDEX.md under `out`. `ctx_root` holds the Consolidator's context directories."""
+    loop = sandbox / VISIBLE / family / "loop"
+    meta = RC.scene_meta(sandbox, family) or {}
+    names = names_from_meta(meta)
+    fam = jload(sandbox / "scripts" / "rsi" / "families" / f"{family}.json", {}) or {}
+    scene_note = fam.get("scene_note") or "in a simulated scene"
+    rows = diag_rows(sandbox, family)
+    if ctx_root is None:
+        ctx_root = (
+            Path(os.environ.get("LOCOMANI_WORKSPACE", str(Path.home() / "workspace")))
+            / "tmp"
+            / "rsi_knowledge"
+            / family
+        )
+    dest = out / family
+    dest.mkdir(parents=True, exist_ok=True)
+    log = [f"# build {family} from {sandbox} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
+    kept, cost = 0, 0.0
+    for m in mechanisms(loop, iters):
+        table = evidence_table(m, rows)
+        if not table:
+            log.append(f"- {m['slug']}: no diagnostic rows under its incumbent version -- skipped")
+            continue
+        ranked = rank_columns(table)
+        entry, problems = None, []
+        for attempt in range(2):
+            so, acct = consolidate(
+                m,
+                table,
+                ranked,
+                ctx_root / slugify(m["slug"]) / str(attempt),
+                scene_note,
+                stub=_stub_output(table) if stub else None,
+            )
+            cost += float(acct.get("cost_usd") or 0.0)
+            entry, problems = validate(so, table, m["flips"], names)
+            if entry is not None or problems and problems[0].startswith("declined"):
+                break
+            (ctx_root / slugify(m["slug"]) / str(attempt) / "problems.txt").write_text("\n".join(problems))
+        if entry is None:
+            log.append(f"- {m['slug']}: dropped -- " + "; ".join(problems))
+            continue
+        entry.update(id=f"{family}/{slugify(m['slug'])}", version=1, status="candidate",
+                     source=dict(family=family, sandbox=sandbox.name, iters=sorted({n for n, _ in m["ids"]}),
+                                 mechanism_ids=[h for _, h in m["ids"]], gate=m["gate"],
+                                 built_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
+                     audit=dict(names_checked=True, hidden_checked=True))  # fmt: skip
+        (dest / f"{slugify(m['slug'])}.json").write_text(json.dumps(entry, indent=1, ensure_ascii=False) + "\n")
+        kept += 1
+        log.append(
+            f"- {m['slug']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}"
+        )
+    log.append(f"\n{kept} entries, model cost {cost:.2f} USD")
+    (dest / "BUILD.md").write_text("\n".join(log) + "\n")
+    index(out)
+    return dict(entries=kept, cost_usd=round(cost, 2))
+
+
+def entries(out: Path = OUT) -> list[dict]:
+    return [json.loads(p.read_text()) for p in sorted(out.glob("*/*.json"))]
+
+
+def index(out: Path = OUT) -> None:
+    rows = ["# Knowledge library", "", "One entry per mechanism (scripts/rsi/knowledge.py build). Roles read HITS.md, not this index.", "",
+            "| id | scope | status | condition | objects | reads as |", "|---|---|---|---|---|---|"]  # fmt: skip
+    for e in entries(out):
+        cond = " and ".join(f"{c['feature']} {c['op']} {c['value']}" for c in e["condition"].get("all", []))
+        rows.append(
+            f"| {e['id']} | {e['scope']} | {e['status']} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
+        )
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "INDEX.md").write_text("\n".join(rows) + "\n")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -317,6 +555,15 @@ def main(argv=None) -> int:
     ev.add_argument("family")
     ev.add_argument("--iters", help="N-M: iterations whose evidence is used")
     ev.add_argument("--out", type=Path, help="write one .md per mechanism here instead of printing")
+    b = sub.add_parser("build")
+    b.add_argument("sandbox", type=Path)
+    b.add_argument("family")
+    b.add_argument("--iters")
+    b.add_argument("--out", type=Path, default=OUT)
+    b.add_argument("--ctx-root", type=Path, help="where the Consolidator's context directories go")
+    b.add_argument("--stub", action="store_true", help="no model call: a test double writes the conditions")
+    ix = sub.add_parser("index")
+    ix.add_argument("--out", type=Path, default=OUT)
     a = ap.parse_args(argv)
     if a.cmd == "evidence":
         iters = None
@@ -333,6 +580,16 @@ def main(argv=None) -> int:
                 (a.out / f"{m['slug']}.md").write_text(md)
             else:
                 print(md)
+        return 0
+    if a.cmd == "build":
+        iters = None
+        if a.iters:
+            lo, _, hi = a.iters.partition("-")
+            iters = set(range(int(lo), int(hi or lo) + 1))
+        print(json.dumps(build(a.sandbox.resolve(), a.family, a.out, iters, a.stub, a.ctx_root)))
+        return 0
+    if a.cmd == "index":
+        index(a.out)
         return 0
     return 0
 
