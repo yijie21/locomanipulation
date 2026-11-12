@@ -57,7 +57,9 @@ def _iter_of(ref: str) -> tuple[int, str]:
 def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
     """One dict per mechanism (module docstring): hypotheses linked by the Manager's `repeats`, their probe and draft
     flips, the gate's verdict on their drafts. Mechanisms with no flip and no gate verdict are left out."""
-    rows = [r for r in jl(loop / "ledger.jsonl") if isinstance(r.get("iter"), int) and (iters is None or r["iter"] in iters)]
+    rows = [
+        r for r in jl(loop / "ledger.jsonl") if isinstance(r.get("iter"), int) and (iters is None or r["iter"] in iters)
+    ]
     by_iter: dict[int, list[dict]] = defaultdict(list)
     for r in rows:
         by_iter[r["iter"]].append(r)
@@ -106,7 +108,9 @@ def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
             for c in cands:
                 flips.update({x: "fixed" for x in c.get("fixed") or []})
                 flips.update({x: "broken" for x in c.get("broken") or []})
-                drafts.append(dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or ""))
+                drafts.append(
+                    dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or "")
+                )
                 for g in by_iter[n]:
                     if g.get("step") == "gate" and g.get("hash") == c.get("hash") and not g.get("void"):
                         gate = dict(b=g.get("b"), c=g.get("c"), accepted=bool(g.get("accepted")))

@@ -50,7 +50,10 @@ class Columns(unittest.TestCase):
 
     def test_affordance_columns_side_fits_from_schema_02(self):
         rec = past_record()
-        rec["entities"]["Wolf_1"] = {"type": "object", "affordance": {"one_hand": {"side_fits_deg": [[0, 30], [150, 180]]}}}
+        rec["entities"]["Wolf_1"] = {
+            "type": "object",
+            "affordance": {"one_hand": {"side_fits_deg": [[0, 30], [150, 180]]}},
+        }
         c = RC.affordance_columns(META, "pick_Wolf_1", START, [rec])
         self.assertEqual(c["start.side_fits_n"], 2.0)
 
@@ -149,7 +152,9 @@ class Mechanisms(unittest.TestCase):
     def test_flips_merge_probe_and_drafts_last_wins(self):
         with tempfile.TemporaryDirectory() as d:
             m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)))}["H1_hang"]
-        self.assertEqual(m["flips"], {"pick_Wolf_1_s1": "broken", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"})
+        self.assertEqual(
+            m["flips"], {"pick_Wolf_1_s1": "broken", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"}
+        )
         self.assertEqual([x["hash"] for x in m["drafts"]], ["aaa", "bbb"])
         self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True))
 
@@ -184,7 +189,13 @@ class Mechanisms(unittest.TestCase):
     def test_probe_result_without_hypothesis_is_ignored(self):
         with tempfile.TemporaryDirectory() as d:
             loop = two_iteration_loop(Path(d))
-            ledger = jl_rows(loop) + [dict(step="probe", iter=1, results=[dict(id="H99_ghost", fixed=["pick_Ghost_1_s9"], broken=[], status="verified")])]
+            ledger = jl_rows(loop) + [
+                dict(
+                    step="probe",
+                    iter=1,
+                    results=[dict(id="H99_ghost", fixed=["pick_Ghost_1_s9"], broken=[], status="verified")],
+                )
+            ]
             (loop / "ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in ledger))
             ms = KN.mechanisms(loop)
         self.assertNotIn("H99_ghost", {m["slug"] for m in ms})

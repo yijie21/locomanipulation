@@ -115,7 +115,10 @@ def affordance_columns(meta: dict | None, task: str, start: dict | None, records
     if not meta or not start:
         return {}
     placements = (start.get("start") or {}).get("placements") or {}
-    target = next((r["roles"]["target"] for r in records or [] if isinstance(r, dict) and (r.get("roles") or {}).get("target")), None)
+    target = next(
+        (r["roles"]["target"] for r in records or [] if isinstance(r, dict) and (r.get("roles") or {}).get("target")),
+        None,
+    )
     if target is None and len(placements) == 1:
         target = next(iter(placements))
     o = (meta.get("objects") or {}).get(target)
