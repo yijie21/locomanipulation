@@ -78,7 +78,23 @@ def rebuild_parks(loop: Path, n: int) -> dict:
     return parked
 
 
+def install_knowledge(dst: Path, knowledge: Path) -> None:
+    """Plan docs/handoff/shared-knowledge-plan-20261111.md section 7.2: the library under test, used as given -- the
+    family's own entries stay (a temporal-split library is built from the very iterations being replayed), so
+    sandbox.knowledge_without is not applied. The exported copy is replaced, HITS.md dropped, INDEX.md rebuilt."""
+    import knowledge as KN
+
+    lib = dst / "scripts" / "rsi" / "knowledge"
+    if lib.exists():
+        shutil.rmtree(lib)
+    shutil.copytree(knowledge, lib)
+    (lib / "HITS.md").unlink(missing_ok=True)
+    KN.index(lib)
+
+
 def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD", knowledge: Path | None = None) -> None:
+    if knowledge is not None and not knowledge.is_dir():
+        raise SystemExit(f"--knowledge {knowledge}: no such directory")
     SB.build(dst, family, ref)
     s_loop, d_loop = src / VISIBLE / family, dst / VISIBLE / family
     s_hid, d_hid = src / HIDDEN / family, dst / HIDDEN / family
@@ -188,12 +204,8 @@ def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD", knowledg
                     f.write_text(u)
     print(f"{dst}: {family} as iteration {n} began (incumbent {running}, {len(calls)} gate calls, "
           f"{'snapshot' if snap.exists() else 'rebuilt from the ledger'})")  # fmt: skip
-    if knowledge is not None:  # plan docs/handoff/shared-knowledge-plan-20261111.md section 7.2: the library under test
-        lib = dst / "scripts" / "rsi" / "knowledge"
-        if lib.exists():
-            shutil.rmtree(lib)
-        shutil.copytree(knowledge, lib)
-        SB.knowledge_without(dst, family)
+    if knowledge is not None:
+        install_knowledge(dst, knowledge)
 
 
 def report(sandboxes: list[Path], family: str | None) -> list[dict]:

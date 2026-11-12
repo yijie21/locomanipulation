@@ -41,6 +41,13 @@ def _scene_loop():
 
 LP = _scene_loop()
 
+
+def _replay():
+    spec = importlib.util.spec_from_file_location("rsi_replay_knowledge", REPO / "scripts" / "rsi" / "replay.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
 META = {
     "objects": {
         "Wolf_1": {"surface": "Shelf__1", "body": "Wolf_1_object", "box": {"half_extent": [0.034, 0.065, 0.0475]}, "container": False,
@@ -739,6 +746,39 @@ class Wiring(unittest.TestCase):
         self.assertEqual((rows[0]["step"], rows[0]["iter"]), ("knowledge", 2))
         self.assertIn("bad entry", rows[0]["error"])
         self.assertNotIn("hits", rows[0])
+
+    def test_install_knowledge_keeps_the_library_as_given(self):
+        """I2: the replay's library under test keeps the family's own (temporal-split) entries."""
+        RP = _replay()
+        with tempfile.TemporaryDirectory() as d:
+            dst, given = Path(d) / "sb", Path(d) / "given"
+            (dst / "scripts/rsi/knowledge/exported").mkdir(parents=True)
+            (dst / "scripts/rsi/knowledge/exported/e.json").write_text(json.dumps(dict(ENTRY, id="exported/e")))
+            (dst / "scripts/rsi/families").mkdir(parents=True)
+            (dst / "scripts/rsi/families/fam.json").write_text(json.dumps({"library_exclude": ["old"]}))
+            for fam in ("fam", "old"):
+                (given / fam).mkdir(parents=True)
+                (given / fam / "e.json").write_text(json.dumps(dict(ENTRY, id=f"{fam}/e")))
+            (given / "HITS.md").write_text("stale\n")
+            RP.install_knowledge(dst, given)
+            lib = dst / "scripts/rsi/knowledge"
+            self.assertEqual(sorted(p.name for p in lib.iterdir() if p.is_dir()), ["fam", "old"])
+            self.assertFalse((lib / "HITS.md").exists())
+            self.assertIn("fam/e", (lib / "INDEX.md").read_text())
+            self.assertTrue((given / "HITS.md").exists())  # the given directory is not touched
+
+    def test_setup_checks_the_knowledge_path_before_building(self):
+        RP = _replay()
+        built = []
+        orig = RP.SB.build
+        RP.SB.build = lambda *a, **k: built.append(a)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                with self.assertRaises(SystemExit):
+                    RP.setup(Path(d) / "src", "fam", 0, Path(d) / "dst", knowledge=Path(d) / "missing")
+        finally:
+            RP.SB.build = orig
+        self.assertEqual(built, [])
 
     def test_iterate_runs_the_knowledge_step_after_the_pool_redraw(self):
         import inspect
