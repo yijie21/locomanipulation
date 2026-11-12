@@ -160,9 +160,11 @@ def _pct(xs: list[float], q: float) -> float:
 
 
 def rank_columns(table: list[dict]) -> list[dict]:
-    """Per column, how differently the flipped and the unchanged rounds are distributed: numeric columns by the
-    difference of medians over the pooled interquartile range (with each group's [p10, p90]), categorical ones by
-    the share of the majority category among flipped rounds that the unchanged rounds lack (with counts)."""
+    """Per column, how differently the flipped and the unchanged rounds are distributed, as a score in [0, 1]:
+    numeric columns d / (d + IQR) with d the difference of the group medians and IQR the pooled interquartile range
+    (with each group's [p10, p90]); categorical ones the share of the flipped rounds' majority category minus its
+    share among the unchanged rounds, floored at 0 (with counts). A column with no unchanged rounds scores 0.0:
+    there is nothing to separate from. Best first, ties by column name."""
     flipped = [r for r in table if r["flip"] != "unchanged"]
     rest = [r for r in table if r["flip"] == "unchanged"]
     cols = {k for r in table for k in r if "." in k}
@@ -174,16 +176,17 @@ def rank_columns(table: list[dict]) -> list[dict]:
             continue
         if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in fv + rv):
             pooled = sorted(fv + rv)
-            iqr = _pct(pooled, 0.75) - _pct(pooled, 0.25) or 1e-6
-            score = abs(_pct(fv, 0.5) - _pct(rv, 0.5)) / iqr if rv else 0.0
+            iqr = _pct(pooled, 0.75) - _pct(pooled, 0.25)
+            d = abs(_pct(fv, 0.5) - _pct(rv, 0.5)) if rv else 0.0
+            score = d / (d + iqr) if d else 0.0
             out.append(dict(col=k, kind="num", score=round(score, 3), flipped=[_pct(fv, 0.1), _pct(fv, 0.9)],
                             unchanged=[_pct(rv, 0.1), _pct(rv, 0.9)] if rv else None))  # fmt: skip
         else:
             fc, rc = Counter(map(str, fv)), Counter(map(str, rv))
             top, n = fc.most_common(1)[0]
-            score = n / len(fv) - (rc.get(top, 0) / len(rv) if rv else 0.0)
+            score = max(0.0, n / len(fv) - rc.get(top, 0) / len(rv)) if rv else 0.0
             out.append(dict(col=k, kind="cat", score=round(score, 3), flipped=dict(fc), unchanged=dict(rc)))
-    return sorted(out, key=lambda c: -c["score"])
+    return sorted(out, key=lambda c: (-c["score"], c["col"]))
 
 
 def render_evidence(mech: dict, table: list[dict], ranked: list[dict], top: int = 12) -> str:

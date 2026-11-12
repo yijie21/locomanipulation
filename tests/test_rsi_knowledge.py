@@ -236,6 +236,31 @@ class Evidence(unittest.TestCase):
         self.assertEqual(ranked["start.support_top_m"]["kind"], "num")
         self.assertEqual(len(ranked["start.support_top_m"]["flipped"]), 2)
 
+    def test_zero_iqr_numeric_column_does_not_outrank_a_separating_categorical(self):
+        t = [dict(label=f"u{i}", flip="unchanged", **{"a.num": 1.0, "b.cat": "x"}) for i in range(8)]
+        t += [dict(label="f1", flip="fixed", **{"a.num": 5.0, "b.cat": "y"})]
+        ranked = {c["col"]: c for c in KN.rank_columns(t)}
+        # with zero IQR any difference of medians separates fully: exactly 1.0, never above (was ~1e5 before)
+        self.assertLessEqual(ranked["a.num"]["score"], 1.0)
+        self.assertEqual(ranked["b.cat"]["score"], 1.0)
+        self.assertLessEqual(ranked["a.num"]["score"], ranked["b.cat"]["score"])
+
+    def test_no_unchanged_rounds_scores_zero(self):
+        t = [dict(label=f"f{i}", flip="fixed", **{"a.num": float(i), "b.cat": "y"}) for i in range(3)]
+        self.assertEqual([c["score"] for c in KN.rank_columns(t)], [0.0, 0.0])
+
+    def test_rank_columns_sorted_by_score_descending(self):
+        t = [
+            dict(label="f1", flip="fixed", **{"a.cat": "y", "b.cat": "y", "c.num": 9.0}),
+            dict(label="f2", flip="fixed", **{"a.cat": "y", "b.cat": "x", "c.num": 9.0}),
+            dict(label="u1", flip="unchanged", **{"a.cat": "x", "b.cat": "x", "c.num": 1.0}),
+            dict(label="u2", flip="unchanged", **{"a.cat": "x", "b.cat": "x", "c.num": 2.0}),
+        ]  # fmt: skip
+        ranked = KN.rank_columns(t)
+        scores = [c["score"] for c in ranked]
+        self.assertEqual(scores, sorted(scores, reverse=True))
+        self.assertEqual([c["col"] for c in ranked], ["a.cat", "c.num", "b.cat"])
+
     def test_version_of_dir(self):
         self.assertEqual(KN.version_of_dir("/x/diag/incumbent_abc"), "abc")
         self.assertEqual(KN.version_of_dir("/x/diag/candidate_abc"), "abc")
