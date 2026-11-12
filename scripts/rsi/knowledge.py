@@ -567,6 +567,74 @@ def index(out: Path = OUT) -> None:
     (out / "INDEX.md").write_text("\n".join(rows) + "\n")
 
 
+def hits(ents: list[dict], rows: list[dict]) -> list[dict]:
+    """Plan section 5.2: each entry whose condition holds on at least one round, with the rounds and how many failed;
+    entries that hit only successes go last."""
+    out = []
+    for e in ents:
+        trig = trigger(e["condition"], rows)
+        if not trig:
+            continue
+        rounds = sorted((r["label"], bool(r["ok"])) for r in trig)
+        out.append(dict(id=e["id"], scope=e["scope"], version=e.get("version", 1), status=e.get("status", ""),
+                        rounds=rounds, failed=sum(not ok for _, ok in rounds)))  # fmt: skip
+    return sorted(out, key=lambda h: (h["failed"] == 0, -h["failed"], h["id"]))
+
+
+def _cond_text(c: dict) -> str:
+    parts = [f"{x['feature']} {x['op']} {x['value']}" for x in c.get("all") or []]
+    if c.get("any"):
+        parts.append("(" + " or ".join(f"{x['feature']} {x['op']} {x['value']}" for x in c["any"]) + ")")
+    parts += [f"{x['feature']} {x['op']} {x['value']}" for x in c.get("narrowed_by") or []]
+    return " and ".join(parts)
+
+
+def render_hits(hs: list[dict], by_id: dict[str, dict]) -> str:
+    """HITS.md (plan section 5.3). Object names from the evidence never reach it: only this family's round labels."""
+    if not hs:
+        return "no entry's condition holds on this incumbent's diagnostic rounds\n"
+    lines = ["# Knowledge entries whose condition holds on this incumbent's diagnostic rounds", "",
+             "Other families' loops verified these directions in situations like the rounds listed; this family's rounds decide. "
+             "Cite an entry you use by its id in `knowledge_refs`.", ""]  # fmt: skip
+    tail = []
+    for h in hs:
+        e = by_id[h["id"]]
+        if h["failed"] == 0:
+            tail.append(
+                f"- {h['id']}: condition holds on {len(h['rounds'])} round(s) the incumbent already succeeds on"
+            )
+            continue
+        rounds = ", ".join(f"{l} ({'ok' if ok else 'failed'})" for l, ok in h["rounds"])
+        lines += [f"## {h['id']}  ({h['scope']}, v{h['version']}, {h['status']})",
+                  f"Hits this incumbent's diagnostic rounds: {rounds}",
+                  f"Condition: {_cond_text(e['condition'])}",
+                  f"Reads as: {e['signature'].get('reads_as', '')}",
+                  f"Worked elsewhere: {e['repair'].get('works', '')} (where: {e['repair'].get('where', '')})"]  # fmt: skip
+        if e["repair"].get("does_not"):
+            lines.append("Did not work: " + "; ".join(e["repair"]["does_not"]))
+        lines.append("")
+    if tail:
+        lines += ["## Conditions that hold only where the incumbent already succeeds", *tail, ""]
+    return "\n".join(lines)
+
+
+def write_hits(root: Path, rounds_dir: Path, out_dir: Path, family: str, pool: Path | None = None) -> int:
+    """Evaluate the library under `root` on the rounds in `rounds_dir` (start files from `pool`, by default the
+    pool_diag beside the rounds' diag directory); write <out_dir>/knowledge_hits.json and
+    <root>/scripts/rsi/knowledge/HITS.md. Returns the entries hitting a failed round. No library: nothing written."""
+    lib = root / "scripts" / "rsi" / "knowledge"
+    ents = entries(lib) if lib.is_dir() else []
+    if not ents:
+        return 0
+    pool = pool or rounds_dir.parents[1] / "pool_diag"
+    rows = RC.scan([(rounds_dir, family), (pool, family)], RC.machine(), RC.scene_meta(root, family))
+    hs = hits(ents, rows)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "knowledge_hits.json").write_text(json.dumps(hs, indent=1) + "\n")
+    (lib / "HITS.md").write_text(render_hits(hs, {e["id"]: e for e in ents}))
+    return sum(h["failed"] > 0 for h in hs)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -584,6 +652,11 @@ def main(argv=None) -> int:
     b.add_argument("--stub", action="store_true", help="no model call: a test double writes the conditions")
     ix = sub.add_parser("index")
     ix.add_argument("--out", type=Path, default=OUT)
+    ev2 = sub.add_parser("eval")
+    ev2.add_argument("root", type=Path, help="the sandbox (or repository) holding scripts/rsi/knowledge")
+    ev2.add_argument("rounds", type=Path, help="the incumbent's diagnostic rounds directory")
+    ev2.add_argument("family")
+    ev2.add_argument("--out", type=Path, required=True)
     a = ap.parse_args(argv)
     if a.cmd == "evidence":
         iters = None
@@ -610,6 +683,9 @@ def main(argv=None) -> int:
         return 0
     if a.cmd == "index":
         index(a.out)
+        return 0
+    if a.cmd == "eval":
+        print(write_hits(a.root.resolve(), a.rounds.resolve(), a.out, a.family))
         return 0
     return 0
 

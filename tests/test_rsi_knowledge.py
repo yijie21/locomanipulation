@@ -502,5 +502,75 @@ class Consolidate(unittest.TestCase):
             self.assertIn("H1_hang", (out / "INDEX.md").read_text())
 
 
+ENTRY = dict(id="fam/H1_hang", version=1, status="candidate", scope="shared", scope_why="positive on Wolf_1",
+             condition=COND, signature=dict(reads_as="the pre-reach stalls at the slab"),
+             repair=dict(works="filter stances", does_not=["raise D_MIN (broke 4)"], where="stance choice"),
+             evidence=dict(by_object={"Wolf_1": dict(triggered=2, fixed=2, broken=0)}, separation={}, diag_rounds=[], counterexamples=[]))  # fmt: skip
+
+
+class Hits(unittest.TestCase):
+    def test_hits_list_failed_rounds_first(self):
+        hs = KN.hits([ENTRY], ROWS[:5])
+        self.assertEqual(len(hs), 1)
+        self.assertEqual(hs[0]["failed"], 2)
+        self.assertEqual(
+            sorted(l for l, _ in hs[0]["rounds"]), ["pick_Plant4_1_s3", "pick_Wolf_1_s1", "pick_Wolf_1_s2"]
+        )
+
+    def test_no_hit_when_condition_holds_nowhere(self):
+        e = dict(ENTRY, condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 5}]})
+        self.assertEqual(KN.hits([e], ROWS), [])
+
+    def test_render_hits_shows_repair_and_hides_object_names_from_evidence(self):
+        md = KN.render_hits(KN.hits([ENTRY], ROWS[:5]), {ENTRY["id"]: ENTRY})
+        self.assertIn("fam/H1_hang", md)
+        self.assertIn("filter stances", md)
+        self.assertIn("raise D_MIN", md)
+        self.assertIn("pick_Wolf_1_s1 (failed)", md)
+        self.assertNotIn("by_object", md)
+        self.assertNotIn("positive on Wolf_1", md)
+
+    def test_render_hits_without_hits_is_one_line(self):
+        md = KN.render_hits([], {})
+        self.assertEqual(md.strip().count("\n"), 0)
+        self.assertIn("no entry", md)
+
+    def test_all_ok_hits_go_last_and_collapsed(self):
+        e2 = dict(
+            ENTRY, id="fam/other", condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 1.0}]}
+        )
+        hs = KN.hits([ENTRY, e2], ROWS[:5])
+        self.assertEqual([h["id"] for h in hs], ["fam/H1_hang", "fam/other"])
+        md = KN.render_hits(hs, {ENTRY["id"]: ENTRY, e2["id"]: e2})
+        self.assertIn("already succeeds", md)
+
+    def test_write_hits_reads_the_library_and_writes_both_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "scripts/rsi/knowledge/fam").mkdir(parents=True)
+            (root / "scripts/rsi/knowledge/fam/H1_hang.json").write_text(json.dumps(ENTRY))
+            (root / "scripts/rsi/families").mkdir(parents=True)
+            (root / "scripts/rsi/families/fam.json").write_text(json.dumps({"scene": "outputs/scene"}))
+            (root / "outputs/scene").mkdir(parents=True)
+            (root / "outputs/scene/scene_meta.json").write_text(json.dumps(META))
+            rounds = root / "fam" / "diag" / "incumbent_x"
+            rounds.mkdir(parents=True)
+            (rounds / "pick_Wolf_1_s1.json").write_text(
+                json.dumps(dict(label="pick_Wolf_1_s1", task="pick_Wolf_1", ok=False, steps=[]))
+            )
+            (rounds / "pick_Wolf_1_s1.past.jsonl").write_text(json.dumps(past_record()) + "\n")
+            (root / "fam" / "pool_diag").mkdir()
+            (root / "fam" / "pool_diag" / "pick_Wolf_1_s1.json").write_text(json.dumps(START))
+            n = KN.write_hits(root, rounds, root / "it", "fam")
+            self.assertEqual(n, 1)
+            self.assertTrue((root / "it/knowledge_hits.json").exists())
+            self.assertIn("fam/H1_hang", (root / "scripts/rsi/knowledge/HITS.md").read_text())
+
+    def test_write_hits_without_a_library_is_a_no_op(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(KN.write_hits(Path(d), Path(d), Path(d) / "it", "fam"), 0)
+            self.assertFalse((Path(d) / "it").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
