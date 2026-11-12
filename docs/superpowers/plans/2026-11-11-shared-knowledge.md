@@ -112,7 +112,10 @@ class Columns(unittest.TestCase):
 
     def test_affordance_columns_side_fits_from_schema_02(self):
         rec = past_record()
-        rec["entities"]["Wolf_1"] = {"type": "object", "affordance": {"one_hand": {"side_fits_deg": [[0, 30], [150, 180]]}}}
+        rec["entities"]["Wolf_1"] = {
+            "type": "object",
+            "affordance": {"one_hand": {"side_fits_deg": [[0, 30], [150, 180]]}},
+        }
         c = RC.affordance_columns(META, "pick_Wolf_1", START, [rec])
         self.assertEqual(c["start.side_fits_n"], 2.0)
 
@@ -178,7 +181,10 @@ def affordance_columns(meta: dict | None, task: str, start: dict | None, records
     if not meta or not start:
         return {}
     placements = (start.get("start") or {}).get("placements") or {}
-    target = next((r["roles"]["target"] for r in records or [] if isinstance(r, dict) and (r.get("roles") or {}).get("target")), None)
+    target = next(
+        (r["roles"]["target"] for r in records or [] if isinstance(r, dict) and (r.get("roles") or {}).get("target")),
+        None,
+    )
     if target is None and len(placements) == 1:
         target = next(iter(placements))
     o = (meta.get("objects") or {}).get(target)
@@ -289,13 +295,19 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Produces: `knowledge.mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]`，每个元素：
 
 ```python
-{"slug": "H3_stance_free_edges",            # 最早那条假设的 id，去掉前缀数字后的 slug 化
- "ids": [(2, "H3_stance_free_edges"), (3, "H9_hang_filter")],
- "claims": ["..."], "insteads": ["..."],
- "incumbent": {2: "0fa018936751", 3: "..."},  # 每轮的现任 hash
- "flips": {"pick_Wolf_1_s410029": "fixed", "pick_Plant4_1_s410018": "broken"},  # 探针和草稿的并集；同一局以最后一次为准
- "drafts": [{"iter": 3, "number": 1, "hash": "259d..", "mechanism": "..."}],
- "gate": {"b": 4, "c": 0, "accepted": False} | None}
+{
+    "slug": "H3_stance_free_edges",  # 最早那条假设的 id，去掉前缀数字后的 slug 化
+    "ids": [(2, "H3_stance_free_edges"), (3, "H9_hang_filter")],
+    "claims": ["..."],
+    "insteads": ["..."],
+    "incumbent": {2: "0fa018936751", 3: "..."},  # 每轮的现任 hash
+    "flips": {
+        "pick_Wolf_1_s410029": "fixed",
+        "pick_Plant4_1_s410018": "broken",
+    },  # 探针和草稿的并集；同一局以最后一次为准
+    "drafts": [{"iter": 3, "number": 1, "hash": "259d..", "mechanism": "..."}],
+    "gate": {"b": 4, "c": 0, "accepted": False} | None,
+}
 ```
 
 - [ ] **Step 1: 写失败的测试**
@@ -358,7 +370,9 @@ class Mechanisms(unittest.TestCase):
     def test_flips_merge_probe_and_drafts_last_wins(self):
         with tempfile.TemporaryDirectory() as d:
             m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)))}["H1_hang"]
-        self.assertEqual(m["flips"], {"pick_Wolf_1_s1": "fixed", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"})
+        self.assertEqual(
+            m["flips"], {"pick_Wolf_1_s1": "fixed", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"}
+        )
         self.assertEqual([x["hash"] for x in m["drafts"]], ["aaa", "bbb"])
         self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True))
 
@@ -442,7 +456,9 @@ def _iter_of(ref: str) -> tuple[int, str]:
 def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
     """One dict per mechanism (module docstring): hypotheses linked by the Manager's `repeats`, their probe and draft
     flips, the gate's verdict on their drafts. Mechanisms with no flip and no gate verdict are left out."""
-    rows = [r for r in jl(loop / "ledger.jsonl") if isinstance(r.get("iter"), int) and (iters is None or r["iter"] in iters)]
+    rows = [
+        r for r in jl(loop / "ledger.jsonl") if isinstance(r.get("iter"), int) and (iters is None or r["iter"] in iters)
+    ]
     by_iter: dict[int, list[dict]] = defaultdict(list)
     for r in rows:
         by_iter[r["iter"]].append(r)
@@ -491,7 +507,9 @@ def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
             for c in cands:
                 flips.update({x: "fixed" for x in c.get("fixed") or []})
                 flips.update({x: "broken" for x in c.get("broken") or []})
-                drafts.append(dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or ""))
+                drafts.append(
+                    dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or "")
+                )
                 for g in by_iter[n]:
                     if g.get("step") == "gate" and g.get("hash") == c.get("hash") and not g.get("void"):
                         gate = dict(b=g.get("b"), c=g.get("c"), accepted=bool(g.get("accepted")))
@@ -559,7 +577,9 @@ MECH = dict(slug="H1_hang", ids=[(0, "H1_hang")], claims=["c"], insteads=["i"], 
 class Evidence(unittest.TestCase):
     def test_table_keeps_the_flipped_tasks_under_the_incumbent_version(self):
         t = KN.evidence_table(MECH, ROWS)
-        self.assertEqual(sorted(r["label"] for r in t), ["pick_Plant4_1_s3", "pick_Wolf_1_s1", "pick_Wolf_1_s2", "pick_Wolf_1_s9"])
+        self.assertEqual(
+            sorted(r["label"] for r in t), ["pick_Plant4_1_s3", "pick_Wolf_1_s1", "pick_Wolf_1_s2", "pick_Wolf_1_s9"]
+        )
         flips = {r["label"]: r["flip"] for r in t}
         self.assertEqual(flips["pick_Wolf_1_s9"], "unchanged")
         self.assertEqual(flips["pick_Plant4_1_s3"], "broken")
@@ -660,7 +680,9 @@ def render_evidence(mech: dict, table: list[dict], ranked: list[dict], top: int 
         lines.append(f"- gate: b {mech['gate']['b']} c {mech['gate']['c']} accepted {mech['gate']['accepted']}")
     lines += ["", "## columns that separate flipped from unchanged rounds (best first)", ""]
     for c in ranked[:top]:
-        lines.append(f"- {c['col']} ({c['kind']}, score {c['score']}): flipped {c['flipped']} | unchanged {c['unchanged']}")
+        lines.append(
+            f"- {c['col']} ({c['kind']}, score {c['score']}): flipped {c['flipped']} | unchanged {c['unchanged']}"
+        )
     lines += ["", "## rounds", "", "| label | task | ok | flip | " + " | ".join(c["col"] for c in ranked[:top]) + " |",
               "|---|---|---|---|" + "---|" * min(top, len(ranked))]  # fmt: skip
     for r in sorted(table, key=lambda r: (r["flip"] == "unchanged", r["label"])):
@@ -1045,12 +1067,25 @@ class Consolidate(unittest.TestCase):
                                           ("pick_Wolf_1_s2", "pick_Wolf_1", False, "own_support"),
                                           ("pick_Wolf_1_s9", "pick_Wolf_1", True, "other_furniture"),
                                           ("pick_Plant4_1_s3", "pick_Plant4_1", True, "own_support")]:  # fmt: skip
-                (diag / f"{label}.json").write_text(json.dumps(dict(label=label, task=task, ok=ok, steps=[], skills="inc0")))
+                (diag / f"{label}.json").write_text(
+                    json.dumps(dict(label=label, task=task, ok=ok, steps=[], skills="inc0"))
+                )
                 rec = past_record(blocking_s="Shelf__1" if role == "own_support" else "Sofa__0")
                 (diag / f"{label}.past.jsonl").write_text(json.dumps(rec) + "\n")
                 (loop.parent / "pool_diag").mkdir(exist_ok=True)
-                (loop.parent / "pool_diag" / f"{label}.json").write_text(json.dumps(dict(task=task, start=dict(
-                    seed=1, robot_xy=[0, 0], robot_yaw=0, placements={KN.object_of(task): [[0, 0, 0.9], [1, 0, 0, 0]]}))))
+                (loop.parent / "pool_diag" / f"{label}.json").write_text(
+                    json.dumps(
+                        dict(
+                            task=task,
+                            start=dict(
+                                seed=1,
+                                robot_xy=[0, 0],
+                                robot_yaw=0,
+                                placements={KN.object_of(task): [[0, 0, 0.9], [1, 0, 0, 0]]},
+                            ),
+                        )
+                    )
+                )
             out = root / "knowledge"
             summary = KN.build(root, "fam", out, stub=True)
         self.assertEqual(summary["entries"], 1)
@@ -1113,8 +1148,9 @@ def _reflect_module():
     return mod
 
 
-def consolidate(mech: dict, table: list[dict], ranked: list[dict], ctx: Path, scene_note: str,
-                stub: dict | None = None) -> tuple[dict, dict]:
+def consolidate(
+    mech: dict, table: list[dict], ranked: list[dict], ctx: Path, scene_note: str, stub: dict | None = None
+) -> tuple[dict, dict]:
     """One `claude -p` call per mechanism in an isolated context directory (reflect.py's way); `stub` skips it."""
     ctx.mkdir(parents=True, exist_ok=True)
     (ctx / "evidence.md").write_text(render_evidence(mech, table, ranked))
@@ -1124,7 +1160,12 @@ def consolidate(mech: dict, table: list[dict], ranked: list[dict], ctx: Path, sc
     if stub is not None:
         return stub, dict(cost_usd=0.0, seconds=0, session="stub", outside=[])
     R = _reflect_module()
-    prompt = (HERE / "prompts" / "consolidator.md").read_text().replace("{CONTEXT_DIR}", str(ctx)).replace("{SCENE_NOTE}", scene_note)
+    prompt = (
+        (HERE / "prompts" / "consolidator.md")
+        .read_text()
+        .replace("{CONTEXT_DIR}", str(ctx))
+        .replace("{SCENE_NOTE}", scene_note)
+    )
     session = str(uuid.uuid4())
     cmd = ["claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(SCHEMA),
            "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config", "--effort", "high",
@@ -1139,10 +1180,16 @@ def consolidate(mech: dict, table: list[dict], ranked: list[dict], ctx: Path, sc
     named = set()
     for p in Path.home().glob(f".claude/projects/*/{session}.jsonl"):
         text = p.read_text(errors="replace")
-        named |= {m for m in R.PATH.findall(text) if not m.startswith((str(ctx.parent), str(Path.home() / ".claude/shell-snapshots")))}
+        named |= {
+            m
+            for m in R.PATH.findall(text)
+            if not m.startswith((str(ctx.parent), str(Path.home() / ".claude/shell-snapshots")))
+        }
         if R.FORBIDDEN.search(text):
             so = {"decline": "void: the session named a hidden or forbidden path"}
-    return so, dict(cost_usd=out.get("total_cost_usd"), seconds=round(time.time() - t0), session=session, outside=sorted(named)[:50])
+    return so, dict(
+        cost_usd=out.get("total_cost_usd"), seconds=round(time.time() - t0), session=session, outside=sorted(named)[:50]
+    )
 
 
 def _texts(so: dict) -> list[str]:
@@ -1208,7 +1255,9 @@ def build(sandbox: Path, family: str, out: Path, iters: set[int] | None = None, 
     fam = jload(sandbox / "scripts" / "rsi" / "families" / f"{family}.json", {}) or {}
     scene_note = fam.get("scene_note") or "in a simulated scene"
     rows = diag_rows(sandbox, family)
-    ctx_root = Path(os.environ.get("LOCOMANI_WORKSPACE", str(Path.home() / "workspace"))) / "tmp" / "rsi_knowledge" / family
+    ctx_root = (
+        Path(os.environ.get("LOCOMANI_WORKSPACE", str(Path.home() / "workspace"))) / "tmp" / "rsi_knowledge" / family
+    )
     dest = out / family
     dest.mkdir(parents=True, exist_ok=True)
     log = [f"# build {family} from {sandbox} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
@@ -1221,8 +1270,14 @@ def build(sandbox: Path, family: str, out: Path, iters: set[int] | None = None, 
         ranked = rank_columns(table)
         entry, problems = None, []
         for attempt in range(2):
-            so, acct = consolidate(m, table, ranked, ctx_root / slugify(m["slug"]) / str(attempt), scene_note,
-                                   stub=_stub_output(table) if stub else None)
+            so, acct = consolidate(
+                m,
+                table,
+                ranked,
+                ctx_root / slugify(m["slug"]) / str(attempt),
+                scene_note,
+                stub=_stub_output(table) if stub else None,
+            )
             cost += float(acct.get("cost_usd") or 0.0)
             entry, problems = validate(so, table, m["flips"], names)
             if entry is not None or problems and problems[0].startswith("declined"):
@@ -1238,7 +1293,9 @@ def build(sandbox: Path, family: str, out: Path, iters: set[int] | None = None, 
                      audit=dict(names_checked=True, hidden_checked=True))  # fmt: skip
         (dest / f"{slugify(m['slug'])}.json").write_text(json.dumps(entry, indent=1, ensure_ascii=False) + "\n")
         kept += 1
-        log.append(f"- {m['slug']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}")
+        log.append(
+            f"- {m['slug']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}"
+        )
     log.append(f"\n{kept} entries, model cost {cost:.2f} USD")
     (dest / "BUILD.md").write_text("\n".join(log) + "\n")
     index(out)
@@ -1268,7 +1325,9 @@ def index(out: Path = OUT) -> None:
             "| id | scope | status | condition | objects | reads as |", "|---|---|---|---|---|---|"]  # fmt: skip
     for e in entries(out):
         cond = " and ".join(f"{c['feature']} {c['op']} {c['value']}" for c in e["condition"].get("all", []))
-        rows.append(f"| {e['id']} | {e['scope']} | {e['status']} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |")
+        rows.append(
+            f"| {e['id']} | {e['scope']} | {e['status']} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
+        )
     out.mkdir(parents=True, exist_ok=True)
     (out / "INDEX.md").write_text("\n".join(rows) + "\n")
 ```
@@ -1344,7 +1403,9 @@ class Hits(unittest.TestCase):
         hs = KN.hits([ENTRY], ROWS[:5])
         self.assertEqual(len(hs), 1)
         self.assertEqual(hs[0]["failed"], 2)
-        self.assertEqual(sorted(l for l, _ in hs[0]["rounds"]), ["pick_Plant4_1_s3", "pick_Wolf_1_s1", "pick_Wolf_1_s2"])
+        self.assertEqual(
+            sorted(l for l, _ in hs[0]["rounds"]), ["pick_Plant4_1_s3", "pick_Wolf_1_s1", "pick_Wolf_1_s2"]
+        )
 
     def test_no_hit_when_condition_holds_nowhere(self):
         e = dict(ENTRY, condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 5}]})
@@ -1364,7 +1425,9 @@ class Hits(unittest.TestCase):
         self.assertIn("no entry", md)
 
     def test_all_ok_hits_go_last_and_collapsed(self):
-        e2 = dict(ENTRY, id="fam/other", condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 1.0}]})
+        e2 = dict(
+            ENTRY, id="fam/other", condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 1.0}]}
+        )
         hs = KN.hits([ENTRY, e2], ROWS[:5])
         self.assertEqual([h["id"] for h in hs], ["fam/H1_hang", "fam/other"])
         md = KN.render_hits(hs, {ENTRY["id"]: ENTRY, e2["id"]: e2})
@@ -1381,7 +1444,9 @@ class Hits(unittest.TestCase):
             (root / "outputs/scene/scene_meta.json").write_text(json.dumps(META))
             rounds = root / "fam" / "diag" / "incumbent_x"
             rounds.mkdir(parents=True)
-            (rounds / "pick_Wolf_1_s1.json").write_text(json.dumps(dict(label="pick_Wolf_1_s1", task="pick_Wolf_1", ok=False, steps=[])))
+            (rounds / "pick_Wolf_1_s1.json").write_text(
+                json.dumps(dict(label="pick_Wolf_1_s1", task="pick_Wolf_1", ok=False, steps=[]))
+            )
             (rounds / "pick_Wolf_1_s1.past.jsonl").write_text(json.dumps(past_record()) + "\n")
             (root / "fam" / "pool_diag").mkdir()
             (root / "fam" / "pool_diag" / "pick_Wolf_1_s1.json").write_text(json.dumps(START))
@@ -1437,7 +1502,9 @@ def render_hits(hs: list[dict], by_id: dict[str, dict]) -> str:
     for h in hs:
         e = by_id[h["id"]]
         if h["failed"] == 0:
-            tail.append(f"- {h['id']}: condition holds on {len(h['rounds'])} round(s) the incumbent already succeeds on")
+            tail.append(
+                f"- {h['id']}: condition holds on {len(h['rounds'])} round(s) the incumbent already succeeds on"
+            )
             continue
         rounds = ", ".join(f"{l} ({'ok' if ok else 'failed'})" for l, ok in h["rounds"])
         lines += [f"## {h['id']}  ({h['scope']}, v{h['version']}, {h['status']})",
@@ -1604,8 +1671,8 @@ KNOWLEDGE_NOTE = (  # plan docs/handoff/shared-knowledge-plan-20261111.md sectio
 `prompt_vars()` 里 `LIBRARY=...` 改为：
 
 ```python
-        LIBRARY=(LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "")
-        + (KNOWLEDGE_NOTE if (HERE / "knowledge" / "HITS.md").exists() else ""),
+LIBRARY = LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else ""
+(+(KNOWLEDGE_NOTE if (HERE / "knowledge" / "HITS.md").exists() else ""),)
 ```
 
 `HYPOTHESES_SCHEMA` 的 `predicted_broken` 之后加：
@@ -1728,7 +1795,11 @@ def report(sandboxes: list[Path]) -> list[dict]:
     """Plan section 7.2: per replayed sandbox, the last iteration's Reviewer and Prober numbers."""
     out = []
     for sb in sandboxes:
-        fams = [d for d in sorted((sb / VISIBLE).iterdir()) if d.is_dir() and d.name not in ("body", "records")] if (sb / VISIBLE).exists() else []
+        fams = (
+            [d for d in sorted((sb / VISIBLE).iterdir()) if d.is_dir() and d.name not in ("body", "records")]
+            if (sb / VISIBLE).exists()
+            else []
+        )
         if not fams:
             continue
         loop = fams[0] / "loop"
@@ -1737,7 +1808,11 @@ def report(sandboxes: list[Path]) -> list[dict]:
         probe = next((e for e in reversed(es) if e.get("step") == "probe"), {})
         n = probe.get("iter", rev.get("iter"))
         res = probe.get("results") or []
-        hyps = (jload(loop / f"iter_{n:02d}" / "hypotheses.json", {}) or {}).get("hypotheses") or [] if n is not None else []
+        hyps = (
+            (jload(loop / f"iter_{n:02d}" / "hypotheses.json", {}) or {}).get("hypotheses") or []
+            if n is not None
+            else []
+        )
         st = Counter(r.get("status") for r in res)
         out.append(dict(sandbox=sb.name, with_knowledge=(loop / f"iter_{n:02d}" / "knowledge_hits.json").exists() if n is not None else False,
                         n_hyp=len(res), verified=st.get("verified", 0), refuted=st.get("refuted", 0),
@@ -1753,17 +1828,31 @@ def report(sandboxes: list[Path]) -> list[dict]:
 `main` 加：
 
 ```python
-    rp = sub.add_parser("report")
-    rp.add_argument("sandboxes", type=Path, nargs="+")
-    ...
-    if a.cmd == "report":
-        rows = report([p.resolve() for p in a.sandboxes])
-        keys = ["sandbox", "with_knowledge", "n_hyp", "verified", "refuted", "mixed", "hypothesis", "net_fixed", "pred_hit", "pred_n", "cites", "review_cost_usd", "review_s"]
-        print("| " + " | ".join(keys) + " |")
-        print("|" + "---|" * len(keys))
-        for r in rows:
-            print("| " + " | ".join(str(r.get(k)) for k in keys) + " |")
-        return 0
+rp = sub.add_parser("report")
+rp.add_argument("sandboxes", type=Path, nargs="+")
+...
+if a.cmd == "report":
+    rows = report([p.resolve() for p in a.sandboxes])
+    keys = [
+        "sandbox",
+        "with_knowledge",
+        "n_hyp",
+        "verified",
+        "refuted",
+        "mixed",
+        "hypothesis",
+        "net_fixed",
+        "pred_hit",
+        "pred_n",
+        "cites",
+        "review_cost_usd",
+        "review_s",
+    ]
+    print("| " + " | ".join(keys) + " |")
+    print("|" + "---|" * len(keys))
+    for r in rows:
+        print("| " + " | ".join(str(r.get(k)) for k in keys) + " |")
+    return 0
 ```
 
 - [ ] **Step 4: `replay.py`**
