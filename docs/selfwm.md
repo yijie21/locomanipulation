@@ -183,6 +183,49 @@ ROOM_GRASP_WALK_EST=vis MUJOCO_GL=egl $PY $R/room_grasp.py h --procs 6 --layouts
 
 得到什么：特权抓取从 104 到 118，不抬手时 116 到 125。整条视觉链不变，83 对 89。
 
+**可选，把视觉抓取往里推。**
+
+```bash
+ROOM_GRASP_VISION_DEEP=0.03 $PY $R/room_grasp.py h --procs 6 --layouts 0,1,2,3,4,5,6 --methods feedback --tag _w100d3
+```
+
+做什么：视觉抓取沿夹爪前向往里推 3 cm，补单面点云带来的浅抓。只对 `ROOM_GRASP_VISION` 的抓取起作用。
+
+得到什么：腕部相机 89 到 103，验收集 82 到 100。
+
+**可选，头部相机先看，看不到再抬手。**
+
+```bash
+ROOM_GRASP_VISION_DEEP=0.03 ROOM_GRASP_HEAD_FIRST=lk100 $PY $R/room_grasp.py h --procs 6 --layouts 0,1,2,3,4,5,6 --methods feedback --tag _eye
+```
+
+做什么：前三步把姿势名换成 look100、标签换成 lk100 再跑一遍，得到头部相机在 1 m 处的抓取。每局先查头部相机有没有给出够得着的抓取，有就不抬手，没有才抬手并用 `ROOM_GRASP_VISION` 的抓取。
+
+得到什么：约四分之三的局不抬手。成功数开发集 118，验收集 92，和每局都抬手合起来是平手。
+
+**对照，到站位再看一次。**
+
+`ROOM_GRASP_RELOOK=st`：前三步用 `--pose stance`、`--tag st` 得到站位上头部相机的抓取。走到站位后如果它给出够得着的抓取，就替换之前的，停点误差按真值给。开发集 99 对 103，没有增益。
+
+**对照，第二个腕部视角。**
+
+第一步 `--pose` 以 `wrist2` 开头时，换另一只手从另一侧再看一次，存成 `<pose>v`。两次分别过第二步，再合并：
+
+```bash
+$PY $R/vision_merge.py $GRASP_ROOM_OUT/vision --a wb2 --b wb2v --tag wb2m
+```
+
+评测加 `ROOM_GRASP_HAND_LOOK=2`。开发集 105 对 103，没有增益。
+
+**验收集。**
+
+```bash
+GRASP_ROOM_HARD=1 GRASP_ROOM_SEED=5300000 GRASP_ROOM_OUT=$I/grasp_room_hard_ho $PY $R/grasp_room.py build --layouts 7
+export GRASP_ROOM_OUT=$I/grasp_room_hard_ho
+```
+
+做什么：换种子重新摆 7 个房间。之后所有命令不变。
+
 ## 7. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

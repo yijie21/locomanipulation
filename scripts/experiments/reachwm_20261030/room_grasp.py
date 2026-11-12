@@ -272,6 +272,14 @@ AZ_W_ROOF = float(os.environ.get("ROOM_GRASP_AZ_W_ROOF", 0.2))  # the heading-of
 # "vis": the walk's end from the head camera (vision_walk.py) in place of the leg odometry; "log": computed and recorded only
 WALK_EST = os.environ.get("ROOM_GRASP_WALK_EST", "")
 EYES: dict = {}  # id(env) -> vision_walk.Eye
+HEAD_FIRST = os.environ.get(
+    "ROOM_GRASP_HEAD_FIRST", ""
+)  # vision tag of the head camera's look from the start: used when it
+# holds a grasp in range, and the hand is then not raised; otherwise the hand look (ROOM_GRASP_VISION) as usual
+HEAD_CACHE: dict = {}
+RELOOK = os.environ.get("ROOM_GRASP_RELOOK", "")  # vision tag of the look taken again at the stance (head camera)
+RELOOK_CACHE: dict = {}
+VISION_DEEP = float(os.environ.get("ROOM_GRASP_VISION_DEEP", 0.0))  # m: vision grasps go this much deeper
 HAND_LOOK = int(os.environ.get("ROOM_GRASP_HAND_LOOK", 0))  # 1: the episode opens with the hand-camera look (hand_look)
 STANCE_BACK_TRAY = 0.22  # the tray is 8 cm high, knees clear it; the hand reaches the floor band only 0.3-0.5 m ahead (select_eval map)
 LIFT_CABINET = 0.06  # a 10 cm lift meets the board above (grasp_pilot v1 too)
@@ -320,24 +328,29 @@ LOOK_AHEAD, LOOK_SIDE, LOOK_DOWN, LOOK_DEEP = (
     20.0,
     0.22,
 )  # hand ahead / beside the pelvis, m; view down, deg
+LOOK_DOWN2 = float(os.environ.get("ROOM_GRASP_LOOK_DOWN2", 35.0))  # the second look's view down, deg
 CAM_TILT, CAM_UP = 30.0, 0.06  # the wrist camera looks this far below the hand's axis and sits this far over it
 
 
-def hand_look(env, slot: dict):
+def hand_look(env, slot: dict, view: int = 0):
     """Raise the grasping side's hand so that its wrist camera looks at the station's surface LOOK_DEEP behind the front, from
     LOOK_DOWN above it where the wrist can go. Uses where the station is and how high its surface is (the map's knowledge),
-    not the object. -> camera name, (hand position, pitch deg) or None."""
+    not the object. view 1 is the second look: the other hand, from the other side and from LOOK_DOWN2 above.
+    -> camera name, (hand position, pitch deg) or None."""
     m = env.m
     st, c, a, ax, perp = station_frame(slot["station"])
     lat = float(perp @ (np.array(slot["pos"])[:2] - c))
     side, sd = ("right", 1.0) if lat < 0 else ("left", -1.0)
+    if view:
+        side, sd = ("left", -1.0) if side == "right" else ("right", 1.0)
+    look_down = LOOK_DOWN2 if view else LOOK_DOWN
     pv, Rp = env.pelvis()
     yaw = E.yaw_of(Rp)
     f, l_ = np.array([math.cos(yaw), math.sin(yaw)]), np.array([-math.sin(yaw), math.cos(yaw)])
     hand = pv[:2] + f * LOOK_AHEAD - l_ * sd * LOOK_SIDE
     aim = np.r_[c + ax * LOOK_DEEP, slot["surf"] + 0.06]
     d = float(np.linalg.norm(aim[:2] - hand))
-    z = float(np.clip(aim[2] + d * math.tan(math.radians(LOOK_DOWN)) - CAM_UP, 0.50, 1.20))
+    z = float(np.clip(aim[2] + d * math.tan(math.radians(look_down)) - CAM_UP, 0.50, 1.20))
     down = math.degrees(math.atan2(z + CAM_UP - aim[2], d))
     pitch = float(np.clip(down - CAM_TILT, -25.0, 60.0))
     az = math.atan2(aim[1] - hand[1], aim[0] - hand[0])
@@ -544,8 +557,17 @@ def episode(
     p_o, R_o = sim.d.xpos[b].copy(), quat_mat(sim.d.xquat[b])
     z0_others = {s["object"]: sim.d.xpos[sim.m.body(s["object"]).id].copy() for s in layout["slots"]}
     look_fix = None
+    g_head = None
+    if HEAD_FIRST:  # the head camera looks first, at no cost: if it gives a grasp, the hand stays down
+        gh = HEAD_CACHE[k][slot["object"]]
+        if (
+            len(gh["score"])
+            and choose_grasp(slot, gh["tool"], gh["R"], gh["score"], gh["held"], p_o, R_o)[0] is not None
+        ):
+            g_head = gh
+        res["eye"] = "head" if g_head is not None else "hand"
     if (
-        HAND_LOOK
+        HAND_LOOK and g_head is None
     ):  # the look vision_grasp.py's wrist pass took: raise the hand, (the frame), back to standing; the pelvis
         # is followed by the leg odometry over it, and the grasp is placed from where the robot believes it stands now
         from locomani.backends.scalebfm import motor as MM
@@ -557,6 +579,10 @@ def episode(
             jf.anchor(pA, E.yaw_of(RA), MM.WRIST, MM.R.OFF)
         con.phase = "look"
         hand_look(env, slot)
+        if HAND_LOOK > 1 and m.fell_at is None:  # the second look, with the other hand
+            GR.home(m)
+            if m.fell_at is None:
+                hand_look(env, slot, view=1)
         if m.fell_at is None:
             if LOOK_HOME > 0:
                 GR.HOME_S = GR.HOME_SETTLE_S = LOOK_HOME
@@ -582,7 +608,7 @@ def episode(
             res["look_est_cm"] = (100 * (pe - pt)).round(3).tolist() + [
                 round(math.degrees(E.yaw_of(Re) - E.yaw_of(Rt)), 3)
             ]
-    g = cache[slot["object"]]
+    g = g_head if g_head is not None else cache[slot["object"]]
     i, info = choose_grasp(slot, g["tool"], g["R"], g["score"], g["held"], p_o, R_o)
     if i is None:
         return dict(res, declined="no grasp in range", success=False)
@@ -661,6 +687,22 @@ def episode(
                 e = ev
     else:
         e = np.zeros(3)
+    if (
+        RELOOK
+    ):  # the target looked at again from the stance: if it is in view, its grasp replaces the earlier one and is
+        # known relative to the body as it stands now, so the walk's estimate no longer matters
+        g2 = RELOOK_CACHE[k][slot["object"]]
+        i2, info2 = (None, None)
+        if len(g2["score"]):
+            i2, info2 = choose_grasp(slot, g2["tool"], g2["R"], g2["score"], g2["held"], p_o, R_o)
+        res["relook"] = i2 is not None
+        if i2 is not None:
+            g, i, info = g2, i2, info2
+            tool_w, R_w = p_o + R_o @ g["tool"][i], R_o @ g["R"][i]
+            if info["flip"]:
+                R_w = R_w @ np.diag([1.0, -1.0, -1.0])
+            e = np.r_[res["walk_err_cm"], math.degrees(yaw1 - yaw0)]
+            res.update(grasp=int(i), **info)
     # where the robot believes it stands, then the goal in that frame: the command is relative to the body
     pb, yb = walk[:2] + e[:2] / 100, math.radians(float(e[2]))
     Rb = E.rot_z(yb)
@@ -1077,18 +1119,19 @@ def episode(
 VISION = os.environ.get("ROOM_GRASP_VISION", "")  # "start": grasps from the head camera's point cloud (vision_grasp.py)
 
 
-def load_cache(layout: dict, k: int = 0) -> dict:
+def load_cache(layout: dict, k: int = 0, tag: str = "") -> dict:
     root = ROOM.GN / "scenes"
     out = {}
     for j, s in enumerate(layout["slots"]):
-        if VISION:  # GraspGen-X on what the head camera saw of this placement; nothing seen leaves no grasp
-            f = ROOM.OUT / "vision" / f"grasp_{VISION}_L{k}_s{j}.npz"
+        if tag or VISION:  # GraspGen-X on what the head camera saw of this placement; nothing seen leaves no grasp
+            f = ROOM.OUT / "vision" / f"grasp_{tag or VISION}_L{k}_s{j}.npz"
             z = np.load(f) if f.exists() else dict(tool=np.zeros((0, 3)), R=np.zeros((0, 3, 3)), score=np.zeros(0))
             n = len(z["score"])
             held = (
                 z["held"].astype(bool) if "held" in getattr(z, "files", ()) else np.ones(n, bool)
             )  # vision_validate.py
-            out[s["object"]] = dict(tool=z["tool"], R=z["R"], score=z["score"], held=held, width=np.full(n, 0.05))
+            tool = z["tool"] + VISION_DEEP * z["R"][:, :, 0] if n else z["tool"]  # further along the approach axis
+            out[s["object"]] = dict(tool=tool, R=z["R"], score=z["score"], held=held, width=np.full(n, 0.05))
             continue
         z = np.load(root / f"obj_{s['id']:03d}" / "grasp_cache.npz", allow_pickle=True)
         out[s["object"]] = dict(
@@ -1114,9 +1157,15 @@ def worker(wid: int, jobs: list, methods, tag: str) -> None:
     models = {"post": torch.load(AE.WM_POST, map_location="cpu", weights_only=False).eval(),
               "post_wkp": torch.load(WK.WALK_MODEL_POST, map_location="cpu", weights_only=False).eval()}  # fmt: skip
     for k, slots in by.items():
+        EYES.clear()  # the last layout's camera holds its environment, and with it a policy on the GPU
+        env = None
         env = ROOM.make_env(k)
         layout = json.load(open(ROOM.OUT / f"layout_{k}" / "layout.json"))
         cache = load_cache(layout, k)
+        if RELOOK:
+            RELOOK_CACHE[k] = load_cache(layout, k, RELOOK)
+        if HEAD_FIRST:
+            HEAD_CACHE[k] = load_cache(layout, k, HEAD_FIRST)
         rec = GR.Recorder(env)
         con = Contacts(env)
         odo = None

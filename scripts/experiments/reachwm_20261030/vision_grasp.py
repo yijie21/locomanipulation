@@ -120,72 +120,86 @@ def see(layouts: list[int], pose: str) -> None:
             for s in layout["slots"]:
                 m.place(s["object"], np.array(s["pos"]), np.array(s["quat"]))
             m.hold(1.0)
-            cam = "head_camera"
-            if pose.startswith(
-                "wrist"
-            ):  # the hand as the eye: the grasping side's wrist camera, aimed at the station's surface
-                from locomani.backends.scalebfm import motor as MM
+            n_views = (
+                2 if pose.startswith("wrist2") else 1
+            )  # wrist2…: a second look with the other hand, saved as <pose>v
+            for view in range(n_views):
+                name = pose + "v" * view
+                cam = "head_camera"
+                if pose.startswith(
+                    "wrist"
+                ):  # the hand as the eye: the grasping side's wrist camera, aimed at the station's surface
+                    from locomani.backends.scalebfm import motor as MM
 
-                pA, RA = env.pelvis()
-                jf.anchor(pA, RG.E.yaw_of(RA), MM.WRIST, MM.R.OFF)
-                cam, look = RG.hand_look(env, slot)
-                if look is None or m.fell_at is not None:
-                    rows.append(dict(layout=k, slot=j, station=slot["station"], surf=slot["surf"], depth=slot.get("depth"),
-                                     object=slot["object"], n_pix=0, dist=-1.0, centre_px=[-1, -1], centre_in=False, fell=True))  # fmt: skip
-                    continue
-            depth, seg, pc, Rc, fovy = frame(env, rd, rs, cam)
-            pc_true, est = pc.copy(), None
-            if pose.startswith("wrist"):  # the camera's pose from the joints and the leg odometry, not the simulator
-                side_ = cam.split("_")[0]
-                pj, Rw = jf.jaw(side_)
-                jf.on = False
-                cid = sm.camera(cam).id
-                Rl = np.zeros(9)
-                mujoco.mju_quat2Mat(Rl, sm.cam_quat[cid])
-                pc_e = pj - Rw @ MM.R.OFF + Rw @ sm.cam_pos[cid]
-                Rc_e = Rw @ Rl.reshape(3, 3) @ np.diag([1.0, -1.0, -1.0])
-                est = [100 * float(np.linalg.norm(pc_e - pc)),
-                       math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(Rc_e @ Rc.T) - 1) / 2))))]  # fmt: skip
-                Rc_sim, pc, Rc = Rc, pc_e, Rc_e
-            b = sm.body(slot["object"]).id
-            ids = np.array([g for g in range(sm.ngeom) if sm.body_rootid[sm.geom_bodyid[g]] == sm.body_rootid[b]])
-            mask = np.isin(seg, ids)
-            root = sm.body_rootid[sm.body("pelvis").id]
-            robot = np.isin(seg, np.array([g for g in range(sm.ngeom) if sm.body_rootid[sm.geom_bodyid[g]] == root]))
-            glass = np.isin(
-                seg,
-                np.array(
-                    [g for g in range(sm.ngeom) if GLASS.get(sm.body(int(sm.body_rootid[sm.geom_bodyid[g]])).name)]
-                    or [-9]
-                ),
-            )
-            crng = np.random.default_rng(7000 + 100 * k + j)
-            depth_rs = VD.realsense(depth, frame.right, fovy, crng, glass)
-            Rc_true = Rc_sim if est is not None else Rc.copy()
-            if CALIB:  # what a calibrated camera still carries: the depth's scale and the mounting angle
-                depth_rs = (depth_rs * (1.0 + crng.normal(0.0, CALIB_SCALE))).astype(np.float32)
-                Rc = mujoco_rot(crng.normal(0.0, math.radians(CALIB_DEG) / math.sqrt(3), 3)) @ Rc
-            pts = cloud(depth, mask, pc_true, Rc_true, fovy)
-            # how much of it the frame holds: the same object alone, nothing in front, against what is seen
-            p_o, R_o = env.sim.d.xpos[b].copy(), RG.quat_mat(env.sim.d.xquat[b])
-            cam_o = Rc_true.T @ (p_o - pc_true)
-            f = 0.5 * H / math.tan(math.radians(fovy) / 2)
-            uv = [W / 2 + f * cam_o[0] / cam_o[2], H / 2 + f * cam_o[1] / cam_o[2]] if cam_o[2] > 0 else [-1, -1]
-            inside = bool(0 <= uv[0] < W and 0 <= uv[1] < H)
-            rows.append(dict(layout=k, slot=j, station=slot["station"], surf=slot["surf"], depth=slot.get("depth"),
-                             object=slot["object"], n_pix=int(mask.sum()), dist=float(np.linalg.norm(p_o - pc_true)), cam_est=est,
-                             centre_px=[float(uv[0]), float(uv[1])], centre_in=inside, cam=cam))  # fmt: skip
-            rc.update_scene(env.sim.d, camera=cam)
-            img = rc.render().copy()
-            np.savez_compressed(OUT / f"see_{pose}_L{k}_s{j}.npz", pts=pts.astype(np.float32), p_o=p_o, R_o=R_o, cam_p=pc,
-                                cam_R=Rc, cam_R_true=Rc_true, cam_p_true=pc_true, fovy=fovy, depth=depth.astype(np.float32), mask=mask, rgb=img, robot=robot,
-                                depth_rs=depth_rs)  # fmt: skip
-            if j % 6 == 0:
-                from PIL import Image
+                    if view == 0:
+                        pA, RA = env.pelvis()
+                        jf.anchor(pA, RG.E.yaw_of(RA), MM.WRIST, MM.R.OFF)
+                    else:
+                        import gen_reach as GR
 
-                img[mask] = (0.5 * img[mask] + 0.5 * np.array([255, 40, 40])).astype(np.uint8)
-                Image.fromarray(img).save(OUT / f"see_{pose}_L{k}_s{j}.png")
-            print(k, j, slot["station"], slot["surf"], rows[-1]["n_pix"], inside, flush=True)
+                        GR.home(m)
+                    cam, look = RG.hand_look(env, slot, view=view) if m.fell_at is None else (None, None)
+                    if look is None or m.fell_at is not None:
+                        rows.append(dict(layout=k, slot=j, station=slot["station"], surf=slot["surf"], depth=slot.get("depth"),
+                                         object=slot["object"], n_pix=0, dist=-1.0, centre_px=[-1, -1], centre_in=False, fell=True))  # fmt: skip
+                        break
+                depth, seg, pc, Rc, fovy = frame(env, rd, rs, cam)
+                pc_true, est = pc.copy(), None
+                if pose.startswith(
+                    "wrist"
+                ):  # the camera's pose from the joints and the leg odometry, not the simulator
+                    side_ = cam.split("_")[0]
+                    pj, Rw = jf.jaw(side_)
+                    jf.on = view + 1 < n_views
+                    cid = sm.camera(cam).id
+                    Rl = np.zeros(9)
+                    mujoco.mju_quat2Mat(Rl, sm.cam_quat[cid])
+                    pc_e = pj - Rw @ MM.R.OFF + Rw @ sm.cam_pos[cid]
+                    Rc_e = Rw @ Rl.reshape(3, 3) @ np.diag([1.0, -1.0, -1.0])
+                    est = [100 * float(np.linalg.norm(pc_e - pc)),
+                           math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(Rc_e @ Rc.T) - 1) / 2))))]  # fmt: skip
+                    Rc_sim, pc, Rc = Rc, pc_e, Rc_e
+                b = sm.body(slot["object"]).id
+                ids = np.array([g for g in range(sm.ngeom) if sm.body_rootid[sm.geom_bodyid[g]] == sm.body_rootid[b]])
+                mask = np.isin(seg, ids)
+                root = sm.body_rootid[sm.body("pelvis").id]
+                robot = np.isin(
+                    seg, np.array([g for g in range(sm.ngeom) if sm.body_rootid[sm.geom_bodyid[g]] == root])
+                )
+                glass = np.isin(
+                    seg,
+                    np.array(
+                        [g for g in range(sm.ngeom) if GLASS.get(sm.body(int(sm.body_rootid[sm.geom_bodyid[g]])).name)]
+                        or [-9]
+                    ),
+                )
+                crng = np.random.default_rng(7000 + 100 * k + j)
+                depth_rs = VD.realsense(depth, frame.right, fovy, crng, glass)
+                Rc_true = Rc_sim if est is not None else Rc.copy()
+                if CALIB:  # what a calibrated camera still carries: the depth's scale and the mounting angle
+                    depth_rs = (depth_rs * (1.0 + crng.normal(0.0, CALIB_SCALE))).astype(np.float32)
+                    Rc = mujoco_rot(crng.normal(0.0, math.radians(CALIB_DEG) / math.sqrt(3), 3)) @ Rc
+                pts = cloud(depth, mask, pc_true, Rc_true, fovy)
+                # how much of it the frame holds: the same object alone, nothing in front, against what is seen
+                p_o, R_o = env.sim.d.xpos[b].copy(), RG.quat_mat(env.sim.d.xquat[b])
+                cam_o = Rc_true.T @ (p_o - pc_true)
+                f = 0.5 * H / math.tan(math.radians(fovy) / 2)
+                uv = [W / 2 + f * cam_o[0] / cam_o[2], H / 2 + f * cam_o[1] / cam_o[2]] if cam_o[2] > 0 else [-1, -1]
+                inside = bool(0 <= uv[0] < W and 0 <= uv[1] < H)
+                rows.append(dict(layout=k, slot=j, station=slot["station"], surf=slot["surf"], depth=slot.get("depth"),
+                                 object=slot["object"], n_pix=int(mask.sum()), dist=float(np.linalg.norm(p_o - pc_true)), cam_est=est,
+                                 centre_px=[float(uv[0]), float(uv[1])], centre_in=inside, cam=cam, view=view))  # fmt: skip
+                rc.update_scene(env.sim.d, camera=cam)
+                img = rc.render().copy()
+                np.savez_compressed(OUT / f"see_{name}_L{k}_s{j}.npz", pts=pts.astype(np.float32), p_o=p_o, R_o=R_o, cam_p=pc,
+                                    cam_R=Rc, cam_R_true=Rc_true, cam_p_true=pc_true, fovy=fovy, depth=depth.astype(np.float32), mask=mask, rgb=img, robot=robot,
+                                    depth_rs=depth_rs)  # fmt: skip
+                if j % 6 == 0:
+                    from PIL import Image
+
+                    img[mask] = (0.5 * img[mask] + 0.5 * np.array([255, 40, 40])).astype(np.uint8)
+                    Image.fromarray(img).save(OUT / f"see_{name}_L{k}_s{j}.png")
+                print(k, j, slot["station"], slot["surf"], rows[-1]["n_pix"], inside, flush=True)
     json.dump(rows, open(OUT / f"see_{pose}_{'_'.join(map(str, layouts))}.json", "w"))
 
 
