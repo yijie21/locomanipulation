@@ -57,7 +57,7 @@ class LegOdometry:
     def __init__(self, model: mujoco.MjModel, qadr: np.ndarray, vadr: np.ndarray, point: str = "sole",
                  mode: str = "height", pow_: float = LOAD_POW, switch_m: float = 0.002):  # fmt: skip
         """qadr, vadr: the qpos and dof address of each of the 29 joints in the controller's order (runtime.Sim).
-        point: the foot point taken as staying put, the ankle or the sole (centre of the foot's flat box); mode: "load"
+        point: the foot point taken as staying put, the ankle or the sole (centre of the foot's flat box or of its contact spheres); mode: "load"
         (weights ~ load^pow_, pow_ inf = the more loaded foot only) or "height" (the lower foot, switching when the other
         is lower by switch_m)."""
         assert model.jnt_type[0] == mujoco.mjtJoint.mjJNT_FREE and model.jnt_qposadr[0] == 0, (
@@ -67,9 +67,17 @@ class LegOdometry:
         self.qadr, self.vadr = np.asarray(qadr), np.asarray(vadr)
         self.point, self.mode, self.pow, self.switch_m = point, mode, pow_, switch_m
         self.ank = {s: model.body(f"{s}_ankle_roll_link").id for s in SIDES}
-        self.sole = {s: [g for g in range(model.ngeom) if model.geom_bodyid[g] == self.ank[s]
-                         and model.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX][0] for s in SIDES}  # fmt: skip
+        self.sole = {s: self._sole(model, self.ank[s]) for s in SIDES}
         self.jp, self.jr = np.zeros((3, model.nv)), np.zeros((3, model.nv))
+
+    @staticmethod
+    def _sole(model, body: int) -> list:
+        """The foot's sole geoms: its flat box, or on a model with point feet (SIMPLE's G1) its contact spheres."""
+        on = [g for g in range(model.ngeom) if model.geom_bodyid[g] == body]
+        box = [g for g in on if model.geom_type[g] == mujoco.mjtGeom.mjGEOM_BOX]
+        return box[:1] or [
+            g for g in on if model.geom_type[g] == mujoco.mjtGeom.mjGEOM_SPHERE and model.geom_contype[g]
+        ]
 
     def feet(self, q, tau, grav):
         """Both ankles in the level frame (2, 3) and their loads (2,) in N."""
@@ -83,7 +91,7 @@ class LegOdometry:
         f, load = np.zeros((2, 3)), np.zeros(2)
         for k, s in enumerate(SIDES):
             b = self.ank[s]
-            f[k] = L @ (d.xpos[b] if self.point == "ankle" else d.geom_xpos[self.sole[s]])
+            f[k] = L @ (d.xpos[b] if self.point == "ankle" else d.geom_xpos[self.sole[s]].mean(axis=0))
             mujoco.mj_jacBody(self.m, d, self.jp, self.jr, b)
             J = np.r_[self.jp, self.jr][:, self.vadr[LEGS[s]]]
             w = np.linalg.lstsq(J.T, np.asarray(tau, float)[LEGS[s]], rcond=None)[0]

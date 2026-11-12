@@ -17,6 +17,13 @@ from pathlib import Path
 import mujoco
 import numpy as np
 
+try:  # every episode is a scene of its own, ~180 MB compiled: keep them out of the runtime's model cache (an unwritable
+    import locomani.paths as _paths  # cache makes runtime.load_model compile without saving)
+
+    _paths.MJB_CACHE = "/dev/null/no_model_cache"
+except ImportError:  # listing episodes needs no runtime
+    pass
+
 REPO = Path(__file__).resolve().parents[3]
 SIMPLE = Path(os.environ.get("SIMPLE_ROOT", "/workspace/code/locomanipulation/third_party/SIMPLE"))
 OUT = Path(os.environ.get("SIMPLE_EVAL_OUT", REPO / "outputs" / "simple_eval_20261112"))
@@ -28,6 +35,10 @@ OBJ_PULL = (
 LIFT = {"XMovePickTeleop": 0.09, "XMoveBendPickTeleop": 0.09, "BendPickMP": 0.09, "TabletopGraspMP": 0.018}  # m
 
 
+AMO_PELVIS = (
+    0.785  # m, engines/mujoco.py: the ground lies this far under the AMO robot's layout height (robots/g1_wholebody.py)
+)
+RES = {"graspnet1b": "graspnet", "objects": "objects"}  # an asset's res_id -> its folder under data/assets
 HEAD_CAM = "head"
 HEAD_CAM_POS = [0.05366004 + 0.0039635, 0.01752999, 0.4738702 - 0.044]  # in torso_link
 HEAD_CAM_QUAT = [0.91496, 0.0, 0.40355, 0.0]  # the camera's x forward, z up frame in torso_link
@@ -70,18 +81,23 @@ def build(ep: dict, out: Path | None = None) -> dict:
     w.add_geom(name="ground", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[0, 0, 1], friction=[1.0, 0.005, 0.0001],
                rgba=[0.75, 0.75, 0.72, 1])  # fmt: skip
     info = dict(dir=str(out), objects={}, tables={})
+    lift = 0.0
+    if cfg["robot_cfg"]["uid"] != "g1_sonic":  # SIMPLE's AMO tasks put the table top at z 0 and the ground below it
+        t, r = cfg["layout"]["actors"]["table"], cfg["dr_state_dict"]["spatial"][cfg["robot_cfg"]["uid"]]
+        lift = AMO_PELVIS - r["position"][2] - (t["pose"]["position"][2] + 0.5 * t["size"][2])
+    info["lift"] = lift
     for key, a in cfg["layout"]["actors"].items():
-        pos, quat = a["pose"]["position"], a["pose"]["quaternion"]
+        pos, quat = list(a["pose"]["position"]), a["pose"]["quaternion"]
+        pos[2] += lift
         if a.get("uid") == "box":  # a table: a slab
             b = w.add_body(name=key, pos=pos, quat=quat)
             b.add_geom(name=f"{key}_geom", type=mujoco.mjtGeom.mjGEOM_BOX, size=0.5 * np.array(a["size"]), condim=6,
                        friction=[2, 0.04, 0.0005], priority=10, rgba=[0.72, 0.6, 0.42, 1])  # fmt: skip
             info["tables"][key] = dict(top=pos[2] + 0.5 * a["size"][2], pos=pos, size=a["size"], quat=quat)
-        elif "asset" in a and a["asset"].get("res_id") == "graspnet1b":
+        elif "asset" in a and a["asset"].get("res_id") in RES:  # an object, or the basket things are placed in
             label, uid = a["asset"]["label"], int(a["asset"]["uid"])
-            pieces = sorted(
-                glob.glob(str(SIMPLE / "data/assets/graspnet/models" / f"{uid:03d}" / "coacd_0.05" / "*.obj"))
-            )
+            models = SIMPLE / "data/assets" / RES[a["asset"]["res_id"]] / "models" / f"{uid:03d}" / "coacd_0.05"
+            pieces = sorted(glob.glob(str(models / "*.obj")))
             assert pieces, f"no collision pieces for object {uid}"
             b = w.add_body(name=label, pos=pos, quat=quat)
             for i, f in enumerate(pieces):

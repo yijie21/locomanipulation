@@ -275,6 +275,21 @@ BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/pick.py XMovePickTeleop --gras
 
 得到什么：`outputs/simple_eval_20261112/cloud/` 下每局一个点云和一个抓取文件。XMovePick 28 / 30，XMoveBendPick 30 / 30。三条合计约 10 分钟一个任务。
 
+**不读骨盆和手的真值。**
+
+`pick.py` 加 `--odo`：ScaleBFM 知道的骨盆位置、走完后机器人以为自己在哪、伺服读的手掌位置，都改成关节读数加腿部里程计。起点位姿读一次，只用来定坐标系。四个拿取任务各 30 局：XMovePick 28，XMoveBendPick、BendPickMP、TabletopGraspMP 都是 30。任务名写 BendPickMP 或 TabletopGraspMP 时，解压到 `x/BendPickMP` 和 `x/TabletopGraspMP`。
+
+**拿起、带走、放到篮子上。**
+
+```bash
+BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/place.py LocomotionPickBetweenTablesTeleop --odo
+BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/place.py HandoverTeleop --odo
+```
+
+做什么：前面看和出抓取两步照旧。第一个任务在桌 1 拿起饼干盒，转身走到约 2 米外的桌 2，把盒子立在篮子上松手；第二个任务拿起后向左横移，同样放到篮子上，没有做右手交左手，SIMPLE 对这个任务只检查盒子碰到篮子。篮子在碰撞里是封口的，东西进不去，所以放置就是立在口沿上。篮子的位置和口沿高度读仿真真值。
+
+得到什么：不加 `--odo` 时 25 / 30 和 23 / 30，加了是 9 / 30 和 18 / 30。转身加走 2 米后里程计和真实骨盆位置差 20 cm 左右。每局约 40 秒和 31 秒。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。
@@ -283,4 +298,5 @@ BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/pick.py XMovePickTeleop --gras
 - 成功数比预期低一大截：检查 `BFM_ROOT=odo` 和 `OMP_NUM_THREADS=1` 是否设了。模型是在腿部里程计下训练的，线程数会改变仿真结局。
 - 后台跑到 10 分钟被杀：用 `nohup setsid` 启动，不要用工具自带的后台模式。
 - 第一局和后面的局结果不一致：ScaleBFM 启动后第一次调用和之后不同，脚本已经先空跑一次，自己写新脚本时要照做。
+- SIMPLE 评测把磁盘写满：每一局是一个新场景，运行时会把编译好的模型存进 `/workspace/tmp/mjb_cache`，每个约 180 MB。`episodes.py` 已经在自己的进程里关掉这个缓存，自己写新脚本时要先导入它。
 - 伺服版本摔倒偏多：已知问题，5 到 9 局对 2 局，原因没查清。
