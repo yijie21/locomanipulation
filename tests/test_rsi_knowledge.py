@@ -480,7 +480,7 @@ class Consolidate(unittest.TestCase):
                                     "Wolf_1": {"type": "object", "affordance": {"one_hand": {"side_fits_deg": [[0, 30]]}}}})  # fmt: skip
         emitted = {**RC.affordance_columns(META, "pick_Wolf_1", START, [rec]), **RC.start_features(START, "pick_Wolf_1"),
                    **RC.graph_columns([rec])}  # fmt: skip
-        self.assertEqual(set(emitted) - allowed, set())
+        self.assertEqual(set(emitted) - allowed, {"start.seed"})  # the draw number is emitted but never a condition
 
     def test_graph_kinds_match_the_recorder(self):
         from locomani.tasks.scene import past as P

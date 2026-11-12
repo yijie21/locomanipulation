@@ -269,7 +269,7 @@ def graph_columns(records: list[dict]) -> dict:
 # what start_features and affordance_columns emit, graph_columns' `<kind>.*` columns and its round-level ones, and
 # row()'s failure_class. Not the `_flat` step columns (`<step>.*`, `events.*`): those are keyed by the skill's own step
 # names and exist in no other family. Kept beside the generators; tests check the generators emit nothing outside.
-START_COLUMNS = ("start.spawn_dist_m", "start.spawn_bearing_deg", "start.obj_z", "start.obj_yaw_deg", "start.seed",
+START_COLUMNS = ("start.spawn_dist_m", "start.spawn_bearing_deg", "start.obj_z", "start.obj_yaw_deg",  # not start.seed: a draw number carries nothing across scenes
                  "start.obj_height_m", "start.obj_min_width_m", "start.container", "start.obj_mass_kg",
                  "start.support_top_m", "start.grasp_z_m", "start.over_support_m", "start.side_fits_n")  # fmt: skip
 GRAPH_KINDS = ("walk", "turn", "sidestep", "posture", "hold", "reach", "grip", "release", "squeeze", "mixed")  # past.KIND_OF_CALL  # fmt: skip
