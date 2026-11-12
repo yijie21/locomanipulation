@@ -48,6 +48,7 @@ def _replay():
     spec.loader.exec_module(mod)
     return mod
 
+
 META = {
     "objects": {
         "Wolf_1": {"surface": "Shelf__1", "body": "Wolf_1_object", "box": {"half_extent": [0.034, 0.065, 0.0475]}, "container": False,
@@ -456,7 +457,10 @@ class Consolidate(unittest.TestCase):
 
     def test_validate_rejects_columns_outside_the_spec(self):
         """I5 (spec section 3.2): a skill-given step column never exists in another family."""
-        t = [dict(r, **{"pregrasp.jaw_err_cm": 1.0, "reach.at.err_cm": 2.0, "start.obj_mass_kg": 0.15}) for r in KN.evidence_table(MECH, ROWS)]
+        t = [
+            dict(r, **{"pregrasp.jaw_err_cm": 1.0, "reach.at.err_cm": 2.0, "start.obj_mass_kg": 0.15})
+            for r in KN.evidence_table(MECH, ROWS)
+        ]
         so = dict(SO, condition={"all": [{"feature": "pregrasp.jaw_err_cm", "op": ">=", "value": 0.5}]})
         entry, problems = KN.validate(so, t, MECH["flips"], NAMES)
         self.assertIsNone(entry)
@@ -623,6 +627,10 @@ class Hits(unittest.TestCase):
         self.assertNotIn("by_object", md)
         self.assertNotIn("positive on Wolf_1", md)
 
+    def test_render_hits_header_does_not_claim_verification(self):
+        md = KN.render_hits(KN.hits([ENTRY], ROWS[:5]), {ENTRY["id"]: ENTRY})
+        self.assertNotIn("verified", md)  # every entry is status=candidate
+
     def test_render_hits_without_hits_is_one_line(self):
         md = KN.render_hits([], {})
         self.assertEqual(md.strip().count("\n"), 0)
@@ -688,6 +696,16 @@ class Wiring(unittest.TestCase):
             hits_ = LP.named_objects(Path(d), names=set())
         self.assertEqual(len(hits_), 1)
         self.assertIn(LP.RECORDER_TAG, hits_[0])
+
+    def test_named_void_cites_rules_38_and_39_for_recorder_hits(self):
+        rows: list[dict] = []
+        orig = LP.ledger
+        LP.ledger = rows.append
+        try:
+            LP.named_void(1, [f"x.py:1 'HITS.md' {LP.RECORDER_TAG}"], "draft 1")
+        finally:
+            LP.ledger = orig
+        self.assertIn("rules.md 30 / 38 / 39", rows[0]["reason"])
 
     def test_hypothesis_schema_accepts_knowledge_refs(self):
         props = LP.HYPOTHESES_SCHEMA["properties"]["hypotheses"]["items"]["properties"]

@@ -272,7 +272,7 @@ def graph_columns(records: list[dict]) -> dict:
 START_COLUMNS = ("start.spawn_dist_m", "start.spawn_bearing_deg", "start.obj_z", "start.obj_yaw_deg", "start.seed",
                  "start.obj_height_m", "start.obj_min_width_m", "start.container", "start.obj_mass_kg",
                  "start.support_top_m", "start.grasp_z_m", "start.over_support_m", "start.side_fits_n")  # fmt: skip
-GRAPH_KINDS = ("walk", "turn", "sidestep", "posture", "hold", "reach", "grip", "release", "squeeze", "mixed")  # past.KIND_OF_CALL
+GRAPH_KINDS = ("walk", "turn", "sidestep", "posture", "hold", "reach", "grip", "release", "squeeze", "mixed")  # past.KIND_OF_CALL  # fmt: skip
 GRAPH_SUFFIXES = ("beside.gap_m", "beside.side", "beside.n", "blocking.depth_m", "blocking.what", "blocking.role",
                   "above.gap_m", "near_edge.dist_m", "near_edge.edge", "dist_m", "facing_deg", "reach_vec.fwd",
                   "reach_vec.out", "reach_vec.z", "at.err_cm", "approach.side", "moved_before_grip",

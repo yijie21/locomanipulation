@@ -60,6 +60,14 @@ def flip_key(version: str | None, label: str) -> str:
     return f"{version}:{label}"
 
 
+def _note_flips(flips: dict[str, str], version: str | None, res: dict) -> None:
+    """A probe result's or a draft's fixed / broken labels, under the incumbent version they were measured against
+    (none without a known version); a later note of the same key wins."""
+    if version:
+        flips.update({flip_key(version, x): "fixed" for x in res.get("fixed") or []})
+        flips.update({flip_key(version, x): "broken" for x in res.get("broken") or []})
+
+
 def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
     """One dict per mechanism (module docstring): hypotheses linked by the Manager's `repeats`, their probe and draft
     flips, the gate's verdict on their drafts. Mechanisms with no flip and no gate verdict are left out. `flips` is
@@ -106,21 +114,15 @@ def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
             inc = (jload(loop / f"iter_{n:02d}" / "reviewer_context.json", {}) or {}).get("incumbent") or {}
             if inc.get("hash"):
                 incumbent[n] = inc["hash"]
-
-            def note(fixed, broken, v=inc.get("hash")):
-                if v:
-                    flips.update({flip_key(v, x): "fixed" for x in fixed or []})
-                    flips.update({flip_key(v, x): "broken" for x in broken or []})
-
             for r in by_iter[n]:
                 if r.get("step") == "probe":
                     for p in r.get("results") or []:
                         if (n, p.get("id")) in ids:
-                            note(p.get("fixed"), p.get("broken"))
+                            _note_flips(flips, inc.get("hash"), p)
             cands = [c for c in jload(loop / f"iter_{n:02d}" / "candidates.json", []) or []
                      if isinstance(c, dict) and (n, c.get("hypothesis")) in ids]  # fmt: skip
             for c in cands:
-                note(c.get("fixed"), c.get("broken"))
+                _note_flips(flips, inc.get("hash"), c)
                 drafts.append(
                     dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or "")
                 )
@@ -614,7 +616,7 @@ def render_hits(hs: list[dict], by_id: dict[str, dict]) -> str:
     if not hs:
         return "no entry's condition holds on this incumbent's diagnostic rounds\n"
     lines = ["# Knowledge entries whose condition holds on this incumbent's diagnostic rounds", "",
-             "Other families' loops verified these directions in situations like the rounds listed; this family's rounds decide. "
+             "Candidate entries from other loops whose condition holds on the rounds listed; what worked there is a hypothesis here, this family's rounds decide. "
              "Cite an entry you use by its id in `knowledge_refs`.", ""]  # fmt: skip
     tail = []
     for h in hs:

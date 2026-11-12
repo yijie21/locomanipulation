@@ -2409,12 +2409,12 @@ RECORDER_TOKENS = (
     "rsi/knowledge",
     "knowledge_hits",
     "HITS.md",
-)  # strings a skill has no business holding (rules.md 38)
+)  # strings a skill has no business holding (rules.md 38 / 39)
 RECORDER_TAG = "(rules.md 38 / 39)"
 
 
 def named_void(n: int, named: list[str], what: str) -> None:
-    rules = "rules.md 30" if not any(RECORDER_TAG in x for x in named) else "rules.md 30 / 38"
+    rules = "rules.md 30" if not any(RECORDER_TAG in x for x in named) else "rules.md 30 / 38 / 39"
     ledger(dict(step="gate", iter=n, accepted=False, void=True, named_objects=named,
                 reason=f"{what} branches on object names or reads the recorder ({rules}): {', '.join(named[:6])}"))  # fmt: skip
 
