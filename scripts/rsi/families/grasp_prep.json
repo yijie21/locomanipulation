@@ -59,6 +59,8 @@
    "scripts/rsi/design.py",
    "scripts/rsi/try.py",
    "scripts/rsi/experience",
+   "scripts/rsi/knowledge.py",
+   "scripts/rsi/knowledge",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",
    "tests/conftest.py",

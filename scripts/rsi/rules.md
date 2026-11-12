@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 24, 2026-11-07)
+# Rules for the scene RSI loop (TODO 27, version 25, 2026-11-11)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -266,3 +266,13 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     evidence that a change should stay (rule 7). Entities enter a record by relevance (roles, neighbours within
     0.30 m, furniture in the stance footprint or the approach corridor, surfaces within 0.5 m above the target,
     regions), not by contact; a value the recorder could not compute is `unknown`, never false.
+39. The knowledge library (plan docs/handoff/shared-knowledge-plan-20261111.md; version 25). `scripts/rsi/knowledge.py
+    build` turns a finished family's ledger and scene-graph records into entries: a condition over record-library
+    columns, the failure signature it goes with, what repaired it and what did not, and the per-object evidence;
+    the driver scopes each entry `shared` (held and helped on two or more objects) or `local` (one object, or
+    narrowed to the positive objects' start.* ranges) and never by an object's name (rule 30's check runs on the
+    entry's text). Before each Reviewer the driver evaluates every entry on the incumbent's diagnostic rounds and
+    writes the ones that hold to scripts/rsi/knowledge/HITS.md (prompt: what worked elsewhere is a hypothesis
+    here; this family's rounds decide; cite an entry's id in `knowledge_refs`). The skills package may not read it:
+    a draft whose skills code names `rsi/knowledge`, `knowledge_hits` or `HITS.md` is void, as rule 38's recorder
+    (code: loop.py named_objects). The library never enters the gate, the sentinel or the regression.

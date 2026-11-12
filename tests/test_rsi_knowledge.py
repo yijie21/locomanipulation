@@ -3,6 +3,7 @@ clustering, evidence tables, condition evaluation and scope, the Consolidator's 
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 import tempfile
@@ -14,6 +15,31 @@ sys.path.insert(0, str(REPO / "scripts" / "rsi"))
 
 import knowledge as KN  # noqa: E402
 import records as RC  # noqa: E402
+
+_sb = importlib.util.spec_from_file_location("rsi_sandbox", REPO / "scripts" / "rsi" / "sandbox.py")
+sandbox = importlib.util.module_from_spec(_sb)
+_sb.loader.exec_module(sandbox)
+
+
+def _scene_loop():
+    """scripts/rsi/loop.py under a private name; the modules it pulls in (batch, loop, ...) share their names with the
+    scalebfm experiment's, so they are put back out of sys.modules afterwards."""
+    names = ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "design", "sealed", "loop")
+    saved = {k: sys.modules.pop(k, None) for k in names}
+    spec = importlib.util.spec_from_file_location("rsi_scene_loop_knowledge", REPO / "scripts" / "rsi" / "loop.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    try:
+        spec.loader.exec_module(mod)
+    finally:
+        for k, v in saved.items():
+            sys.modules.pop(k, None)
+            if v is not None:
+                sys.modules[k] = v
+    return mod
+
+
+LP = _scene_loop()
 
 META = {
     "objects": {
@@ -570,6 +596,39 @@ class Hits(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(KN.write_hits(Path(d), Path(d), Path(d) / "it", "fam"), 0)
             self.assertFalse((Path(d) / "it").exists())
+
+
+class Wiring(unittest.TestCase):
+    def test_knowledge_without_drops_own_and_excluded_families(self):
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d)
+            for fam in ("fam", "old", "keep_me"):
+                (dest / "scripts/rsi/knowledge" / fam).mkdir(parents=True)
+                (dest / "scripts/rsi/knowledge" / fam / "e.json").write_text(json.dumps(dict(ENTRY, id=f"{fam}/e")))
+            (dest / "scripts/rsi/families").mkdir(parents=True)
+            (dest / "scripts/rsi/families/fam.json").write_text(json.dumps({"library_exclude": ["old"]}))
+            sandbox.knowledge_without(dest, "fam")
+            left = sorted(p.name for p in (dest / "scripts/rsi/knowledge").iterdir() if p.is_dir())
+        self.assertEqual(left, ["keep_me"])
+
+    def test_knowledge_without_is_a_no_op_without_the_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            sandbox.knowledge_without(Path(d), "fam")  # no raise
+
+    def test_skills_may_not_name_the_knowledge_library(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "x.py").write_text('P = "scripts/rsi/knowledge/HITS.md"\n')
+            hits_ = LP.named_objects(Path(d), names=set())
+        self.assertEqual(len(hits_), 1)
+        self.assertIn(LP.RECORDER_TAG, hits_[0])
+
+    def test_hypothesis_schema_accepts_knowledge_refs(self):
+        props = LP.HYPOTHESES_SCHEMA["properties"]["hypotheses"]["items"]["properties"]
+        self.assertEqual(props["knowledge_refs"], {"type": "array", "items": {"type": "string"}})
+
+    def test_knowledge_note_names_the_hits_file(self):
+        self.assertIn("HITS.md", LP.KNOWLEDGE_NOTE)
+        self.assertIn("knowledge_refs", LP.KNOWLEDGE_NOTE)
 
 
 if __name__ == "__main__":

@@ -165,6 +165,25 @@ def library_without(dest: Path, family: str) -> None:
     reflect.index(lib)
 
 
+def knowledge_without(dest: Path, family: str) -> None:
+    """The sandbox's knowledge library (scripts/rsi/knowledge, plan docs/handoff/shared-knowledge-plan-20261111.md)
+    without `family`'s own entries and those of the family file's `library_exclude`; nothing when it holds none.
+    HITS.md is written by the loop before each Reviewer (knowledge.write_hits)."""
+    lib = dest / "scripts" / "rsi" / "knowledge"
+    if not lib.is_dir():
+        return
+    fam_file = dest / "scripts" / "rsi" / "families" / f"{family}.json"
+    fam = json.loads(fam_file.read_text()) if fam_file.exists() else {}
+    for name in [family, *fam.get("library_exclude", [])]:
+        if (lib / name).is_dir():
+            shutil.rmtree(lib / name)
+    (lib / "HITS.md").unlink(missing_ok=True)
+    mod = importlib.util.spec_from_file_location("rsi_knowledge", HERE / "knowledge.py")
+    kn = importlib.util.module_from_spec(mod)
+    mod.loader.exec_module(kn)
+    kn.index(lib)
+
+
 def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in)."""
     if dest.exists():
@@ -175,6 +194,7 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     spec = apply_spec(dest, family)
     default_strip(dest)
     library_without(dest, family)
+    knowledge_without(dest, family)
     hide_seeds(dest, family)
     links = [(rel, REPO / rel) for rel in LINKS]
     if spec.get("scene_exclude") is not None:

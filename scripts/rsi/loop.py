@@ -198,6 +198,12 @@ LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience libr
     "entry's numbers come from other objects and surfaces: they are hypotheses for this family, to check on these "
     "rounds, and where this family's rounds disagree, trust the rounds.\n"
 )
+KNOWLEDGE_NOTE = (  # plan docs/handoff/shared-knowledge-plan-20261111.md section 5.3
+    "The knowledge library's hits, scripts/rsi/knowledge/HITS.md: entries (condition -> failure signature -> repair) "
+    "from other families' finished loops whose condition holds on this incumbent's diagnostic rounds, each with the "
+    "rounds it hits, what worked and what did not elsewhere. Nothing listed means no condition holds. An entry's "
+    "numbers come from other objects: a hypothesis built on one cites its id in `knowledge_refs`.\n"
+)
 SCOPES = {  # TODO 32.11 (Harness2's scoped proposals): each scoped Reviewer gives at most two hypotheses in its scope
     "P": "YOUR SCOPE: HOW THE ROBOT DOES IT. You own the skill's procedure -- the order and timing of walk, stance, reach, "
     "grip, lift and hold, the tolerances and when a step counts as done, mode switches, approach paths, retries and "
@@ -298,6 +304,7 @@ HYPOTHESES_SCHEMA = {
                     },
                     "predicted_fixed": {"type": "array", "items": {"type": "string"}},
                     "predicted_broken": {"type": "array", "items": {"type": "string"}},
+                    "knowledge_refs": {"type": "array", "items": {"type": "string"}},  # knowledge library entry ids
                 },
             },
         },
@@ -406,7 +413,8 @@ def prompt_vars() -> dict:
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
-        LIBRARY=LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "",
+        LIBRARY=(LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "")
+        + (KNOWLEDGE_NOTE if (HERE / "knowledge" / "HITS.md").exists() else ""),
     )
 
 
@@ -1543,6 +1551,14 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
+    try:  # plan docs/handoff/shared-knowledge-plan-20261111.md section 5.1: the knowledge library's hits for this incumbent
+        import knowledge as KN
+
+        n_hits = KN.write_hits(REPO, base, it_dir, FAMILY, LOOP / "pool_diag")
+        if n_hits:
+            ledger(dict(step="knowledge", iter=n, hits=n_hits))
+    except Exception as e:  # a library bug never stops an iteration
+        ledger(dict(step="knowledge", iter=n, error=f"{type(e).__name__}: {e}"[:200]))
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
     attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
@@ -2377,8 +2393,15 @@ def named_objects(skills: Path, names: set[str] | None = None) -> list[str]:
     return hits
 
 
-RECORDER_TOKENS = ("past.jsonl", "rsi/past.py", "scene.past")  # strings a skill has no business holding (rules.md 38)
-RECORDER_TAG = "(rules.md 38)"
+RECORDER_TOKENS = (
+    "past.jsonl",
+    "rsi/past.py",
+    "scene.past",
+    "rsi/knowledge",
+    "knowledge_hits",
+    "HITS.md",
+)  # strings a skill has no business holding (rules.md 38)
+RECORDER_TAG = "(rules.md 38 / 39)"
 
 
 def named_void(n: int, named: list[str], what: str) -> None:
