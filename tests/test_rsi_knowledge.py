@@ -202,5 +202,47 @@ class Mechanisms(unittest.TestCase):
         self.assertTrue(all("pick_Ghost_1_s9" not in m["flips"] for m in ms))
 
 
+def diag_row(label, task, ok, skills, **cols):
+    return dict(label=label, task=task, ok=int(ok), skills=skills, **cols)
+
+
+ROWS = [
+    diag_row("pick_Wolf_1_s1", "pick_Wolf_1", False, "inc0", **{"start.support_top_m": 0.84, "walk.blocking.role": "own_support"}),
+    diag_row("pick_Wolf_1_s2", "pick_Wolf_1", False, "inc0", **{"start.support_top_m": 0.84, "walk.blocking.role": "own_support"}),
+    diag_row("pick_Wolf_1_s9", "pick_Wolf_1", True, "inc0", **{"start.support_top_m": 0.84, "walk.blocking.role": "other_furniture"}),
+    diag_row("pick_Plant4_1_s3", "pick_Plant4_1", True, "inc0", **{"start.support_top_m": 1.08, "walk.blocking.role": "own_support"}),
+    diag_row("pick_Mug_2_s5", "pick_Mug_2", False, "inc0", **{"start.support_top_m": 0.72}),
+    diag_row("pick_Wolf_1_s1", "pick_Wolf_1", True, "inc1", **{"start.support_top_m": 0.84}),  # another version: out
+]  # fmt: skip
+MECH = dict(slug="H1_hang", ids=[(0, "H1_hang")], claims=["c"], insteads=["i"], incumbent={0: "inc0"},
+            flips={"pick_Wolf_1_s1": "fixed", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"},
+            drafts=[], gate=None)  # fmt: skip
+
+
+class Evidence(unittest.TestCase):
+    def test_table_keeps_the_flipped_tasks_under_the_incumbent_version(self):
+        t = KN.evidence_table(MECH, ROWS)
+        self.assertEqual(
+            sorted(r["label"] for r in t), ["pick_Plant4_1_s3", "pick_Wolf_1_s1", "pick_Wolf_1_s2", "pick_Wolf_1_s9"]
+        )
+        flips = {r["label"]: r["flip"] for r in t}
+        self.assertEqual(flips["pick_Wolf_1_s9"], "unchanged")
+        self.assertEqual(flips["pick_Plant4_1_s3"], "broken")
+
+    def test_rank_columns_numeric_and_categorical(self):
+        ranked = {c["col"]: c for c in KN.rank_columns(KN.evidence_table(MECH, ROWS))}
+        self.assertEqual(ranked["walk.blocking.role"]["kind"], "cat")
+        self.assertEqual(ranked["walk.blocking.role"]["flipped"], {"own_support": 3})
+        self.assertEqual(ranked["start.support_top_m"]["kind"], "num")
+        self.assertEqual(len(ranked["start.support_top_m"]["flipped"]), 2)
+
+    def test_render_evidence_names_the_mechanism_and_the_flips(self):
+        t = KN.evidence_table(MECH, ROWS)
+        md = KN.render_evidence(MECH, t, KN.rank_columns(t))
+        self.assertIn("H1_hang", md)
+        self.assertIn("pick_Plant4_1_s3", md)
+        self.assertIn("walk.blocking.role", md)
+
+
 if __name__ == "__main__":
     unittest.main()
