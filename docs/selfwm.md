@@ -217,6 +217,26 @@ $PY $R/vision_merge.py $GRASP_ROOM_OUT/vision --a wb2 --b wb2v --tag wb2m
 
 评测加 `ROOM_GRASP_HAND_LOOK=2`。开发集 105 对 103，没有增益。
 
+**可选，上游 VLM 指点。**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 $S3 -s $R/vision_point.py $GRASP_ROOM_OUT --objects $GRASP_ROOM_OBJECTS/objects.json \
+    --wrist wristb100 --head look100 --tag wbp
+```
+
+做什么：认出“左数第几个”是上游 VLM 的事，它在能看到整排物体的头部画面里给一个像素。这里直接给这个像素：头部相机看得到目标时取目标上的一点，看不到时取腕部画面里的一点。头部像素加深度得到一个三维点，腕部画面里 SAM 3 的候选中离它 6 cm 以内最近的那个就是目标，没有就在那个位置按深度切一块。SAM 3 服务要开着，头部和腕部的前两步要先跑过。之后第三步和评测照旧，标签用 wbp。
+
+得到什么：`vision/see_wbp_L*_s*.npz`、`vision/seg_wbp.json`。找对 202 个，原来是 185 个。成功数开发集 114 对 103，验收集 106 对 100，合起来 34 好 17 坏。
+
+**对照，两只眼睛互相核对。**
+
+```bash
+CUDA_VISIBLE_DEVICES=0 HF_HUB_OFFLINE=1 $S3 -s $R/vision_agree.py $GRASP_ROOM_OUT --objects $GRASP_ROOM_OBJECTS/objects.json \
+    --a wb100 --b lk100 --see-b look100 --tag wbx
+```
+
+做什么：腕部和头部各自认目标。两片点云中心在 6 cm 以内就用腕部的；不一致时把两个候选在头部画面里框出来编号，让 Qwen3-VL 选。两眼一致时 98 % 是对的，可以当置信度用；不一致时 Qwen3-VL 选不准，整体没有增益。
+
 **验收集。**
 
 ```bash
@@ -226,7 +246,22 @@ export GRASP_ROOM_OUT=$I/grasp_room_hard_ho
 
 做什么：换种子重新摆 7 个房间。之后所有命令不变。
 
-## 7. 常见错误
+## 7. SIMPLE 评测集
+
+SIMPLE 是别人的基准，机器人用它官方的 G1 加 Dex3 三指手，不用我们的 mars 加 Dex1。HITCH 论文在它的六个任务上各跑 30 局。
+
+```bash
+D=outputs/simple_eval_20261112
+huggingface-cli download USC-PSI-Lab/psi-data --repo-type dataset --include "simple-eval/*" --local-dir $D/dl
+for t in XMovePickTeleop XMoveBendPickTeleop; do mkdir -p $D/x/$t && unzip -q $D/dl/simple-eval/G1Wholebody$t-v0.zip -d $D/x/$t; done
+BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY scripts/experiments/simple_eval_20261112/pick.py XMovePickTeleop --side right --stand 0.27
+```
+
+做什么：前三行下载官方评测局并解开两个拿取任务，全部约 51 MB。`episodes.py` 把每一局的桌子、目标和干扰物体重建成 ScaleBFM 能加载的场景，机器人、物体质量和摩擦、求解器设置照 SIMPLE 的代码，需要 main 的 `third_party/SIMPLE`。`pick.py` 走过去，用 SIMPLE 自带的那一个 Dex3 抓取伸手、合三指、抬 15 cm。成功判定是 SIMPLE 的：目标升高 9 cm。物体位姿和手的位置都读仿真真值，这是带特权的基准。
+
+得到什么：每局一行，最后一行是成功数。XMovePick 站位参数 0.27 时 30 局全成，0.30 时 25 局；XMoveBendPick 在 0.30 时 30 局全成。每局 12 到 14 秒，约 8 分钟跑完一个任务。
+
+## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。
 - SAM 3 服务用 18832 端口，18822 是视觉线的，不要占。

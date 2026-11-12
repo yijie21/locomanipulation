@@ -207,7 +207,10 @@ class Motor:
         self.jacobian = jacobian
         self.track = {n: sim.m.body(n).id for n in track}
         self.foot_bodies = {sim.m.body(ANKLE[s]).id for s in SIDES}
-        self.fingers = {s: tuple(sim.m.body(n).id for n in FINGERS[s]) for s in SIDES}
+        fingers = (
+            FINGERS if sim.hand == "dex1" else {s: (f"{s}_hand_thumb_2_link", f"{s}_hand_index_1_link") for s in SIDES}
+        )
+        self.fingers = {s: tuple(sim.m.body(n).id for n in fingers[s]) for s in SIDES}
         self.k = 0
         self.mode: int | None = None  # set (and sent to the policy) by the first primitive
         self.ref = None  # callable t -> Pose
@@ -386,7 +389,7 @@ class Motor:
         """One 50 Hz step on the current reference. False once the robot has fallen (the step is not taken)."""
         sim = self.sim
         fut = self._futures()
-        sim.grip_target[:] = np.repeat(self.jaw, 2)
+        sim.set_jaw(self.jaw)
         if sim.fallen():
             self.fell_at = self.t if self.fell_at is None else self.fell_at
             return False

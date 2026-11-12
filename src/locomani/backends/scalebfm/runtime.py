@@ -37,6 +37,15 @@ FK_XML = os.path.join(ROOT, "assets/scalebfm/g1_29dof_fk.xml")
 TOP_Z = 0.085
 OFF = np.array([0.1515, 0.0, 0.0])  # wrist frame -> pad centre (dex1)
 GRIP_OPEN, GRIP_CLOSED = 0.0245, -0.023
+# Dex3 (SIMPLE's g1_sonic robot): 7 joints a hand, our PD with SIMPLE's gains and its power-grasp pose
+# (third_party/SIMPLE/src/simple/robots/g1_sonic.py). A jaw command maps to a closure in [0, 1] between open and that pose.
+DEX3_JOINTS = ("thumb_0", "thumb_1", "thumb_2", "index_0", "index_1", "middle_0", "middle_1")
+DEX3_KP, DEX3_KD = np.array([5.0, 5.0, 5.0, 2.5, 2.5, 2.5, 2.5]), 1.0
+DEX3_CLOSE = {
+    "left": np.array([0.3523, -0.0964, 0.2790, -0.5058, -1.1950, -0.5389, -0.9835]),
+    "right": np.array([0.0233, -0.0240, -0.2217, 0.2566, 1.3371, 0.3085, 0.9805]),
+}
+JAW_SHUT = -0.06  # the jaw command that means fully closed (MotorConfig.jaw_close)
 # gripper PD (ctrl units x gear 250 N). The joint itself clamps actuator force at +-20 N (actuatorfrcrange),
 # so GRIP_CLIP above 0.08 is inert and kp 40 saturates beyond 2 mm error: the 87 g finger limit-cycles
 # (+-6.5 mm sd at rest with kd 1.0) and the asymmetric close flicks the bottle out. A/B on run_bottle.py,
@@ -149,19 +158,24 @@ class Sim:
         self.kd = np.asarray(meta["damping"], dtype=float)
         self.tlim = np.asarray(meta["torque_limit"], dtype=float)
         self.default = np.asarray(meta["default_dof_pos"], dtype=float)
-        gj = [
-            mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, n)
-            for n in (
-                "left_hand_gripper_1_joint",
-                "left_hand_gripper_2_joint",
-                "right_hand_gripper_1_joint",
-                "right_hand_gripper_2_joint",
-            )
-        ]
+        gnames = (
+            "left_hand_gripper_1_joint",
+            "left_hand_gripper_2_joint",
+            "right_hand_gripper_1_joint",
+            "right_hand_gripper_2_joint",
+        )
+        self.hand = "dex1" if mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, gnames[0]) >= 0 else "dex3"
+        if self.hand == "dex3":
+            gnames = tuple(f"{s}_hand_{j}_joint" for s in ("left", "right") for j in DEX3_JOINTS)
+        gj = [mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, n) for n in gnames]
+        assert min(gj) >= 0, "hand joint missing in the scene"
         self.gq = np.array([self.m.jnt_qposadr[j] for j in gj])
         self.gv = np.array([self.m.jnt_dofadr[j] for j in gj])
         self.gact = np.array([next(a for a in range(self.m.nu) if self.m.actuator_trnid[a, 0] == j) for j in gj])
-        self.grip_target = np.full(4, GRIP_OPEN)
+        self.hand_open = np.full(4, GRIP_OPEN) if self.hand == "dex1" else np.zeros(14)
+        self.grip_target = self.hand_open.copy()
+        self.fingers_cmd: dict = {}  # dex3: side -> 7 joint targets, set by the caller, cleared by reset
+        self.glim = self.m.actuator_ctrlrange[self.gact, 1]  # dex3: the finger motors' torque limit
         self.grip_clip = self.cfg.grip_clip  # ctrl clamp on the gripper PD (config.py); callers may lower it per round
         self.bid = {
             n: mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, n)
@@ -204,7 +218,7 @@ class Sim:
         self.d.qpos[:3] = [spawn_xy[0], spawn_xy[1], PELVIS_Z + 0.02]
         self.d.qpos[3:7] = [np.cos(spawn_yaw / 2), 0, 0, np.sin(spawn_yaw / 2)]
         self.d.qpos[self.qadr] = self.default
-        self.d.qpos[self.gq] = GRIP_OPEN
+        self.d.qpos[self.gq] = self.hand_open
         if self.crate_b is not None:
             c = self.crate0.copy()
             c[1] += crate_dy
@@ -212,7 +226,8 @@ class Sim:
             self.d.qpos[self.crate_q + 3 : self.crate_q + 7] = self.crate_quat0
         self.d.ctrl[:] = 0
         mujoco.mj_forward(self.m, self.d)
-        self.grip_target[:] = GRIP_OPEN
+        self.grip_target[:] = self.hand_open
+        self.fingers_cmd.clear()
         if self.pert is not None:
             self.pert.redraw()
             self.pert.queue.clear()
@@ -234,6 +249,16 @@ class Sim:
             st["dof_pos"] = self.pert.noisy("q", st["dof_pos"])
             st["dof_vel"] = self.pert.noisy("dq", st["dof_vel"])
         return st
+
+    def set_jaw(self, jaw) -> None:
+        """The two sides' jaw commands (left, right) as hand joint targets."""
+        if self.hand == "dex1":
+            self.grip_target[:] = np.repeat(jaw, 2)
+            return
+        c = np.clip((GRIP_OPEN - np.asarray(jaw, float)) / (GRIP_OPEN - JAW_SHUT), 0.0, 1.0)
+        self.grip_target[:7], self.grip_target[7:] = c[0] * DEX3_CLOSE["left"], c[1] * DEX3_CLOSE["right"]
+        for side, q in self.fingers_cmd.items():  # a grasp's own finger joints replace the closure
+            self.grip_target[7 * (side == "right") :][:7] = q
 
     def body(self, name):
         b = self.bid[name]
@@ -260,11 +285,18 @@ class Sim:
             q_cmd = tgt if self.pert is None else self.pert.delayed(np.asarray(tgt, dtype=float).copy())
             tau = gain * self.kp * (q_cmd - d.qpos[self.qadr]) - gain * self.kd * d.qvel[self.vadr]
             d.ctrl[self.act] = np.clip(tau, -self.tlim, self.tlim)
-            d.ctrl[self.gact] = np.clip(
-                self.cfg.grip_kp * (self.grip_target - d.qpos[self.gq]) - self.cfg.grip_kd * d.qvel[self.gv],
-                -self.grip_clip,
-                self.grip_clip,
-            )
+            if self.hand == "dex1":
+                d.ctrl[self.gact] = np.clip(
+                    self.cfg.grip_kp * (self.grip_target - d.qpos[self.gq]) - self.cfg.grip_kd * d.qvel[self.gv],
+                    -self.grip_clip,
+                    self.grip_clip,
+                )
+            else:
+                d.ctrl[self.gact] = np.clip(
+                    np.tile(DEX3_KP, 2) * (self.grip_target - d.qpos[self.gq]) - DEX3_KD * d.qvel[self.gv],
+                    -self.glim,
+                    self.glim,
+                )
             mujoco.mj_step(self.m, d)
 
     def push(self, force, seconds: float = 0.2) -> None:

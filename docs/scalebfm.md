@@ -78,7 +78,7 @@ third_party/Isaac-GR00T/.venv/bin/python -m locomani.tasks.bottle_visual.pipelin
 | 文件 | 作用 |
 |---|---|
 | `network.py` | vendor 的 ScaleBFM transformer,eager torch,不需要 TensorRT |
-| `runtime.py` | `Sim`:我们的 MuJoCo 场景 + ScaleBFM 的 PD(200 Hz,decimation 4,增益/力矩限幅来自 metadata)+ 我们自己的 dex1 夹爪 PD;`Policy`:拼 9 个 tensor 的观测、history 3 帧、mode 2;`Refs`:骨盆 / 手参考 → 未来 6 帧 |
+| `runtime.py` | `Sim`:我们的 MuJoCo 场景 + ScaleBFM 的 PD(200 Hz,decimation 4,增益/力矩限幅来自 metadata)+ 手的 PD:模型里有 dex1 关节就是 dex1 夹爪,否则是 Dex3 三指手(每只手 7 个关节,`fingers_cmd` 直接给目标);`Policy`:拼 9 个 tensor 的观测、history 3 帧、mode 2;`Refs`:骨盆 / 手参考 → 未来 6 帧 |
 | `action.py` | 29 维原生动作 codec(§6),`encode_action` / `decode_action` |
 | `executor.py` | `ActionExecutor`:25 Hz 动作 → 50 Hz 控制,每行保持两个 tick;采集与部署共用 |
 | `chunks.py` | `ChunkScheduler`:带延迟的 action chunk 切换(部署用) |
