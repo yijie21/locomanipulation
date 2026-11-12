@@ -178,9 +178,12 @@ class Mechanisms(unittest.TestCase):
     def test_flips_merge_probe_and_drafts_last_wins(self):
         with tempfile.TemporaryDirectory() as d:
             m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)))}["H1_hang"]
+        # keyed by the incumbent the flip was measured against: iteration 0 ran on inc0, iteration 1 on inc1
         self.assertEqual(
-            m["flips"], {"pick_Wolf_1_s1": "broken", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"}
-        )
+            m["flips"],
+            {"inc0:pick_Wolf_1_s1": "fixed", "inc1:pick_Wolf_1_s1": "broken", "inc1:pick_Wolf_1_s2": "fixed",
+             "inc1:pick_Plant4_1_s3": "broken"},
+        )  # fmt: skip
         self.assertEqual([x["hash"] for x in m["drafts"]], ["aaa", "bbb"])
         self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True))
 
@@ -225,7 +228,7 @@ class Mechanisms(unittest.TestCase):
             (loop / "ledger.jsonl").write_text("".join(json.dumps(r) + "\n" for r in ledger))
             ms = KN.mechanisms(loop)
         self.assertNotIn("H99_ghost", {m["slug"] for m in ms})
-        self.assertTrue(all("pick_Ghost_1_s9" not in m["flips"] for m in ms))
+        self.assertTrue(all(not any(k.endswith(":pick_Ghost_1_s9") for k in m["flips"]) for m in ms))
 
 
 def diag_row(label, task, ok, version, **cols):
@@ -241,7 +244,7 @@ ROWS = [
     diag_row("pick_Wolf_1_s1", "pick_Wolf_1", True, "inc1", **{"start.support_top_m": 0.84}),  # another version: out
 ]  # fmt: skip
 MECH = dict(slug="H1_hang", ids=[(0, "H1_hang")], claims=["c"], insteads=["i"], incumbent={0: "inc0"},
-            flips={"pick_Wolf_1_s1": "fixed", "pick_Wolf_1_s2": "fixed", "pick_Plant4_1_s3": "broken"},
+            flips={"inc0:pick_Wolf_1_s1": "fixed", "inc0:pick_Wolf_1_s2": "fixed", "inc0:pick_Plant4_1_s3": "broken"},
             drafts=[], gate=None)  # fmt: skip
 
 
@@ -254,6 +257,17 @@ class Evidence(unittest.TestCase):
         flips = {r["label"]: r["flip"] for r in t}
         self.assertEqual(flips["pick_Wolf_1_s9"], "unchanged")
         self.assertEqual(flips["pick_Plant4_1_s3"], "broken")
+
+    def test_a_flip_under_one_version_is_not_counted_under_another(self):
+        """I1: a mechanism spanning incumbents inc0 and inc1; the label flipped under inc0 only."""
+        mech = dict(MECH, incumbent={0: "inc0", 1: "inc1"}, flips={"inc0:pick_Wolf_1_s1": "fixed"})
+        t = KN.evidence_table(mech, ROWS)
+        by = {(r["version"], r["label"]): r["flip"] for r in t}
+        self.assertEqual(by[("inc0", "pick_Wolf_1_s1")], "fixed")
+        self.assertEqual(by[("inc1", "pick_Wolf_1_s1")], "unchanged")
+        self.assertEqual(sum(f != "unchanged" for f in by.values()), 1)
+        bo = KN.by_object(t, mech["flips"])
+        self.assertEqual(bo["Wolf_1"]["fixed"], 1)
 
     def test_rank_columns_numeric_and_categorical(self):
         ranked = {c["col"]: c for c in KN.rank_columns(KN.evidence_table(MECH, ROWS))}

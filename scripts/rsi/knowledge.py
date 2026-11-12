@@ -54,9 +54,18 @@ def _iter_of(ref: str) -> tuple[int, str]:
     return int(n), hid
 
 
+def flip_key(version: str | None, label: str) -> str:
+    """A mechanism's `flips` key: the incumbent version the flip was measured against and the round's label
+    ("<hash>:<label>"); a row is looked up by (row["version"], row["label"])."""
+    return f"{version}:{label}"
+
+
 def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
     """One dict per mechanism (module docstring): hypotheses linked by the Manager's `repeats`, their probe and draft
-    flips, the gate's verdict on their drafts. Mechanisms with no flip and no gate verdict are left out."""
+    flips, the gate's verdict on their drafts. Mechanisms with no flip and no gate verdict are left out. `flips` is
+    keyed by flip_key(incumbent hash of the iteration, label): a label flipped under one incumbent says nothing about
+    its round under another. An iteration without a known incumbent hash contributes no flips (no evidence table
+    could hold them)."""
     rows = [
         r for r in jl(loop / "ledger.jsonl") if isinstance(r.get("iter"), int) and (iters is None or r["iter"] in iters)
     ]
@@ -97,17 +106,21 @@ def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
             inc = (jload(loop / f"iter_{n:02d}" / "reviewer_context.json", {}) or {}).get("incumbent") or {}
             if inc.get("hash"):
                 incumbent[n] = inc["hash"]
+
+            def note(fixed, broken, v=inc.get("hash")):
+                if v:
+                    flips.update({flip_key(v, x): "fixed" for x in fixed or []})
+                    flips.update({flip_key(v, x): "broken" for x in broken or []})
+
             for r in by_iter[n]:
                 if r.get("step") == "probe":
                     for p in r.get("results") or []:
                         if (n, p.get("id")) in ids:
-                            flips.update({x: "fixed" for x in p.get("fixed") or []})
-                            flips.update({x: "broken" for x in p.get("broken") or []})
+                            note(p.get("fixed"), p.get("broken"))
             cands = [c for c in jload(loop / f"iter_{n:02d}" / "candidates.json", []) or []
                      if isinstance(c, dict) and (n, c.get("hypothesis")) in ids]  # fmt: skip
             for c in cands:
-                flips.update({x: "fixed" for x in c.get("fixed") or []})
-                flips.update({x: "broken" for x in c.get("broken") or []})
+                note(c.get("fixed"), c.get("broken"))
                 drafts.append(
                     dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or "")
                 )
@@ -144,13 +157,14 @@ def diag_rows(sandbox: Path, family: str) -> list[dict]:
 
 def evidence_table(mech: dict, rows: list[dict]) -> list[dict]:
     """The rounds the mechanism's condition must separate: of the tasks it flipped, every round under the incumbent
-    version the flip was measured against (the situation before the change), with `flip`."""
+    version the flip was measured against (the situation before the change), with `flip` looked up by the row's
+    (version, label)."""
     versions = set(mech["incumbent"].values())
-    tasks = {r["task"] for r in rows if r["label"] in mech["flips"]}
+    tasks = {r["task"] for r in rows if flip_key(r.get("version"), r["label"]) in mech["flips"]}
     out = []
     for r in rows:
         if r["task"] in tasks and r.get("version") in versions:
-            out.append(dict(r, flip=mech["flips"].get(r["label"], "unchanged")))
+            out.append(dict(r, flip=mech["flips"].get(flip_key(r["version"], r["label"]), "unchanged")))
     return out
 
 
@@ -239,11 +253,12 @@ def object_of(task: str) -> str:
 
 
 def by_object(triggered: list[dict], flips: dict[str, str]) -> dict[str, dict]:
+    """Per object: the triggered rounds and how many of them the mechanism fixed or broke (flips keyed by flip_key)."""
     out: dict[str, dict] = {}
     for r in triggered:
         o = out.setdefault(object_of(r["task"]), dict(triggered=0, fixed=0, broken=0))
         o["triggered"] += 1
-        f = flips.get(r["label"])
+        f = flips.get(flip_key(r.get("version"), r["label"]))
         if f in ("fixed", "broken"):
             o[f] += 1
     return out
