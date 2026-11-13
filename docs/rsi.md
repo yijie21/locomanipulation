@@ -204,7 +204,8 @@ $PY scripts/rsi/regress.py add pick_single $S pick --last $(python3 -c "import j
 $S/outputs/scene_rsi_20261016/grasp_atomic_past/
 ├── diag/incumbent_<hash>/<任务>_s<seed>.past.jsonl   现任在诊断池上每一局的记录
 ├── diag/candidate_<hash>/<任务>_s<seed>.past.jsonl   每份草稿、Composer 候选在诊断池上的记录（被接受后改名成 incumbent_）
-└── loop/iter_NN/diag_digest.md                      每轮给 Reviewer 的摘要，含 "Scene-graph transitions" 一节
+├── loop/iter_NN/diag_digest.md                      每轮给 Reviewer 的摘要，含 "Scene-graph transitions" 一节
+└── loop/iter_NN/reviewer_context.json                Reviewer 的上下文；`round_features` 每局一行，列就是知识条目条件可用的那些（`start.*`、`<步骤类>.<关系>`、`first_bad.*`）
 $S/outputs/scene_rsi_20261016_hidden/grasp_atomic_past/
 └── gate/<NN_hash>/candidate/、sealed/<版本>/         验收池和封存集的局，人能看，角色不能
 ```

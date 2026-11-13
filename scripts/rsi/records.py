@@ -283,6 +283,21 @@ CONDITION_COLUMNS = frozenset(
 )
 
 
+TABLE_KEYS = ("label", "task", "ok")
+
+
+def condition_table(rows: list[dict]) -> list[dict]:
+    """One row per round with its label, task and ok and whichever of CONDITION_COLUMNS it has, sorted by label: the
+    view a Reviewer and a knowledge entry's condition share (reviewer_context.json `round_features`). The per-skill
+    step columns (`<step>.*`, `events.*`) stay out: the digest already lists every step's numbers."""
+    out = []
+    for r in rows:
+        d = {k: r.get(k) for k in TABLE_KEYS}
+        d.update({k: r[k] for k in sorted(CONDITION_COLUMNS) if r.get(k) is not None})
+        out.append(d)
+    return sorted(out, key=lambda d: str(d["label"]))
+
+
 def row(rec: dict, start: dict | None, where: str, host: str, family: str, graph: list[dict] | None = None,
         meta: dict | None = None) -> dict:  # fmt: skip
     out = {"label": rec["label"], "task": rec["task"], "family": family, "ok": int(bool(rec["ok"])),

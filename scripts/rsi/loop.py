@@ -1559,6 +1559,15 @@ def knowledge_step(n: int, base: Path, it_dir: Path) -> None:
         ledger(dict(step="knowledge", iter=n, error=f"{type(e).__name__}: {e}"[:200]))
 
 
+def round_features(base: Path) -> list[dict]:
+    """The incumbent's diagnostic rounds as one flat row each, in the columns a knowledge entry's condition may use
+    (records.CONDITION_COLUMNS: the start's geometry and affordance, the scene-graph relations per step kind, the
+    first unexpected transition, the failure class). The Reviewer reads a HITS.md condition and its rounds off the
+    same numbers, instead of rebuilding them from `past.py show`. A broken round file is skipped by records.scan."""
+    rows = RC.scan([(base, FAMILY), (LOOP / "pool_diag", FAMILY)], RC.machine(), RC.scene_meta(REPO, FAMILY))
+    return RC.condition_table(rows)
+
+
 def iterate(n: int, meta: dict, stub: bool) -> str | None:
     it_dir = STATE / f"iter_{n:02d}"
     it_dir.mkdir(parents=True, exist_ok=True)
@@ -1584,7 +1593,7 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     if prev.exists():
         extra["designs_last"] = jload(prev)
     ctx = it_dir / "reviewer_context.json"
-    jdump(ctx, context(inc, extra))
+    jdump(ctx, context(inc, dict(extra, round_features=round_features(base))))  # the Reviewer's view only
     prompt = fill((HERE / "prompts" / "reviewer.md").read_text(), CONTEXT=ctx, **common)
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", instead="stub", evidence="stub",
                   delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},

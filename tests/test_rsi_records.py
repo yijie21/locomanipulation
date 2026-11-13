@@ -134,3 +134,21 @@ def test_the_driver_asks_the_library_only_when_the_probe_could_not_decide(tmp_pa
     assert [h["status"] for h in hyps["hypotheses"]] == ["verified", "refuted", "hypothesis"]
     assert pr[0]["status"] == "verified" and pr[0]["records"]["n_in"] == 10
     assert "records" not in pr[1] and "records" not in pr[2]
+
+
+def test_condition_table_keeps_only_the_shared_columns_sorted_by_label():
+    """The Reviewer's `round_features`: label / task / ok plus the columns a knowledge condition may use; a skill's own
+    step columns and `events.*` stay out, missing values are dropped, rows come back by label."""
+    rows_ = [
+        dict(label="t_s2", task="t", ok=0, skills="abc", set="{}", machine="h", failure_class="slip",
+             **{"start.spawn_dist_m": 1.2, "reach.at.err_cm": 3.5, "first_bad.kind": "grip", "n_unexpected": 2,
+                "pick.ok": 0, "pick.gap_cm": 4.0, "events.gap_cm": 4.0, "start.seed": 2}),
+        dict(label="t_s1", task="t", ok=1, skills="abc", set="{}", machine="h", failure_class=None,
+             **{"start.spawn_dist_m": 0.9, "n_unexpected": 0}),
+    ]  # fmt: skip
+    t = RC.condition_table(rows_)
+    assert [r["label"] for r in t] == ["t_s1", "t_s2"]
+    assert t[0] == {"label": "t_s1", "task": "t", "ok": 1, "n_unexpected": 0, "start.spawn_dist_m": 0.9}
+    assert set(t[1]) == {"label", "task", "ok", "failure_class", "start.spawn_dist_m", "reach.at.err_cm",
+                         "first_bad.kind", "n_unexpected"}  # fmt: skip
+    assert set(t[1]) - {"label", "task", "ok"} <= RC.CONDITION_COLUMNS

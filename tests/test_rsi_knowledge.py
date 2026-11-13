@@ -811,6 +811,27 @@ class Wiring(unittest.TestCase):
         self.assertIn("bad entry", rows[0]["error"])
         self.assertNotIn("hits", rows[0])
 
+    def test_round_features_is_the_flat_table_the_reviewer_context_carries(self):
+        """One row per diagnostic round in the knowledge conditions' columns (records.CONDITION_COLUMNS): the Reviewer
+        reads a HITS.md condition off the same numbers. Only the Reviewer's context file carries it."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            rounds = self._hook_fixture(root)
+            saved = self._with_loop_globals(root, [])
+            try:
+                table = LP.round_features(rounds)
+            finally:
+                for k, v in saved.items():
+                    setattr(LP, k, v)
+        self.assertEqual([(r["label"], r["task"], r["ok"]) for r in table], [("pick_Wolf_1_s1", "pick_Wolf_1", 0)])
+        extra = set(table[0]) - {"label", "task", "ok"}
+        self.assertTrue(extra and extra <= LP.RC.CONDITION_COLUMNS, extra)
+        self.assertIn("walk.blocking.role", extra)  # a graph column from the round's past record
+        self.assertIn("start.spawn_dist_m", extra)  # a start column from pool_diag
+        src = (REPO / "scripts/rsi/loop.py").read_text()
+        self.assertEqual(src.count("round_features=round_features(base)"), 1)
+        self.assertIn('reviewer_context.json"\n    jdump(ctx, context(inc, dict(extra, round_features=', src)
+
     def test_install_knowledge_keeps_the_library_as_given(self):
         """I2: the replay's library under test keeps the family's own (temporal-split) entries."""
         RP = _replay()

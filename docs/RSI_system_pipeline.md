@@ -88,7 +88,7 @@ scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit
    │     诊断池失败 < 10 局就重抽 (diag_pool.py)；撤销已被做成的搁置；
    │     同类失败 ≥ 2 局时单独重跑那条命令，判动作层还是技能 (isolate.py)；
    │     生成 diag_digest.md (digest.py：失败类型计数、每任务几何事实、首失败步骤、区分数、场景图转移一节)
-   │     + reviewer_context.json (现任、参数、mechanisms 机制表、压缩 history、focus、parked、attribution、designs_last)
+   │     + reviewer_context.json (现任、参数、round_features 每局一行的条件列表、mechanisms 机制表、压缩 history、focus、parked、attribution、designs_last)
    │
    ├─ 1 Reviewer (claude -p, high)：读规则 / 方案 / 上下文 / 摘要 → .past.jsonl → NPZ 最后手段
    │     工具：graspability / body.reach / choose / prep / records.query / try.py (≤ 40 局/次, ≤ 240 局/轮)
