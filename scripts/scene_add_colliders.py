@@ -59,13 +59,45 @@ CEIL_CORE = 0.6  # share of a surface's half extents where its ceiling is looked
 CEIL_COVER = 0.75  # share of that core the ceiling must cover
 WALL_BITS = A.ROBOT_ONLY_BIT | A.OBJECT_ONLY_BIT
 MIN_HALF = 0.0075  # m: a box is at least 1.5 cm thick, so a finger pressing into it does not come out behind
+CHUNK_POINTS = 4_000_000  # subdivided points held at once: the shell's walls are ~2.4e8 (a 6 m sliver face alone 5e5)
 
 
-def surface_points(mesh: trimesh.Trimesh, pitch: float) -> np.ndarray:
-    """The mesh's vertices after subdividing it to pitch / 2: every cell its surface passes through holds some."""
-    if len(mesh.faces) == 0:
-        return np.zeros((0, 3))
-    return remesh.subdivide_to_size(mesh.vertices, mesh.faces, max_edge=pitch / 2, max_iter=30)[0]
+def surface_chunks(mesh: trimesh.Trimesh, pitch: float):
+    """The mesh's vertices after subdividing it to pitch / 2 (every cell its surface passes through holds some), in
+    chunks of whole faces: a face is split into 4 until its longest edge fits, whatever its neighbours do, so the chunks
+    together hold the same points as the whole mesh subdivided at once (a shared edge's points once per side)."""
+    tri = mesh.vertices[mesh.faces]
+    longest = np.linalg.norm(tri - np.roll(tri, 1, axis=1), axis=2).max(1)
+    n = 2.0 ** np.ceil(np.log2(np.maximum(longest / (pitch / 2), 1)))
+    count = np.cumsum((n + 1) * (n + 2) / 2)
+    starts = np.searchsorted(count, np.arange(0, count[-1], CHUNK_POINTS), side="right") if len(n) else []
+    for s, e in zip(starts, [*starts[1:], len(n)]):
+        if e > s:
+            yield remesh.subdivide_to_size(mesh.vertices, mesh.faces[s:e], max_edge=pitch / 2, max_iter=30)[0]
+
+
+def cell_bounds(cell: np.ndarray, lo: np.ndarray, hi: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Per distinct cell: the cell, and the min of `lo` / max of `hi` over its rows."""
+    idx, inv = np.unique(cell, axis=0, return_inverse=True)
+    inv = inv.reshape(-1)
+    cmin = np.full((len(idx), 3), np.inf)
+    cmax = np.full((len(idx), 3), -np.inf)
+    np.minimum.at(cmin, inv, lo)
+    np.maximum.at(cmax, inv, hi)
+    return idx, cmin, cmax
+
+
+def scan(mesh: trimesh.Trimesh, pitch: float, origin: np.ndarray, frames: list[tuple], to_world):
+    """One pass over the mesh's surface points (surface_chunks), keeping only what boxes() and open_space() read: the
+    occupied cells with their points' bounds (the points' frame), and per surface in `frames` the lowest point
+    `to_world(points)` puts in each of its 4 x 4 core cells (ceiling_lows)."""
+    cells, lows = [], np.full((len(frames), 16), np.inf)
+    for pts in surface_chunks(mesh, pitch):
+        cells.append(cell_bounds(np.floor((pts - origin) / pitch).astype(np.int64), pts, pts))
+        lows = np.minimum(lows, ceiling_lows(frames, to_world(pts)))
+    if not cells:
+        return (np.zeros((0, 3), np.int64), np.zeros((0, 3)), np.zeros((0, 3))), lows
+    return cell_bounds(*(np.concatenate(c) for c in zip(*cells))), lows
 
 
 def merge(idx: np.ndarray) -> tuple[list[tuple[np.ndarray, np.ndarray]], np.ndarray]:
@@ -100,25 +132,20 @@ def merge(idx: np.ndarray) -> tuple[list[tuple[np.ndarray, np.ndarray]], np.ndar
     return out, label[at]
 
 
-def boxes(points: np.ndarray, pitch: float, origin: np.ndarray, keep) -> list[tuple[np.ndarray, np.ndarray]]:
-    """(centre, half extents) of the boxes over the cells `points` occupy whose centres `keep` (a function of the
-    centres) keeps, in the points' frame. A box is its cells cut down to its points' bounds plus pitch / 4 (closing the
-    gaps to the boxes beside it), and at least 2 * MIN_HALF thick: one face of a wall alone is a flat set of points."""
-    cell = np.floor((points - origin) / pitch).astype(np.int64)
-    idx, inv = np.unique(cell, axis=0, return_inverse=True)
-    inv = inv.reshape(-1)
+def boxes(cells: tuple, pitch: float, origin: np.ndarray, keep) -> list[tuple[np.ndarray, np.ndarray]]:
+    """(centre, half extents) of the boxes over the occupied cells (scan: cells and their points' bounds) whose centres
+    `keep` (a function of the centres) keeps, in the points' frame. A box is its cells cut down to its points' bounds
+    plus pitch / 4 (closing the gaps to the boxes beside it), and at least 2 * MIN_HALF thick: one face of a wall alone
+    is a flat set of points."""
+    idx, cmin, cmax = cells
     kept = keep(origin + (idx + 0.5) * pitch)
     merged, ids = merge(idx[kept])
     if not merged:
         return []
-    cell_box = np.full(len(idx), -1, np.int64)
-    cell_box[kept] = ids
-    vbox = cell_box[inv]
-    sel = vbox >= 0
     vmin = np.full((len(merged), 3), np.inf)
     vmax = np.full((len(merged), 3), -np.inf)
-    np.minimum.at(vmin, vbox[sel], points[sel])
-    np.maximum.at(vmax, vbox[sel], points[sel])
+    np.minimum.at(vmin, ids, cmin[kept])
+    np.maximum.at(vmax, ids, cmax[kept])
     out = []
     for (lo, hi), a, b in zip(merged, vmin, vmax):
         lo = np.maximum(origin + lo * pitch, a - pitch / 4)
@@ -127,29 +154,42 @@ def boxes(points: np.ndarray, pitch: float, origin: np.ndarray, keep) -> list[tu
     return out
 
 
-def open_space(meta: dict, overlay: dict, of: str, points: np.ndarray) -> list[tuple]:
-    """Per surface of `of`: (key, xy, yaw, half extents, top, ceiling, approach edges). `ceiling` is how high the space
-    over the surface is closed: the piece's surface `points` (world frame) over the middle of the surface (CEIL_CORE of
-    its half extents), CEIL_MIN to OPEN_ABOVE_M above it, in at least CEIL_COVER of a 4 x 4 grid there (their median
-    lowest point), else the surface listed over it (mjcf.ceiling) -- None for one open above: a seat with its back at an
-    edge, a table, the cart's top tier."""
-    out = []
-    for sk, sf in sorted(meta["surfaces"].items()):
-        if sf.get("of_object") != of:
-            continue
-        xy, yaw = np.asarray(sf["xy"], float), float(sf.get("yaw", 0.0))
-        half, top = np.asarray(sf["half_extent"][:2], float), float(sf["top"])
+def surface_frames(meta: dict, of: str) -> list[tuple]:
+    """Per surface of `of`: (key, xy, yaw, half extents, top)."""
+    return [
+        (sk, np.asarray(sf["xy"], float), float(sf.get("yaw", 0.0)), np.asarray(sf["half_extent"][:2], float),
+         float(sf["top"]))
+        for sk, sf in sorted(meta["surfaces"].items())
+        if sf.get("of_object") == of
+    ]  # fmt: skip
+
+
+def ceiling_lows(frames: list[tuple], points: np.ndarray) -> np.ndarray:
+    """(len(frames), 16): per surface, the lowest of `points` (world frame) over the middle of the surface (CEIL_CORE of
+    its half extents), CEIL_MIN to OPEN_ABOVE_M above it, in each cell of a 4 x 4 grid there (inf: none)."""
+    out = np.full((len(frames), 16), np.inf)
+    for low, (_sk, xy, yaw, half, top) in zip(out, frames):
         lx, ly = local(points, xy, yaw)
         z = points[:, 2]
         core = (np.abs(lx) <= CEIL_CORE * half[0]) & (np.abs(ly) <= CEIL_CORE * half[1])
         core &= (z > top + CEIL_MIN) & (z <= top + OPEN_ABOVE_M)
         gx = np.clip(((lx[core] / (CEIL_CORE * half[0]) + 1) * 2).astype(int), 0, 3)
         gy = np.clip(((ly[core] / (CEIL_CORE * half[1]) + 1) * 2).astype(int), 0, 3)
-        low = np.full(16, np.inf)
         np.minimum.at(low, gx * 4 + gy, z[core])
+    return out
+
+
+def open_space(meta: dict, overlay: dict, frames: list[tuple], lows: np.ndarray) -> list[tuple]:
+    """Per surface in `frames`: (key, xy, yaw, half extents, top, ceiling, approach edges). `ceiling` is how high the
+    space over the surface is closed: where the piece's surface reaches at least CEIL_COVER of the surface's 4 x 4 grid
+    (`lows`, ceiling_lows), the median of their lowest points, else the surface listed over it (mjcf.ceiling) -- None
+    for one open above: a seat with its back at an edge, a table, the cart's top tier."""
+    out = []
+    for (sk, xy, yaw, half, top), low in zip(frames, lows):
         ceil = float(np.median(low[np.isfinite(low)])) if np.isfinite(low).mean() >= CEIL_COVER else None
         if ceil is None and mjcf.ceiling(meta["surfaces"], sk) is not None:
             ceil = mjcf.ceiling(meta["surfaces"], sk) - mjcf.SLAB
+        sf = meta["surfaces"][sk]
         edges = set(sf.get("approach_edges") or ()) | set((overlay.get(sk) or {}).get("approach_edges") or ())
         out.append((sk, xy, yaw, half, top, ceil, sorted(edges)))
     return out
@@ -195,14 +235,16 @@ def wall_boxes(objs: dict, meta: dict, overlay: dict) -> tuple[list, list]:
         )
         if len(part.faces):
             parts.append(part)
-    pts = np.concatenate([surface_points(p, WALL_PITCH) for p in parts])
-    origin = np.floor(pts.min(0) / WALL_PITCH) * WALL_PITCH
-    spaces = open_space(meta, overlay, adt.SHELL, pts)
+    shell = trimesh.util.concatenate(parts)
+    origin = np.floor(shell.vertices[shell.faces].reshape(-1, 3).min(0) / WALL_PITCH) * WALL_PITCH  # = the points' min
+    frames = surface_frames(meta, adt.SHELL)
+    cells, lows = scan(shell, WALL_PITCH, origin, frames, lambda p: p)
+    spaces = open_space(meta, overlay, frames, lows)
 
     def keep(c):
         return keep_mask(c, WALL_PITCH, spaces) & (c[:, 2] >= WALL_Z[0]) & (c[:, 2] <= WALL_Z[1])
 
-    return boxes(pts, WALL_PITCH, origin, keep), spaces
+    return boxes(cells, WALL_PITCH, origin, keep), spaces
 
 
 def furniture_boxes(key: str, a: adt.AdtObject, o: dict, meta: dict, overlay: dict, floor_z: float):
@@ -211,15 +253,16 @@ def furniture_boxes(key: str, a: adt.AdtObject, o: dict, meta: dict, overlay: di
     raw = A.load_mesh(key)
     body = raw.copy()
     body.vertices = raw.vertices @ a.body_axes.T + np.asarray(a.body()["mesh_offset"])
-    pts = surface_points(body, FURN_PITCH)
     origin = np.floor(body.bounds[0] / FURN_PITCH) * FURN_PITCH
     rot, pos = adt.quat_to_matrix(o["init_quat"]), np.asarray(o["init_pos"], float)
-    spaces = open_space(meta, overlay, key, pos + pts @ rot.T)
+    frames = surface_frames(meta, key)
+    cells, lows = scan(body, FURN_PITCH, origin, frames, lambda p: pos + p @ rot.T)
+    spaces = open_space(meta, overlay, frames, lows)
 
     def keep(c):
         return (c[:, 2] >= floor_z - FURN_PITCH) & keep_mask(pos + c @ rot.T, FURN_PITCH, spaces)
 
-    return boxes(pts, FURN_PITCH, origin, keep), spaces
+    return boxes(cells, FURN_PITCH, origin, keep), spaces
 
 
 def geom_xml(name: str, centre, half, bits: int, rgba: str, quat=None) -> str:
