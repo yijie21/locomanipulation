@@ -46,20 +46,24 @@ def sha1_of(path: Path) -> str:
     return h.hexdigest()
 
 
-def fetch(entry: dict, dest: Path) -> str:
-    """Download one link-file entry ({download_url, sha1sum, file_size_bytes}) to `dest`; -> 'kept' | 'fetched'."""
+def fetch(entry: dict, dest: Path, attempts: int = 3) -> str:
+    """Download one link-file entry ({download_url, sha1sum, file_size_bytes}) to `dest`; -> 'kept' | 'fetched'.
+
+    A sha1 mismatch is retried: the CDN occasionally serves a corrupt body that a fresh request gets right.
+    """
     if dest.exists() and sha1_of(dest) == entry["sha1sum"]:
         return "kept"
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    with urllib.request.urlopen(entry["download_url"], timeout=120) as r, open(part, "wb") as f:
-        shutil.copyfileobj(r, f, 1 << 20)
-    got = sha1_of(part)
-    if got != entry["sha1sum"]:
+    for _ in range(attempts):
+        with urllib.request.urlopen(entry["download_url"], timeout=120) as r, open(part, "wb") as f:
+            shutil.copyfileobj(r, f, 1 << 20)
+        got = sha1_of(part)
+        if got == entry["sha1sum"]:
+            part.replace(dest)
+            return "fetched"
         part.unlink()
-        raise RuntimeError(f"{dest.name}: sha1 {got} != {entry['sha1sum']}")
-    part.replace(dest)
-    return "fetched"
+    raise RuntimeError(f"{dest.parent.name}/{dest.name}: sha1 {got} != {entry['sha1sum']} after {attempts} attempts")
 
 
 def sequences(root: Path, names: list[str]) -> None:
