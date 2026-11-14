@@ -48,9 +48,11 @@ def test_one_instance_builds_lints_clean_and_renders_its_preview(tmp_path):
     assert Path(entry["png"]).is_file() and (tmp_path / "preview/index.json").is_file()
     kinds = [o["graspable"] for o in entry["objects"].values()]
     assert len(kinds) == 11 and kinds.count("single") == 6 and kinds.count("bimanual") == 5  # 4 drawn + the carton
-    assert entry["families"] == {"gso_grasp_s0": 6, "gso_bimanual_s0": 5}
+    assert entry["families"] == {"gso_grasp_s0": 6, "gso_bimanual_s0": 5, "gso_pack_s0": 6, "gso_pack_bimanual_s0": 4,
+                                 "gso_all_s0": 21, "gso_pack_all_s0": 10}  # fmt: skip
     assert sorted(p.name for p in (tmp_path / "families").iterdir()) == [
-        "gso_bimanual_s0.json", "gso_grasp_s0.json", "gso_s0_tasks.jsonl"]  # fmt: skip
+        "gso_all_s0.json", "gso_bimanual_s0.json", "gso_grasp_s0.json", "gso_pack_all_s0.json",
+        "gso_pack_bimanual_s0.json", "gso_pack_s0.json", "gso_s0_tasks.jsonl"]  # fmt: skip
     meta = json.loads((tmp_path / "scenes/logistics_room_1030_s0/scene_meta.json").read_text())
     assert meta["gso"]["seed"] == 0 and len(meta["gso"]["keys"]) == 10
     assert all(o["semantic"]["drop_test"]["ok"] for o in meta["objects"].values() if o.get("free"))
