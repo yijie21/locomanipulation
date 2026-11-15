@@ -73,7 +73,10 @@ class Env:
         import capability_probe as cap
 
         self.cap = cap
-        self.probe = cap.Probe("grip" if scene == "grip" else "reach")
+        # REACH_CONTROLLER (2026-11-16): "scalebfm" (default) or "sonic" -- SONIC v1.1 in process (backends.sonic_onnx),
+        # same scene, robot, joint order and Motor, so the self-model data of the two compare column for column
+        self.controller = os.environ.get("REACH_CONTROLLER", "scalebfm")
+        self.probe = cap.Probe("grip" if scene == "grip" else "reach", controller=self.controller)
         self.m, self.sim, self.R = self.probe.m, self.probe.sim, self.probe.R
         root = os.environ.get(
             "BFM_ROOT", "true"

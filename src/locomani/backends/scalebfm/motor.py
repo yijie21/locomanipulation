@@ -454,7 +454,7 @@ class Motor:
         if abs(R.wrap(heading - yaw0)) > 1e-3:
             a = R.wrap(heading - yaw0)
             segments.append((turn_seconds(a, cfg.turn_rate), lambda u, a=a: (p0[:2], yaw0 + R.smoothstep(u) * a)))
-        ff = float(np.interp(speed or cfg.walk_speed, FF_SPEEDS, FF_SHORT))
+        ff = self._walk_overshoot(speed or cfg.walk_speed)
         prof = Profile(speed or cfg.walk_speed, cfg.walk_acc, dist + ff if dist > 0.05 else dist)
         d = delta / max(dist, 1e-9)
         if dist > 1e-3:
@@ -509,6 +509,11 @@ class Motor:
         if self.fell_at is None:
             self._stand()
         return out
+
+    def _walk_overshoot(self, speed: float) -> float:
+        """How far a walk's reference runs past the goal: ScaleBFM's stop shortfall at that speed (FF_SHORT). A
+        controller whose motor closes the loop on the pelvis itself (sonic_onnx.SonicMotor) returns 0."""
+        return float(np.interp(speed, FF_SPEEDS, FF_SHORT))
 
     def turn(self, yaw: float) -> Outcome:
         return self.walk_to(self.sim.d.qpos[:2].copy(), yaw)
