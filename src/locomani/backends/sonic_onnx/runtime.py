@@ -291,7 +291,8 @@ def vr_targets(links: dict, pelvis_pos, pelvis_quat) -> tuple[np.ndarray, np.nda
 # -- the policy ------------------------------------------------------------------------------------------------------
 @dataclass(frozen=True)
 class SonicConfig:
-    device_id: int = 0  # CUDA device of the three ONNX sessions; -1: CPU
+    device_id: int = 0  # CUDA device of the planner (and of the encoder / decoder unless nets_on_cpu); -1: all on CPU
+    nets_on_cpu: bool = False  # encoder and decoder on the CPU: many processes then do not queue on one GPU every tick
     policy_dir: str = paths.SONIC_POLICY_DIR
     planner: str = f"{paths.SONIC_DEPLOY}/planner/target_vel/V2/planner_sonic.onnx"
     threads: int = 1  # onnxruntime CPU threads per session
@@ -311,8 +312,10 @@ class SonicPolicy:
         )  # sim index of each MuJoCo joint
         self.from_mj = np.array([MUJOCO_JOINT_NAMES.index(n) for n in joint_names])  # MuJoCo index of each sim joint
         self._check_layout()
-        self.enc, self.dec, self.plan = (self._session(p) for p in (
-            f"{self.cfg.policy_dir}/model_encoder.onnx", f"{self.cfg.policy_dir}/model_decoder.onnx", self.cfg.planner))  # fmt: skip
+        nets = -1 if self.cfg.nets_on_cpu else self.cfg.device_id
+        self.enc = self._session(f"{self.cfg.policy_dir}/model_encoder.onnx", nets)
+        self.dec = self._session(f"{self.cfg.policy_dir}/model_decoder.onnx", nets)
+        self.plan = self._session(self.cfg.planner, self.cfg.device_id)
         self.root_source = None  # leg odometry (reachwm leg_odo.OdoRoot) sets this; called once a tick
         self.root_est = None
         self.reset_state()
@@ -326,18 +329,18 @@ class SonicPolicy:
         modes = {m["name"]: m["mode_id"] for m in conf["encoder"]["encoder_modes"]}
         assert modes.get("teleop") == TELEOP_MODE, modes
 
-    def _session(self, path: str):
+    def _session(self, path: str, device: int):
         import onnxruntime as ort
 
         so = ort.SessionOptions()
         so.intra_op_num_threads = so.inter_op_num_threads = self.cfg.threads
         so.log_severity_level = 3
-        if self.cfg.device_id < 0:
+        if device < 0:
             return ort.InferenceSession(path, so, providers=["CPUExecutionProvider"])
         import torch  # noqa: F401 -- loads the CUDA 12 / cuDNN 9 libraries onnxruntime's CUDA provider needs
 
         ort.preload_dlls()
-        s = ort.InferenceSession(path, so, providers=[("CUDAExecutionProvider", {"device_id": self.cfg.device_id})])
+        s = ort.InferenceSession(path, so, providers=[("CUDAExecutionProvider", {"device_id": device})])
         assert "CUDAExecutionProvider" in s.get_providers(), f"no CUDA provider for {path}"
         return s
 

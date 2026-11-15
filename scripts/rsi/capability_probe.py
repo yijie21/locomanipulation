@@ -169,9 +169,9 @@ def probe_scene() -> Path:
 
 
 class Probe:
-    def __init__(self, kind: str, controller: str = "scalebfm"):
+    def __init__(self, kind: str, controller: str = "scalebfm", sonic=None):
         """`controller` "scalebfm" (the default) or "sonic": SONIC v1.1 in process (backends.sonic_onnx), same scene,
-        robot, joint order and Motor interface."""
+        robot, joint order and Motor interface; `sonic` its SonicConfig (None: the defaults)."""
         sys.path[:0] = [str(REPO / "src")]
         from locomani.backends.scalebfm import runtime as R
         from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
@@ -186,7 +186,7 @@ class Probe:
             from locomani.backends.sonic_onnx.runtime import SonicPolicy, SonicSim
 
             meta = json.load(open(R.META))
-            policy = SonicPolicy(meta["joint_names"])
+            policy = SonicPolicy(meta["joint_names"], sonic)
             sim = SonicSim(meta, backend=backend)
             self.m = SonicMotor(sim, policy, MotorConfig(), model_xml=str(WALK / "scene_locomani.xml"))
         else:

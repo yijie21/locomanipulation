@@ -76,7 +76,17 @@ class Env:
         # REACH_CONTROLLER (2026-11-16): "scalebfm" (default) or "sonic" -- SONIC v1.1 in process (backends.sonic_onnx),
         # same scene, robot, joint order and Motor, so the self-model data of the two compare column for column
         self.controller = os.environ.get("REACH_CONTROLLER", "scalebfm")
-        self.probe = cap.Probe("grip" if scene == "grip" else "reach", controller=self.controller)
+        sonic = None
+        if self.controller == "sonic":
+            # REACH_SONIC_NETS: "gpu" (default) all three ONNX sessions on the worker's GPU; "cpu" encoder and decoder on
+            # the CPU; "allcpu" the planner too. REACH_SONIC_THREADS: onnxruntime threads per session.
+            from locomani.backends.sonic_onnx.runtime import SonicConfig
+
+            where = os.environ.get("REACH_SONIC_NETS", "gpu")
+            assert where in ("gpu", "cpu", "allcpu"), where
+            sonic = SonicConfig(device_id=-1 if where == "allcpu" else 0, nets_on_cpu=where == "cpu",
+                                threads=int(os.environ.get("REACH_SONIC_THREADS", "1")))  # fmt: skip
+        self.probe = cap.Probe("grip" if scene == "grip" else "reach", controller=self.controller, sonic=sonic)
         self.m, self.sim, self.R = self.probe.m, self.probe.sim, self.probe.R
         root = os.environ.get(
             "BFM_ROOT", "true"

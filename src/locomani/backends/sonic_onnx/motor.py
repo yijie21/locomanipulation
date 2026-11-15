@@ -4,15 +4,22 @@
 same pelvis path, posture / reach the same whole-body IK poses, grip / release / hold the same jaw ramps -- and replaces
 only how a reference reaches the controller, every tick:
 
-  upper body  the VR 3-point targets of the reference: its left and right wrist and its head point (torso + 0.35 m), in
-              the reference pelvis frame, from FK of the reference pose. This is what SONIC's teleop encoder reads; it
-              decides the joints itself, as ScaleBFM decides them from the reference keypoints.
-  legs        SONIC's own velocity planner. While walking (MODE_WALK): SLOW_WALK along the reference path's velocity
-              plus kp_xy x the pelvis error, the pelvis from `root_est` (leg odometry when it is on, else the
-              simulator's), facing the reference heading; a finished path within stop_tolerance -> IDLE. Standing
-              primitives: IDEL_SQUAT at the reference pelvis height when it is below squat_below (the only planner mode
-              that honours a height, backends.sonic.agent_server.LocomotionMode), else IDLE; the facing is the
-              reference heading either way, so a turn in place is the planner's.
+  upper body  the VR 3-point targets of the reference: its left and right wrist and its head point (torso + 0.35 m),
+              from FK of the reference pose, expressed in the pelvis frame the robot believes it has (`vr_frame`
+              "robot": the pelvis estimate and the IMU attitude), so SONIC is asked for the reference's world wrist
+              poses, as ScaleBFM is (its input is the world keypoints minus its root estimate). SONIC's teleop encoder
+              reads these and decides the joints itself.
+  legs        SONIC's own velocity planner. While walking (MODE_WALK, `walk` "goal"): SLOW_WALK toward the walk's end
+              pose, braking as sqrt(2 decel d) from v_cruise, IDLE within stop_radius, on `root_est` (leg odometry when
+              it is on, else the simulator's), facing the reference heading. Standing primitives: IDEL_SQUAT at the
+              reference pelvis height when it is below squat_below (the only planner mode that honours a height,
+              backends.sonic.agent_server.LocomotionMode), else IDLE; the facing is the reference heading either way, so
+              a turn in place is the planner's.
+
+The walk and VR-frame defaults were chosen on a800 2026-11-16 (sonic_selfmodel_20261115_a800, "预测修订"): 24
+approach-like walks (APPROACH_BOX, seed 99000000, apart from the data seeds) per setting, decel 0.3 / v_cruise 0.45
+stop error median 9.4 cm (kp_goal 1.0 / 0.35: 17.8 cm, 1 fall); 5 smoke reaches, "robot" frame 2.0-7.3 cm against
+"reference" 1.0-45 cm (the squat reach lost the pelvis' own 7 cm in the reference frame).
 
 No servo, hand program or arm IK of ours runs between the reference and SONIC (the self-model data record the
 controller, not a correction on top of it). `last_fut` holds the reference wrist poses so `commanded_jaw` -- what the
@@ -48,9 +55,25 @@ from locomani.backends.sonic_onnx import runtime as S
 
 @dataclass(frozen=True)
 class SonicMotorConfig:
-    kp_xy: float = 1.5  # 1/s on the pelvis error while walking
+    # walking. "goal": head for the walk's end pose at a speed that falls with the distance left, IDLE within
+    # stop_radius; "track": follow the moving reference point (path velocity + kp_xy x error). Both on the pelvis
+    # estimate. The commands are rounded (speed_step, dir_step_deg) so the 10 Hz replan rule does not restart the
+    # gait on every float change.
+    walk: str = "goal"
+    v_cruise: float = 0.45  # m/s, "goal": the top speed (SLOW_WALK delivers ~0.8 of it, planner probe 2026-11-16)
+    kp_goal: float = 1.0  # 1/s, "goal" with decel 0: speed = kp_goal x distance left, within [v_min, v_cruise]
+    decel: float = 0.3  # m/s^2, "goal": > 0 brakes as sqrt(2 decel d) instead (cruise until close)
+    stop_radius: float = 0.03  # m, "goal": IDLE inside this
+    kp_xy: float = 1.5  # 1/s, "track"
     v_min: float = 0.10  # m/s: SLOW_WALK's slowest useful speed (planner probe 2026-11-16: 0.10 -> 0.074 m/s)
     v_max: float = 0.60  # m/s: SLOW_WALK's top (0.1 + 0.5 x stick in the official VR sender)
+    speed_step: float = 0.05  # m/s
+    dir_step_deg: float = 5.0
+    # the frame the VR 3-point targets are expressed in. "robot": the pelvis the robot believes it has (the pelvis
+    # estimate, the IMU attitude), so SONIC is asked for the reference's WORLD wrist poses -- what ScaleBFM's input is
+    # (world keypoints minus its root estimate); "reference": the reference pose's own pelvis (the teleop sender's
+    # convention, which leaves the pelvis' own error in the hand)
+    vr_frame: str = "robot"
     squat_below: float = 0.775  # m: a reference pelvis lower than this is a squat at that height (IDLE stands ~0.78)
     squat_min: float = 0.40  # m: the squat mode's documented lower end (planner_onnx.md)
     settle_s: float = 2.0  # s of SONIC holding its first plan after reset, before t = 0
@@ -106,19 +129,33 @@ class SonicMotor(Motor):
         est = self.pol.root_est
         return self.sim.d.qpos[:3].copy() if est is None else np.asarray(est, float)
 
+    def _walk(self, v: np.ndarray, top: float, facing: np.ndarray) -> S.Movement:
+        """SLOW_WALK along `v` (m/s, world xy), its speed in [v_min, top] and rounded, its direction rounded."""
+        c = self.sonic
+        n = float(np.linalg.norm(v))
+        speed = round(float(np.clip(n, c.v_min, top)) / c.speed_step) * c.speed_step
+        step = math.radians(c.dir_step_deg)
+        a = round(math.atan2(v[1], v[0]) / step) * step
+        return S.Movement(S.SLOW_WALK, speed, np.array([math.cos(a), math.sin(a), 0.0]), facing, -1.0)
+
     def _movement(self, ref: Pose) -> S.Movement:
         c, cfg = self.sonic, self.cfg
-        facing = self._facing(R.yaw_of(ref.quat))
+        facing = self._facing(R.yaw_of(ref.quat))  # constant except while the path turns: not rounded
+        idle = S.Movement(S.IDLE, -1.0, np.zeros(3), facing, -1.0)
         if self.mode == MODE_WALK:
+            est = self._pelvis_estimate()[:2]
+            if c.walk == "goal":
+                left = self.ref(self.t + 1e3).pos[:2] - est  # walk_to's reference clamps to its end pose
+                dist = float(np.linalg.norm(left))
+                if dist <= c.stop_radius:
+                    return idle
+                speed = math.sqrt(2.0 * c.decel * dist) if c.decel > 0 else c.kp_goal * dist
+                return self._walk(left / dist * speed, c.v_cruise, facing)
             v_ref = (self.ref(self.t + R.DT).pos[:2] - ref.pos[:2]) / R.DT
-            err = ref.pos[:2] - self._pelvis_estimate()[:2]
-            v = v_ref + c.kp_xy * err
-            moving = float(np.linalg.norm(v_ref)) > 1e-4
-            if moving or float(np.linalg.norm(err)) > cfg.stop_tolerance:
-                n = float(np.linalg.norm(v))
-                speed = float(np.clip(n, c.v_min, c.v_max))
-                return S.Movement(S.SLOW_WALK, speed, np.r_[v / max(n, 1e-9), 0.0], facing, -1.0)
-            return S.Movement(S.IDLE, -1.0, np.zeros(3), facing, -1.0)
+            err = ref.pos[:2] - est
+            if float(np.linalg.norm(v_ref)) > 1e-4 or float(np.linalg.norm(err)) > cfg.stop_tolerance:
+                return self._walk(v_ref + c.kp_xy * err, c.v_max, facing)
+            return idle
         z = float(ref.pos[2])
         if z < c.squat_below:
             return S.Movement(S.IDEL_SQUAT, -1.0, np.zeros(3), facing, max(z, c.squat_min))
@@ -126,7 +163,10 @@ class SonicMotor(Motor):
 
     def _command(self, ref: Pose) -> S.SonicCommand:
         links = self.kp(ref.pos, ref.quat, ref.joints)
-        vr_pos, vr_quat = S.vr_targets(links, ref.pos, ref.quat)
+        if self.sonic.vr_frame == "robot":
+            vr_pos, vr_quat = S.vr_targets(links, self._pelvis_estimate(), self.sim.d.qpos[3:7])
+        else:
+            vr_pos, vr_quat = S.vr_targets(links, ref.pos, ref.quat)
         self.last_fut = {WRIST[s]: (links[WRIST[s]][0][None], links[WRIST[s]][1][None]) for s in SIDES}
         return S.SonicCommand(self._movement(ref), vr_pos, vr_quat)
 
