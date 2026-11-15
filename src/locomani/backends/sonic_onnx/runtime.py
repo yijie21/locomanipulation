@@ -317,7 +317,6 @@ class SonicPolicy:
         self.dec = self._session(f"{self.cfg.policy_dir}/model_decoder.onnx", nets)
         self.plan = self._session(self.cfg.planner, self.cfg.device_id)
         self.root_source = None  # leg odometry (reachwm leg_odo.OdoRoot) sets this; called once a tick
-        self.root_est = None
         self.reset_state()
 
     def _check_layout(self) -> None:
@@ -346,6 +345,7 @@ class SonicPolicy:
 
     # -- state ------------------------------------------------------------------------------------------------------
     def reset_state(self) -> None:
+        self.root_est = None  # the last tick's pelvis estimate: a new episode must not read the previous one's
         self.hist: deque = deque(maxlen=HISTORY)
         self.last_action = np.zeros(29)  # raw, IsaacLab order
         self.motion: Motion | None = None

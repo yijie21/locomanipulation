@@ -501,71 +501,23 @@ def approach_segment(env: E.Env, rec: Recorder, rng, walked: bool) -> dict | Non
 
 
 def worker(wid: int, ids: list[int], seed: int) -> None:
+    """Every reset of `ids`. A reset whose whole-body IK raises a numerical error (scipy's least-squares SVD not
+    converging; seen once in 12000 approach resets under SONIC, 2026-11-16, never under ScaleBFM) is dropped whole --
+    its segments removed, its id printed and counted in skipped.json -- and the worker goes on, so one degenerate pose
+    does not cost the other resets. The resets that raise nothing are recorded exactly as before."""
     env = E.Env("open")
     rec = Recorder(env)
     segs, chunk, t0 = [], 0, time.time()
+    skipped: list[int] = []
     for n, i in enumerate(ids):
-        rng = np.random.default_rng(seed + i)
-        env.reset(None)
-        m = env.m
-        walked = bool(rng.random() < (APPROACH_DIVERSE if APPROACH else SIDESTEP_WALK if SIDESTEP else 0.35))
-        cmds = [None] * CHAIN
-        if GRASP:
-            walked = False  # the walk below is this flag's own
-            cmds = grasp_commands(rng)
-            if GRASP_ROOM:  # as room_grasp.episode: a short open walk, the heading off by what it was off at the start
-                d, y0 = float(rng.uniform(0.45, 0.90)), float(rng.uniform(-0.10, 0.10))
-                m.reset((-d, y0), float(math.radians(rng.uniform(-8, 8))))
-                m.hold(1.0)
-                open_walk(m, d, float(rng.uniform(-0.06, 0.06)), 0.0)
-            else:
-                m.reset(
-                    (-float(rng.uniform(*GRASP_WALK)), float(rng.uniform(-0.2, 0.2))),
-                    float(math.radians(rng.uniform(-15, 15))),
-                )
-                m.hold(1.0)
-                m.walk_to(np.zeros(2), yaw=0.0)
-            if m.fell_at is not None:
-                continue
-            m.hold(0.5)
-            walked = True
-        if walked and not GRASP:
-            ang, d = rng.uniform(-math.pi, math.pi), rng.uniform(0.3, 1.2)
-            m.walk_to(np.array([d * math.cos(ang), d * math.sin(ang)]), yaw=float(rng.uniform(-math.pi, math.pi)))
-            if m.fell_at is not None:
-                continue
-        asked, n_side = np.zeros(2, np.float32), 0
-        if APPROACH:
-            s = approach_segment(env, rec, rng, walked)
-            if s is not None:
-                s["reset"], s["sidestep"], s["n_sidesteps"] = ID0 + i, asked, n_side
-                segs.append(s)
-            if (n + 1) % 25 == 0:
-                print(f"w{wid} {n + 1}/{len(ids)} resets, {len(segs)} segments, {time.time() - t0:.0f}s", flush=True)
-            if len(segs) >= FLUSH:
-                save(segs, OUT / f"w{wid}_{chunk:03d}.npz")
-                segs, chunk = [], chunk + 1
-            continue
-        if SIDESTEP:
-            for _ in range(2 if rng.random() < SIDESTEP_TWICE else 1):
-                m.hold(PRE_S)
-                d = rng.uniform(*SIDESTEP_BOX)
-                if m.fell_at is None:
-                    m.sidestep(left=float(d[1]), forward=float(d[0]))
-                asked, n_side = asked + d.astype(np.float32), n_side + 1
-            if m.fell_at is not None:
-                continue
-            walked = True
-        last_cmd = None
-        for k in range(len(cmds)):
-            s = segment(env, rec, rng, walked, k, cmds[k], last_cmd)
-            if s is None:
-                break
-            last_cmd = s["cmd_w"]
-            s["reset"], s["sidestep"], s["n_sidesteps"] = ID0 + i, asked, n_side
-            segs.append(s)
-            if s["fell"]:
-                break
+        n_before = len(segs)
+        try:
+            segs = _reset(env, rec, i, seed, segs)
+        except (np.linalg.LinAlgError, ValueError) as e:
+            del segs[n_before:]
+            rec.on = False
+            skipped.append(ID0 + i)
+            print(f"w{wid} reset {ID0 + i} skipped: {type(e).__name__}: {e}", flush=True)
         if (n + 1) % 25 == 0:
             print(f"w{wid} {n + 1}/{len(ids)} resets, {len(segs)} segments, {time.time() - t0:.0f}s", flush=True)
         if len(segs) >= FLUSH:
@@ -573,7 +525,70 @@ def worker(wid: int, ids: list[int], seed: int) -> None:
             segs, chunk = [], chunk + 1
     if segs:
         save(segs, OUT / f"w{wid}_{chunk:03d}.npz")
+    json.dump(dict(wid=wid, skipped=skipped), open(OUT / f"w{wid}_skipped.json", "w"))
     print(f"w{wid} done {len(ids)} resets {time.time() - t0:.0f}s", flush=True)
+
+
+def _reset(env, rec, i: int, seed: int, segs: list) -> list:
+    """One reset of `worker`: its segments appended to `segs` (returned). It writes nothing to disk, so a reset that
+    raises leaves no trace once `worker` drops what it appended."""
+    rng = np.random.default_rng(seed + i)
+    env.reset(None)
+    m = env.m
+    walked = bool(rng.random() < (APPROACH_DIVERSE if APPROACH else SIDESTEP_WALK if SIDESTEP else 0.35))
+    cmds = [None] * CHAIN
+    if GRASP:
+        walked = False  # the walk below is this flag's own
+        cmds = grasp_commands(rng)
+        if GRASP_ROOM:  # as room_grasp.episode: a short open walk, the heading off by what it was off at the start
+            d, y0 = float(rng.uniform(0.45, 0.90)), float(rng.uniform(-0.10, 0.10))
+            m.reset((-d, y0), float(math.radians(rng.uniform(-8, 8))))
+            m.hold(1.0)
+            open_walk(m, d, float(rng.uniform(-0.06, 0.06)), 0.0)
+        else:
+            m.reset(
+                (-float(rng.uniform(*GRASP_WALK)), float(rng.uniform(-0.2, 0.2))),
+                float(math.radians(rng.uniform(-15, 15))),
+            )
+            m.hold(1.0)
+            m.walk_to(np.zeros(2), yaw=0.0)
+        if m.fell_at is not None:
+            return segs
+        m.hold(0.5)
+        walked = True
+    if walked and not GRASP:
+        ang, d = rng.uniform(-math.pi, math.pi), rng.uniform(0.3, 1.2)
+        m.walk_to(np.array([d * math.cos(ang), d * math.sin(ang)]), yaw=float(rng.uniform(-math.pi, math.pi)))
+        if m.fell_at is not None:
+            return segs
+    asked, n_side = np.zeros(2, np.float32), 0
+    if APPROACH:
+        s = approach_segment(env, rec, rng, walked)
+        if s is not None:
+            s["reset"], s["sidestep"], s["n_sidesteps"] = ID0 + i, asked, n_side
+            segs.append(s)
+        return segs
+    if SIDESTEP:
+        for _ in range(2 if rng.random() < SIDESTEP_TWICE else 1):
+            m.hold(PRE_S)
+            d = rng.uniform(*SIDESTEP_BOX)
+            if m.fell_at is None:
+                m.sidestep(left=float(d[1]), forward=float(d[0]))
+            asked, n_side = asked + d.astype(np.float32), n_side + 1
+        if m.fell_at is not None:
+            return segs
+        walked = True
+    last_cmd = None
+    for k in range(len(cmds)):
+        s = segment(env, rec, rng, walked, k, cmds[k], last_cmd)
+        if s is None:
+            break
+        last_cmd = s["cmd_w"]
+        s["reset"], s["sidestep"], s["n_sidesteps"] = ID0 + i, asked, n_side
+        segs.append(s)
+        if s["fell"]:
+            break
+    return segs
 
 
 def save(segs: list[dict], path: Path) -> None:

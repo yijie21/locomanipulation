@@ -100,6 +100,11 @@ class SonicMotor(Motor):
         self.servo, self.servo_target, self.hand_override = {}, {}, {}
         self.servo_on = {s: False for s in SIDES}
         self.pol.reset(sim.state())
+        # anchor the pelvis estimate here before the settle (leg odometry restarts on _stand, as Motor.reset's does at
+        # once): otherwise the settle's ticks integrate onto the PREVIOUS episode's anchor, and two runs of the same
+        # reset differ by what the worker ran before it (a800 2026-11-16: 24.74 / 20.00 cm alone, 24.71 / 20.77 after
+        # another reset)
+        self._stand()
         for _ in range(int(round(self.sonic.settle_s / R.DT))):
             sim.set_jaw(self.jaw)
             sim.step(self.pol(sim.state(), self._plan_command()))
