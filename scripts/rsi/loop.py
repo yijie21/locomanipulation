@@ -136,6 +136,18 @@ CLASS_SUGGEST = {
     "knocked": "the object moved before the grip: a raised-hand approach, a path clear of it",
     "slip": "gripped, then lost: grip_check / lift_check and a re-grip through stage()",
     "fell": "the robot fell: a controller or motor-layer limit, an escalation (rules.md 20), not a skill fix",
+    # the two-hand classes (TODO 38.11, rules.md 35): side_reach, knocked, slip and fell read as above
+    "one_hand_short": "one hand did not get to the box: the stance is off-centre or too far for that arm, or the two "
+    "targets are not symmetric about the body; a re-approach of that hand through stage() (bimanual_grip_check)",
+    "no_lift": "both hands on the box, it never rose: not enough squeeze (motor.squeeze inward_m), the lift too small "
+    "or too fast, or the hands too low on the walls; bimanual_lift_check and a re-squeeze through stage()",
+    # the strict box goal's classes (TODO 38.19): lifted(X, clearance, tilt) judged over the round's last window
+    "low_lift": "the box rose but its lowest corner never cleared the platform by the goal's clearance: a bigger lift "
+    "(stand up fully, raise the hands more), checked by the measured lowest corner before the window starts",
+    "tilted": "the box's bottom tipped past the goal's limit: the two hands at unequal heights, or the grasp off the "
+    "box's centre of mass along the walls; level the hands while lifting and check the tilt",
+    "dropped_hold": "the whole goal held at some moment, then failed inside the judging window: the box slid in the "
+    "hands or the body sagged; keep pressing (squeeze), stop moving before the window, or a re-grip",
 }
 ATTRIBUTE_CLASSES = ("fell_walk",)  # TODO 33.20: failure classes the driver attributes to a layer (isolate.CLASSES)
 ATTRIBUTE_MIN = 2  # ... once the incumbent fails at least this many diagnostic rounds of the class
@@ -391,14 +403,21 @@ def family_spec() -> dict:
     return json.loads(p.read_text()) if p.exists() else {}
 
 
+SCENE_NOTE = (
+    "in a simulated apartment"  # the prompts' opening line; a family on another scene sets `scene_note` (TODO 38.10)
+)
+
+
 def prompt_vars() -> dict:
-    """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, and the
-    pool sizes. A family without them gets the text the prompts had before."""
+    """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, the scene
+    the prompts' first line names (`scene_note`, TODO 38.10), and the pool sizes. A family without them gets the text
+    the prompts had before."""
     spec = family_spec()
     pools = spec.get("pools") or {}
     return dict(
         PLAN=PLAN,
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
+        SCENE_NOTE=spec.get("scene_note") or SCENE_NOTE,
         N_DIAG=(pools.get("diag") or {}).get("n", 50),
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         CANDIDATES_NOTE=(CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "")
@@ -893,7 +912,7 @@ def claude(
     cmd = [
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
         "--settings", json.dumps({"disableAllHooks": True}), "--strict-mcp-config",
-        "--permission-mode", "bypassPermissions", "--disallowedTools", tools,
+        "--permission-mode", "bypassPermissions", "--allowedTools", "Bash", "--disallowedTools", tools,
         *(["--effort", EFFORT.get(role) or EFFORT[role.split("_")[0]]] if (role in EFFORT or role.split("_")[0] in EFFORT) else []),
         *(["--add-dir", *allowed_dirs()] if allowed_dirs() else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
@@ -3093,8 +3112,12 @@ def cmd_status(_a) -> int:
     parked = jload(STATE / "parked.json", {})
     for cid, p in parked.items():
         print(f"parked {cid}: {p['task']} ({p['scope']}, {len(p['starts'])} diag starts, {p['kind']})")
-    inc = jload(GATE_DIR / "incumbent.json")
-    v = unparked_view(Path(inc["rounds"])) if inc else None
+    try:  # while a role runs the hidden directory has mode 000 (hidden_locked): no acceptance line, not a crash
+        inc = jload(GATE_DIR / "incumbent.json")
+        v = unparked_view(Path(inc["rounds"])) if inc else None
+    except PermissionError:
+        print("acceptance: not readable now (a role is running and the hidden directory is locked); ask again later")
+        return 0
     if v:
         print(f"acceptance: {v['all_ok']}/{v['all_n']} of all starts, {v['ok']}/{v['n']} outside {v['parked_tasks']}")
     return 0

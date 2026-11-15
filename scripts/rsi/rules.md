@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 28, 2026-11-06)
+# Rules for the scene RSI loop (TODO 27, version 29, 2026-11-15)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -50,7 +50,7 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 14. Open loop, ScaleBFM's hands land 2-9 cm and 10-30 deg off at grasp poses; the motor layer's reach servo (jaw centre
     + wrist attitude integral) brings them to about 1 cm. During a fast entry the hand lags the command by up to 10 cm.
 15. Standing in mode 2 the feet slide apart (27.7 -> 36.1 cm in 15 s); mode 4 pins them.
-16. Walks run at 0.25 m/s (version 10; versions 7-9 ran at 0.5 m/s). At this speed ScaleBFM shuffles, its feet
+16. Walks run at 0.25 m/s (version 10; versions 7-9 ran at 0.5 m/s; a family file's `motor` block may change it: box_bimanual walks at 0.5 m/s, TODO 38.21, user 2026-10-24). At this speed ScaleBFM shuffles, its feet
     sliding on the floor. Straight walks stop within 1.5-2 cm; in-place turns end 2-5 deg off. The motor layer walks
     straight lines only;
     `navigate.walk_path` plans around furniture on the occupancy map (body radius 0.35 m: at 0.26 m an arm caught the
@@ -259,3 +259,27 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     that as the draft's `footprint` for the Composer (code: loop.py footprint; prompt). With `run --repair`, a draft that
     breaks a start the incumbent finishes gets one more turn in its own session with that run's result; the repair
     replaces it only if it breaks fewer starts without losing net ones (code: loop.py repair_draft; prompt) (version 28).
+
+39. Two-hand actions (TODO 38.4, D4; the logistics line's version 21, its rule 36; version 29 here): the motor layer has nine actions. `reach("both", (left, right), ...)`
+    moves the two jaw centres together; `grip("both")` / `release("both")` close and open the two jaws together;
+    `squeeze(inward_m, seconds)` pushes the two jaw centres towards each other along the line between them and keeps
+    pushing -- the offsets ride on each hand's servo reference in the pelvis frame through posture, hold and walk_to
+    until `release` or a `reach` of that hand drops them (`reach(..., keep_squeeze=True)` keeps them: a two-hand lift
+    by the arms); while a squeeze is on, the servo's lead is capped at the offset, so the push is at most twice
+    `inward_m`. Nothing in them decides the stance, the hand placement or the lift; a family whose object is wider than a jaw (`semantic.graspable` bimanual; `box_bimanual`, TODO 38) builds
+    those from these actions. `held(X)` then needs the fingers of both hands on X and X off every surface (rule 23's
+    second branch). The step checks for a two-hand hold are `stage.bimanual_grip_check` and `stage.bimanual_lift_check`
+    (rule 31). The failure classes are the two-hand set when the family's object is bimanual (rule 32; TODO 38.11).
+    Graspability, the chooser, the body table and the preparatory layer (rules 32, 34) describe one jaw: on a bimanual
+    family they say nothing about the two-hand hold, and a hypothesis may not cite them for it (prompt).
+
+40. Strict goals and judging windows (TODO 38.19, user 2026-10-24; the logistics line's version 22, its rule 37; version 29 here). `lifted(X, clearance_m, tilt_deg)`
+    holds when the lowest corner of X's box is `clearance_m` or more above the top of the surface the scene file
+    rests X on, and X's bottom face is less than `tilt_deg` off level. A family may set `judge_s`: the goal is then
+    checked every 0.1 s and must hold at every check over the round's last `judge_s` seconds -- the end of the plan
+    included, then the runner's `hold_s` standing still -- so a skill may still stand up or lift in the window, but
+    the box may not slip, tip or drop at any check in it. The round record carries `judge` (the window, how many
+    checks held, the first one that failed and why, `ever_ok`). `box_bimanual` uses `held(X)` + `lifted(X, 0.20, 60)`
+    with `judge_s` 5 and `hold_s` 2; its failure classes add low_lift, tilted and dropped_hold (code: predicates.py,
+    episode.judge_window, failure_class.py). Its seed is the first run's incumbent, not an empty package, so rule 27
+    does not apply to it: change the pick that is there rather than writing a new one (prompt).

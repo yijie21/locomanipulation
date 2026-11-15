@@ -17,6 +17,7 @@ non-task free objects the round moved more than 2 cm or tilted more than 10 deg,
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -37,7 +38,7 @@ import family as F  # noqa: E402
 
 from locomani.backends.scalebfm import runtime as R  # noqa: E402
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
-from locomani.tasks.scene.episode import run_episode  # noqa: E402
+from locomani.tasks.scene.episode import HOLD_S, run_episode  # noqa: E402
 from locomani.tasks.scene.start import Start  # noqa: E402
 from locomani.tasks.scene.world import SceneWorld  # noqa: E402
 
@@ -85,10 +86,13 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
         policy = Gr00tPolicy()
     else:
         policy = R.Policy("cuda", ScaleBfmBackendConfig())
-    world = SceneWorld(fam["scene_dir"], policy, controller=controller)
-    if B.motor_config().reach_compensation:  # TODO 33.1.4 (2): RSI_REACH_COMPENSATION=1
+    # TODO 38.21: the family's motor block over the RSI_* switches (batch.family_motor, else batch.motor_config); the two
+    # switches go on through the world's methods below, the route with its cache and dump directories
+    cfg = B.family_motor(fam["name"]) or B.motor_config()
+    base = dataclasses.replace(cfg, reach_compensation=False, reach_route=False)
+    world = SceneWorld(fam["scene_dir"], policy, controller=controller, motor_config=base)
+    if cfg.reach_compensation:  # TODO 33.1.4 (2): RSI_REACH_COMPENSATION=1
         world.compensate_reaches()
-    cfg = B.motor_config()
     if cfg.reach_route:  # TODO 40: RSI_REACH_ROUTE=1; the route cache and failed-request dump directories
         world.route_reaches(os.environ.get("RSI_ROUTE_CACHE") or None, os.environ.get("RSI_ROUTE_DUMP") or None,
                             cfg.reach_route_scope, cfg.reach_route_pose_goal)  # fmt: skip
@@ -127,7 +131,9 @@ def run_round(
     elif plan is None:
         rec = dict(label=label, task=task.id, ok=False, why="no skill covers this goal", fell=False, dropped=False)
     else:
-        res, arrays = run_episode(world, task, start, plan)
+        # a family's success timing (TODO 38.19): the end-of-plan hold and the judging window
+        hold_s, judge_s = float(fam.get("hold_s", HOLD_S)), fam.get("judge_s")
+        res, arrays = run_episode(world, task, start, plan, hold_s=hold_s, judge_s=judge_s)
         ex = res.execution
         # a round that reaches its goal is no drop: a put-down onto a surface more than DROP_M below the start
         # (the clock onto the console table) counted as one (r1_on_single, human intervention 2, 2026-10-16)
@@ -138,6 +144,8 @@ def run_round(
                    plan_ok=ex["plan_ok"], plan_why=ex["plan_why"], error=ex["error"], steps=ex["steps"],
                    t_end=ex["t_end"], seated=ex["seated"], calls=ex.get("calls", []),
                    others_moved=ex.get("others_moved", {}))  # fmt: skip
+        if ex.get("judge") is not None:
+            rec["judge"] = ex["judge"]
         if npz:
             np.savez_compressed(out / f"{label}.npz", **arrays)
     try:  # TODO 33.15: the round's failure class and events (failure_class.py); a classifier bug never costs a round

@@ -132,6 +132,112 @@ class FailureClass(unittest.TestCase):
         self.assertEqual(FC.classify(rec(steps=[WALK, reach(20.0)]), None, None, None)[0], "side_reach")
 
 
+def bibox_scene():
+    """The logistics carton: 0.45 x 0.32 x 0.33 m, origin at its bottom centre, wider than a jaw either way."""
+    body = (
+        f'<body name="b" pos="0 0 {TOP}"><freejoint/><geom type="box" size="0.225 0.16 0.165" pos="0 0 0.165"/></body>'
+    )
+    return scene(
+        body, {"B": obj("b", TOP, bimanual=True, box=dict(half_extent=[0.225, 0.16, 0.165], centre=[0, 0, 0.165]))}
+    )
+
+
+def bitrace(left_on=True, right_on=True, squeeze=True, rise_cm=0.0, drop=False, push_cm=0.0):
+    """hold, walk, a both-hand reach, squeeze, posture (the lift): the hands end on the box's x faces (or short)."""
+    n0, n_walk, n_reach, n_sq, n_after = 50, 150, 150, 50, 200
+    T = n0 + n_walk + n_reach + n_sq + n_after
+    t = np.arange(T) * DT
+    prims = np.array(["hold", "posture", "reach", "squeeze", "walk_to"])
+    p = np.zeros(T, int)
+    p[n0 : n0 + n_walk] = 4
+    p[n0 + n_walk : n0 + n_walk + n_reach] = 2
+    hi = n0 + n_walk + n_reach
+    if squeeze:
+        p[hi : hi + n_sq] = 3
+    p[hi + n_sq :] = 1
+    obj = np.zeros((T, 7))
+    obj[:, :3] = [0.5, 0.0, TOP]
+    obj[:, 3] = 1.0
+    if push_cm:
+        obj[hi - 30 :, 1] += push_cm / 100
+    if rise_cm:
+        obj[hi + n_sq :, 2] += rise_cm / 100
+        if drop:
+            obj[hi + n_sq + 100 :, 2] = TOP
+    wr = np.zeros((T, 2, 3))
+    z = TOP + 0.2
+    # the jaw centre is OFF ahead of the wrist towards the object: a wrist 0.1515 m outside a face puts the jaw on it
+    gap = {"left": 0.0 if left_on else 0.10, "right": 0.0 if right_on else 0.10}
+    for j, (s, sign) in enumerate((("left", -1), ("right", 1))):
+        wr[:, j] = [0.5 + sign * (0.225 + 0.1515 + gap[s] + 0.30), 0.0, z]
+        wr[n0 + n_walk : hi, j, 0] = np.linspace(wr[0, j, 0], 0.5 + sign * (0.225 + 0.1515 + gap[s]), n_reach)
+        wr[hi:, j, 0] = 0.5 + sign * (0.225 + 0.1515 + gap[s])
+    if rise_cm:
+        wr[hi + n_sq :, :, 2] += rise_cm / 100
+    jaw = np.full((T, 2), FC.GRIP_OPEN)
+    fingers = np.full((T, 4), FC.GRIP_OPEN)
+    robot = np.zeros((T, 7))
+    robot[:, 3] = 1.0
+    return dict(t=t, primitive=p.astype(np.int16), primitives=prims, jaw=jaw, fingers=fingers, wrists=wr,
+                ref_wrists=wr.copy(), robot=robot, joints=np.zeros((T, 29)), mode=np.zeros(T), ref_pelvis=robot[:, :3],
+                obj_b=obj)  # fmt: skip
+
+
+class Bimanual(unittest.TestCase):
+    """TODO 38.11: the two-hand classes on a bimanual object."""
+
+    def test_a_bimanual_object_is_recognised_and_a_single_hand_one_is_not(self):
+        self.assertTrue(FC.bimanual(bibox_scene(), "B"))
+        self.assertFalse(FC.bimanual(box_scene(), "B"))
+        self.assertFalse(FC.bimanual(None, "B"))
+
+    def test_both_hands_on_no_rise_is_no_lift(self):
+        cls, ev = FC.classify(rec(steps=[WALK, reach(1.0)]), bitrace(), bibox_scene(), "B")
+        self.assertEqual(cls, "no_lift")
+        self.assertEqual(ev["hold_t"], 7.0)
+        self.assertLess(max(ev["hand_box_cm"].values()), FC.HAND_ON_CM)
+        self.assertEqual(ev["obj_rise_max_cm"], 0.0)
+
+    def test_one_hand_short_and_both_short(self):
+        cls, ev = FC.classify(rec(steps=[WALK, reach(1.0)]), bitrace(left_on=False), bibox_scene(), "B")
+        self.assertEqual(cls, "one_hand_short")
+        self.assertGreater(ev["hand_box_cm"]["left"], FC.HAND_ON_CM)
+        self.assertLess(ev["hand_box_cm"]["right"], FC.HAND_ON_CM)
+        cls, _ = FC.classify(rec(steps=[WALK, reach(1.0)]), bitrace(left_on=False, right_on=False), bibox_scene(), "B")
+        self.assertEqual(cls, "side_reach")
+
+    def test_rose_then_lost_is_slip_and_pushed_before_the_hold_is_knocked(self):
+        cls, ev = FC.classify(rec(steps=[WALK, reach(1.0)]), bitrace(rise_cm=8.0, drop=True), bibox_scene(), "B")
+        self.assertEqual(cls, "slip")
+        self.assertEqual(ev["obj_rise_max_cm"], 8.0)
+        cls, ev = FC.classify(rec(steps=[WALK, reach(1.0)]), bitrace(push_cm=5.0), bibox_scene(), "B")
+        self.assertEqual(cls, "knocked")
+        self.assertEqual(ev["obj_moved_before_hold_cm"], 5.0)
+
+    def test_the_strict_goal_classes(self):
+        # TODO 38.19: rose 8 cm and stayed (bitrace rise without drop): too low for lifted(.., 0.20, ..)
+        low = rec(why="[goal] lifted(B, 0.2, 30.0): lowest corner 8.0 cm above table (need 20)")
+        self.assertEqual(FC.classify(low, bitrace(rise_cm=8.0), bibox_scene(), "B")[0], "low_lift")
+        tilt = rec(why="[goal] lifted(B, 0.2, 30.0): tilted 41 deg (limit 30)")
+        self.assertEqual(FC.classify(tilt, bitrace(rise_cm=8.0), bibox_scene(), "B")[0], "tilted")
+        judge = dict(ok=False, ever_ok=True, first_fail_t=12.0, first_fail_why="[goal] held(B): no hand touches it")
+        dropped = rec(why="[judge] ...", judge=judge)
+        cls, ev = FC.classify(dropped, bitrace(rise_cm=8.0), bibox_scene(), "B")
+        self.assertEqual(cls, "dropped_hold")
+        self.assertEqual(ev["judge"]["first_fail_t"], 12.0)
+
+    def test_the_common_classes_come_first(self):
+        self.assertEqual(FC.classify(rec(ok=True), bitrace(), bibox_scene(), "B")[0], "ok")
+        self.assertEqual(FC.classify(rec(fell=True, steps=[WALK]), bitrace(), bibox_scene(), "B")[0], "fell_walk")
+        self.assertEqual(
+            FC.classify(rec(fell=True, steps=[WALK, reach(1.0)]), bitrace(), bibox_scene(), "B")[0], "fell"
+        )
+        walk_off = dict(WALK, stop_err_cm=9.0)
+        self.assertEqual(FC.classify(rec(steps=[walk_off, reach(1.0)]), bitrace(), bibox_scene(), "B")[0], "walk_off")
+        # no trace: the steps alone say whether the reach got there
+        self.assertEqual(FC.classify(rec(steps=[WALK, reach(20.0)]), None, bibox_scene(), "B")[0], "side_reach")
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -74,6 +74,23 @@ def motor_config():
     )
 
 
+def family_motor(family: str):
+    """A family's MotorConfig (TODO 38.21): the batch's config (motor_config: the defaults and the RSI_* switches)
+    overridden by its file's `motor` block (box_bimanual: {"walk_speed": 0.5}, user 2026-10-24), or None when the file
+    has no block (the batch's config as is). scene_round.make_world builds the world with it, and the batch and try.py
+    expect its signature."""
+    from dataclasses import fields, replace
+
+    from locomani.backends.scalebfm.motor import MotorConfig
+
+    f = HERE / "families" / f"{family}.json"
+    over = (json.loads(f.read_text()).get("motor") or {}) if f.is_file() else {}
+    bad = set(over) - {x.name for x in fields(MotorConfig)}
+    if bad:
+        raise KeyError(f"{family}: unknown motor settings {sorted(bad)}")
+    return replace(motor_config(), **over) if over else None
+
+
 def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | None = None,
                     cuda_graph: bool | None = None) -> str:  # fmt: skip
     """TODO 36 (review 2026-10-22): a short hash of the motor-relevant settings a round ran under -- every MotorConfig
@@ -165,7 +182,7 @@ def run_jobs(
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
     env.setdefault("TMPDIR", paths.TMP)
     every = pool_labels(pool)
-    motor = [motor_signature(job.controller) for job in jobs]
+    motor = [motor_signature(job.controller, family_motor(family)) for job in jobs]
     todo = {
         k: [x for x in (job.labels or every) if not done(job.out / f"{x}.json", motor[k])] for k, job in enumerate(jobs)
     }

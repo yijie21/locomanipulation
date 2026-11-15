@@ -281,3 +281,50 @@ class ReachRoute(unittest.TestCase):
         np.testing.assert_allclose(self.calls[0]["jaw"][0], np.ones(3))  # the goal's jaw goes with the goal's cut
         self.assertTrue(self.calls[0]["pose_ok"])
         self.assertEqual((MotorConfig().reach_route_scope, MotorConfig().reach_route_pose_goal), ("via", False))
+
+
+class BothHandsAndSqueeze(unittest.TestCase):
+    """TODO 38.4: grip / release take side "both"; squeeze offsets both servo references inward and stays on."""
+
+    def test_grip_both_ramps_both_jaws_and_reports_per_side(self):
+        m = motor()
+        out = m.grip("both", seconds=0.1)
+        np.testing.assert_allclose(m.jaw, m.cfg.jaw_close)
+        self.assertFalse(out.ok)  # a stand-in policy holds nothing
+        self.assertEqual(len(out.info["held"]), 2)
+        self.assertEqual(len(out.info["opening_cm"]), 2)
+        self.assertIn("left, right", out.why)
+        out = m.release("both", seconds=0.1)
+        np.testing.assert_allclose(m.jaw, R.GRIP_OPEN)
+        self.assertEqual(len(out.info["opening_cm"]), 2)
+
+    def test_squeeze_pushes_the_jaw_centres_towards_each_other_in_the_pelvis_frame(self):
+        m = motor(MotorConfig(servo_ki=1000.0, servo_cap=0.05))
+        m.tick()
+        left, right = m.jaw_centre("left")[0], m.jaw_centre("right")[0]
+        axis = (right - left) / np.linalg.norm(right - left)
+        out = m.squeeze(0.03, seconds=0.1)
+        self.assertAlmostEqual(
+            out.info["gap_cm"], 100 * float(np.linalg.norm(right - left)), delta=5.0
+        )  # measured at the end
+        self.assertTrue(all(m.servo_on.values()))
+        off_l = R.rot_z(m.yaw()) @ m.squeeze_offset["left"]
+        np.testing.assert_allclose(off_l, 0.03 * axis, atol=1e-4)  # the yaw drifts a little over the ticks
+        np.testing.assert_allclose(m.squeeze_offset["right"], -m.squeeze_offset["left"], atol=1e-12)
+        # the servo leads saturate towards the offsets (nothing blocks the hands here; the sign is what matters)
+        lead_l, lead_r = m.servo[("pos", "left")], m.servo[("pos", "right")]
+        self.assertGreater(float(lead_l @ axis), 0.0)
+        self.assertLess(float(lead_r @ axis), 0.0)
+        # it stays on through a hold and goes with release; a reach of one hand drops that hand's offset only
+        m.hold(0.1)
+        self.assertEqual(set(m.squeeze_offset), {"left", "right"})
+        m.release("left", seconds=0.1)
+        self.assertEqual(set(m.squeeze_offset), {"right"})
+        m.squeeze(0.02, seconds=0.1)
+        m.reach("left", m.jaw_centre("left")[0] + [0.0, 0.0, 0.02], speed=1.0)
+        self.assertEqual(set(m.squeeze_offset), {"right"})
+        m.release("both", seconds=0.1)
+        self.assertEqual(m.squeeze_offset, {})
+        m.squeeze(0.02, seconds=0.1)
+        m.reset((-1.5, 0.0), 0.0, warm_up=0)
+        self.assertEqual(m.squeeze_offset, {})

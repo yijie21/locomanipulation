@@ -1,6 +1,6 @@
 # STATE — 2026-10-28（主线：场景 RSI，抓取线 grasp_atomic / grasp_prep）
 
-工作目录 `/workspace/code/locomanipulation`，分支 `main`，最新提交见 `git log --oneline -5`（没推送）。
+工作目录 `/workspace/code/locomanipulation`，分支 `main`，最新提交见 `git log --oneline -5`（2026-11-15 合并 origin/main 后推送）。合并带进 henry-zhao 的物流间双臂抱箱线（TODO 38，SRA0889，严格判据下 `box-b` 封存集 41 / 50，TODO 38.24），现状和命令见 `docs/rsi_logistics_room.md`。
 
 ## 提交与磁盘
 - 不提交来路不明的文件：`papers/`、`node_modules/`、`package*.json`、`uv.lock`、`step1–7.md`、`.serena/`、`.playwright-mcp/`、
@@ -33,7 +33,7 @@
 ## 下一步（编号见 `TODO.md`）
 - 41.2：用户定落点（建议库原语：进入后 < 3 cm、下降后 < 5 cm 才合爪，否则退回重来一次），定了就实现并跑一次真运行。
 - 41.1 / 33.2：用户定要不要采用“只算目标的账”（建议采用）。
-- 其余待定的都在 DECISIONS 10-27“连着做 TODO”一节的“暂停”里（A800 三项、37.6、36.9、36.10、39.3、38.5–38.10、23.4.3）。
+- 其余待定的都在 DECISIONS 10-27“连着做 TODO”一节的“暂停”里（A800 三项、37.6、36.9、36.10、39.3、45.5–45.10、23.4.3）。
 
 ## 未解决 / 卡点
 - 已确认：本机仿真确定（同代码同起点结局相同）；A800 和本机同设置 73 / 80 局相同，不配对；A800 只跑用户指定的实验。
