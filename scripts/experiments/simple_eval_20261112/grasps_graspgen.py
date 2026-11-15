@@ -42,6 +42,7 @@ if __name__ == "__main__":
     ap.add_argument("--assets-dir", required=True)
     ap.add_argument("--num-grasps", type=int, default=500)
     ap.add_argument("--planner", default="graspmoe")
+    ap.add_argument("--only", default="", help="clouds whose name starts with this")
     a = ap.parse_args()
     ckpt = str(get_checkpoints_version_dir())
     sampler = GraspGenXSampler(
@@ -49,8 +50,11 @@ if __name__ == "__main__":
     )
     cfg = json.load(open(os.path.join(a.assets_dir, "x_grippers", HAND, "config.json")))
     f_open, f_close = (np.array([cfg[k][f"right_{j}_joint"] for j in JOINTS], float) for k in ("open", "close"))
-    for f in sorted(glob.glob(os.path.join(a.dir, "*_L*_e*.npz"))):
+    for f in sorted(glob.glob(os.path.join(a.dir, a.only + "*_L*_e*.npz"))):
         name = os.path.basename(f)[:-4]
+        g = os.path.join(a.dir, f"grasp_{name}.npz")
+        if name.startswith("grasp_") or (os.path.exists(g) and os.path.getmtime(g) >= os.path.getmtime(f)):
+            continue  # its grasps are newer than the cloud: other runs may be reading them
         if name.startswith("grasp_"):
             continue
         z = np.load(f)

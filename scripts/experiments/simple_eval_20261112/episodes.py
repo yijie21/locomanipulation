@@ -81,6 +81,7 @@ def build(ep: dict, out: Path | None = None) -> dict:
     w.add_geom(name="ground", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[0, 0, 1], friction=[1.0, 0.005, 0.0001],
                rgba=[0.75, 0.75, 0.72, 1])  # fmt: skip
     info = dict(dir=str(out), objects={}, tables={})
+    looks = set()
     lift = 0.0
     if cfg["robot_cfg"]["uid"] != "g1_sonic":  # SIMPLE's AMO tasks put the table top at z 0 and the ground below it
         t, r = cfg["layout"]["actors"]["table"], cfg["dr_state_dict"]["spatial"][cfg["robot_cfg"]["uid"]]
@@ -100,11 +101,24 @@ def build(ep: dict, out: Path | None = None) -> dict:
             pieces = sorted(glob.glob(str(models / "*.obj")))
             assert pieces, f"no collision pieces for object {uid}"
             b = w.add_body(name=label, pos=pos, quat=quat)
+            look = OUT / "visual" / f"{RES[a['asset']['res_id']]}_{uid:03d}"  # visuals.py: what the camera sees
+            if look.with_suffix(".obj").exists() and f"{label}_look" not in looks:
+                looks.add(f"{label}_look")
+                spec.add_mesh(name=f"{label}_look", file=str(look.with_suffix(".obj")))
+                spec.add_texture(
+                    name=f"{label}_tex", type=mujoco.mjtTexture.mjTEXTURE_2D, file=str(look.with_suffix(".png"))
+                )
+                mat = spec.add_material(name=f"{label}_mat")
+                mat.textures[mujoco.mjtTextureRole.mjTEXROLE_RGB] = f"{label}_tex"
+            seen = f"{label}_look" in looks
+            if seen:
+                b.add_geom(name=f"{label}_look", meshname=f"{label}_look", type=mujoco.mjtGeom.mjGEOM_MESH, density=0,
+                           contype=0, conaffinity=0, group=1, material=f"{label}_mat")  # fmt: skip
             for i, f in enumerate(pieces):
                 spec.add_mesh(name=f"{label}_mesh_convex{i}", file=f)
                 b.add_geom(name=f"{label}_convex_{i}", meshname=f"{label}_mesh_convex{i}", type=mujoco.mjtGeom.mjGEOM_MESH,
                            condim=4, mass=0.1 / len(pieces), friction=[0.8, 0.05, 0.005], solref=[0.005, 2],
-                           rgba=[0.85, 0.3, 0.25, 1] if key == "target" else [0.35, 0.5, 0.8, 1])  # fmt: skip
+                           group=3 if seen else 0, rgba=[0.55, 0.55, 0.55, 1])  # fmt: skip
             b.add_freejoint(name=f"{label}_joint")
             info["objects"][key] = dict(body=label, uid=uid, pos=pos, quat=quat)
         elif key == cfg["robot_cfg"]["uid"] or "robot" in key:
@@ -118,8 +132,12 @@ def build(ep: dict, out: Path | None = None) -> dict:
     info["start"]["yaw"] = float(2 * np.arctan2(q[3], q[0]))
     info["target"] = info["objects"]["target"]["body"]
     spec.compile()
-    (out / "scene_locomani.xml").write_text(spec.to_xml())
-    json.dump(dict(surfaces={}, objects={}, simple=info), open(out / "scene_meta.json", "w"))
+    for name, text in (("scene_locomani.xml", spec.to_xml()), ("scene_meta.json", json.dumps(dict(surfaces={}, objects={}, simple=info)))):  # fmt: skip
+        tmp = (
+            out / f"{name}.{os.getpid()}.tmp"
+        )  # two runs of one task build the same scene: never leave a half-written file
+        tmp.write_text(text)
+        os.replace(tmp, out / name)
     return info
 
 

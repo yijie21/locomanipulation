@@ -78,6 +78,8 @@ def object_in_box(P, depth, box):
 WHERE = {"tray": "on the grey tray on the floor", "low": "on the white low cabinet", "table": "on the wooden table",
          "counter": "on the white counter", "high": "on the high shelf"}  # fmt: skip
 ORD = {
+    1: ("only",),
+    2: ("left", "right"),
     3: ("leftmost", "middle", "rightmost"),
     4: ("leftmost", "second from the left", "second from the right", "rightmost"),
 }
@@ -92,7 +94,7 @@ def expression(layout: dict, j: int, phrase: str) -> str:
     rank = next(i for i, t in enumerate(row) if t["object"] == s["object"])
     where = (
         WHERE.get(s["station"])
-        or f"on the {('bottom', 'middle', 'top')[(0.30, 0.62, 0.94).index(s['surf'])]} shelf of the wooden cabinet"
+        or f"on the {('bottom', 'middle', 'top')[int(np.argmin(np.abs(np.array((0.30, 0.62, 0.94)) - s['surf'])))]} shelf of the wooden cabinet"
     )
     return f"the {phrase} that is the {ORD[len(row)][rank]} object {where}"
 
