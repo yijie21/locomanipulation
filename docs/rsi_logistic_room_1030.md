@@ -170,7 +170,7 @@ PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 --build
 ```
 
 做什么：按 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `unreal.build` 建关卡：把场景的会动部分（机器人、纸箱、10 件物体和它们的扫描纹理）导出成 URLab 的 MJCF 导入进 `/Game/Levels/logistics_room_1030_s0`（房间是 warehouse 的关卡）。导出器剥掉碰撞壳之前先把每件物体的质量和惯量烤成显式 `<inertial>`，不然扫描物体没有质量、编译失败。s1–s9 换名字各建一次（每个实例一份关卡，10 件物体各不相同）；重建场景实例后关卡要重建（`source.json` 记着场景 XML 的哈希，不一致 `run_context.unreal_scene` 会拒绝）。
-第三条给每个实例出一张 Unreal 图（用户 11-04）：把关卡里的第三视角机位（1280 × 960、fovy 45）依次放到平台正上方 2 m 和房间远角（和 MuJoCo 预览图同样的两个视角），各拍一帧静止场景（沉降后的物体、机器人在起点），图下列出物体；`--build` 让它先给缺关卡或关卡过期（场景哈希不符）的实例建关卡，不加就报错停下。
+第三条给每个实例出一张 Unreal 图（用户 11-04）：把关卡里的第三视角机位（1280 × 960、fovy 45）依次放到平台正上方 2 m 和房间远角（和 MuJoCo 预览图同样的两个视角），各拍一帧静止场景（沉降后的物体、机器人在起点），图下列出物体；`--build` 让它先给缺关卡或关卡过期（场景哈希不符）的实例建关卡，不加就报错停下。图已存在且比关卡新的实例跳过（`--force` 重画），每做完一个实例就并进 `index_unreal.json`，所以中途停了再跑同一条命令只补剩下的。编辑器每载一个关卡占的内存不还（11-13 在 31 GB 的机器上做到第 8 个时涨到 22 GB，被 OOM 杀掉，连带关掉了启动它的 VSCode），所以每做 `--restart-every` 个（默认 5，0 不重启）就用 `stop_unreal.sh` / `start_unreal.sh --gpu <--gpu，默认 0>` 重启一次。在 VSCode 的终端里跑时，把编辑器放进自己的 scope 并限内存，超了只杀它：`systemd-run --user --scope -p MemoryMax=24G bash scripts/start_unreal.sh --gpu 0`。
 得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 39–97 s（s0–s9 的 11-05 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 十张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 15–31 s（主要是载关卡、起 PIE）。之后 Unreal 视频见第 6 节最后一段（`report_unreal.py --media`，场景名从 `media.json` 来）。
 
 ## 8. 评测没见过的物体
@@ -196,7 +196,7 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 - 预览或渲染测试报 GL / EGL 错：第 0 节的 `MUJOCO_GL=egl` 要在 pytest 导入 mujoco 之前设好（放在命令行环境里，别在测试里设）。
 - `scene_feasibility.py` 全部 `does not rest still in the sim`：少了落地测试那一步。
 - Unreal 导出时 MuJoCo 编译报自由物体的质量和惯量为零：导出器版本太旧，剥碰撞壳之前没有烤惯量（`export_mjcf.bake_inertia`）。
-- `gso_preview_unreal.py` 中途报 `zmq.error.Again`、之后 `no Unreal editor command server on :18801`：编辑器死了（11-05 建到 s5 的预览时一次），`bash scripts/start_unreal.sh --gpu 0` 再跑同一条命令，建好的关卡和图会跳过。
+- `gso_preview_unreal.py` 中途报 `zmq.error.Again`、之后 `no Unreal editor command server on :18801`：编辑器死了（11-05 建到 s5 的预览时一次），`bash scripts/start_unreal.sh --gpu 0` 再跑同一条命令，建好的关卡和图会跳过。VSCode 跟着一起关掉、内核日志里 UnrealEditor 被 OOM 杀掉：内存用光，把 `--restart-every` 调小（第 7 节）。
 - `gso_preview_unreal.py` 报 `Unreal level missing` / `stale`：该实例没建关卡或场景重建后关卡没重建，加 `--build` 或手动 `build_scene.sh <实例> --unreal`；报 `PIE did not start` 或连不上编辑器：先 `bash scripts/start_unreal.sh --gpu 0`，且同一时间只能有一个进程用编辑器（建关卡时别渲染）。
 - `gso_pack_check.py` 或一局报 `Error opening file 'gso/gso_0050/model_collision_0.obj'`：场景目录旁的 `<实例>_physics/` 是 11-05 之前写的旧副本（相对网格路径没改成绝对的，场景文件没更新它就不重写），删掉重跑；报 `FileNotFoundError: /workspace/models/scalebfm/…`：`LOCOMANI_WORKSPACE` 没设（第 0 节）。
 - 起点采样打印 `seed N: skipped (no spot on A ...)`：这个 seed 摆不下，纸箱的抱取带、两手留空的通道或其余物体找不到位置，跳过它是正常的，池也这样跳。每局开始时平台上的其余物体也会重新随机摆放（任务行的 `shuffle_others`，11-06）；关掉它，s0 的 21 个任务里有 13 个一个起点也抽不到。

@@ -8,10 +8,13 @@ start). Needs the Unreal editor (bash scripts/start_unreal.sh --gpu N) and every
 (bash scripts/build_scene.sh logistics_room_1030_s<seed> --unreal; `--build` runs that for a missing or stale level).
 
     PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 [--build] [--out outputs/gso_preview]
-        [--scenes outputs/scene_discovery]
+        [--scenes outputs/scene_discovery] [--force] [--restart-every 5 --gpu 0]
 
-Writes `<out>/<scene>_unreal.png` per instance and `<out>/index_unreal.json`. About 30 s an instance (the level load
-and PIE start; the two captures take a second).
+Writes `<out>/<scene>_unreal.png` per instance and merges its entry into `<out>/index_unreal.json` as each is done.
+An instance whose picture is newer than its level is skipped (`--force` draws it again). The editor keeps what each
+level load and PIE start took (22 GB by the eighth instance on 2026-11-13, when the OOM kill took the editor down), so
+every `--restart-every` instances built or drawn it is restarted (stop_unreal.sh, start_unreal.sh --gpu); 0 never.
+About 30 s an instance (the level load and PIE start; the two captures take a second).
 """
 
 from __future__ import annotations
@@ -85,6 +88,19 @@ def level_state(scene_dir: Path) -> str:
     return "ok" if json.loads(src.read_text()).get("scene_xml_sha256") == want else "stale"
 
 
+def up_to_date(scene_dir: Path, png: Path) -> bool:
+    """The instance's picture exists and was drawn after its level was built."""
+    src = Path(paths.UNREAL_ASSETS) / scene_dir.name / "source.json"
+    return png.is_file() and png.stat().st_mtime > src.stat().st_mtime
+
+
+def restart_editor(gpu: int) -> None:
+    """A fresh editor on `gpu`: what the last levels took is given back."""
+    print(f"[unreal] restarting the editor on GPU {gpu}", flush=True)
+    subprocess.run(["bash", str(ROOT / "scripts/stop_unreal.sh")], check=True)
+    subprocess.run(["bash", str(ROOT / "scripts/start_unreal.sh"), "--gpu", str(gpu)], check=True)
+
+
 def capture(view: UnrealView, qpos, cam: dict) -> np.ndarray:
     """One fresh picture of `qpos` from the rig at `cam`; the rig goes back to its parking place after."""
     rig = view.film_adr[export_mjcf.RIG]
@@ -148,13 +164,28 @@ def main(argv=None) -> int:
     ap.add_argument("--scenes", type=Path, default=ROOT / "outputs/scene_discovery")
     ap.add_argument("--out", type=Path, default=ROOT / "outputs/gso_preview")
     ap.add_argument("--build", action="store_true", help="build (or rebuild) a missing or stale level first")
+    ap.add_argument("--force", action="store_true", help="draw an instance again although its picture is up to date")
+    ap.add_argument(
+        "--restart-every", type=int, default=5, help="restart the editor after this many instances; 0 never"
+    )
+    ap.add_argument("--gpu", type=int, default=0, help="the card a restarted editor runs on (start_unreal.sh --gpu)")
     a = ap.parse_args(argv)
-    index = {}
+    index_path = a.out / "index_unreal.json"
+    index = json.loads(index_path.read_text()) if index_path.is_file() else {}
+    used = 0  # instances the running editor has built or drawn
     for seed in range(a.first_seed, a.first_seed + a.seeds):
         scene_dir = a.scenes / SCENE.format(seed=seed)
         if not (scene_dir / "scene_locomani.xml").is_file():
             raise SystemExit(f"no instance {scene_dir}: $VENV_SIM_PY scripts/gso_preview.py --seeds {seed + 1}")
         state = level_state(scene_dir)
+        png = a.out / f"{scene_dir.name}_unreal.png"
+        if state == "ok" and not a.force and up_to_date(scene_dir, png):
+            print(f"[unreal] {scene_dir.name}: {png} is up to date, skipped (--force draws it again)", flush=True)
+            continue
+        if a.restart_every and used >= a.restart_every:
+            restart_editor(a.gpu)
+            used = 0
+        used += 1
         if state != "ok":
             cmd = ["bash", str(ROOT / "scripts/build_scene.sh"), scene_dir.name, "--unreal"]
             if not a.build:
@@ -162,13 +193,12 @@ def main(argv=None) -> int:
             print(f"[unreal] level {state}: {' '.join(cmd)}", flush=True)
             subprocess.run(cmd, check=True)
         t0 = time.time()
-        entry = render_instance(scene_dir, a.out / f"{scene_dir.name}_unreal.png")
+        entry = render_instance(scene_dir, png)
         entry["seconds"] = round(time.time() - t0, 1)
         index[scene_dir.name] = entry
+        index_path.write_text(json.dumps(dict(sorted(index.items())), indent=1) + "\n")
         print(f"[unreal] {scene_dir.name}: {entry['png']} ({entry['seconds']} s)", flush=True)
-    a.out.mkdir(parents=True, exist_ok=True)
-    (a.out / "index_unreal.json").write_text(json.dumps(index, indent=1) + "\n")
-    print(json.dumps({k: v["png"] for k, v in index.items()}, indent=1))
+    print(json.dumps({k: v["png"] for k, v in sorted(index.items())}, indent=1))
     return 0
 
 
