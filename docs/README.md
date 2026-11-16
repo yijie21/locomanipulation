@@ -6,7 +6,7 @@
 
 - [AGENTS.md](../AGENTS.md)：改代码的共同约定，从这里开始。
 - [代码导航](reference/change-map.md)：按要改的东西找代码、配置和测试。
-- [场景 RSI 的代码结构与系统流水线](RSI_system_pipeline.md)：三层代码各管什么、外环 / 内环 / 一局各走哪些步、数据落在哪、PAST 记录器接在哪（2026-11-01 的静态分析）。
+- [场景 RSI 的代码结构与系统流水线](RSI_system_pipeline.md)：三层代码各管什么、外环 / 内环 / 一局各走哪些步、数据落在哪、PAST 记录器接在哪、ADT 场景怎么建、同一任务族的 10 个任务之间怎么共享知识（2026-11-01 的静态分析，11-16 补）。
 - [开发规范](reference/standards.md)：模块边界、接口和配置约定、证据规则。
 - [会话流程](agents/session-workflow.md)：验证范围、完成标准和交接。
 - [文档维护规则](agents/doc-ownership.md)：每类内容写在哪一页，以及面向读者的页面怎么写。

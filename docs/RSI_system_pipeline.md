@@ -1,6 +1,8 @@
-# 场景 RSI 的代码结构与系统流水线（2026-11-01）
+# 场景 RSI 的代码结构与系统流水线（2026-11-01，11-16 补）
 
 这一页是对 ADT 公寓场景上的 RSI（recursive self-improvement）流水线的一次静态分析：代码分几层、每个模块管什么、一轮外环和一轮内环各走哪些步、数据落在哪里，以及 2026-10-30 加进去的 PAST 场景图记录器接在哪。原理和取舍见[详解](rsi_design.md)，命令见 [runbook](rsi.md)，实测结果见[进展报告](handoff/scene-rsi-report-20261019.md)，记录器的方案见 [PAST 方案](handoff/past-scene-graph-plan-20261030.md)。行数是 2026-11-01 `henry-dev` 上的。
+
+11-16 补了三处：ADT 场景怎么建（第 1.1 节）、11-11 接进内环的知识库钩子（第 2.2 节第 0 步），以及同一任务族里 10 个任务之间怎么共享知识（第 5 节，对着 `ga-past-b` 的结果分析）。
 
 ## 1. 代码结构
 
@@ -31,11 +33,12 @@ src/locomani/
         ├── into.py (443)   放进容器
         ├── near.py (289)   拿着走到某物旁
         ├── held.py / clearance.py / cover.py / grasp_program.py   辅助：持握、避让、遮挡、种子抓取程序
+        ├── bimanual.py / pack.py   两手抱取和两手放入、放入再抱箱（11-05，物流间线用，ADT 族不走到）
         └── test_*.py       技能自己的单元测试（写回时跑）
 
 scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit/ 不进沙盒，角色读不到）
 ├── outer.py / outer_run.py 外环：发现任务 → 分桶 → 选缺口 → 建任务族 → 逐族跑内环 → 写回 → 回归 → 能力表
-├── loop.py (≈2900)         内环驱动：六个角色、起点池、审计、账本、续跑、停止线
+├── loop.py (3033)          内环驱动：六个角色、起点池、审计、账本、续跑、停止线
 ├── gate.py                 验收门：候选 vs 现任，配对比较（哨兵 → 第一阶段 30 局 → 全池 → 结论）
 ├── sealed.py / regress.py / writeback.py / capability_write.py   封存集、回归、三方合并写回、能力表
 ├── sandbox.py              沙盒：git archive HEAD + 符号链接 third_party 和场景 + 自带 git
@@ -43,9 +46,11 @@ scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit
 ├── digest.py / failure_class.py / records.py / isolate.py / design.py / diag_pool.py / try.py
 │                           给 Reviewer 的视图：摘要、失败类型、记录库、动作层归因、设计探针、诊断池重抽、角色自测
 ├── reflect.py + experience/   经验库：每个跑完的任务族一条反思
+├── knowledge.py (765)      两层知识库：建库（build）、在诊断局上求值（eval → HITS.md）、重放对照表（report）（11-11）
+├── replay.py               从跑完的运行的某一轮起重放，比较流程改动；--knowledge 装入指定的库
 ├── past.py                 show / compare 看场景图记录（TODO 39）
-├── prompts/{reviewer,manager,engineer,composer,reflector}.md   角色提示词
-├── rules.md                规则第 23 版（38 条），角色读的唯一人类知识
+├── prompts/{reviewer,manager,engineer,composer,reflector,consolidator}.md   角色提示词
+├── rules.md                规则第 25 版（39 条），角色读的唯一人类知识
 ├── families/*.json  plans/*.md  seeds/   任务族、方案、空种子
 └── report/                 报告、视频、监控脚本
 ```
@@ -61,6 +66,20 @@ scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit
 | 隐藏池（角色读不到） | `<沙盒>/outputs/scene_rsi_20261016_hidden/<任务族>/{pool_accept/, pool_sealed/, gate/}` |
 | 角色临时目录 | `<WORKSPACE>/tmp/rsi_scene_<沙盒名>/` |
 | 登记表、能力表、记录库 | 主仓库 `outputs/scene_rsi_20261016/outer/registry.json`、`configs/scene_discovery/capability_mars_scalebfm.yaml`、`outputs/scene_rsi_20261016/records/library.jsonl` |
+
+### 1.1 ADT 场景从哪来（离线一次，人跑）
+
+```
+scripts/adt_download.py     只取序列的 main_groundtruth（约 20 MB）和用到物体的 DTC 模型，不下 2.3 TB 全量
+→ adt_to_scene.py geometry  scene_discovery/adt.py：ADT 的 y 轴朝上转成仿真的 z 轴朝上（ADT_TO_SIM），物体取第一帧位姿；
+                            floorplan.py 墙和房间，surfaces.py 固定家具朝上的面作台面
+→ adt_to_scene.py estimate  Claude 估名字、质量、摩擦、是否容器，properties.py 的规则校正
+→ adt_to_scene.py mujoco --robot mars   scene_locomani.xml：可动物体用凸包，家具凸包只和机器人碰
+→ scene_add_panels.py / scene_add_colliders.py / scene_settle.py --write   补面板和碰撞体，写入沉降后的位姿
+→ （可选）adt_to_usd.py     Isaac 或 Unreal 的渲染资产
+```
+
+产物在 `outputs/scene_discovery/adt_apartment_mars/`：序列 `Apartment_release_clean_seq131_M1292`，`scene_meta.json` 里有 354 个物体、69 个台面。这些是 ADT 的衍生物，按 DECISIONS 2026-10-20 打包进了 `rsi_kit/`（`scripts/rsi/kit.py pack / restore`）。用这个场景的任务族有 `pick_single`、`r1_*`、`r2_*`、`cal_r2`–`cal_r4`、`grasp_atomic`、`grasp_atomic_past`、`grasp_prep`；`gso_*` 和 `box_bimanual` 是物流间。
 
 ## 2. 系统流水线
 
@@ -86,13 +105,16 @@ scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit
    │
    ├─ 0 驱动程序准备：现任跑诊断池 (50 局，batch.py 12 进程) → diag/incumbent_<hash>/{.json, .npz, .past.jsonl}
    │     诊断池失败 < 10 局就重抽 (diag_pool.py)；撤销已被做成的搁置；
+   │     知识库钩子 (knowledge_step，11-11)：每条条目的条件在这些诊断局上求值 → 沙盒的 scripts/rsi/knowledge/HITS.md
+   │     + iter_NN/knowledge_hits.json，账本记一行 knowledge；库为空时不生成 HITS.md，提示里也没有知识块；
    │     同类失败 ≥ 2 局时单独重跑那条命令，判动作层还是技能 (isolate.py)；
    │     生成 diag_digest.md (digest.py：失败类型计数、每任务几何事实、首失败步骤、区分数、场景图转移一节)
    │     + reviewer_context.json (现任、参数、round_features 每局一行的条件列表、mechanisms 机制表、压缩 history、focus、parked、attribution、designs_last)
    │
    ├─ 1 Reviewer (claude -p, high)：读规则 / 方案 / 上下文 / 摘要 → .past.jsonl → NPZ 最后手段
    │     工具：graspability / body.reach / choose / prep / records.query / try.py (≤ 40 局/次, ≤ 240 局/轮)
-   │     输出 hypotheses.json：≤ 4 条 {claim, instead, evidence, delta.set, predicted_fixed / broken, needs_code?, measure?, design?}
+   │     有命中时还读 HITS.md（规则 39）
+   │     输出 hypotheses.json：≤ 4 条 {claim, instead, evidence, delta.set, predicted_fixed / broken, needs_code?, measure?, design?, knowledge_refs?}
    │     + infeasible 声明（硬约束 check 程序 + 出路 + 1–3 次尝试）
    │
    ├─ 2 Prober (程序)：每条假设的参数 delta 在 50 个诊断起点上真跑 → status 已验证 / 已否定 / 有赢有输 / 仍是假设
@@ -188,7 +210,83 @@ loop.named_objects：skills/ 里引用记录器 → 草稿作废（规则 38）
 - **人**：`.past.jsonl` 本身是可读 JSON；`show` / `compare` 的文本输出和摘要那一节给人看也够用；`--json` 导出单条。节点—边的图形页（`past.py html`）是第二阶段。
 - **技能**：不许读。技能代码里 import `locomani.tasks.scene.past`、或字符串含 `past.jsonl` / `rsi/past.py`，草稿作废（规则第 38 条，`loop.named_objects`）。
 
-## 5. 薄弱处（2026-11-01 的观察，未动）
+## 5. 同一任务族里 10 个任务之间怎么共享知识（2026-11-16）
+
+以 `grasp_atomic_past` 为例：10 个物体（Orange、CoffeeCan、DishSoap、Mug、TvRemote、WoodenSpoon、Candle、VaseSmall、Plant4、DisplayWolf）的 `held(X)` 任务，从只有动作层的空种子开始，没有经验库（`library_exclude` 排除了每一条）。三个池按物体平分：诊断池 30 局（每物体 3 局）、验收池 40 局（4 局）、封存集 50 局（5 局）。运行结果见 [ga-past-b 结果](handoff/ga-past-b-results-20261102.md)。
+
+结论：**现在没有一个显式的知识共享模块。** 10 个任务在一个内环里一起进化，共享靠四样东西间接实现：同一份技能代码、禁止写物体名、10 个任务一起做配对验收、角色看到的是跨任务的同一份证据。显式的两层知识库代码已写好（第 5.5 节），但还没建过库，没参与过运行。
+
+### 5.1 载体：同一份技能代码
+
+10 个任务的目标都是 `held(X)`。`plan_for` 把它们全都交给 `pick_held`，再交给 `pick.pick(ctx, key)`（`skills/__init__.py`），所以只有一条执行路径。Engineer 改的是 `pick.py` 里的共享逻辑，每处改动同时作用到 10 个物体上。
+
+从某个物体学到的东西，以按几何特征分支的条件和常数留在代码里（`pick.py` 开头的常数区）：
+
+- `TOP_FLAT_M`：扁平物体放在矮台面上时，改用俯捏（遥控器、钱包学出来的）；
+- `COVERED_VIA_OUT_M`、`NARROW_SIDE_MAX_M`：物体上方有遮挡时，用另一条接近路线（狼摆件学出来的）；
+- `LOW_SPAN_M`、`LOW_WIDTH_M`：物体宽度接近爪口时，降到更窄的高度去抓。
+
+条件写的是特征，不是名字。以后来一个同样扁平或同样被遮挡的物体，会自动走进对应分支。现在实际起作用的"共享层"就是代码里这些带条件的分支。
+
+### 5.2 强制泛化：技能里不许写物体名（规则 30）
+
+技能可以为一类物体写专门的流程（`recipes/`，带 `SIGNATURE` 和 `match(obj)`），由分发器按特征选，通用 pick 兜底。技能代码里只要出现场景物体的 key、刚体名、ADT 实例名或名字词干，草稿就作废（`loop.named_objects`）。所以即使一个修法只为救一个物体，也必须写成"台面高于多少、上方有遮挡"这样的特征条件。这条规则把每个物体上的局部经验强行写成带条件、可复用的形式。
+
+### 5.3 选择压力：10 个任务一起做配对验收
+
+验收门每次都同时覆盖 10 个任务（`gate.py`）：
+
+- 第一阶段 30 局按任务比例分层抽，净赢不大于 0 就拒；
+- 结论要多赢减少赢至少 3，且少赢不超过多赢的三分之一；
+- 哨兵每个任务取 1 局，必须复现现任的结局。
+
+所以修好 A 物体、却弄坏 B 物体的改动会被拒；每个物体只有 4 局，只救一个物体的改动也很难攒够净赢 3。`ga-past-b` 的记录：
+
+| 轮 | 候选 | 逐物体变化（验收池） | 结论 |
+|---|---|---|---|
+| 0 | `0fa018` | 空种子变成 8 个物体都会做 | 接受，26 / 40 |
+| 1 | `d16e63`、`4006ff` | 只有马克杯多 1 局 | 拒（多赢 1、少赢 0） |
+| 3 | `ea93e5` | 洗洁精多 2、马克杯多 1、橙子多 1，咖啡罐少 1 | 接受（多赢 4、少赢 1） |
+| 6 | `33aebe` | 狼摆件、马克杯、咖啡罐各多 1，橙子少 1 | 拒（多赢 3、少赢 1，净 2） |
+
+第 3 轮和第 6 轮说明，一次共享代码的改动同时在几个物体上有正有负，验收门只按总的净收益做决定。封存集上两个被接受的版本逐局配对：第 3 轮版本多赢 7、少赢 1（31 → 37 / 50）。
+
+### 5.4 诊断视角：角色看到的是跨任务的同一份证据
+
+- Reviewer 读的 `diag_digest.md` 同时列出 10 个任务的失败类型和首个失败步骤；场景图转移那一节按任务对照失败局和成功局。所以假设天然是跨物体的机制（比如"手腕压到台面前下沿"），而不是单个物体的补丁。
+- Prober 在全部 30 个诊断起点上验证假设，结果写的是救回了哪些起点、弄坏了哪些起点，按物体就能看出影响面。
+- 记录库（`records.py`）的 `measure` 按特征列跨所有任务的局做 Fisher 检验，比如"台面高于 1 m 的局失败更多"。
+- 机制表（`loop.mechanism_table`）按 Manager 的 `repeats` 把多轮里的同一机制串起来，前几轮的结论靠账本和压缩 history 传到后面。
+
+### 5.5 显式的两层知识库：代码已写，没建过库
+
+`knowledge.py`（[设计](handoff/shared-knowledge-plan-20261111.md)，规则 39）把上面隐式的东西变成显式条目：
+
+```
+跑完的账本 → 聚出机制，以及每个机制救回 / 弄坏的局（按现任版本和局标签）
+          → join 诊断局的 PAST 图列和 start.* 特征 → 证据表（列按区分度排序）
+          → Consolidator（LLM）只写 condition / signature / repair，程序校验列名和物体名
+          → 程序按 evidence.by_object 定 scope：多个物体净正是 shared，只有一个物体净正是 local，
+            local 用物体特征区间收窄条件（narrowed_by）
+          → 下一轮在现任诊断局上求值条件，命中的写进 HITS.md 给 Reviewer
+```
+
+这里判断"10 个任务之间是否共享"的依据就是 `by_object`：一条修法在几个物体上净正。截至 11-16，仓库里没有 `scripts/rsi/knowledge/` 目录，即还没对 `ga-past-b` 跑过 `build`，HITS.md 从未生成；设计稿里的 `hand_hooked_under_slab`（狼摆件 3 / 3、盆栽反例）是示意，不是实测产出。
+
+### 5.6 对照与问题
+
+| | 现在实际起作用的 | 设计中的显式知识库 |
+|---|---|---|
+| 知识的形式 | 技能代码里按特征写的分支和常数 | 条件、失败签名、修法组成的 JSON 条目 |
+| 共享还是局部怎么定 | 不显式定，由验收门的总净收益隐式筛 | 程序按净正的物体数定 scope |
+| 局部知识放哪 | `recipes/` 加 `match()`（规则允许，主库现在没有） | `local` 条目加 `narrowed_by` |
+| 新任务怎么复用 | 写回主仓库 `skills/` 后，新任务族直接继承代码 | 条件在新任务的诊断局上命中才给角色看 |
+
+1. **局部知识容易被验收门淘汰**：每物体 4 个验收局，只救一个物体的改动很难净赢 3。橙子和木勺 8 轮都没做成，部分原因可能在这里；这和 SSLA "保留局部适配"的目标有张力。
+2. **共享知识没有显式的适用范围**：代码里的分支条件是 Engineer 按当时看到的物体写的，不记录它从哪几个物体验证出来、哪些是反例；这正是 `knowledge.py` 要补的。
+3. **下一步**：在 SRA0889 上跑 `knowledge.py build ga-past-b grasp_atomic_past --iters 0-3`（沙盒在那台机器的 `/workspace/code/rsi-scene/`），看抽出几条、`shared` / `local` 划得对不对，再按设计稿第 7.2 节做配对重放。
+
+## 6. 薄弱处（2026-11-01 的观察，未动）
 
 1. **诊断只看方向**：50 局同配置重复过 6 / 10 和 2 / 10，Reviewer 的假设命中率受噪声影响大；新运行对比旧运行也是非配对的。
 2. **`predicates._held` 的 resting 判定**查同一足迹里所有台面，包括物体上方的隔板（`bottom − top` 为负也满足 `≤ 0.02`），隔板下的物体 `held` 永远为假。
