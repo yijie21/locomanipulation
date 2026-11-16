@@ -12,7 +12,8 @@ only how a reference reaches the controller, every tick:
   legs        SONIC's own velocity planner. While walking (MODE_WALK, `walk` "goal"): SLOW_WALK toward the walk's end
               pose, braking as sqrt(2 decel d) from v_cruise, IDLE within stop_radius, on `root_est` (leg odometry when
               it is on, else the simulator's), facing the reference heading. Standing primitives: IDEL_SQUAT at the
-              reference pelvis height when it is below squat_below (the only planner mode that honours a height,
+              reference pelvis height (rounded to height_step) once it drops below squat_enter, back to IDLE above
+              squat_exit (IDEL_SQUAT is the only planner mode that honours a height,
               backends.sonic.agent_server.LocomotionMode), else IDLE; the facing is the reference heading either way, so
               a turn in place is the planner's.
 
@@ -74,7 +75,14 @@ class SonicMotorConfig:
     # (world keypoints minus its root estimate); "reference": the reference pose's own pelvis (the teleop sender's
     # convention, which leaves the pelvis' own error in the hand)
     vr_frame: str = "robot"
-    squat_below: float = 0.775  # m: a reference pelvis lower than this is a squat at that height (IDLE stands ~0.78)
+    # standing vs squatting, with hysteresis. IDLE stands its pelvis at ~0.785 whatever the reference says. The motor's
+    # standing reference is the MEASURED pelvis (Motor._stand), so a squat threshold just under the standing height
+    # (0.775 until 2026-11-16) turned every stand into a squat at that height, the robot sagged a little, the next
+    # stand re-anchored lower, and the unrounded height replanned every 0.1 s: 75 % of stand commands ended in squat
+    # mode at 0.746 m and 5-7 % of segments settled (sonic_selfmodel_20261115_a800, independent review)
+    squat_enter: float = 0.70  # m: reference pelvis below this -> IDEL_SQUAT
+    squat_exit: float = 0.73  # m: ... above this -> IDLE again
+    height_step: float = 0.02  # m: the squat height sent, rounded (a gamepad's resolution, not a float stream)
     squat_min: float = 0.40  # m: the squat mode's documented lower end (planner_onnx.md)
     settle_s: float = 2.0  # s of SONIC holding its first plan after reset, before t = 0
 
@@ -88,6 +96,7 @@ class SonicMotor(Motor):
         super().__init__(sim, policy, config, model_xml=model_xml, track=track, jacobian=jacobian)
         self.sonic = sonic or SonicMotorConfig()
         self.cmd: S.SonicCommand | None = None
+        self.squatting = False
 
     # -- reset ------------------------------------------------------------------------------------------------------
     def reset(self, xy, yaw: float, *, warm_up: int = 0) -> None:
@@ -99,6 +108,7 @@ class SonicMotor(Motor):
         self.jaw[:] = JAW_OPEN
         self.servo, self.servo_target, self.hand_override = {}, {}, {}
         self.servo_on = {s: False for s in SIDES}
+        self.squatting = False
         self.pol.reset(sim.state())
         # anchor the pelvis estimate here before the settle (leg odometry restarts on _stand, as Motor.reset's does at
         # once): otherwise the settle's ticks integrate onto the PREVIOUS episode's anchor, and two runs of the same
@@ -148,6 +158,7 @@ class SonicMotor(Motor):
         facing = self._facing(R.yaw_of(ref.quat))  # constant except while the path turns: not rounded
         idle = S.Movement(S.IDLE, -1.0, np.zeros(3), facing, -1.0)
         if self.mode == MODE_WALK:
+            self.squatting = False
             est = self._pelvis_estimate()[:2]
             if c.walk == "goal":
                 left = self.ref(self.t + 1e3).pos[:2] - est  # walk_to's reference clamps to its end pose
@@ -162,9 +173,11 @@ class SonicMotor(Motor):
                 return self._walk(v_ref + c.kp_xy * err, c.v_max, facing)
             return idle
         z = float(ref.pos[2])
-        if z < c.squat_below:
-            return S.Movement(S.IDEL_SQUAT, -1.0, np.zeros(3), facing, max(z, c.squat_min))
-        return S.Movement(S.IDLE, -1.0, np.zeros(3), facing, -1.0)
+        self.squatting = z < (c.squat_exit if self.squatting else c.squat_enter)
+        if self.squatting:
+            h = max(round(z / c.height_step) * c.height_step, c.squat_min)
+            return S.Movement(S.IDEL_SQUAT, -1.0, np.zeros(3), facing, h)
+        return idle
 
     def _command(self, ref: Pose) -> S.SonicCommand:
         links = self.kp(ref.pos, ref.quat, ref.joints)

@@ -194,3 +194,36 @@ class Readapt(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SquatHysteresis(unittest.TestCase):
+    """SonicMotor's standing branch: IDLE near the standing height, IDEL_SQUAT below squat_enter until above squat_exit,
+    the height rounded; a stand re-anchored at a slightly sagged pelvis must not become a squat (the 0.775 bug)."""
+
+    def motor(self):
+        from locomani.backends.scalebfm.motor import MODE_STAND, MotorConfig
+        from locomani.backends.sonic_onnx.motor import SonicMotor, SonicMotorConfig
+
+        m = SonicMotor.__new__(SonicMotor)
+        m.sonic, m.cfg, m.mode, m.squatting = SonicMotorConfig(), MotorConfig(), MODE_STAND, False
+        return m
+
+    def movement(self, m, z):
+        from locomani.backends.scalebfm.motor import Pose
+
+        return m._movement(Pose(np.array([0.0, 0.0, z]), yaw_quat(0.3), np.zeros(29), np.zeros(29)))
+
+    def test_sagged_stands_stay_idle_and_squats_round_and_hold(self):
+        m = self.motor()
+        for z in (0.787, 0.770, 0.746, 0.71):
+            mv = self.movement(m, z)
+            self.assertEqual((mv.mode, mv.height), (S.IDLE, -1.0), z)
+        mv = self.movement(m, 0.611)
+        self.assertEqual(mv.mode, S.IDEL_SQUAT)
+        self.assertAlmostEqual(mv.height, 0.62)
+        self.assertEqual(self.movement(m, 0.719).mode, S.IDEL_SQUAT)  # inside the band: still squatting
+        self.assertAlmostEqual(self.movement(m, 0.719).height, 0.72)
+        self.assertEqual(self.movement(m, 0.735).mode, S.IDLE)  # above squat_exit
+        self.assertEqual(self.movement(m, 0.719).mode, S.IDLE)  # and the band does not re-enter from above
+        self.assertAlmostEqual(self.movement(m, 0.30).height, 0.40)  # squat_min
+        np.testing.assert_allclose(self.movement(m, 0.787).facing, [math.cos(0.3), math.sin(0.3), 0.0], atol=1e-12)

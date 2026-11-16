@@ -135,7 +135,10 @@ ID0 = int(os.environ.get("REACH_ID0", "0"))  # added to the reset ids, so a seco
 # Default off. A file holding the frozen weights replays the frozen dataset bit for bit.
 STUDENT = os.environ.get("REACH_STUDENT", "")
 FLUSH = 500  # segments per saved chunk
-PRE_S, POST_S = 0.3, 1.0
+PRE_S = 0.3
+# REACH_POST_S (2026-11-16): seconds recorded after the reach returns, 1.0 by default (every dataset so far); a longer
+# tail is a diagnostic for controllers that settle more slowly (SONIC: 5-7 % of segments settled at 1.0 s)
+POST_S = float(os.environ.get("REACH_POST_S", "1.0"))
 CORE = (np.array([0.15, -0.40, 0.15]), np.array([0.70, 0.15, 1.35]))
 WIDE = (np.array([0.05, -0.60, 0.02]), np.array([1.00, 0.35, 1.50]))
 
