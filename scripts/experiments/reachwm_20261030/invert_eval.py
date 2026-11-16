@@ -41,7 +41,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "selfwm_20261029"))
 import env as E  # noqa: E402
 
-OUT = E.REPO / "outputs" / "reachwm_20261030" / "invert"
+OUT = Path(os.environ.get("REACHWM_ROOT") or E.REPO / "outputs" / "reachwm_20261030") / "invert"
 SEED = 9000000
 LAMBDA = 1.0
 PELVIS = (-1.0, 0.56, 0.62, 0.68, 0.74)  # -1 = stand

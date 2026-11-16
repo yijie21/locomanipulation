@@ -15,12 +15,13 @@ Writes outputs/reachwm_20261030/data_approach_reach/all.npz and data_approach0_r
 from __future__ import annotations
 
 import math
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 
-OUT = Path(__file__).resolve().parents[3] / "outputs" / "reachwm_20261030"
+OUT = Path(os.environ.get("REACHWM_ROOT") or Path(__file__).resolve().parents[3] / "outputs" / "reachwm_20261030")
 
 
 def rot_h6(dyaw: np.ndarray, pitch: np.ndarray) -> np.ndarray:

@@ -57,6 +57,21 @@ def gravity_in_base(q) -> np.ndarray:
     return g * (2 * w * w - 1) - np.cross(u, g) * 2 * w + u * np.dot(u, g) * 2
 
 
+def in_order(meta: dict, order: str) -> dict:
+    """`meta` (MuJoCo joint order) with its per-joint lists in `order`: "mujoco" as is, "scalebfm" in ScaleBFM's
+    metadata order (what scalebfm.runtime.Sim and the self-model features use), so every controller's sim exchanges
+    state and targets in the same columns."""
+    if order == "mujoco":
+        return meta
+    assert order == "scalebfm", order
+    names = json.load(open(R.META))["joint_names"]
+    idx = [meta["joint_names"].index(n) for n in names]
+    out = dict(meta, joint_names=list(names))
+    for k in ("stiffness", "damping", "torque_limit", "default_dof_pos"):
+        out[k] = [meta[k][i] for i in idx]
+    return out
+
+
 def sim_meta(model_xml: str) -> dict:
     """The joint table `Sim` wants: the gear WBC's gains, the scene model's torque limits, ScaleBFM's standing pose."""
     m = mujoco.MjModel.from_xml_path(model_xml)
@@ -73,9 +88,14 @@ def sim_meta(model_xml: str) -> dict:
 class Gr00tSim(R.Sim):
     """`runtime.Sim` on the gear WBC's PD (same 5 ms step, four per tick); grippers, bodies and the fall test as is."""
 
-    def __init__(self, backend: ScaleBfmBackendConfig, video=False, perturb: dict | None = None):
+    def __init__(self, backend: ScaleBfmBackendConfig, video=False, perturb: dict | None = None, order: str = "mujoco"):
+        """`order`: as AmoSim's."""
+        from locomani.backends.amo.runtime import in_order
+
         xml = os.path.join(backend.scene_path(), "scene_locomani.xml")
-        super().__init__(sim_meta(xml), video=video, backend=backend, perturb=perturb)
+        meta = in_order(sim_meta(xml), order)
+        super().__init__(meta, video=video, backend=backend, perturb=perturb)
+        self.joint_names = list(meta["joint_names"])
 
 
 class Gr00tPolicy:

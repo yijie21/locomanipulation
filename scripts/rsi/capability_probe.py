@@ -170,7 +170,7 @@ def probe_scene() -> Path:
 
 class Probe:
     def __init__(self, kind: str, controller: str = "scalebfm", sonic=None, scene_dir=None, dynamics: str = "scene"):
-        """`controller` "scalebfm" (the default) or "sonic": SONIC v1.1 in process (backends.sonic_onnx), same scene,
+        """`controller` "scalebfm" (the default), "amo", "gr00t_wbc", or "sonic": SONIC v1.1 in process (backends.sonic_onnx), same scene,
         robot, joint order and Motor interface; `sonic` its SonicConfig (None: the defaults). `scene_dir`: the sim's
         scene instead of walk_mars (the whole-body IK keeps walk_mars' robot); `dynamics`: SonicSim's joint dynamics."""
         sys.path[:0] = [str(REPO / "src")]
@@ -190,6 +190,22 @@ class Probe:
             policy = SonicPolicy(meta["joint_names"], sonic)
             sim = SonicSim(meta, backend=backend, dynamics=dynamics)
             self.m = SonicMotor(sim, policy, MotorConfig(), model_xml=str(WALK / "scene_locomani.xml"))
+        elif controller == "amo":  # AMO's legs and waist, our arm IK per tick (backends.amo); AMO's own motor defaults
+            from locomani.backends.amo.motor import AmoMotor
+            from locomani.backends.amo.runtime import AmoPolicy, AmoSim
+
+            policy = AmoPolicy("cuda")
+            sim = AmoSim(backend, order="scalebfm")
+            self.m = AmoMotor(sim, policy, None, model_xml=str(WALK / "scene_locomani.xml"))
+        elif controller == "gr00t_wbc":  # NVIDIA's gear WBC (backends.gr00t_wbc): legs and waist, arms as AMO's
+            from locomani.backends.gr00t_wbc.motor import VARIANTS, Gr00tMotor
+            from locomani.backends.gr00t_wbc.runtime import Gr00tPolicy, Gr00tSim
+
+            policy = Gr00tPolicy()
+            sim = Gr00tSim(backend, order="scalebfm")
+            self.m = Gr00tMotor(
+                sim, policy, None, model_xml=str(WALK / "scene_locomani.xml"), gr00t=VARIANTS["gr00t_wbc"]
+            )
         else:
             assert controller == "scalebfm", controller
             policy = R.Policy("cuda", ScaleBfmBackendConfig())

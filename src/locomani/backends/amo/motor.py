@@ -43,7 +43,7 @@ from locomani.backends.scalebfm.motor import (
     expmap,
     lowest_foot_point,
 )
-from locomani.primitives.g1_joints import ARM_MJ
+from locomani.primitives.g1_joints import ARM_MJ, MUJOCO_JOINT_NAMES
 from locomani.primitives.whole_body_ik import rotvec
 
 # shoulder pitch, roll, yaw, elbow, wrist roll, pitch, yaw: hands beside the thighs, clear of the torso and legs
@@ -91,9 +91,14 @@ class AmoMotor(Motor):
         super().__init__(sim, policy, config or AMO_MOTOR, model_xml=model_xml, track=track, jacobian=jacobian)
         self.amo = amo or AmoConfig()
         self.torso_id = sim.m.body("torso_link").id
+        # the policy works in MuJoCo joint order; the sim may exchange state and targets in another (AmoSim order)
+        names = list(getattr(sim, "joint_names", MUJOCO_JOINT_NAMES))
+        self.to_mj = np.array([names.index(n) for n in MUJOCO_JOINT_NAMES])  # sim index of each MuJoCo joint
+        self.from_mj = np.array([MUJOCO_JOINT_NAMES.index(n) for n in names])  # MuJoCo index of each sim joint
         self._reset_servos()
 
     def _reset_servos(self) -> None:
+        self.root_est = None  # the pelvis estimate of the last tick (leg odometry when it is on)
         self.h_int = 0.0
         self.p_int = 0.0
         self.arm_q = np.r_[ARM_READY]
@@ -108,7 +113,7 @@ class AmoMotor(Motor):
         sim = self.sim
         sim.reset(np.asarray(xy, float), float(yaw), 0.0)
         sim.d.qpos[sim.qadr] = 0.0
-        sim.d.qpos[sim.qadr[A.ARMS]] = ARM_READY
+        sim.d.qpos[self.kp.qadr[A.ARMS]] = ARM_READY
         mujoco.mj_forward(sim.m, sim.d)
         sim.d.qpos[2] += 0.005 - lowest_foot_point(sim.m, sim.d, self.foot_bodies)
         mujoco.mj_forward(sim.m, sim.d)
@@ -121,7 +126,7 @@ class AmoMotor(Motor):
         y = float(yaw)
         for _ in range(int(self.amo.settle_s / A.DT)):  # AMO stands up from its default pose; not on the round's clock
             sim.grip_target[:] = JAW_OPEN
-            sim.step(self.pol(sim.state(), A.Command(yaw=y), ARM_READY))
+            self._step(self.pol(self._mj_state(), A.Command(yaw=y), ARM_READY))
         self.nominal = self.joints()[:15].copy()
         self._stand()
         self.stand_pose = self.ref(0.0)
@@ -130,6 +135,20 @@ class AmoMotor(Motor):
         self.pitch0 = float(self._torso_attitude(self.stand_pose)[1])
 
     # -- the tick ---------------------------------------------------------------------------------------------------
+    def _mj_state(self, st: dict | None = None) -> dict:
+        """The sim's state with the joint arrays in MuJoCo order (the policy's)."""
+        st = dict(self.sim.state() if st is None else st)
+        st["dof_pos"], st["dof_vel"] = st["dof_pos"][self.to_mj], st["dof_vel"][self.to_mj]
+        return st
+
+    def _step(self, targets_mj) -> None:
+        self.sim.step(np.asarray(targets_mj, float)[self.from_mj])
+
+    def _pelvis_estimate(self) -> np.ndarray:
+        """Where the robot believes its pelvis is: the leg odometry (`policy.root_source`, reachwm leg_odo.OdoRoot)
+        when it is on, else the simulator's -- ScaleBFM is told the same estimate as its root."""
+        return self.sim.d.qpos[:3].copy() if self.root_est is None else np.asarray(self.root_est, float)
+
     def _set_mode(self, mode: int) -> None:
         self.mode = mode
 
@@ -155,7 +174,8 @@ class AmoMotor(Motor):
         d = self.sim.d
         yaw_ref = R.yaw_of(ref.quat)
         yaw = self.yaw()
-        e_xy = ref.pos[:2] - d.qpos[:2]
+        est = self._pelvis_estimate()
+        e_xy = ref.pos[:2] - est[:2]
         c, s = np.cos(yaw), np.sin(yaw)
         to_body = np.array([[c, s], [-s, c]])
         vx = vy = 0.0
@@ -180,7 +200,7 @@ class AmoMotor(Motor):
         roll = float(np.clip(roll, -a.torso_roll_max, a.torso_roll_max))
         if self.mode != MODE_WALK:
             self.h_int = float(
-                np.clip(self.h_int + a.ki_height * A.DT * (ref.pos[2] - d.qpos[2]), -a.cap_height, a.cap_height)
+                np.clip(self.h_int + a.ki_height * A.DT * (ref.pos[2] - est[2]), -a.cap_height, a.cap_height)
             )
             meas = A.euler(R.quat_wxyz(R.rot_z(-yaw) @ R.mat(d.xquat[self.torso_id])))[1]
             self.p_int = float(
@@ -225,7 +245,7 @@ class AmoMotor(Motor):
                 p_w, q_w = self.kp(ref.pos, ref.quat, ref.joints)[WRIST[s]]
                 self.cmd_jaw[s] = (p_w + R.mat(q_w) @ R.OFF, R.mat(q_w))
             return self.arm_q
-        pel_p, pel_q = self.pelvis()
+        pel_p, pel_q = self._pelvis_estimate(), self.pelvis()[1]
         Rp = R.mat(pel_q)
         q = q_meas.copy()
         q[A.ARMS] = ref.joints[A.ARMS]  # seeded at the reference's (planned) arm, held near it by the posture prior
@@ -241,9 +261,16 @@ class AmoMotor(Motor):
 
     def tick(self) -> bool:
         sim = self.sim
+        st = sim.state()
+        if getattr(self.pol, "root_source", None) is not None:
+            self.root_est = np.asarray(self.pol.root_source(st, None), float)
         ref = self.ref(self.t)
         cmd = self._command(ref)
         arms = self._arms(ref)
+        # what the self-model data record as the command (gen_reach Recorder): the jaw centres the arms are sent to
+        self.last_fut = {
+            WRIST[s]: ((p - Rw @ R.OFF)[None], R.quat_wxyz(Rw)[None]) for s, (p, Rw) in self.cmd_jaw.items()
+        }
         sim.grip_target[:] = np.repeat(self.jaw, 2)
         if sim.fallen():
             self.fell_at = self.t if self.fell_at is None else self.fell_at
@@ -275,7 +302,7 @@ class AmoMotor(Motor):
                 ),  # fmt: skip
             )
         )
-        sim.step(self.pol(sim.state(), cmd, arms))
+        self._step(self.pol(self._mj_state(st), cmd, arms))
         self.last_cmd = cmd
         self.k += 1
         return True

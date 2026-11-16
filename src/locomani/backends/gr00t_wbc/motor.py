@@ -49,8 +49,8 @@ class Gr00tMotor(AmoMotor):
         sim = self.sim
         sim.reset(np.asarray(xy, float), float(yaw), 0.0)
         sim.d.qpos[sim.qadr] = 0.0
-        sim.d.qpos[sim.qadr[:15]] = G.DEFAULT
-        sim.d.qpos[sim.qadr[G.ARMS]] = ARM_READY
+        sim.d.qpos[self.kp.qadr[:15]] = G.DEFAULT
+        sim.d.qpos[self.kp.qadr[G.ARMS]] = ARM_READY
         mujoco.mj_forward(sim.m, sim.d)
         sim.d.qpos[2] += 0.005 - lowest_foot_point(sim.m, sim.d, self.foot_bodies)
         mujoco.mj_forward(sim.m, sim.d)
@@ -64,7 +64,7 @@ class Gr00tMotor(AmoMotor):
         stand = G.Command(yaw=y, height=G.HEIGHT0)
         for _ in range(int(self.amo.settle_s / G.DT)):  # not on the round's clock
             sim.grip_target[:] = JAW_OPEN
-            sim.step(self.pol(sim.state(), stand, ARM_READY))
+            self._step(self.pol(self._mj_state(), stand, ARM_READY))
         self.nominal = self.joints()[:15].copy()
         self._stand()
         self.stand_pose = self.ref(0.0)

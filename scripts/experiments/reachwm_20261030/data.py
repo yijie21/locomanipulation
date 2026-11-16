@@ -23,8 +23,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "selfwm_20261029"))
 import env as E  # noqa: E402
 
-DATA = E.REPO / "outputs" / "reachwm_20261030" / "data"
-OUT = E.REPO / "outputs" / "reachwm_20261030"
+# REACHWM_ROOT (2026-11-16): the data and model root of one controller's run (default outputs/reachwm_20261030, every
+# ScaleBFM dataset); runs of other controllers in parallel each set their own
+OUT = Path(os.environ.get("REACHWM_ROOT") or E.REPO / "outputs" / "reachwm_20261030")
+DATA = OUT / "data"
 # REACHWM_X0_REF=1 (2026-10-30 diagnosis): also give the start the controller's reference -- the jaw centre the motor
 # commands at k0 (C, pelvis frame) and its offset from the measured jaw (pelvis frame). A chained reach plans from the
 # previous reach's reference, not from where the hand actually is.
