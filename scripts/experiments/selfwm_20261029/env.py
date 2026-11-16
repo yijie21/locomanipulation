@@ -87,6 +87,10 @@ class Env:
             sonic = SonicConfig(device_id=-1 if where == "allcpu" else 0, nets_on_cpu=where == "cpu",
                                 threads=int(os.environ.get("REACH_SONIC_THREADS", "1")))  # fmt: skip
         self.probe = cap.Probe("grip" if scene == "grip" else "reach", controller=self.controller, sonic=sonic)
+        if self.controller == "sonic":  # REACH_SONIC_IFACE: SonicMotorConfig.interface (vr3pt, g1_splice, g1_full)
+            self.probe.m.sonic = dataclasses.replace(
+                self.probe.m.sonic, interface=os.environ.get("REACH_SONIC_IFACE", self.probe.m.sonic.interface)
+            )
         self.m, self.sim, self.R = self.probe.m, self.probe.sim, self.probe.R
         root = os.environ.get(
             "BFM_ROOT", "true"

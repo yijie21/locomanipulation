@@ -53,6 +53,8 @@ from locomani.backends.scalebfm.motor import (
 )
 from locomani.backends.sonic_onnx import runtime as S
 
+UPPER = np.arange(12, 29)  # waist (3) and arms (14), MuJoCo order: the deploy's 17 spliced upper-body joints
+
 
 @dataclass(frozen=True)
 class SonicMotorConfig:
@@ -75,6 +77,12 @@ class SonicMotorConfig:
     # (world keypoints minus its root estimate); "reference": the reference pose's own pelvis (the teleop sender's
     # convention, which leaves the pelvis' own error in the hand)
     vr_frame: str = "robot"
+    # which SONIC input carries the upper body. "vr3pt": the VR 3-point targets (teleop encoder mode, until
+    # 2026-11-16); "g1_splice": the 29-joint reference mode on the planner's motion with the reference's 17 upper-body
+    # joints (waist + arms) spliced into every future frame; "g1_full": as g1_splice while walking, and while standing
+    # all 29 joints and the root orientation of the reference itself (the whole-body IK pose, feet planted, the pelvis
+    # height in its legs), the planner kept in IDLE
+    interface: str = "vr3pt"
     # standing vs squatting, with hysteresis. IDLE stands its pelvis at ~0.785 whatever the reference says. The motor's
     # standing reference is the MEASURED pelvis (Motor._stand), so a squat threshold just under the standing height
     # (0.775 until 2026-11-16) turned every stand into a squat at that height, the robot sagged a little, the next
@@ -122,7 +130,10 @@ class SonicMotor(Motor):
         self.stand_pose = self.ref(0.0)
 
     def _plan_command(self) -> S.SonicCommand:
-        """IDLE, and the VR targets of the playing plan's own pose (what the g1 mode would track)."""
+        """IDLE, and the playing plan's own pose: its g1 frames, or for vr3pt the VR targets of that pose."""
+        if self.sonic.interface != "vr3pt":
+            facing = self._facing(R.yaw_of(self.sim.d.qpos[3:7]))
+            return S.SonicCommand(S.Movement(S.IDLE, -1.0, np.zeros(3), facing, -1.0), g1=self.pol.planner_frames())
         pos, quat, q = self.pol.plan_pose()
         links = self.kp(pos, quat, q)
         vr_pos, vr_quat = S.vr_targets(links, pos, quat)
@@ -172,6 +183,8 @@ class SonicMotor(Motor):
             if float(np.linalg.norm(v_ref)) > 1e-4 or float(np.linalg.norm(err)) > cfg.stop_tolerance:
                 return self._walk(v_ref + c.kp_xy * err, c.v_max, facing)
             return idle
+        if c.interface == "g1_full":
+            return idle
         z = float(ref.pos[2])
         self.squatting = z < (c.squat_exit if self.squatting else c.squat_enter)
         if self.squatting:
@@ -181,12 +194,30 @@ class SonicMotor(Motor):
 
     def _command(self, ref: Pose) -> S.SonicCommand:
         links = self.kp(ref.pos, ref.quat, ref.joints)
-        if self.sonic.vr_frame == "robot":
-            vr_pos, vr_quat = S.vr_targets(links, self._pelvis_estimate(), self.sim.d.qpos[3:7])
-        else:
-            vr_pos, vr_quat = S.vr_targets(links, ref.pos, ref.quat)
         self.last_fut = {WRIST[s]: (links[WRIST[s]][0][None], links[WRIST[s]][1][None]) for s in SIDES}
-        return S.SonicCommand(self._movement(ref), vr_pos, vr_quat)
+        mv = self._movement(ref)
+        if self.sonic.interface == "vr3pt":
+            if self.sonic.vr_frame == "robot":
+                vr_pos, vr_quat = S.vr_targets(links, self._pelvis_estimate(), self.sim.d.qpos[3:7])
+            else:
+                vr_pos, vr_quat = S.vr_targets(links, ref.pos, ref.quat)
+            return S.SonicCommand(mv, vr_pos, vr_quat)
+        assert self.sonic.interface in ("g1_splice", "g1_full"), self.sonic.interface
+        return S.SonicCommand(mv, g1=self._g1_frames())
+
+    def _g1_frames(self) -> S.G1Frames:
+        """The g1 encoder's 10 future frames (0.1 s apart) from the motor's reference `self.ref`: its own whole-body
+        pose while standing under g1_full, else the planner's motion with the reference's upper body spliced in.
+        Joint velocities are the reference's 50 Hz forward difference."""
+        times = self.t + S.FUTURE_STEP * R.DT * np.arange(S.FUTURE)
+        refs = [self.ref(t) for t in times]
+        q_ref = np.array([r.joints for r in refs])
+        dq_ref = (np.array([self.ref(t + R.DT).joints for t in times]) - q_ref) / R.DT
+        if self.sonic.interface == "g1_full" and self.mode != MODE_WALK:
+            return S.G1Frames(q_ref, dq_ref, np.array([r.quat for r in refs]))
+        g = self.pol.planner_frames()
+        g.q[:, UPPER], g.dq[:, UPPER] = q_ref[:, UPPER], dq_ref[:, UPPER]
+        return g
 
     def tick(self) -> bool:
         sim = self.sim

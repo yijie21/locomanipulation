@@ -104,6 +104,7 @@ DECODER_BLOCKS = (
     ("his_gravity_dir_10frame_step1", 30),
 )
 TELEOP_MODE = 1
+G1_MODE = 0  # the 29-joint reference mode (observation_config.yaml encoder_modes "g1")
 
 
 def _offsets(blocks) -> dict:
@@ -267,13 +268,28 @@ class Movement:
 
 
 @dataclass
+class G1Frames:
+    """The g1 (29-joint reference) encoder's 10 future frames, 0.1 s apart from the current tick: joint positions and
+    velocities (MuJoCo order, absolute) and the root orientation in the ROBOT's world (w, x, y, z). The deploy reads
+    them from its playing motion (GatherMotionJointPositionsMultiFrame, GatherMotionJointVelocitiesMultiFrame,
+    GatherMotionAnchorOrientationMutiFrame with the heading anchor, g1_deploy_onnx_ref.cpp:629-880), optionally with
+    17 upper-body joints spliced in; here the caller builds them (`SonicPolicy.planner_frames` gives the planner's)."""
+
+    q: np.ndarray  # (10, 29)
+    dq: np.ndarray  # (10, 29)
+    quat: np.ndarray  # (10, 4)
+
+
+@dataclass
 class SonicCommand:
-    """One tick's input: the planner's movement state and the VR 3-point targets (left wrist, right wrist, head; points
-    in the reference pelvis frame, quaternions w, x, y, z of the links relative to the reference pelvis)."""
+    """One tick's input: the planner's movement state, and either the VR 3-point targets (teleop mode: left wrist, right
+    wrist, head; points in a pelvis frame, quaternions w, x, y, z of the links relative to it) or the g1 frames (the
+    29-joint reference mode)."""
 
     movement: Movement
-    vr_pos: np.ndarray  # (9,)
-    vr_quat: np.ndarray  # (12,)
+    vr_pos: np.ndarray | None = None  # (9,)
+    vr_quat: np.ndarray | None = None  # (12,)
+    g1: G1Frames | None = None
 
 
 def vr_targets(links: dict, pelvis_pos, pelvis_quat) -> tuple[np.ndarray, np.ndarray]:
@@ -326,7 +342,7 @@ class SonicPolicy:
         assert enc == [n for n, _ in ENCODER_BLOCKS], f"encoder layout changed: {enc}"
         assert dec == [n for n, _ in DECODER_BLOCKS], f"decoder layout changed: {dec}"
         modes = {m["name"]: m["mode_id"] for m in conf["encoder"]["encoder_modes"]}
-        assert modes.get("teleop") == TELEOP_MODE, modes
+        assert modes.get("teleop") == TELEOP_MODE and modes.get("g1") == G1_MODE, modes
 
     def _session(self, path: str, device: int):
         import onnxruntime as ort
@@ -479,6 +495,16 @@ class SonicPolicy:
 
     def encoder_input(self, base_quat, cmd: SonicCommand) -> np.ndarray:
         x = np.zeros(ENC_DIM)
+        if cmd.g1 is not None:  # g1 mode: the 29-joint future frames (cpp:1726, 1739, 1746-1747)
+            g = cmd.g1
+            x[ENC["encoder_mode_4"]] = [G1_MODE, 0.0, 0.0, 0.0]
+            x[ENC["motion_joint_positions_10frame_step5"]] = np.asarray(g.q)[:, MUJOCO_TO_ISAACLAB].ravel()
+            x[ENC["motion_joint_velocities_10frame_step5"]] = np.asarray(g.dq)[:, MUJOCO_TO_ISAACLAB].ravel()
+            h = qconj(heading(base_quat))
+            x[ENC["motion_anchor_orientation_heading_10frame_step5"]] = np.concatenate(
+                [rot6(qmul(h, q)) for q in g.quat]
+            )
+            return x
         x[ENC["encoder_mode_4"]] = [TELEOP_MODE, 0.0, 0.0, 0.0]
         m, f = self.motion, self.frame
         rel = qmul(qconj(heading(base_quat)), qmul(self.apply, m.quat[f]))
@@ -536,6 +562,15 @@ class SonicPolicy:
             self.motion.q[f, LEGS] = 0.98 * legs + 0.02 * self.readapt_orig
 
     # -- the plan's own pose, for start-up and inspection -------------------------------------------------------------
+    def planner_frames(self) -> G1Frames:
+        """The playing planner motion's 10 future frames, its root mapped to the robot's world by the heading anchor
+        (what the deploy's g1 mode reads with no upper body spliced in)."""
+        m = self.motion
+        frames = np.minimum(self.frame + FUTURE_STEP * np.arange(FUTURE), m.T - 1)
+        return G1Frames(
+            m.q[frames].copy(), m.dq[frames].copy(), np.array([qmul(self.apply, m.quat[i]) for i in frames])
+        )
+
     def plan_pose(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """(root position, root quaternion, 29 MuJoCo joints) of the playing frame, in the planner's world."""
         m, f = self.motion, self.frame
@@ -563,5 +598,5 @@ class SonicSim(R.Sim):
 
 __all__ = [
     "DEFAULT_ANGLES", "EFFORT", "IDEL_SQUAT", "IDLE", "KD", "KP", "Motion", "Movement", "SLOW_WALK", "SonicCommand",
-    "SonicConfig", "SonicPolicy", "SonicSim", "WALK", "from_planner", "merge", "sonic_meta", "vr_targets",
+    "SonicConfig", "SonicPolicy", "SonicSim", "WALK", "G1Frames", "from_planner", "merge", "sonic_meta", "vr_targets",
 ]  # fmt: skip

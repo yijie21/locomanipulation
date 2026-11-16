@@ -227,3 +227,53 @@ class SquatHysteresis(unittest.TestCase):
         self.assertEqual(self.movement(m, 0.719).mode, S.IDLE)  # and the band does not re-enter from above
         self.assertAlmostEqual(self.movement(m, 0.30).height, 0.40)  # squat_min
         np.testing.assert_allclose(self.movement(m, 0.787).facing, [math.cos(0.3), math.sin(0.3), 0.0], atol=1e-12)
+
+
+class G1Mode(unittest.TestCase):
+    """The 29-joint reference (g1) encoder input and SonicMotor's g1 frames."""
+
+    def test_encoder_input_g1(self):
+        p = policy_without_sessions()
+        p.motion = S.from_planner(Motion().planner_frames(44))
+        q = np.tile(DEFAULT_ANGLES, (10, 1)) + 0.001 * np.arange(29)[None]
+        dq = np.full((10, 29), 0.5)
+        quat = np.tile(yaw_quat(0.4), (10, 1))
+        x = p.encoder_input(yaw_quat(0.4), S.SonicCommand(S.Movement(), g1=S.G1Frames(q, dq, quat)))
+        np.testing.assert_allclose(x[S.ENC["encoder_mode_4"]], [0, 0, 0, 0])
+        pos = x[S.ENC["motion_joint_positions_10frame_step5"]].reshape(10, 29)
+        from locomani.backends.sonic.sonic_decoder import MUJOCO_TO_ISAACLAB
+
+        np.testing.assert_allclose(pos[3], q[3][MUJOCO_TO_ISAACLAB])  # IsaacLab order, absolute
+        self.assertAlmostEqual(pos[0, 1], q[0, 6])  # IsaacLab joint 1 is the right hip pitch (MuJoCo 6)
+        # the root orientation relative to the robot's heading: same yaw -> identity
+        np.testing.assert_allclose(x[S.ENC["motion_anchor_orientation_heading_10frame_step5"]].reshape(10, 6),
+                                   np.tile([1, 0, 0, 1, 0, 0], (10, 1)), atol=1e-12)  # fmt: skip
+        teleop = (
+            "vr_3point_local_target",
+            "vr_3point_local_orn_target",
+            "motion_joint_positions_lowerbody_10frame_step5",
+        )
+        for k in teleop:
+            self.assertEqual(float(np.abs(x[S.ENC[k]]).sum()), 0.0)
+
+    def test_motor_splices_the_reference_upper_body(self):
+        from locomani.backends.scalebfm.motor import MODE_STAND, MODE_WALK, MotorConfig, Pose
+        from locomani.backends.sonic_onnx.motor import UPPER, SonicMotor, SonicMotorConfig
+
+        p = policy_without_sessions()
+        p.motion = S.from_planner(Motion().planner_frames(44))
+        p.apply = yaw_quat(0.0)
+        m = SonicMotor.__new__(SonicMotor)
+        m.pol, m.cfg, m.k = p, MotorConfig(), 0
+        ref_q = np.full(29, 0.3)
+        m.ref = lambda t: Pose(np.array([0.0, 0.0, 0.7]), yaw_quat(0.2), ref_q + t, np.zeros(29))
+        for iface, mode in (("g1_splice", MODE_STAND), ("g1_full", MODE_WALK)):
+            m.sonic, m.mode = SonicMotorConfig(interface=iface), mode
+            g = m._g1_frames()
+            np.testing.assert_allclose(g.q[:, UPPER], ref_q[UPPER] + 0.1 * np.arange(10)[:, None])
+            np.testing.assert_allclose(g.dq[:, UPPER], 1.0, atol=1e-9)
+            np.testing.assert_allclose(g.q[:, :12], p.planner_frames().q[:, :12])  # legs: the planner's
+        m.sonic, m.mode = SonicMotorConfig(interface="g1_full"), MODE_STAND
+        g = m._g1_frames()
+        np.testing.assert_allclose(g.q, ref_q + 0.1 * np.arange(10)[:, None])  # standing: the whole reference
+        np.testing.assert_allclose(g.quat, np.tile(yaw_quat(0.2), (10, 1)))
