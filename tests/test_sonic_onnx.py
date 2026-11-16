@@ -277,3 +277,16 @@ class G1Mode(unittest.TestCase):
         g = m._g1_frames()
         np.testing.assert_allclose(g.q, ref_q + 0.1 * np.arange(10)[:, None])  # standing: the whole reference
         np.testing.assert_allclose(g.quat, np.tile(yaw_quat(0.2), (10, 1)))
+
+
+class TrainingDynamics(unittest.TestCase):
+    def test_training_table_matches_g1_py(self):
+        # gear_sonic robots/g1.py: hips pitch / roll and knees 139, hip yaw and waist yaw 88, ankles and waist roll /
+        # pitch 50, arms 25, wrist pitch / yaw 5
+        idx = {n: MUJOCO_JOINT_NAMES.index(n) for n in MUJOCO_JOINT_NAMES}
+        for n, e in (("left_hip_pitch_joint", 139), ("right_hip_roll_joint", 139), ("left_hip_yaw_joint", 88),
+                     ("left_knee_joint", 139), ("left_ankle_pitch_joint", 50), ("waist_yaw_joint", 88),
+                     ("waist_pitch_joint", 50), ("left_elbow_joint", 25), ("right_wrist_yaw_joint", 5)):  # fmt: skip
+            self.assertEqual(S.TRAIN_EFFORT[idx[n]], e, n)
+        self.assertAlmostEqual(S.ARMATURE[idx["left_shoulder_pitch_joint"]], 0.003609725)
+        self.assertAlmostEqual(S.ARMATURE[idx["left_hip_pitch_joint"]], 0.025101925)

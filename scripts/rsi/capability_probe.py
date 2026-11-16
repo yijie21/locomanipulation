@@ -169,9 +169,10 @@ def probe_scene() -> Path:
 
 
 class Probe:
-    def __init__(self, kind: str, controller: str = "scalebfm", sonic=None):
+    def __init__(self, kind: str, controller: str = "scalebfm", sonic=None, scene_dir=None, dynamics: str = "scene"):
         """`controller` "scalebfm" (the default) or "sonic": SONIC v1.1 in process (backends.sonic_onnx), same scene,
-        robot, joint order and Motor interface; `sonic` its SonicConfig (None: the defaults)."""
+        robot, joint order and Motor interface; `sonic` its SonicConfig (None: the defaults). `scene_dir`: the sim's
+        scene instead of walk_mars (the whole-body IK keeps walk_mars' robot); `dynamics`: SonicSim's joint dynamics."""
         sys.path[:0] = [str(REPO / "src")]
         from locomani.backends.scalebfm import runtime as R
         from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
@@ -179,7 +180,7 @@ class Probe:
         from locomani.tasks.scene.world import GRIP_LAW
 
         self.R, self.kind, self.controller = R, kind, controller
-        scene = probe_scene() if kind == "grip" else WALK
+        scene = probe_scene() if kind == "grip" else (Path(scene_dir) if scene_dir else WALK)
         backend = ScaleBfmBackendConfig(scene_dir=str(scene), object_name="", **GRIP_LAW)
         if controller == "sonic":
             from locomani.backends.sonic_onnx.motor import SonicMotor
@@ -187,7 +188,7 @@ class Probe:
 
             meta = json.load(open(R.META))
             policy = SonicPolicy(meta["joint_names"], sonic)
-            sim = SonicSim(meta, backend=backend)
+            sim = SonicSim(meta, backend=backend, dynamics=dynamics)
             self.m = SonicMotor(sim, policy, MotorConfig(), model_xml=str(WALK / "scene_locomani.xml"))
         else:
             assert controller == "scalebfm", controller

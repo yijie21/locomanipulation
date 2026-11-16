@@ -79,6 +79,11 @@ KD = 4.0 * ARMATURE * _W
 _LEG_EFFORT = [88.0, 88.0, 88.0, 139.0, 50.0, 50.0]
 _ARM_EFFORT = [25.0] * 5 + [5.0] * 2
 EFFORT = np.array(_LEG_EFFORT + _LEG_EFFORT + [88.0, 50.0, 50.0] + _ARM_EFFORT + _ARM_EFFORT)
+# the training actuators (gear_sonic/envs/manager_env/robots/g1.py:239-358, IsaacLab ImplicitActuatorCfg): the same
+# kp / kd and armature per motor as above, hip pitch and roll 139 N.m, and no passive joint damping or friction (the
+# shipped MuJoCo XMLs add damping 0.05, frictionloss 0.2 / 0.1 and armature 0.01 on every joint)
+_LEG_TRAIN = [139.0, 139.0, 88.0, 139.0, 50.0, 50.0]
+TRAIN_EFFORT = np.array(_LEG_TRAIN + _LEG_TRAIN + [88.0, 50.0, 50.0] + _ARM_EFFORT + _ARM_EFFORT)
 
 # encoder / decoder input layouts (observation_config.yaml order; cpp:1868-1891, 1807-1811)
 ENCODER_BLOCKS = (
@@ -590,13 +595,29 @@ def sonic_meta(meta: dict) -> dict:
 
 
 class SonicSim(R.Sim):
-    """`scalebfm.runtime.Sim` -- same scene, robot, joint order, 5 ms x 4 step and Dex1 PD -- with SONIC's joint PD."""
+    """`scalebfm.runtime.Sim` -- same scene, robot, joint order, 5 ms x 4 step and Dex1 PD -- with SONIC's joint PD.
 
-    def __init__(self, meta: dict, video=False, backend=None, perturb: dict | None = None):
+    `dynamics` "scene": the scene's own joint dynamics (armature, damping, friction, actuator ranges as its XML has
+    them); "training": the 29 joints' armature, effort limits and zero passive damping / friction of SONIC's training
+    actuators (TRAIN_EFFORT, ARMATURE), set on this instance's model."""
+
+    def __init__(self, meta: dict, video=False, backend=None, perturb: dict | None = None, dynamics: str = "scene"):
+        assert dynamics in ("scene", "training"), dynamics
         super().__init__(sonic_meta(meta), video=video, backend=backend, perturb=perturb)
+        self.dynamics = dynamics
+        if dynamics == "training":
+            m = self.m
+            for i, name in enumerate(meta["joint_names"]):
+                j, mj = m.joint(name).id, MUJOCO_JOINT_NAMES.index(name)
+                dof, a, e = m.jnt_dofadr[j], self.act[i], float(TRAIN_EFFORT[mj])
+                m.dof_armature[dof], m.dof_damping[dof], m.dof_frictionloss[dof] = ARMATURE[mj], 0.0, 0.0
+                m.actuator_ctrlrange[a] = (-e, e)
+                if m.jnt_actfrclimited[j]:
+                    m.jnt_actfrcrange[j] = (-e, e)
+                self.tlim[i] = e
 
 
 __all__ = [
-    "DEFAULT_ANGLES", "EFFORT", "IDEL_SQUAT", "IDLE", "KD", "KP", "Motion", "Movement", "SLOW_WALK", "SonicCommand",
+    "DEFAULT_ANGLES", "EFFORT", "TRAIN_EFFORT", "IDEL_SQUAT", "IDLE", "KD", "KP", "Motion", "Movement", "SLOW_WALK", "SonicCommand",
     "SonicConfig", "SonicPolicy", "SonicSim", "WALK", "G1Frames", "from_planner", "merge", "sonic_meta", "vr_targets",
 ]  # fmt: skip

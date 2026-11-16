@@ -86,7 +86,15 @@ class Env:
             assert where in ("gpu", "cpu", "allcpu"), where
             sonic = SonicConfig(device_id=-1 if where == "allcpu" else 0, nets_on_cpu=where == "cpu",
                                 threads=int(os.environ.get("REACH_SONIC_THREADS", "1")))  # fmt: skip
-        self.probe = cap.Probe("grip" if scene == "grip" else "reach", controller=self.controller, sonic=sonic)
+        # REACH_SCENE_DIR: the sim's scene directory instead of walk_mars (2026-11-16: NVIDIA's own G1 + Dex3);
+        # REACH_SONIC_DYN: SonicSim's joint dynamics, "scene" or "training"
+        self.probe = cap.Probe(
+            "grip" if scene == "grip" else "reach",
+            controller=self.controller,
+            sonic=sonic,
+            scene_dir=os.environ.get("REACH_SCENE_DIR") or None,
+            dynamics=os.environ.get("REACH_SONIC_DYN", "scene"),
+        )
         if self.controller == "sonic":  # REACH_SONIC_IFACE: SonicMotorConfig.interface (vr3pt, g1_splice, g1_full)
             self.probe.m.sonic = dataclasses.replace(
                 self.probe.m.sonic, interface=os.environ.get("REACH_SONIC_IFACE", self.probe.m.sonic.interface)
