@@ -70,8 +70,6 @@
    "scripts/rsi/prep.py",
    "scripts/rsi/past.py",
    "scripts/rsi/experience",
-   "scripts/rsi/knowledge.py",
-   "scripts/rsi/knowledge",
    "scripts/rsi/rules.md",
    "scripts/rsi/prompts",
    "tests/conftest.py",
