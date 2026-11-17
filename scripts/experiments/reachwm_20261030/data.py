@@ -50,6 +50,40 @@ SUBSET = os.environ.get("REACHWM_SUBSET", "")
 # high, pelvis 0.60-0.64 m. val and test_iid stay out; the band and edge splits stop being unseen.
 TRAIN_HELD = os.environ.get("REACHWM_TRAIN_HELD", "0") == "1"
 Q, GRAV, HEIGHT = slice(0, 29), slice(58, 61), 64  # S layout (env.py)
+# REACHWM_QFIX=1 (2026-11-17, found by the independent review of sonic_g1_selfmodel_20261116): GOAL_REF's "plan joints
+# minus start joints" subtracted S's joints, which are in ScaleBFM's metadata order (runtime.Sim reads dof_pos through
+# sim.qadr, every controller in this harness), from the plan's joints, which are in MuJoCo order (Motor.kp.qadr): 27 of
+# the 29 positions paired two different joints. With the switch the start joints are put in MuJoCo order first. Both
+# raw vectors were in x0 already, so the old feature only scrambled a linear combination. Off by default: every model
+# trained before keeps its own feature, plan_invert.plan_features reads the same switch, and wrist_invert.export stamps
+# the pickle (.qfix) so check_qfix can refuse a model fed the other feature.
+QFIX = os.environ.get("REACHWM_QFIX", "0") == "1"
+
+
+def s_to_mujoco() -> np.ndarray:
+    """Index array: S's 29 joints (ScaleBFM metadata order) -> MuJoCo order (locomani.primitives.g1_joints)."""
+    import json
+
+    from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES  # env.py put REPO/src on the path
+
+    names = json.load(open(E.REPO / "assets" / "scalebfm" / "model_22200_tensorrt_metadata.json"))["joint_names"]
+    idx = np.array([names.index(n) for n in MUJOCO_JOINT_NAMES])
+    assert len(idx) == 29 and sorted(idx) == list(range(29))
+    return idx
+
+
+S2MJ = s_to_mujoco() if QFIX else None
+
+
+def start_joints_like_plan(q0: np.ndarray) -> np.ndarray:
+    """Start joints (S order, rows or one vector) in the order the plan's joints use: MuJoCo under QFIX, else unchanged."""
+    return np.asarray(q0)[..., S2MJ] if QFIX else q0
+
+
+def check_qfix(model) -> None:
+    """A pickled reach model (wrist_invert.export) was trained with one form of the joint feature; refuse the other."""
+    trained = bool(getattr(model, "qfix", False))
+    assert trained == QFIX, f"model trained with REACHWM_QFIX={int(trained)}, this process runs REACHWM_QFIX={int(QFIX)}"
 FRACS = (0.1, 0.3, 1.0)
 SEG_KEYS = ("n_steps", "k0", "side", "dyaw", "pitch", "pelvis_z", "walked", "chain", "fell", "ok", "jaw_err_cm",
             "att_err_deg", "ik_err_cm", "reach_s", "reset", "target", "rot6", "start")  # fmt: skip
@@ -161,7 +195,7 @@ def derive(D: dict) -> None:
         )  # quat wxyz -> columns 0, 1
         c1 = np.stack([2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)], -1)
         rq = D["ref_q"].astype(np.float32)
-        D["x0"] = np.c_[D["x0"], rq, rq - D["q_0"], hv(D["ref_pel"][:, :3] - org, yaw0), hv(c0, yaw0), hv(c1, yaw0),
+        D["x0"] = np.c_[D["x0"], rq, rq - start_joints_like_plan(D["q_0"]), hv(D["ref_pel"][:, :3] - org, yaw0), hv(c0, yaw0), hv(c1, yaw0),
                         D["ref_s"]].astype(np.float32)  # fmt: skip
     if APPROACH:
         D["x0"] = np.c_[D["x0"], walk_features(D["walk"])].astype(np.float32)

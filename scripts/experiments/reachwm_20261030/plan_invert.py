@@ -86,7 +86,7 @@ def plan_features(rec: dict, q0: np.ndarray, start: np.ndarray) -> np.ndarray:
     c1 = np.array([2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)])
     h = lambda v: DT.hv(np.asarray(v, np.float64)[None], yaw0)[0]  # noqa: E731
     rq = rec["ref_q"]
-    return np.r_[rq, rq - q0, h(rec["ref_pel"][:3].astype(np.float64) - org), h(c0), h(c1), rec["ref_s"]].astype(
+    return np.r_[rq, rq - DT.start_joints_like_plan(q0), h(rec["ref_pel"][:3].astype(np.float64) - org), h(c0), h(c1), rec["ref_s"]].astype(
         np.float32
     )
 

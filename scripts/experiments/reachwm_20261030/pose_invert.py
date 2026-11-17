@@ -65,9 +65,13 @@ def angle(Ra: np.ndarray, Rb: np.ndarray) -> float:
 
 
 def predict_pose(model, b: dict):
-    """EndEnsemble.predict plus the members' rotations: pos, pos_std, R_pred (mean rot6 by Gram-Schmidt), spread (rad)."""
+    """EndEnsemble.predict plus the members' rotations: pos, pos_std, R_pred (mean rot6 by Gram-Schmidt), spread (rad).
+    Refuses a model trained with the other form of the joint feature (data.check_qfix)."""
+    import data as DT
     import models as M
     import torch
+
+    DT.check_qfix(model)
 
     with torch.no_grad():
         os_ = [mm.predict(b) for mm in model.members]

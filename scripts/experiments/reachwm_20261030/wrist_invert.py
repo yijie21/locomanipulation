@@ -356,6 +356,7 @@ def export() -> None:
     spec = ",".join(str(DT.OUT / f"data_{k}" / "all.npz") for k in DATA_KEYS)
     D = DT.load(spec)
     ref = TR.load_model("E3_ensemble", 1.0, D, "cpu", DT.OUT / MODEL_ROOT)
+    ref.qfix = DT.QFIX  # which form of the joint feature it learned (data.check_qfix)
     WM.parent.mkdir(parents=True, exist_ok=True)
     torch.save(ref, WM)
     print(f"wm_ref.pt from {MODEL_ROOT} ({len(D['n_steps'])} segments) -> {WM}", flush=True)
