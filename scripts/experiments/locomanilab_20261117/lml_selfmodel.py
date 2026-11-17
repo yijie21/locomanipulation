@@ -259,6 +259,9 @@ def gen(out: Path, resets: int, seed: int, id0: int, shards: int, shard: int) ->
 # -- driving LocoManiLab's controllers ------------------------------------------------------------------------------
 class Driver:
     def __init__(self, policy_config: str, motion_dir: Path):
+        # their ONNXModule leaves onnxruntime's intra-op threads at its default (one per core) unless this is set: 100
+        # shards then ran ~6 runnable threads each (load 650 on 128 cores) and a policy step took 72 ms instead of ~5
+        os.environ.setdefault("SIM2REAL_ORT_NUM_THREADS", "1")
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         import mujoco as mj
 
@@ -403,32 +406,50 @@ def save(segs: list[dict], path: Path) -> None:
     np.savez_compressed(path, **pack)
 
 
+CHUNK = 50  # resets per saved file: a rerun skips finished chunks, so a container restart loses at most one
+
+
 def drive(out: Path, shard: int, policy_config: str, tag: str, limit: int | None) -> None:
     md = out / f"motions_{shard:03d}"
     plans = json.loads((md / "plans.json").read_text())
     names = sorted(k for k in plans if k.startswith("r"))
-    dr, pl = Driver(policy_config, md), Planner()
-    assert dr.full.num_motions == len(names), (dr.full.num_motions, len(names))
+    n = min(limit or len(names), len(names))
     od = out / f"data_{tag}"
     od.mkdir(parents=True, exist_ok=True)
-    segs, log, t0 = [], [], time.time()
-    for idx, name in enumerate(names[: limit or len(names)]):  # any4hdmi's loader sorts by name; check_motion verifies
-        frames = np.load(md / "motions" / f"{name}.npz")["qpos"]
-        rows, info = dr.run_reset(idx, frames)
-        # their dataset stores motions in float16 (any4hdmi storage_dtype): 1e-3 rad of rounding; another reset's motion
-        # differs by tenths of a radian
-        assert info["length_ok"] and info["motion_check"] < 5e-3, f"{name}: the runner plays another motion ({info})"
-        s = segments(rows, info["fell"], frames, plans[name], pl)
-        segs += s
-        log.append(dict(name=name, n_segs=len(s), **info))
-        if (idx + 1) % 20 == 0:
-            print(f"drive {tag} shard {shard}: {idx + 1}/{len(names)} resets, {len(segs)} segments, "
-                  f"falls {sum(x['fell'] is not None for x in log)}, {time.time() - t0:.0f} s", flush=True)  # fmt: skip
-    if segs:
-        save(segs, od / f"w{shard:03d}_000.npz")
-    (od / f"w{shard:03d}_log.json").write_text(json.dumps(log))
-    print(f"drive {tag} shard {shard} done: {len(log)} resets, {len(segs)} segments, "
-          f"falls {sum(x['fell'] is not None for x in log)}, {time.time() - t0:.0f} s", flush=True)  # fmt: skip
+    chunks = [range(c, min(c + CHUNK, n)) for c in range(0, n, CHUNK)]
+    done = lambda c: (od / f"w{shard:03d}_{c:03d}_log.json").exists()  # noqa: E731 -- written after the chunk's data
+    before = sum(len(r) for c, r in enumerate(chunks) if done(c))
+    print(f"drive {tag} shard {shard}: {before}/{len(names)} resets already driven", flush=True)
+    if before == n:
+        return
+    dr, pl = Driver(policy_config, md), Planner()
+    assert dr.full.num_motions == len(names), (dr.full.num_motions, len(names))
+    t0, nres, nseg, nfall = time.time(), 0, 0, 0
+    for c, ids in enumerate(chunks):
+        if done(c):
+            continue
+        segs, log = [], []
+        for idx in ids:  # any4hdmi's loader sorts by name; check_motion verifies
+            name = names[idx]
+            frames = np.load(md / "motions" / f"{name}.npz")["qpos"]
+            rows, info = dr.run_reset(idx, frames)
+            # their dataset stores motions in float16 (any4hdmi storage_dtype): 1e-3 rad of rounding; another reset's
+            # motion differs by tenths of a radian
+            assert info["length_ok"] and info["motion_check"] < 5e-3, f"{name}: the runner plays another motion ({info})"
+            s = segments(rows, info["fell"], frames, plans[name], pl)
+            segs += s
+            log.append(dict(name=name, n_segs=len(s), **info))
+            nres, nseg, nfall = nres + 1, nseg + len(s), nfall + (info["fell"] is not None)
+            if nres % 10 == 0:
+                print(f"drive {tag} shard {shard}: {before + nres}/{len(names)} resets, {nseg} segments, falls {nfall}, "
+                      f"{time.time() - t0:.0f} s", flush=True)  # fmt: skip
+        if segs:
+            tmp = od / f".w{shard:03d}_{c:03d}.tmp.npz"  # not matched by merge's glob until renamed
+            save(segs, tmp)
+            os.replace(tmp, od / f"w{shard:03d}_{c:03d}.npz")
+        (od / f"w{shard:03d}_{c:03d}_log.json").write_text(json.dumps(log))
+    print(f"drive {tag} shard {shard} done: {before + nres} resets ({nres} this run, {nseg} segments, falls {nfall}), "
+          f"{time.time() - t0:.0f} s", flush=True)  # fmt: skip
 
 
 def merge(out: Path, tag: str) -> None:
