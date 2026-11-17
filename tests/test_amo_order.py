@@ -73,6 +73,24 @@ class Boundary(unittest.TestCase):
         m.root_est = np.array([1.0, 2.0, 0.6])
         np.testing.assert_allclose(m._pelvis_estimate(), [1.0, 2.0, 0.6])
 
+    def test_servo_measures_jaw_source_when_set(self):
+        """The arm servo measures the jaw from `jaw_source` when a caller sets one (as Motor._servo), else the sim."""
+        from locomani.backends.scalebfm.motor import MotorConfig
+
+        m, _ = self.motor(list(MUJOCO_JOINT_NAMES))
+        m.hand_override, m.servo_on, m.servo_target, m.servo = {}, {"right": True}, {}, {}
+        m.cfg, m.amo = MotorConfig(), SimpleNamespace(hand_lead_s=0.0)
+        ref_jaw = np.array([0.5, -0.2, 0.9])
+        m.kp = lambda pos, quat, joints: {"right_wrist_yaw_link": (ref_jaw - np.array([0.1515, 0.0, 0.0]), np.array([1.0, 0, 0, 0]))}
+        ref = SimpleNamespace(pos=None, quat=None, joints=np.zeros(29), velocity=np.zeros(29))
+        m.jaw_centre = lambda side: (ref_jaw.copy(), np.eye(3))  # the sim: the jaw is exactly where it should be
+        lead_sim = m._jaw_target("right", ref)[0] - ref_jaw
+        m.servo = {}
+        m.jaw_source = lambda side: (ref_jaw - np.array([0.0, 0.0, 0.05]), np.eye(3))  # the estimate: 5 cm low
+        lead_src = m._jaw_target("right", ref)[0] - ref_jaw
+        np.testing.assert_allclose(lead_sim, 0.0, atol=1e-12)
+        self.assertGreater(lead_src[2], 0.0)  # it pushes up toward the reference, so it read jaw_source
+
 
 if __name__ == "__main__":
     unittest.main()

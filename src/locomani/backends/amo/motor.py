@@ -227,7 +227,9 @@ class AmoMotor(Motor):
             return p_ref, R_ref
         cfg = self.cfg
         jaw_ref = self.servo_target.get(side, p_ref)
-        p_meas, R_meas = self.jaw_centre(side)
+        # the jaw the servo measures: `jaw_source` when a caller sets one (as Motor._servo; e.g. leg_odo.JawFeed, joints
+        # + leg odometry), else the simulator's wrist body
+        p_meas, R_meas = (getattr(self, "jaw_source", None) or self.jaw_centre)(side)
         turn = self.servo.get(("turn", side), np.zeros(3)) + cfg.servo_ki_rot * R.DT * rotvec(R_ref @ R_meas.T)
         n = float(np.linalg.norm(turn))
         turn = turn * (cfg.servo_cap_rot / n) if n > cfg.servo_cap_rot else turn
