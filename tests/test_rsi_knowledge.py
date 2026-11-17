@@ -539,6 +539,16 @@ class Consolidate(unittest.TestCase):
         self.assertIn("boom", so["decline"])
         self.assertIsNone(acct["cost_usd"])
 
+    def test_build_and_evidence_refuse_a_sandbox_without_the_familys_ledger(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "lib"
+            for cmd in (["build", str(Path(d) / "absent"), "fam", "--out", str(out), "--stub"],
+                        ["evidence", str(Path(d) / "absent"), "fam"]):  # fmt: skip
+                with self.assertRaises(SystemExit) as cm:
+                    KN.main(cmd)
+                self.assertEqual(cm.exception.code, 2)
+            self.assertFalse(out.exists())
+
     def test_build_with_stub_writes_entry_build_log_and_index(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

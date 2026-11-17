@@ -721,6 +721,10 @@ def main(argv=None) -> int:
     rp = sub.add_parser("report")
     rp.add_argument("sandboxes", type=Path, nargs="+")
     a = ap.parse_args(argv)
+    if a.cmd in ("evidence", "build"):  # a wrong path read as "no mechanisms" and built an empty library
+        ledger = a.sandbox / VISIBLE / a.family / "loop" / "ledger.jsonl"
+        if not ledger.exists():
+            ap.error(f"no ledger at {ledger}: the sandbox path or the family is wrong")
     if a.cmd == "report":
         rows = report([p.resolve() for p in a.sandboxes])
         keys = ["sandbox", "with_knowledge", "n_hyp", "verified", "refuted", "mixed", "hypothesis", "net_fixed", "pred_hit", "pred_n", "cites", "review_cost_usd", "review_s"]  # fmt: skip
