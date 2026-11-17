@@ -23,6 +23,8 @@ gait generator) and no grasp-room reaches; the pelvis height in S is the simulat
     $PY lml_selfmodel.py gen   --out DIR --resets 20000 --seed 41000000 --id0 4000000 --shards 100 --shard K
     $PY lml_selfmodel.py drive --out DIR --shard K --policy-config $G/checkpoints/heft/pmg/policy.yaml --tag heft
     $PY lml_selfmodel.py merge --out DIR --tag heft
+    # protocol 2 (each reach planned from the measured state; no gen phase):
+    $PY lml_selfmodel.py drive2 --out DIR --resets 30000 --shard K --policy-config $G/checkpoints/heft/pmg/policy.yaml --tag heft
 """
 
 from __future__ import annotations
@@ -392,6 +394,7 @@ def segments(rows: dict, fell, frames: np.ndarray, plan: dict, pl: Planner) -> l
 
 SEG_SCALARS = ("k0", "side", "dyaw", "pitch", "pelvis_z", "walked", "chain", "homed", "fell", "ok", "jaw_err_cm",
                "att_err_deg", "ik_err_cm", "reach_s", "reset", "ref_s", "n_sidesteps")  # fmt: skip
+SEG_SCALARS2 = SEG_SCALARS + ("lost",)  # protocol 2
 SEG_VECTORS = ("target", "rot6", "start", "ref_q", "ref_pel", "sidestep", "wrist_dev")
 
 
@@ -399,7 +402,7 @@ def save(segs: list[dict], path: Path) -> None:
     """gen_reach.save's layout."""
     pack = {k: np.concatenate([s[k] for s in segs]) for k in ("S", "W", "J", "C")}
     pack["n_steps"] = np.array([len(s["S"]) for s in segs])
-    for k in SEG_SCALARS:
+    for k in SEG_SCALARS2 if "lost" in segs[0] else SEG_SCALARS:
         pack[k] = np.array([s[k] for s in segs])
     for k in SEG_VECTORS:
         pack[k] = np.stack([s[k] for s in segs])
@@ -452,6 +455,265 @@ def drive(out: Path, shard: int, policy_config: str, tag: str, limit: int | None
           f"{time.time() - t0:.0f} s", flush=True)  # fmt: skip
 
 
+# -- protocol 2 (2026-11-17, locomanilab_selfmodel2): every reach planned from the measured state ------------------
+# Protocol 1 above planned a reset's whole reference offline, so the second reach started from the first reach's
+# REFERENCE end while the robot was elsewhere; the recipe (gen_reach -> Motor.reach, servo off) plans each reach when it
+# is commanded: the command is placed with the measured pelvis, the IK path starts at the measured hand and is solved on
+# the measured posture, and the reference blends into it from where the reference is. Here that happens inside the
+# drive: at each command row the reach is planned from the robot's state and spliced into the runner's motion after the
+# current frame (the frames already played are unchanged, so the controller sees a new command, not a jump). Both
+# controllers read the reference root only as displacements (HEFT: future root minus current root; ScaleBFM:
+# reference_forcing) but track its heading against the robot's, so the plan is shifted in x/y onto the current
+# reference root and keeps the measured heading (as Motor.reach builds its poses on the measured yaw): the
+# reference-to-robot heading offset is not a hidden input of the self model.
+LOST_M = 0.5  # a reach whose pelvis displacement departs this far from the reference's ends the reset (protocol 1 kept them)
+# No tilt criterion: in protocol 1's data 11 % (ScaleBFM) of the segments that did not fall had the pelvis tilted
+# > 45 deg at some row (deep crouches, IK pelvis pitch up to 0.70 rad) with ordinary errors (median 12.8 cm vs 10.6).
+MARGIN_S = 0.5  # extra hold after each spliced reach so the motion never runs out before the next splice
+
+
+class MotionBuilder:
+    """The runner's in-memory motion from qpos frames, exactly as their loader builds it (any4hdmi compute_motion_qvel
+    + FKRunner on the motion's MJCF, MotionDataset's joint reorder and float16 storage; checked equal to the loader's
+    arrays, max |diff| 0) -- without the loader's on-disk FK cache, which would keep one entry per splice."""
+
+    def __init__(self, template):
+        import torch  # noqa: F401 -- FKRunner takes tensors
+        from any4hdmi.fk.runner import FKRunner
+
+        self.fk = FKRunner(FK_XML, batch_size=4096, device="cpu")
+        self.t = template
+
+    def build(self, frames: np.ndarray):
+        import torch
+        from any4hdmi.utils.dataset import compute_motion_qvel
+        from sim2real.rl_policy.utils.motion import MotionDataset
+
+        t = self.t
+        qv = compute_motion_qvel(self.fk.model, frames, float(FPS))
+        out = self.fk.forward_kinematics(torch.as_tensor(frames, dtype=torch.float32), torch.as_tensor(qv, dtype=torch.float32))
+        n = len(frames)
+        st = {"motion_id": np.zeros(n, np.int64), "step": np.arange(n, dtype=np.int64)}
+        for k, v in out.items():
+            if k not in t._storage:
+                continue
+            v = v.numpy()
+            if k in ("joint_pos", "joint_vel"):
+                r = np.zeros((n, t._storage[k].shape[1]), v.dtype)
+                r[:, t._dest_joint_indices] = v[:, t._src_joint_indices]
+                v = r
+            st[k] = v.astype(t._storage[k].dtype)
+        ds = object.__new__(MotionDataset)
+        ds._dataset, ds.body_names, ds.joint_names = t._dataset, t.body_names, t.joint_names
+        ds._src_joint_indices, ds._dest_joint_indices = t._src_joint_indices, t._dest_joint_indices
+        ds._source_starts, ds._source_ends = np.array([0], np.int64), np.array([n], np.int64)
+        ds._storage, ds._motion_ids = st, np.array([0], np.int64)
+        ds._refresh_selected_bounds()
+        return ds
+
+
+class OnlineDriver(Driver):
+    """Driver for protocol 2: one reset = the default stance, then CHAIN reaches each planned at its command row."""
+
+    def __init__(self, policy_config: str, init_dir: Path):
+        super().__init__(policy_config, init_dir)
+        from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
+
+        self.builder = MotionBuilder(self.full)
+        self.to_mj = np.array([SCALEBFM_ORDER.index(n) for n in MUJOCO_JOINT_NAMES])  # S order -> MuJoCo order
+        self.plan_s = 0.0
+
+    def _swap(self, frames: np.ndarray) -> None:
+        sp = self.runner.state_processor
+        sp.motion_dataset = self.builder.build(frames)
+        sp.motion_length = sp.motion_dataset.num_steps
+        sp._update_motion_data()
+
+    def _plan(self, pl: "Planner", x: dict, ref_frame: np.ndarray, c: dict):
+        """Plan reach `c` from the measured sample `x` (as gen_reach + Motor.reach, servo off); returns the blended
+        frames (to follow `ref_frame`, the current reference frame) and the reach record."""
+        p, quat = x["root"][:3].astype(float), x["root"][3:].astype(float)
+        yaw = yaw_of(_qmat(quat))
+        Rh = rot_z(yaw)
+        target_w = np.r_[p[:2] + (Rh @ np.r_[c["target"][:2], 0.0])[:2], c["target"][2]]
+        rot_w = rot_z(yaw + c["dyaw"]) @ rot_y(c["pitch"])
+        q_mj = x["q"][self.to_mj].astype(float)
+        t0 = time.time()
+        poses, durs, ik_err, dur = pl.reach((p, quat, q_mj), c["side"], target_w, rot_w, c["pelvis_z"])
+        self.plan_s += time.time() - t0
+        delta = np.r_[ref_frame[:2] - p[:2], 0.0]  # measured world -> reference coordinates (x/y shift)
+        ref_pose = (ref_frame[:3].astype(float), ref_frame[3:7].astype(float), ref_frame[7:].astype(float))
+        shifted = [ref_pose] + [(pp + delta, qq, jj) for pp, qq, jj in poses[1:]]
+        last = poses[-1]
+        rec = dict(side=c["side"], target_w=target_w.tolist(), rot_w=rot_w.tolist(), dyaw=c["dyaw"], pitch=c["pitch"],
+                   pelvis_z=c["pelvis_z"], cmd_target=c["target"].tolist(), ik_err=ik_err, reach_s=dur,
+                   ref_q=last[2].tolist(), ref_pel=np.r_[last[0], last[1]].tolist(), delta=delta.tolist())  # fmt: skip
+        return blend_frames(shifted, durs), shifted[-1], rec
+
+    def run_reset_online(self, pl: "Planner", rng) -> tuple[dict, dict, np.ndarray, list[dict]]:
+        import mujoco as mj
+
+        r, sp, m, d = self.runner, self.runner.state_processor, self.m, self.d
+        cmds = [sample_command(rng) for _ in range(CHAIN)]  # same draws, same order as protocol 1's plan_reset
+        start = pl.start_pose()
+        frames = hold(start, START_HOLD_S + MARGIN_S + PRE_S)
+        mj.mj_resetData(m, d)  # fingers, velocities, warm start: nothing carried over from the previous reset
+        mj.mj_forward(m, d)
+        self._swap(frames)
+        sp.motion_t[:] = 0
+        sp._update_motion_data()
+        r._reset_playback()
+        reaches, rows, fell, lost, why, sim_count = [], {}, None, None, "", 0
+        next_cmd, end_frame, k = int(round(START_HOLD_S * FPS)), None, 0
+        anchor = None  # (measured pelvis xy, reference root xy) at the active reach's command row
+        while True:
+            r._maybe_start_motion(sim_elapsed_s=sim_count * r.args.sim_dt)
+            r._policy_step()
+            r.policy.total_inference_cnt += 1
+            for _ in range(r.args.decimation):
+                r.sim.sim_step()
+                sim_count += 1
+            if not r.playback_started:
+                continue
+            f = int(sp.motion_t[0])
+            x = rows[f] = self.sample()
+            if float(x["root"][2]) < FALL_Z:
+                fell, why = f, "height"
+                break
+            if anchor is not None:
+                dev = (x["root"][:2] - anchor[0]) - (frames[min(f, len(frames) - 1), :2] - anchor[1])
+                if float(np.linalg.norm(dev)) > LOST_M:
+                    fell, lost, why = f, f, "lost"
+                    break
+            if k < CHAIN and f == next_cmd:
+                try:
+                    blend, last, rec = self._plan(pl, x, frames[f], cmds[k])
+                except (np.linalg.LinAlgError, ValueError) as e:  # gen_reach drops such a reset (degenerate IK)
+                    why = f"ik {type(e).__name__}: {e}"
+                    break
+                rec.update(chain=k, f_cmd=f, f_end=f + len(blend))
+                tail = POST_S + (PRE_S if k < CHAIN - 1 else 0.2) + MARGIN_S
+                frames = np.concatenate([frames[: f + 1], blend, hold(last, tail)])
+                self._swap(frames)
+                reaches.append(rec)
+                anchor = (x["root"][:2].copy(), frames[f, :2].copy())
+                post = int(round(POST_S * FPS))
+                next_cmd = rec["f_end"] + post + int(round(PRE_S * FPS))
+                end_frame = rec["f_end"] + post
+                k += 1
+            if k == CHAIN and end_frame is not None and f >= end_frame:
+                break
+            if f >= len(frames) - 1:  # the motion ran out (must not happen: MARGIN_S)
+                why = "motion ended"
+                break
+        info = dict(fell=fell, lost=lost, why=why, steps=len(rows), sim_s=sim_count * r.args.sim_dt, planned=len(reaches),
+                    motion_check=self.check_motion(frames) if len(frames) > 3 else 0.0)  # fmt: skip
+        return rows, info, frames, reaches
+
+
+def segments2(rows: dict, fell, lost, frames: np.ndarray, reaches: list[dict], reset: int, pl: Planner) -> list[dict]:
+    """segments() for protocol 2: the same rows and fields; the reference hand in C is taken back to measured
+    coordinates with the shift of the reach whose reference is playing; target / ref_pel are measured-world (as
+    gen_reach); a lost reach is kept like a fall (fell=True, lost=True)."""
+    out = []
+    for i, rc in enumerate(reaches):
+        f_cmd = rc["f_cmd"]
+        f_pre, f_end = f_cmd - int(round(PRE_S * FPS)), rc["f_end"] + int(round(POST_S * FPS))
+        want = list(range(f_pre, f_end + 1, TICKS))
+        seg_fell = fell is not None and fell <= f_end
+        if seg_fell:
+            want = [f for f in want if f <= fell]
+        if f_cmd not in want or any(f not in rows for f in want) or len(want) < want.index(f_cmd) + 2:
+            break
+        side = rc["side"]
+        d_prev = np.array(reaches[i - 1]["delta"]) if i > 0 else np.zeros(3)
+        d_this = np.array(rc["delta"])
+        S, Wr, Jr, Cr = [], [], [], []
+        for f in want:
+            x = rows[f]
+            p, Rp = x["root"][:3], _qmat(x["root"][3:])
+            hands = {s: (pw + Rw @ HAND_OFF, Rw) for s, (pw, Rw) in x["wr"].items()}
+            rf = frames[min(f, len(frames) - 1)]
+            ref_hand = pl.fk_world(rf[:3], rf[3:7], rf[7:])[side][0] - (d_this if f > f_cmd else d_prev)
+            S.append(np.r_[x["q"], x["dq"], Rp.T @ np.array([0.0, 0.0, -1.0]), x["w"], p[2]].astype(np.float32))
+            Wr.append(np.r_[p, yaw_of(Rp), hands["right"][0], hands["left"][0], x["torso"][0] + x["torso"][1] @ np.array([0, 0, 0.35])].astype(np.float32))
+            Rj = hands[side][1]
+            Jr.append(np.r_[Rj[:, 0], Rj[:, 1]].astype(np.float32))
+            Cr.append(np.r_[Rp.T @ (ref_hand - p), -1.0 if f < f_cmd else (f - f_cmd) / FPS].astype(np.float32))
+        k0 = want.index(f_cmd)
+        p0, yaw0 = Wr[k0][:3].astype(float), float(Wr[k0][3])
+        Rh = rot_z(yaw0)
+        tw, rw = np.array(rc["target_w"]), np.array(rc["rot_w"])
+        tg = Rh.T @ np.r_[tw[:2] - p0[:2], 0.0]
+        rot_h = Rh.T @ rw
+        pw, Rw = rows[want[-1]]["wr"][side]
+        land = pw + Rw @ HAND_OFF
+        att = float(np.degrees(np.arccos(np.clip((np.trace(rw.T @ Rw) - 1) / 2, -1, 1))))
+        jaw_err = 100 * float(np.linalg.norm(land - tw))
+        seg_lost = seg_fell and lost is not None and lost == fell
+        out.append(dict(S=np.array(S), W=np.array(Wr), J=np.array(Jr), C=np.array(Cr), k0=k0, side=1 if side == "right" else -1,
+                        target=np.r_[tg[:2], tw[2]].astype(np.float32), dyaw=rc["dyaw"], pitch=rc["pitch"],
+                        rot6=np.r_[rot_h[:, 0], rot_h[:, 1]].astype(np.float32),
+                        pelvis_z=-1.0 if rc["pelvis_z"] is None else rc["pelvis_z"], start=np.r_[p0, yaw0].astype(np.float32),
+                        walked=False, chain=rc["chain"], homed=False, fell=seg_fell, lost=seg_lost, ok=jaw_err < 2.0,
+                        jaw_err_cm=jaw_err, att_err_deg=att, ik_err_cm=100 * rc["ik_err"], reach_s=rc["reach_s"], reset=reset,
+                        ref_s=rc["reach_s"], n_sidesteps=0, ref_q=np.array(rc["ref_q"], np.float32),
+                        ref_pel=np.array(rc["ref_pel"], np.float32), sidestep=np.zeros(2, np.float32),
+                        wrist_dev=np.zeros(3, np.float32)))  # fmt: skip
+        if seg_fell:
+            break
+    return out
+
+
+def drive2(out: Path, shard: int, policy_config: str, tag: str, resets: int, seed: int, id0: int, shards: int,
+           limit: int | None) -> None:  # fmt: skip
+    ids = list(range(shard, resets, shards))
+    n = min(limit or len(ids), len(ids))
+    od = out / f"data_{tag}"
+    od.mkdir(parents=True, exist_ok=True)
+    chunks = [range(c, min(c + CHUNK, n)) for c in range(0, n, CHUNK)]
+    done = lambda c: (od / f"w{shard:03d}_{c:03d}_log.json").exists()  # noqa: E731 -- written after the chunk's data
+    before = sum(len(r) for c, r in enumerate(chunks) if done(c))
+    print(f"drive2 {tag} shard {shard}: {before}/{len(ids)} resets already driven", flush=True)
+    if before == n:
+        return
+    init = out / "init" / f"s{shard:03d}"  # the stance motion the runner is built with (one small loader cache entry)
+    if not (init / "manifest.json").exists():
+        from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
+
+        (init / "motions").mkdir(parents=True, exist_ok=True)
+        pl0 = Planner()
+        np.savez_compressed(init / "motions" / "stance.npz", qpos=hold(pl0.start_pose(), START_HOLD_S + MARGIN_S + PRE_S))
+        (init / "manifest.json").write_text(json.dumps(dict(format_version=2, dataset_name="lml_stance", mjcf=str(FK_XML),
+            motions_subdir="motions", timestep=DT, qpos_dim=36, num_motions=1,
+            qpos_names=["root_tx", "root_ty", "root_tz", "root_qw", "root_qx", "root_qy", "root_qz", *MUJOCO_JOINT_NAMES])))  # fmt: skip
+    dr, pl = OnlineDriver(policy_config, init), Planner()
+    t0, nres, nseg, nfall, nlost = time.time(), 0, 0, 0, 0
+    for c, rng_ids in enumerate(chunks):
+        if done(c):
+            continue
+        segs, log = [], []
+        for j in rng_ids:
+            i = ids[j]
+            rows, info, frames, reaches = dr.run_reset_online(pl, np.random.default_rng(seed + i))
+            assert info["motion_check"] < 5e-3, f"reset {id0 + i}: the runner plays another motion ({info})"
+            s = segments2(rows, info["fell"], info["lost"], frames, reaches, id0 + i, pl)
+            segs += s
+            log.append(dict(reset=id0 + i, n_segs=len(s), **info))
+            nres, nseg = nres + 1, nseg + len(s)
+            nfall, nlost = nfall + (info["fell"] is not None and info["lost"] is None), nlost + (info["lost"] is not None)
+            if nres % 10 == 0:
+                print(f"drive2 {tag} shard {shard}: {before + nres}/{len(ids)} resets, {nseg} segments, falls {nfall}, "
+                      f"lost {nlost}, {time.time() - t0:.0f} s (planning {dr.plan_s:.0f} s)", flush=True)  # fmt: skip
+        if segs:
+            tmp = od / f".w{shard:03d}_{c:03d}.tmp.npz"
+            save(segs, tmp)
+            os.replace(tmp, od / f"w{shard:03d}_{c:03d}.npz")
+        (od / f"w{shard:03d}_{c:03d}_log.json").write_text(json.dumps(log))
+    print(f"drive2 {tag} shard {shard} done: {before + nres} resets ({nres} this run, {nseg} segments, falls {nfall}, "
+          f"lost {nlost}), {time.time() - t0:.0f} s", flush=True)  # fmt: skip
+
+
 def merge(out: Path, tag: str) -> None:
     od = out / f"data_{tag}"
     zs = [dict(np.load(p)) for p in sorted(od.glob("w[0-9]*_[0-9]*.npz"))]
@@ -463,7 +725,7 @@ def merge(out: Path, tag: str) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("phase", choices=["gen", "drive", "merge"])
+    ap.add_argument("phase", choices=["gen", "drive", "drive2", "merge"])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--resets", type=int, default=20000)
     ap.add_argument("--seed", type=int, default=41000000)
@@ -478,5 +740,7 @@ if __name__ == "__main__":
         gen(a.out, a.resets, a.seed, a.id0, a.shards, a.shard)
     elif a.phase == "drive":
         drive(a.out, a.shard, a.policy_config, a.tag, a.limit)
+    elif a.phase == "drive2":
+        drive2(a.out, a.shard, a.policy_config, a.tag, a.resets, a.seed, a.id0, a.shards, a.limit)
     else:
         merge(a.out, a.tag)

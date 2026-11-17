@@ -10,8 +10,10 @@ runner with these fixes:
 """
 
 import dataclasses
+import os
 import sys
 
+import numpy as np
 import yaml
 
 import sim2real.sim_env.integrated_sim2sim as I
@@ -35,7 +37,32 @@ def load_sim_model(robot_cfg, **kw):
     kw.setdefault("joint_dynamics", {k: v for k, v in _DYNAMICS.items() if k != "_path"})
     m = _orig_load(robot_cfg, **kw)
     print(f"[lml_run_integrated] sim model nq {m.nq} nu {m.nu} (Dex3 hands, {_DYNAMICS['_path']} joint dynamics)", flush=True)
+    scale = os.environ.get("LML_HAND_MASS_SCALE")
+    if scale is not None:  # diagnostic: the Dex3 bodies (everything below the wrist_yaw_links) made (almost) massless
+        hand_mass_scale(m, float(scale))
     return m
+
+
+def hand_mass_scale(m, scale: float) -> None:
+    """Scale the mass and inertia of every body below left/right_wrist_yaw_link (kept >= 1e-4 kg / 1e-9 kg m^2: bodies
+    with joints need mass)."""
+    import mujoco
+
+    roots = {mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f"{s}_wrist_yaw_link") for s in ("left", "right")}
+    below = [b for b in range(m.nbody) if b not in roots and _ancestor_in(m, b, roots)]
+    before = float(m.body_mass[below].sum())
+    m.body_mass[below] = np.maximum(m.body_mass[below] * scale, 1e-4)
+    m.body_inertia[below] = np.maximum(m.body_inertia[below] * scale, 1e-9)
+    print(f"[lml_run_integrated] LML_HAND_MASS_SCALE {scale}: {len(below)} hand bodies {before:.3f} -> "
+          f"{float(m.body_mass[below].sum()):.3f} kg (robot {float(m.body_mass.sum()):.2f} kg)", flush=True)  # fmt: skip
+
+
+def _ancestor_in(m, b: int, roots: set) -> bool:
+    while b > 0:
+        b = int(m.body_parentid[b])
+        if b in roots:
+            return True
+    return False
 
 
 I.load_sim_model = load_sim_model
