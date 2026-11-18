@@ -160,6 +160,10 @@ class TaskDriver(H.HostDriver):
         # it, so without this the jitter accumulated within a worker (review 2026-11-18: pelvis up to 30 cm off)
         self.env.robot_base_pos[:] = self.base0[0]
         self.env.robot_base_ori[:] = self.base0[1]
+        # the env's own reset jitter (ithor_base INITIAL_POSE_JITTER, robot 0.10 m) draws from env.rng, so an episode's
+        # start depended on how many episodes the process had run before it; one generator per episode makes the start
+        # a function of the episode index alone (same for every method and worker split)
+        self.env.rng = np.random.default_rng(1_000_003 * (ep + 1))
         self.env.reset()
         self.mj.mj_forward(self.m, self.d)
         self.spawn0 = self.d.xpos[self.pelvis].copy()
