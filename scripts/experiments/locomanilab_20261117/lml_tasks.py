@@ -255,6 +255,24 @@ class TaskDriver(H.HostDriver):
                 return ob
         return None
 
+    def hand_self_contact(self, side: str) -> str | None:
+        """The robot body (not the same hand, wrist or elbow) the `side` hand or wrist touches now, or None (step-3
+        review: low cabinet targets near the thigh, all methods 15-33 cm off, could not be told apart from the log)."""
+        mj, m, d = self.mj, self.m, self.d
+        own = (f"robot0_{side}_hand", f"robot0_{side}_wrist", f"robot0_{side}_elbow")
+        for i in range(d.ncon):
+            c = d.contact[i]
+            n1 = mj.mj_id2name(m, mj.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[c.geom1])) or ""
+            n2 = mj.mj_id2name(m, mj.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[c.geom2])) or ""
+            if not (n1.startswith("robot0_") and n2.startswith("robot0_")):
+                continue
+            a, b = n1.startswith(own[:2]), n2.startswith(own[:2])
+            if a != b:
+                other = n2 if a else n1
+                if not other.startswith(own):
+                    return other
+        return None
+
     def joint_fraction(self) -> float:
         if self.task == FREE:
             return float("nan")
@@ -384,6 +402,7 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
     anchor, servo = None, None
     reset_id = 7000000 + ep
     contact, side_now = {}, wps[0]["side"] if wps else "right"  # the scene body the acting hand touches, per frame
+    selfc = {}  # the robot's own body it touches
     while True:
         dr.push(frames[min(f, len(frames) - 1)])
         if dr.buf is None:
@@ -391,6 +410,7 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
         dr.step()
         x = rows[f] = dr.sample()
         contact[f] = dr.hand_contact(side_now)
+        selfc[f] = dr.hand_self_contact(side_now)
         fracs.append(dr.joint_fraction())
         if success_at is None and dr.succeeded():
             success_at = f
@@ -506,6 +526,9 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
         Rh, p0 = L.rot_z(w["yaw_cmd"]), np.asarray(w["p_cmd"])
         act_h = np.r_[(Rh.T @ np.r_[hand[:2] - p0[:2], 0.0])[:2], hand[2]]
         touched = [g for g in range(w["f_cmd"], fw + 1) if contact.get(g)]
+        self_t = [g for g in range(w["f_cmd"], fw + 1) if selfc.get(g)]
+        w.update(self_contact_win=selfc.get(fw), first_self_contact=[self_t[0], selfc[self_t[0]]] if self_t else None,
+                 self_contact_frames=len(self_t))  # fmt: skip
         w.update(hand_w=hand.tolist(), err_cm=100 * float(np.linalg.norm(e)), along_cm=100 * along,
                  perp_cm=100 * float(np.linalg.norm(e - along * ad)), complete=fw == w["f_win"],
                  err_arrive_cm=100 * float(np.linalg.norm(pa + Ra @ L.HAND_OFF - np.asarray(w["goal_w"]))),
@@ -582,7 +605,8 @@ def servo_step(dr: TaskDriver, sv: dict, rows: dict, frames: np.ndarray, f: int)
     sv["stat"]["at_cap"] += int(bool(np.any(np.abs(sv["lead"]) >= sp["cap"] - 1e-9)))
     sv["leads"].append((f, (100 * e).round(2).tolist(), (100 * sv["lead"]).round(2).tolist()))
     try:
-        poses, _, _, _ = dr.pl.reach(sv["last"], sv["side"], sv["goal_ref"] + sv["lead"], sv["rot_w"], None)
+        poses, _, ik_err, _ = dr.pl.reach(sv["last"], sv["side"], sv["goal_ref"] + sv["lead"], sv["rot_w"], None)
+        sv["stat"]["ik_err_cm"] = round(100 * float(ik_err), 2)  # the last re-solve's own miss: the asked hand unreachable
     except (np.linalg.LinAlgError, ValueError):
         return frames
     new = poses[-1]
