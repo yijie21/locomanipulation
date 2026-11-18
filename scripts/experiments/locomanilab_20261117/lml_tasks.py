@@ -481,7 +481,7 @@ def servo_step(dr: TaskDriver, sv: dict, x: dict, frames: np.ndarray, f: int) ->
 def run(out: Path, task: str, method: str, eps: list[int], worker: int) -> None:
     od = out / "episodes" / task / method
     od.mkdir(parents=True, exist_ok=True)
-    todo = [e for e in eps if not (od / f"ep{e:03d}.json").exists()]
+    todo = [e for e in eps if not (od / f"ep{e:03d}.json").exists() and not (od / f"ep{e:03d}.skip").exists()]
     print(f"tasks {task} {method} worker {worker}: {len(eps) - len(todo)}/{len(eps)} episodes done", flush=True)
     if not todo:
         return
@@ -490,7 +490,16 @@ def run(out: Path, task: str, method: str, eps: list[int], worker: int) -> None:
     dr = TaskDriver(task, seed=worker)
     for e in todo:
         t0 = time.time()
-        r = episode(dr, e, method, T, P)
+        try:
+            r = episode(dr, e, method, T, P)
+        except RuntimeError as err:  # the task's own reset could not place the robot (same for every method: the start
+            # depends on the episode index alone); recorded as a skipped episode, not retried with another seed
+            if "no collision-free" not in str(err):
+                raise
+            (od / f"ep{e:03d}.skip").write_text(str(err))
+            print(f"tasks {task} {method} ep {e}: SKIPPED, reset failed: {err}", flush=True)
+            dr = TaskDriver(task, seed=worker)
+            continue
         r.pop("_rows"), r.pop("_frames")
         r["wall_s"] = round(time.time() - t0, 1)
         tmp = od / f".ep{e:03d}.json"
