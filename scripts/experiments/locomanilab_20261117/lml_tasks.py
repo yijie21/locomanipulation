@@ -23,9 +23,18 @@ point (13 cm ahead of wrist_yaw_link) at the waypoint's grasp point, the wrist x
   selfmodel   the self model's position fixed point (wrist_invert.fixed_point: t <- t + goal - predicted, 6 steps, the
               candidate with the least predicted miss + spread); every candidate is planned from the measured state and
               its features are built by the same code that records the data (lml_selfmodel.segments2 + data.derive)
+  fb_k<ki>_<sensor>  (step 4, 2026-11-18) the feedback servo with the step-3 review's fixes -- cap FB_CAP, the reference
+              read where the policy tracks it (BUF_LAG frames behind the newest push), running to the episode's end --
+              and its hand measurement degraded by <sensor> (see fb_spec)
+
+`FreeSpace` (step 4) is not a task: the host's empty scene, one standing first reach per episode to a command drawn
+from the data's CORE box (episode i: FREE_SEED + i), so the targets spread over the command distribution instead of
+one point per task. `--first-only` keeps only an episode's first waypoint (the pre-touch one) and `--extra-hold S`
+holds it S s longer, so a placement can be measured up to S s after the self model's label time.
 
     python lml_tasks.py table --out DIR                   # lookup table + pickled self models from the host data
     python lml_tasks.py run --out DIR --task T --method M --episodes 0:50 --worker K
+    python lml_tasks.py run --out DIR --task T --methods M1,M2,.. --episodes 0:50 --shard K --shards N [--first-only --extra-hold 2]
     python lml_tasks.py summary --out DIR
 """
 
@@ -36,8 +45,10 @@ import glob
 import json
 import math
 import os
+import re
 import sys
 import time
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -56,10 +67,18 @@ TASKS = {  # benchmark/tasks.yaml: scene, step budget, genuine_min_steps
     "IThorBedroomCloseTopDrawer": dict(scene=329, max_steps=318, genuine=44),
     "IThorKitchenCloseOven": dict(scene=13, max_steps=643, genuine=62),
 }
+FREE = "FreeSpace"  # the host's empty scene, random standing first reaches (not a benchmark task)
+TASKS[FREE] = dict(scene=None, max_steps=0, genuine=0)
+FREE_SEED = 93_000_000  # FreeSpace episode i draws its command from default_rng(FREE_SEED + i); data used 41_000_000 + i
 METHODS = ("alone", "lookup", "feedback", "selfmodel", "selfmodel_s1")
 ITERS = 6  # pose_invert.ITERS_POSE
 LAMBDA = 1.0  # invert_eval.LAMBDA: predicted spread's weight
 SERVO_KI, SERVO_CAP, SERVO_EVERY = 2.0, 0.08, 5  # scalebfm MotorConfig servo_ki / servo_cap; every 5 ticks = 0.1 s
+# step 4's servo (fb_*): the cap lifted (step-3 review: 8 cm held the servo on the cabinet, 50/50 at the cap; the self
+# model moved its target 9.6 cm), and the reference read where the policy tracks it: the host's RealtimeMotionBuffer
+# serves the frame pushed delay_s = 0.14 s = 7 ticks ago (review: reading the newest push made a spurious transit error)
+FB_CAP, BUF_LAG = 0.15, 7
+ERR_OFFS = (0, 25, 50, 75, 100)  # the placement is measured this many frames after the label time (f_win)
 JITTER = 0.05  # tasks.yaml reset_jitter
 # A pre-touch waypoint this far before the first (touch) waypoint, against its approach direction, so the hand is placed
 # in free space before it meets the part (0: the adapter's waypoints only). Smoke 2026-11-18: aimed straight at a point
@@ -139,21 +158,33 @@ _private_scene_cache.written = []
 
 class TaskDriver(H.HostDriver):
     def __init__(self, task: str, seed: int = 0):
-        _private_scene_cache()
         self.task = task
-        super().__init__(env_name=task, seed=seed, scene_ids=TASKS[task]["scene"], fixed_scene_seed=0)
-        for f in _private_scene_cache.written:
-            if os.path.exists(f):
-                os.remove(f)
+        if task == FREE:
+            super().__init__(env_name="EmptyEnv", seed=seed)
+            self.base0 = None
+        else:
+            _private_scene_cache()
+            super().__init__(env_name=task, seed=seed, scene_ids=TASKS[task]["scene"], fixed_scene_seed=0)
+            for f in _private_scene_cache.written:
+                if os.path.exists(f):
+                    os.remove(f)
+            self.base0 = (np.array(self.env.robot_base_pos, float).copy(), np.array(self.env.robot_base_ori, float).copy())
         import mujoco
 
         m = self.m
-        self.base0 = (np.array(self.env.robot_base_pos, float).copy(), np.array(self.env.robot_base_ori, float).copy())
+        self.notes = ""
         self.feet = [mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link") for s in ("left", "right")]
         self.wrist_fk = {s: mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_wrist_yaw_link") for s in ("left", "right")}
         assert m is not None
 
     def reset_episode(self, ep: int) -> None:
+        self.ep = ep
+        if self.task == FREE:  # the empty scene: the data's reset (lml_host.HostDriver.reset), nothing jittered
+            self.env.rng = np.random.default_rng(1_000_003 * (ep + 1))  # in case the env draws from it
+            self.reset()
+            self.mj.mj_forward(self.m, self.d)
+            self.jitter_ok = True
+            return
         from robocasa.utils.scene_initial_jitter import apply_initial_pose_jitter
 
         # the jitter utility writes the jittered pose into env.robot_base_pos / robot_base_ori and a soft reset keeps
@@ -176,6 +207,8 @@ class TaskDriver(H.HostDriver):
         self.spawn_xy = self.d.xpos[self.pelvis][:2].copy()
 
     def waypoints(self) -> list[dict]:
+        if self.task == FREE:
+            return [self.free_waypoint()]
         from rl.kimodo.heft import adapters as AD
 
         g = AD.goals_for(self.env)
@@ -190,6 +223,23 @@ class TaskDriver(H.HostDriver):
             w0 = out[0]
             out.insert(0, dict(w0, goal=w0["goal"] - STANDOFF * w0["ad"], label="pre-touch"))
         return out
+
+    def free_waypoint(self) -> dict:
+        """FreeSpace episode `self.ep`: lml_selfmodel.sample_command restricted to the CORE box and standing, placed in the
+        world from the spawn pose (the robot stands still until the command; command() re-expresses it there)."""
+        rng = np.random.default_rng(FREE_SEED + self.ep)
+        side = "right" if rng.random() < 0.5 else "left"
+        t = rng.uniform(*L.CORE)
+        if side == "left":
+            t[1] = -t[1]
+        dyaw = math.radians(rng.uniform(-60.0, 60.0))
+        pitch = 0.0 if rng.random() < 0.35 else math.radians(rng.uniform(0.0, 90.0))
+        x = self.sample()
+        p, yaw = x["root"][:3], L.yaw_of(L._qmat(x["root"][3:]))
+        gp = np.r_[p[:2] + (L.rot_z(yaw) @ np.r_[t[:2], 0.0])[:2], t[2]]
+        a = yaw + dyaw
+        ad = np.array([math.cos(pitch) * math.cos(a), math.cos(pitch) * math.sin(a), -math.sin(pitch)])
+        return dict(goal=gp, ad=ad, side=side, label="free", needs_root=False, cmd0=dict(target=t.tolist(), dyaw=dyaw, pitch=pitch))
 
     def hand_contact(self, side: str) -> str | None:
         """The scene body the `side` hand or wrist touches now, or None."""
@@ -206,7 +256,12 @@ class TaskDriver(H.HostDriver):
         return None
 
     def joint_fraction(self) -> float:
+        if self.task == FREE:
+            return float("nan")
         return float(self.env.target_semantic_joint.fraction(self.env.sim))
+
+    def succeeded(self) -> bool:
+        return self.task != FREE and bool(self.env._check_success())
 
     # -- leg odometry (the feedback method's sensor) -------------------------------------------------------------------
     def body_rel(self, q_mj: np.ndarray) -> dict:
@@ -285,11 +340,43 @@ class Predictor:
         return o["pos"][0].numpy().astype(np.float64), o["pos_std"][0].numpy().astype(np.float64)
 
 
+# -- the feedback servo's variants ----------------------------------------------------------------------------------
+def fb_spec(method: str) -> dict | None:
+    """The servo a method runs, or None. `feedback` is step 3's (cap 8 cm, the newest push as the reference, stopped at
+    the label time). `fb_k<ki>_<sensor>` is step 4's: cap FB_CAP, the reference BUF_LAG frames back, running to the
+    episode's end, the hand measured by encoders + IMU + leg odometry as `feedback` and then degraded by <sensor>:
+      ideal     as measured
+      n<cm>     white noise, sigma <cm> per axis, a fresh draw at every 0.1 s update (draws fixed by the episode)
+      l<ms>     latency: the update at frame f uses the measurement of frame f - <ms>, compared with the reference of
+                that frame (timestamp aligned, the reading a careful implementation makes)
+      o<cm>     occlusion of the final approach: no measurement while the true hand point is within <cm> of the goal
+                (the integral holds)
+      b<cm>     a constant offset of <cm> in a random direction (fixed by the episode): a calibration error"""
+    if method == "feedback":
+        return dict(ki=SERVO_KI, cap=SERVO_CAP, ref_lag=0, to_end=False, sensor="ideal", level=0.0, lat=0)
+    m = re.fullmatch(r"fb_k([0-9.]+)_(ideal|[nlob][0-9.]+)", method)
+    if m is None:
+        return None
+    s = m[2]
+    sensor, level = ("ideal", 0.0) if s == "ideal" else (s[0], float(s[1:]))
+    lat = int(round(level / 1000 * L.FPS)) if sensor == "l" else 0
+    return dict(ki=float(m[1]), cap=FB_CAP, ref_lag=BUF_LAG, to_end=True, sensor=sensor, level=level, lat=lat)
+
+
+def valid_method(m: str) -> bool:
+    return m in METHODS or fb_spec(m) is not None
+
+
 # -- one episode ----------------------------------------------------------------------------------------------------
-def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor | None) -> dict:
+def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor | None, first_only: bool = False,
+            extra_s: float = 0.0) -> dict:  # fmt: skip
     task = TASKS[dr.task]
+    spec = fb_spec(method)
     dr.reset_episode(ep)
     wps = dr.waypoints()
+    if first_only:
+        wps = wps[:1]
+    extra = int(round(extra_s * L.FPS))
     frames = dr.start_frames()
     rows, wrec = {}, []
     f, k, next_cmd, end_frame = 0, 0, int(round(L.START_HOLD_S * L.FPS)), None
@@ -305,7 +392,7 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
         x = rows[f] = dr.sample()
         contact[f] = dr.hand_contact(side_now)
         fracs.append(dr.joint_fraction())
-        if success_at is None and bool(dr.env._check_success()):
+        if success_at is None and dr.succeeded():
             success_at = f
         if float(x["root"][2]) < L.FALL_Z:
             fell, why = f, "height"
@@ -316,7 +403,7 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 lost, why = f, "lost"
                 break
         if servo is not None and f <= servo["f_stop"] and (f - servo["f_cmd"]) % SERVO_EVERY == 0 and f > servo["f_cmd"]:
-            frames = servo_step(dr, servo, x, frames, f)
+            frames = servo_step(dr, servo, rows, frames, f)
         if k < len(wps) and f == next_cmd:
             wp = wps[k]
             side_now = wp["side"]
@@ -356,7 +443,8 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 info["pred_exec_h"] = best["pos"].tolist()
             else:
                 x0_live = None
-                if P is not None:  # the self model's prediction of exactly this command, planned from this state
+                if P is not None and not method.startswith("fb_"):  # the self model's prediction of exactly this
+                    # command, planned from this state (not for fb_*: the servo changes what is executed, review 11-18)
                     try:
                         (blend, last, rec), Dx = P.features(dr, rows, f, frames, c, k, reset_id)
                         info["pred_exec_h"] = P.predict(Dx)[0].tolist()
@@ -367,18 +455,23 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 rec.update(chain=min(k, 1))
             info["think_s"] = time.time() - tic
             rec.update(chain=min(k, 1), f_cmd=f, f_end=f + len(blend))
-            tail = L.POST_S + (L.PRE_S if k < len(wps) - 1 else 0.2) + L.MARGIN_S
+            final = k == len(wps) - 1
+            tail = L.POST_S + (0.2 + extra_s if final else L.PRE_S) + L.MARGIN_S
             frames = np.concatenate([frames[: f + 1], blend, L.hold(last, tail)])
             anchor = (x["root"][:2].copy(), frames[f, :2].copy())
             post = int(round(L.POST_S * L.FPS))
             info.update(cmd_h=np.asarray(c["target"]).tolist(), f_cmd=f, f_end=rec["f_end"], f_win=rec["f_end"] + post,
                         x0_live=None if x0_live is None else x0_live.tolist(), _rec=rec)  # fmt: skip
+            if "cmd0" in wp:
+                info["cmd0"] = wp["cmd0"]
             wrec.append(info)
-            if method == "feedback":
-                servo = servo_start(dr, x, wp, c, rec, last, f, rec["f_end"] + post, frames)
-                info["servo"] = servo["leads"]  # filled as the servo runs
             next_cmd = rec["f_end"] + post + int(round(L.PRE_S * L.FPS))
-            end_frame = rec["f_end"] + post
+            end_frame = rec["f_end"] + post + (extra if final else 0)
+            if spec is not None:
+                f_stop = end_frame if spec["to_end"] else rec["f_end"] + post
+                servo = servo_start(dr, x, wp, c, rec, last, f, f_stop, frames, spec, ep)
+                info["servo"] = servo["leads"]  # filled as the servo runs
+                info["servo_stat"] = servo["stat"]
             k += 1
         if k == len(wps) and end_frame is not None and f >= end_frame:
             break
@@ -417,6 +510,16 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                  perp_cm=100 * float(np.linalg.norm(e - along * ad)), complete=fw == w["f_win"],
                  err_arrive_cm=100 * float(np.linalg.norm(pa + Ra @ L.HAND_OFF - np.asarray(w["goal_w"]))),
                  contact_win=contact.get(fw), first_contact=touched[0] if touched else None, act_h=act_h.tolist())  # fmt: skip
+        # the same error ERR_OFFS frames after the label time (None past the last row: the episode ended early)
+        err_t = []
+        for o in ERR_OFFS:
+            g = w["f_win"] + o
+            if g not in rows:
+                err_t.append(None)
+                continue
+            pg, Rg = rows[g]["wr"][w["side"]]
+            err_t.append(100 * float(np.linalg.norm(pg + Rg @ L.HAND_OFF - np.asarray(w["goal_w"]))))
+        w["err_t_cm"] = err_t
         if "pred_exec_h" in w:
             w["pred_err_cm"] = 100 * float(np.linalg.norm(np.asarray(w["pred_exec_h"]) - act_h))
         w.pop("_rec", None)
@@ -430,32 +533,53 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 waypoints=wrec, _rows=rows, _frames=frames)  # fmt: skip
 
 
-def servo_start(dr: TaskDriver, x: dict, wp: dict, c: dict, rec: dict, last, f: int, f_stop: int, frames: np.ndarray) -> dict:
+def servo_start(dr: TaskDriver, x: dict, wp: dict, c: dict, rec: dict, last, f: int, f_stop: int, frames: np.ndarray,
+                spec: dict, ep: int) -> dict:  # fmt: skip
     """The command frame: world axes, origin at the pelvis at the command; the feet anchored there from encoders + IMU.
     The servo's error is Motor's (motor.py _servo): the reference's hand NOW minus the measured hand -- not the final
     goal minus the hand, which winds the integral up to its cap during the transit (review 2026-11-18). The reference is
     the plan as first made (`frames0`), before the servo's own shifts."""
     R = L._qmat(x["root"][3:])
     rel = dr.body_rel(x["q"][dr.to_mj])
+    bias = np.random.default_rng([ep, zlib.crc32(b"bias")]).normal(size=3)  # same direction for every level and gain
     # the plan lives in reference coordinates (lml_selfmodel.OnlineDriver._plan shifts it by `delta` onto the
     # reference root); the IK re-solve is asked in those, the error is formed in measured ones
     return dict(f_cmd=f, f_stop=f_stop, f_end=rec["f_end"], side=wp["side"], p_cmd=x["root"][:3].copy(),
                 feet_c=R @ rel["feet"], lead=np.zeros(3), goal_ref=wp["goal"] + np.asarray(rec["delta"]),
+                goal_w=np.asarray(wp["goal"], float), spec=spec, noise=np.random.default_rng([ep, zlib.crc32(b"noise")]),
+                bias_u=bias / np.linalg.norm(bias), stat=dict(updates=0, blind=0, at_cap=0),
                 delta=np.asarray(rec["delta"]), frames0=frames.copy(), rot_w=np.asarray(rec["rot_w"]), last=last, n=0, leads=[])  # fmt: skip
 
 
-def servo_step(dr: TaskDriver, sv: dict, x: dict, frames: np.ndarray, f: int) -> np.ndarray:
+def servo_step(dr: TaskDriver, sv: dict, rows: dict, frames: np.ndarray, f: int) -> np.ndarray:
     """One servo update: hand measured by leg odometry (feet planted since the command), the integral moves the hand
-    target, the IK re-solves the final pose from the planned one, and the rest of the reference is shifted toward it."""
-    R = L._qmat(x["root"][3:])  # IMU orientation
-    rel = dr.body_rel(x["q"][dr.to_mj])
+    target, the IK re-solves the final pose from the planned one, and the rest of the reference is shifted toward it.
+    The measurement is the one of frame g = f - latency, degraded as fb_spec says; the reference is read at g - ref_lag."""
+    sp = sv["spec"]
+    g = f - sp["lat"]
+    if g <= sv["f_cmd"]:  # nothing measured since the command yet
+        return frames
+    xg = rows[g]
+    if sp["sensor"] == "o":
+        pw, Rw = xg["wr"][sv["side"]]
+        if float(np.linalg.norm(pw + Rw @ L.HAND_OFF - sv["goal_w"])) < sp["level"] / 100:
+            sv["stat"]["blind"] += 1
+            return frames
+    R = L._qmat(xg["root"][3:])  # IMU orientation
+    rel = dr.body_rel(xg["q"][dr.to_mj])
     pel_c = sv["feet_c"] - R @ rel["feet"]
     hand_c = pel_c + R @ rel[sv["side"]]
-    rf = sv["frames0"][min(f, len(sv["frames0"]) - 1)]
+    if sp["sensor"] == "n":
+        hand_c = hand_c + sp["level"] / 100 * sv["noise"].normal(size=3)
+    elif sp["sensor"] == "b":
+        hand_c = hand_c + sp["level"] / 100 * sv["bias_u"]
+    rf = sv["frames0"][min(max(g - sp["ref_lag"], 0), len(sv["frames0"]) - 1)]
     ref_hand_w = dr.pl.fk_world(rf[:3], rf[3:7], rf[7:])[sv["side"]][0] - sv["delta"]  # reference coords -> measured
     e = (ref_hand_w - sv["p_cmd"]) - hand_c
-    sv["lead"] = np.clip(sv["lead"] + SERVO_KI * SERVO_EVERY * L.DT * e, -SERVO_CAP, SERVO_CAP)
+    sv["lead"] = np.clip(sv["lead"] + sp["ki"] * SERVO_EVERY * L.DT * e, -sp["cap"], sp["cap"])
     sv["n"] += 1
+    sv["stat"]["updates"] += 1
+    sv["stat"]["at_cap"] += int(bool(np.any(np.abs(sv["lead"]) >= sp["cap"] - 1e-9)))
     sv["leads"].append((f, (100 * e).round(2).tolist(), (100 * sv["lead"]).round(2).tolist()))
     try:
         poses, _, _, _ = dr.pl.reach(sv["last"], sv["side"], sv["goal_ref"] + sv["lead"], sv["rot_w"], None)
@@ -478,20 +602,27 @@ def servo_step(dr: TaskDriver, sv: dict, x: dict, frames: np.ndarray, f: int) ->
 
 
 # -- runner ---------------------------------------------------------------------------------------------------------
-def run(out: Path, task: str, method: str, eps: list[int], worker: int) -> None:
-    od = out / "episodes" / task / method
-    od.mkdir(parents=True, exist_ok=True)
-    todo = [e for e in eps if not (od / f"ep{e:03d}.json").exists() and not (od / f"ep{e:03d}.skip").exists()]
-    print(f"tasks {task} {method} worker {worker}: {len(eps) - len(todo)}/{len(eps)} episodes done", flush=True)
+def run(out: Path, task: str, methods: list[str], eps: list[int], worker: int, shard: int = 0, shards: int = 1,
+        first_only: bool = False, extra_s: float = 0.0) -> None:  # fmt: skip
+    """Episodes `eps` x `methods`, this process taking every `shards`-th (method, episode) pair from `shard`, in one env."""
+    done = lambda m, e: any((out / "episodes" / task / m / f"ep{e:03d}.{x}").exists() for x in ("json", "skip"))  # noqa: E731
+    jobs = [(m, e) for m in methods for e in eps][shard::shards]
+    todo = [(m, e) for m, e in jobs if not done(m, e)]
+    print(f"tasks {task} {','.join(methods) if len(methods) < 4 else f'{len(methods)} methods'} worker {worker} shard {shard}/{shards}: "
+          f"{len(jobs) - len(todo)}/{len(jobs)} episodes done", flush=True)  # fmt: skip
     if not todo:
         return
-    T = dict(np.load(out / "lookup.npz")) if method == "lookup" else None
-    P = Predictor(out / ("wm_s1.pt" if method == "selfmodel_s1" else "wm_s0.pt"))
+    T = dict(np.load(out / "lookup.npz")) if "lookup" in methods else None
+    preds: dict[str, Predictor] = {}
     dr = TaskDriver(task, seed=worker)
-    for e in todo:
+    for method, e in todo:
+        od = out / "episodes" / task / method
+        od.mkdir(parents=True, exist_ok=True)
+        wm = "wm_s1.pt" if method == "selfmodel_s1" else "wm_s0.pt"
+        P = preds[wm] if wm in preds else preds.setdefault(wm, Predictor(out / wm))
         t0 = time.time()
         try:
-            r = episode(dr, e, method, T, P)
+            r = episode(dr, e, method, T, P, first_only=first_only, extra_s=extra_s)
         except RuntimeError as err:  # the task's own reset could not place the robot (same for every method: the start
             # depends on the episode index alone); recorded as a skipped episode, not retried with another seed
             if "no collision-free" not in str(err):
@@ -501,13 +632,15 @@ def run(out: Path, task: str, method: str, eps: list[int], worker: int) -> None:
             dr = TaskDriver(task, seed=worker)
             continue
         r.pop("_rows"), r.pop("_frames")
-        r["wall_s"] = round(time.time() - t0, 1)
+        r.update(wall_s=round(time.time() - t0, 1), first_only=first_only, extra_s=extra_s, servo_spec=fb_spec(method))
         tmp = od / f".ep{e:03d}.json"
         tmp.write_text(json.dumps(r, default=_json))
         os.replace(tmp, od / f"ep{e:03d}.json")
         w0 = r["waypoints"][0] if r["waypoints"] else {}
+        et = w0.get("err_t_cm") or [None] * len(ERR_OFFS)
         print(f"tasks {task} {method} ep {e}: success {r['success']} (step {r['success_step']}), frac {r['frac_start']:.2f}->{r['frac_final']:.2f}, "
-              f"touch err {w0.get('err_cm', float('nan')):.1f} cm (perp {w0.get('perp_cm', float('nan')):.1f}), {r['why'] or 'ok'}, {r['wall_s']} s", flush=True)  # fmt: skip
+              f"touch err {w0.get('err_cm', float('nan')):.1f} cm (perp {w0.get('perp_cm', float('nan')):.1f}), "
+              f"+1 s {et[2] if et[2] is None else round(et[2], 2)}, {r['why'] or 'ok'}, {r['wall_s']} s", flush=True)  # fmt: skip
 
 
 def _json(o):
@@ -540,14 +673,22 @@ if __name__ == "__main__":
     ap.add_argument("phase", choices=["table", "run", "summary"])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--task", default="IThorKitchenCloseDrawer")
-    ap.add_argument("--method", default="alone", choices=METHODS)
+    ap.add_argument("--method", default="alone")
+    ap.add_argument("--methods", default=None, help="comma list (overrides --method)")
     ap.add_argument("--episodes", default="0:50")
     ap.add_argument("--worker", type=int, default=0)
+    ap.add_argument("--shard", type=int, default=0)
+    ap.add_argument("--shards", type=int, default=1)
+    ap.add_argument("--first-only", action="store_true")
+    ap.add_argument("--extra-hold", type=float, default=0.0)
     a = ap.parse_args()
+    ms = a.methods.split(",") if a.methods else [a.method]
+    bad = [m for m in ms if not valid_method(m)]
+    assert not bad, f"unknown methods {bad}"
     if a.phase == "table":
         table(a.out)
     elif a.phase == "run":
         lo, hi = (int(v) for v in a.episodes.split(":"))
-        run(a.out, a.task, a.method, list(range(lo, hi)), a.worker)
+        run(a.out, a.task, ms, list(range(lo, hi)), a.worker, a.shard, a.shards, a.first_only, a.extra_hold)
     else:
         summary(a.out)
