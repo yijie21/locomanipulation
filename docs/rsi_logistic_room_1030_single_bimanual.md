@@ -220,7 +220,7 @@ cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
 ```bash
 R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-a
 python3 scripts/rsi/alternate.py init $R gso_single_grasp gso_bimanual_lift
-CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 > $R/run.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 --max-hours 10 > $R/run.log 2>&1 &
 $PY scripts/rsi/alternate.py status $R                                  # 看进度
 ```
 
@@ -230,8 +230,12 @@ $PY scripts/rsi/alternate.py status $R                                  # 看进
   1. 把共享知识复制进这一方的沙盒并提交，跑一轮内环（`loop.py run --max-iters 1`）。
   2. 用这一方到目前为止的整本账本重建它的条目。
   3. 把这一方的现任技能包（参数覆盖值写进常数）三方合并进另一方的现任。两边改了同一处时保留另一方的版本，记为冲突。合并结果在另一方的验收池上过“不变差”验收门（`loop.py sync`，`gate.py --non-inferior`）：少赢不超过多赢就成为另一方的新现任，否则作废。这次验收在另一方的账本里记一行 `gate`，计入它的验收门调用次数；结果也写进共享的 `sync.jsonl`，两边的 `KNOWLEDGE.md` 末尾都能看到。
-- 一方正常停下（80 %、5 小时、它自己的 5 轮、验收门 12 次）后，跳过它的半轮，也不再往它合并代码；它的条目继续给对方用。
-- 一方的内环异常停下（角色调用失败、崩溃）或同步验收出错时，整个运行停下，`run.log` 最后一行写着原因；查完再跑同一条 `run` 命令，从停下的那一步接着跑。建库得到 0 条或失败只记录，不停。
+- 终止条件（用户 11-18），满足任一条就停：
+  1. 跑完 `--iters` 个迭代（5：单手 5 轮、双手 5 轮）。
+  2. 整个运行跑满 `--max-hours` 小时（默认 10），算两边合计的时间：驱动实际在跑的时间累加，驱动停着的时间不算。每个阶段开始前检查，正在跑的阶段会跑完。
+  3. 两边都在各自的验收池上赢到 `--stop-rate`（默认 0.8，即 40 局赢 32 局）。只有一方赢到时，这一方停下：跳过它的半轮，也不再往它合并代码，它的条目继续给对方用；另一方接着跑。
+- 两边的内环都带 `--alternating` 运行：每个任务族只按停止线停下，不再因为它自己的 5 小时、5 轮、12 次验收门或 Manager 决定停而停；Manager 决定停时只结束这一轮。
+- 一方的内环出错（角色调用失败、审计连续两轮作废、崩溃）或同步验收出错，不算跑完，整个运行停下，`run.log` 最后一行写着原因；查完再跑同一条 `run` 命令，从停下的那一步接着跑。建库得到 0 条或失败只记录，不停。
 - 每个阶段做完都存一次状态（`$R/alternate.json`），中途停了再跑 `run` 会接着跑。同一个运行目录同时只能有一个驱动。
 
 得到什么：`$R/knowledge/knowledge.jsonl`（两边的条目）、`sync.jsonl`（每次合并的文件、冲突、多赢 / 少赢、接受与否）、`$R/logs/`（每个半轮的内环和同步验收日志）。一个迭代约 2 小时：两轮内环各约 45 分钟，两次建库各 10–15 分钟，两次同步验收各 10–20 分钟。

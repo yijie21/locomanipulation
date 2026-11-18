@@ -96,6 +96,10 @@ COST_CAP = float(os.environ["RSI_COST_CAP_USD"]) if "RSI_COST_CAP_USD" in os.env
 WALL_DEFAULT_H = 6.0
 MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", WALL_DEFAULT_H))  # cmd_run resolves it again (resolve_settings)
 MAX_GATE_CALLS = 12
+# `run --alternating` (scripts/rsi/alternate.py, user 2026-11-18): the driver holds the iteration and time limits; the
+# only stop of a family is its stop rate. No gate-call cap, no wall clock, no run-iteration cap, no Manager stop, no
+# unparked view; the audit's void streak and a failed role call still stop it as failures.
+ALTERNATING = False
 # iterations one run takes across its resumes; None = no cap (`--max-iters` only bounds one invocation). A family file
 # may set `max_run_iters`, `max_wall_h` and `stop_rate` (logistics_room_1030: 5, 5 h, 80 %; user 2026-11-06)
 MAX_RUN_ITERS = None
@@ -559,6 +563,8 @@ def stop_reason(meta: dict) -> str | None:
             return f"the incumbent wins {here}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
     elif accepted and accepted[-1]["result"]["candidate_ok"] >= STOP_RATE * n_accept:
         return f"the incumbent wins {accepted[-1]['result']['candidate_ok']}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
+    if ALTERNATING:  # the stop rate is the family's only stop; the driver holds the rest
+        return None
     gates = run_gates(es, meta)
     if len(gates) >= MAX_GATE_CALLS:
         return f"gate calls {len(gates)} >= {MAX_GATE_CALLS}"
@@ -1721,6 +1727,11 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
         ledger(dict(step="manager_invalid", iter=n, reason=f"reopen after {MAX_REOPEN_RUN} reopens in a row"))
         return None
     if dec["decision"] == "stop":
+        if ALTERNATING:  # only the stop rate stops a family of an alternating run: this iteration ends here
+            ledger(
+                dict(step="manager_stop_ignored", iter=n, reason="alternating run: the stop rate alone stops a family")
+            )
+            return None
         return "manager: stop"
     if dec["decision"] == "review":
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
@@ -2480,7 +2491,7 @@ def second_shot(n: int, it_dir: Path, cands: list[dict], gated_hash: str, stub: 
     if not verdict or verdict.get("void") or verdict.get("accepted"):
         return None
     es = entries()
-    if len(run_gates(es, jload(STATE / "meta.json", {}))) >= MAX_GATE_CALLS:
+    if not ALTERNATING and len(run_gates(es, jload(STATE / "meta.json", {}))) >= MAX_GATE_CALLS:
         return None
     rejected = {e["hash"] for e in es if e.get("step") == "gate" and not e.get("accepted") and not e.get("void")
                 and e.get("hash") and e.get("rule", 1) == GATE_RULE}  # fmt: skip
@@ -2766,7 +2777,12 @@ def wall_h(meta: dict) -> float:
     return (time.time() - meta["started_s"] - meta.get("paused_s", 0.0)) / 3600
 
 
-BOOKKEEPING_STEPS = ("stop", "settings", "diag_pool")  # rows a stopped run's ledger can gain without an iteration
+BOOKKEEPING_STEPS = (
+    "stop",
+    "pause",
+    "settings",
+    "diag_pool",
+)  # rows a stopped run's ledger can gain without an iteration
 
 
 def resume(meta: dict) -> None:
@@ -2775,14 +2791,18 @@ def resume(meta: dict) -> None:
     a standalone `loop.py redraw` (33.23), a `settings` row, a wall-clock `stop` the resume itself wrote -- so the
     pause runs from the first row of that trailing run (run C, 2026-10-23: a redraw row after the stop hid a 12 h
     pause and the resumed run stopped at once on the wall clock); a `resume` row ends the walk back, its gap is
-    already counted."""
+    already counted. A `pause` row (the run used up its --max-iters without a stop reason) starts a pause as a stop
+    does, and an alternating run's sync verdicts (`gate` / `gate_error` rows carrying `sync`, loop.py sync) may follow
+    it: the hours another family ran in between do not count either (scripts/rsi/alternate.py, 2026-11-18)."""
     es = entries()
     tail = []
     for e in reversed(es):
-        if e.get("step") not in BOOKKEEPING_STEPS:
+        if e.get("step") not in BOOKKEEPING_STEPS and not (
+            e.get("sync") is not None and e.get("step") in ("gate", "gate_error")
+        ):
             break
         tail.append(e)
-    if not any(e.get("step") == "stop" for e in tail):
+    if not any(e.get("step") in ("stop", "pause") for e in tail):
         return
     t = calendar.timegm(time.strptime(tail[-1]["t"], "%Y-%m-%dT%H:%M:%SZ"))
     if t < int(meta["started_s"]):  # a stop from before this run started (a replay's copied ledger); t is whole seconds
@@ -2897,7 +2917,8 @@ def cmd_run(a) -> int:
 
 def _run(a, efforts: dict) -> int:
     global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT, MAX_RUN_ITERS
-    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX
+    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX, ALTERNATING
+    ALTERNATING = bool(getattr(a, "alternating", False))
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
     meta = prior or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, family=FAMILY)
@@ -2953,6 +2974,7 @@ def _run(a, efforts: dict) -> int:
             n += 1
         if why:
             return finish(why)
+    ledger(dict(step="pause", reason=f"--max-iters {a.max_iters} done"))  # resume() counts the time until the next run
     return 0
 
 
@@ -3066,6 +3088,8 @@ def main(argv=None) -> int:
                             ("--diag-draw-max", "diag_draw_max", "fresh starts a redraw may draw and run (default 90)")):  # fmt: skip
         r.add_argument(flag, dest=key, type=int, default=None, help=text)
     r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
+    r.add_argument("--alternating", action="store_true", help="scripts/rsi/alternate.py's runs: the stop rate is the "
+                   "only stop; no gate-call cap, wall clock, run-iteration cap or Manager stop (user 2026-11-18)")  # fmt: skip
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer, composer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip
     r.add_argument("--engineer-from", type=Path, help="replays: the next iteration takes this recorded iteration's "

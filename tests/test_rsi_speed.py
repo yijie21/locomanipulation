@@ -937,6 +937,26 @@ class TranscriptAudit(unittest.TestCase):
         self.lp.resume(meta)  # the resume row ends the walk back: nothing is taken off twice
         self.assertAlmostEqual(self.lp.wall_h(meta), 4.0, places=2)
 
+    def test_a_pause_and_the_other_familys_sync_verdicts_after_it_do_not_count(self):
+        """2026-11-18, scripts/rsi/alternate.py: each half runs `loop.py run --max-iters 1`, which ends with a pause
+        row; the other family's half follows, then its sync verdict lands in this ledger as a gate row with `sync`.
+        Before the fix the other family's hours counted against this family's MAX_WALL_H."""
+        meta = dict(started_s=time.time() - 3 * 3600)
+        with (self.state / "ledger.jsonl").open("a") as fh:
+            for hours_ago, row in ((2.5, dict(step="gate", iter=0, accepted=False)),
+                                   (2.0, dict(step="pause", reason="--max-iters 1 done")),
+                                   (0.2, dict(step="gate", accepted=True, sync={"from": "other"}))):  # fmt: skip
+                t = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - hours_ago * 3600))
+                fh.write(json.dumps(dict(t=t, **row)) + "\n")
+        self.lp.resume(meta)
+        self.assertAlmostEqual(self.lp.wall_h(meta), 1.0, places=2)  # ran 1 h, stood 2 h while the other family ran
+
+    def test_a_run_that_uses_up_its_iterations_ends_with_a_pause_row(self):
+        import inspect
+
+        src = inspect.getsource(self.lp._run)
+        self.assertIn('ledger(dict(step="pause"', src.rsplit("for _ in range(iters):", 1)[1])
+
     def test_a_stop_from_before_the_run_started_is_not_a_pause(self):
         meta = dict(started_s=time.time() - 3600)
         self.stopped(2)  # a replay's ledger copied from its source run

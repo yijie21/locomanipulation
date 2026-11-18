@@ -3,7 +3,7 @@ share one knowledge library and one skills package. Modes 1 and 2 are the loop a
 `loop.py run`, then `knowledge.py build`).
 
     python3 scripts/rsi/alternate.py init <run dir> <family A> <family B> [--ref HEAD]
-    python3 scripts/rsi/alternate.py run <run dir> [--iters 5] [--loop-args "--candidates 3"] [--stub-knowledge]
+    python3 scripts/rsi/alternate.py run <run dir> [--iters 5] [--max-hours 10] [--stop-rate 0.8] [--loop-args "..."]
     python3 scripts/rsi/alternate.py status <run dir>
     python3 scripts/rsi/alternate.py publish <run dir> [--out scripts/rsi/knowledge]
 
@@ -26,11 +26,18 @@ kind and skill file), which loop.py turns into a line of the Reviewer's and the 
    no more of G's acceptance starts than it wins); the verdict is a gate row of G's ledger (it counts as a gate call)
    and a line of the shared `sync.jsonl`, which KNOWLEDGE.md shows both families. Accepted, it is G's incumbent and
    the next merge base; rejected, the two packages differ there until a later merge carries it.
-A family whose loop stopped normally (its stop row: 80 %, wall clock, its own iteration limit) skips its halves, and
-nothing is merged into it; its entries stay. A loop that stops abnormally (exit 3: a role call failed, a crash) or a
+When it stops (user 2026-11-18), whichever comes first:
+- `--iters` iterations are done (5: five halves of each family);
+- the run has been running `--max-hours` (default 10), both families together: the time the driver ran, summed over
+  its runs (the time it stood stopped does not count), checked before each phase, so a phase under way finishes;
+- both families have reached the stop rate (`--stop-rate`, default 0.8: the incumbent wins that share of the
+  family's acceptance pool). Each family's loop runs with `--alternating`: the stop rate is its only stop (no gate-call
+  cap, no wall clock, no iteration cap, no Manager stop). A family that reached it stops -- its halves are skipped,
+  nothing is merged into it, its entries stay -- and the other goes on.
+A loop that stops abnormally (exit 3: a role call failed, the audit voided two iterations in a row, a crash) or a
 gate error blocks the run: `run` exits and says why; fix it and run again. A build that keeps no entry or fails is
-recorded and the run goes on. The state (`alternate.json`: iteration, turn, phase) is saved after every phase, so
-`run` resumes where it stopped.
+recorded and the run goes on. The state (`alternate.json`: iteration, turn, phase, hours) is saved after every phase,
+so `run` resumes where it stopped.
 
 `publish` puts the run's entries into the repository's library (replacing those of the run's two families); commit
 it yourself.
@@ -262,14 +269,17 @@ def append_sync(run: Path, row: dict) -> None:
 
 
 class Runner:
-    def __init__(self, run: Path, loop_args: list[str] | None = None, stub_knowledge: bool = False):
-        self.run, self.loop_args, self.stub = run, loop_args or [], stub_knowledge
+    def __init__(
+        self, run: Path, loop_args: list[str] | None = None, stub_knowledge: bool = False, stop_rate: float = 0.8
+    ):
+        self.run, self.loop_args, self.stub, self.stop_rate = run, loop_args or [], stub_knowledge, stop_rate
         (run / "logs").mkdir(parents=True, exist_ok=True)
 
     def loop(self, sb: Path, family: str, tag: str) -> int:
         """One inner-loop iteration in the sandbox; the loop's exit code (0 normal, 3 an abnormal stop)."""
         with (self.run / "logs" / f"{tag}_loop.log").open("a") as log:
-            cmd = [str(SIM_PY), "scripts/rsi/loop.py", "run", family, "--max-iters", "1", *self.loop_args]
+            cmd = [str(SIM_PY), "scripts/rsi/loop.py", "run", family, "--max-iters", "1", "--alternating",
+                   "--stop-rate", str(self.stop_rate), *self.loop_args]  # fmt: skip
             return subprocess.run(cmd, cwd=sb, stdout=log, stderr=subprocess.STDOUT).returncode
 
     def build(self, sb: Path, family: str) -> dict:
@@ -409,24 +419,33 @@ def step(run: Path, st: dict, runner) -> None:
     jdump(run / STATE_FILE, st)
 
 
-def done(st: dict, iters: int) -> str | None:
+def done(st: dict, iters: int, max_hours: float | None = None) -> str | None:
+    """Why the run stops now, or None (module docstring)."""
     if st["blocked"]:
         return f"blocked: {st['blocked']}"
     if all(f in st["stopped"] for f in st["families"]):
-        return "both families have stopped"
+        return "both families have stopped: " + "; ".join(f"{f}: {r}" for f, r in st["stopped"].items())
     if st["iter"] >= iters:
         return f"{st['iter']} iterations done"
+    hours = st.get("active_s", 0.0) / 3600
+    if max_hours is not None and hours >= max_hours:
+        return f"time limit: the run has run {hours:.1f} h >= {max_hours:g} h"
     return None
 
 
-def run_all(run: Path, iters: int, runner) -> str:
+def run_all(run: Path, iters: int, runner, max_hours: float | None = None) -> str:
     st = json.loads((run / STATE_FILE).read_text())
     if st["blocked"]:  # a run again after the cause was fixed
         event(st, step="unblock", was=st["blocked"])
         st["blocked"] = None
         jdump(run / STATE_FILE, st)
-    while (why := done(st, iters)) is None:
+    while (why := done(st, iters, max_hours)) is None:
+        t0 = time.time()
         step(run, st, runner)
+        st["active_s"] = st.get("active_s", 0.0) + time.time() - t0  # the hours both families ran, together
+        jdump(run / STATE_FILE, st)
+    event(st, step="end", why=why)
+    jdump(run / STATE_FILE, st)
     return why
 
 
@@ -469,7 +488,8 @@ def status(run: Path) -> str:
     st = json.loads((run / STATE_FILE).read_text())
     lines = [f"families {st['families']} (tags {st['tags']}); iteration {st['iter'] + 1}, "
              f"{st['families'][st['turn']]}'s half, phase {st['phase']}",
-             f"stopped: {st['stopped'] or 'none'}; blocked: {st['blocked'] or 'no'}",
+             f"stopped: {st['stopped'] or 'none'}; blocked: {st['blocked'] or 'no'}; "
+             f"run {st.get('active_s', 0.0) / 3600:.1f} h",
              f"library: {len(KN.entries(run / 'knowledge'))} entries; syncs: {len(KN.jl(run / 'knowledge' / KN.SYNCS))}"]  # fmt: skip
     lines += [json.dumps(e, ensure_ascii=False)[:300] for e in st["events"][-10:]]
     return "\n".join(lines)
@@ -486,6 +506,9 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("run", type=Path)
     r.add_argument("--iters", type=int, default=5, help="iterations, each a half of both families")
+    r.add_argument("--max-hours", type=float, default=10.0, help="hours both families may run together (default 10)")
+    r.add_argument("--stop-rate", type=float, default=0.8, help="a family stops once its incumbent wins this share "
+                   "of its acceptance pool (default 0.8)")  # fmt: skip
     r.add_argument("--loop-args", default="", help='more arguments for each `loop.py run`, e.g. "--candidates 3"')
     r.add_argument("--stub-knowledge", action="store_true", help="knowledge.build without the model (plumbing)")
     s = sub.add_parser("status")
@@ -508,7 +531,8 @@ def main(argv=None) -> int:
         print(json.dumps(publish(run, a.out.resolve())))
         return 0
     with Lock(run):
-        why = run_all(run, a.iters, Runner(run, shlex.split(a.loop_args), a.stub_knowledge))
+        runner = Runner(run, shlex.split(a.loop_args), a.stub_knowledge, a.stop_rate)
+        why = run_all(run, a.iters, runner, a.max_hours)
     print(why)
     return 3 if why.startswith("blocked") else 0
 

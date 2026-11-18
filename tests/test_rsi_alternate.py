@@ -291,6 +291,52 @@ class Driver(unittest.TestCase):
         self.assertEqual(ids, ["fa/new", "zz/keep"])
 
 
+class Limits(unittest.TestCase):
+    """User 2026-11-18: the run stops after --iters iterations, after --max-hours of both families together, or once
+    both families reach the stop rate; one that reaches it stops and the other goes on."""
+
+    def test_the_hours_of_both_families_add_up_and_stop_the_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            AL.run_all(run, 1, FakeRunner(run), max_hours=10)
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            self.assertGreater(st["active_s"], 0.0)
+            st["active_s"] = 10 * 3600 + 1  # as if both families had run ten hours
+            AL.jdump(run / AL.STATE_FILE, st)
+            r = FakeRunner(run)
+            why = AL.run_all(run, 5, r, max_hours=10)
+        self.assertTrue(why.startswith("time limit"), why)
+        self.assertEqual(r.calls, [])
+
+    def test_the_iteration_limit_counts_one_half_of_each_family(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            r = FakeRunner(run)
+            self.assertEqual(AL.run_all(run, 2, r, max_hours=10), "2 iterations done")
+        self.assertEqual((r.calls.count(("loop", "fa")), r.calls.count(("loop", "fb"))), (2, 2))
+
+    def test_both_families_at_the_stop_rate_stop_the_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            rate = "the incumbent wins 32/40 >= 80%: sealed set"
+            why = AL.run_all(run, 5, FakeRunner(run, stops={"fa": rate, "fb": rate}), max_hours=10)
+        self.assertTrue(why.startswith("both families have stopped"), why)
+
+    def test_each_loop_runs_alternating_with_the_stop_rate(self):
+        seen = []
+        orig = AL.subprocess.run
+        AL.subprocess.run = lambda cmd, **kw: seen.append(cmd) or subprocess.CompletedProcess(cmd, 0)
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                AL.Runner(Path(d), stop_rate=0.8).loop(Path(d), "fa", "01_a_fa")
+        finally:
+            AL.subprocess.run = orig
+        cmd = seen[0]
+        self.assertIn("--alternating", cmd)
+        self.assertEqual(cmd[cmd.index("--stop-rate") + 1], "0.8")
+        self.assertEqual(cmd[cmd.index("--max-iters") + 1], "1")
+
+
 class NonInferiorGate(unittest.TestCase):
     def test_c_at_most_b_passes(self):
         GA = _load("rsi_gate_under_test", "gate.py")
@@ -300,17 +346,59 @@ class NonInferiorGate(unittest.TestCase):
         self.assertNotEqual(GA.SYNC_RULE, GA.GATE_RULE)
 
 
+def _loop_module(name: str):
+    names = ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "design", "sealed", "loop")
+    saved = {k: sys.modules.pop(k, None) for k in names}
+    try:
+        return _load(name, "loop.py")
+    finally:
+        for k, v in saved.items():
+            sys.modules.pop(k, None)
+            if v is not None:
+                sys.modules[k] = v
+
+
 class LoopSync(unittest.TestCase):
+    def test_an_alternating_family_stops_only_on_the_stop_rate(self):
+        LP = _loop_module("rsi_loop_alternating_under_test")
+        import time as _t
+
+        with tempfile.TemporaryDirectory() as d:
+            orig = (LP.REPO, LP.ALTERNATING, LP.MAX_RUN_ITERS, LP.STOP_RATE, LP.MAX_WALL_H)
+            LP.REPO = Path(d)
+            LP.configure("fam")
+            try:
+                pool = LP.HIDDEN / "pool_accept"
+                pool.mkdir(parents=True)
+                for i in range(40):
+                    (pool / f"t_s{i}.json").write_text("{}")
+                LP.STATE.mkdir(parents=True)
+                meta = dict(started="2026-01-01T00:00:00Z", started_s=_t.time() - 30 * 3600)
+                LP.MAX_RUN_ITERS, LP.STOP_RATE, LP.MAX_WALL_H = 2, 0.8, 5.0
+                with (LP.STATE / "ledger.jsonl").open("a") as fh:
+                    for i in range(12):  # twelve rejected gate calls in three iterations, 30 h of wall clock
+                        fh.write(json.dumps(dict(t="2026-01-02T00:00:00Z", step="gate", iter=i // 4, accepted=False,
+                                                 pool=str(pool), result=dict(candidate_ok=10, incumbent_ok=20))) + "\n")  # fmt: skip
+                LP.ALTERNATING = False
+                self.assertTrue(LP.stop_reason(meta).startswith("gate calls 12"))
+                LP.ALTERNATING = True
+                self.assertIsNone(LP.stop_reason(meta))  # no gate-call cap, no wall clock, no iteration cap
+                with (LP.STATE / "ledger.jsonl").open("a") as fh:
+                    fh.write(json.dumps(dict(t="2026-01-02T00:00:00Z", step="gate", accepted=True, pool=str(pool),
+                                             sync={"from": "other"}, result=dict(candidate_ok=32, incumbent_ok=20))) + "\n")  # fmt: skip
+                self.assertEqual(LP.stop_reason(meta), "the incumbent wins 32/40 >= 80%: sealed set")
+            finally:
+                LP.REPO, LP.ALTERNATING, LP.MAX_RUN_ITERS, LP.STOP_RATE, LP.MAX_WALL_H = orig
+
+    def test_an_alternating_family_ignores_a_manager_stop_and_takes_second_shots_past_the_cap(self):
+        import inspect
+
+        LP = _loop_module("rsi_loop_alternating_src_under_test")
+        self.assertIn('step="manager_stop_ignored"', inspect.getsource(LP))
+        self.assertIn("if not ALTERNATING and len(run_gates(", inspect.getsource(LP.second_shot))
+
     def test_the_sync_verdict_is_a_gate_row_without_an_iteration(self):
-        names = ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "design", "sealed", "loop")
-        saved = {k: sys.modules.pop(k, None) for k in names}
-        try:
-            LP = _load("rsi_loop_sync_under_test", "loop.py")
-        finally:
-            for k, v in saved.items():
-                sys.modules.pop(k, None)
-                if v is not None:
-                    sys.modules[k] = v
+        LP = _loop_module("rsi_loop_sync_under_test")
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             orig = (LP.REPO, LP.subprocess.run)
