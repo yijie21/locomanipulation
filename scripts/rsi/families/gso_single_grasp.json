@@ -42,18 +42,23 @@
  "stop_rate": 0.8,
  "max_wall_h": 5.0,
  "max_run_iters": 5,
+ "pool_per_task": {
+  "diag": 3,
+  "accept": 4,
+  "sealed": 5
+ },
  "pools": {
   "diag": {
    "seed": 9000000,
-   "n": 30
+   "n": 60
   },
   "accept": {
    "seed": 9100000,
-   "n": 40
+   "n": 80
   },
   "sealed": {
    "seed": 9200000,
-   "n": 50
+   "n": 100
   }
  },
  "plan": "scripts/rsi/plans/gso_single_grasp.md",

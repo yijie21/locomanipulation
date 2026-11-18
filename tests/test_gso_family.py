@@ -229,6 +229,13 @@ def test_a_hand_picked_scene_gets_one_family_lifted_030_and_judged_over_the_last
         assert fam["tasks"] == [r["id"] for r in rows] == ids
         assert all(r["goal"][1].endswith(", 0.30, 60)") and (r["hold_s"], r["judge_s"]) == (2.0, 5.0) for r in rows)
         assert (fam["hold_s"], fam["judge_s"]) == (2.0, 5.0) and fam["sandbox"]["seed"] is None
+        per = GF.PICKED_PER_TASK  # pools by the task count (user 2026-11-18); acceptance at least gate.STAGE1 + 1
+        assert fam["pool_per_task"] == per
+        assert {k: v["n"] for k, v in fam["pools"].items()} == {
+            "diag": per["diag"] * len(ids),
+            "accept": max(per["accept"] * len(ids), GF.gate_stage1() + 1),
+            "sealed": per["sealed"] * len(ids),
+        }
         assert fam["spawn"] == {"rooms": "all", "distance_m": [0.5, 4.0], "face_target_deg": [-80, 80]}  # user 11-17
         assert fam["plan"] in fam["sandbox"]["keep"] and (ROOT / fam["plan"]).is_file()
         assert {"scripts/rsi/knowledge.py", "scripts/rsi/knowledge"} <= set(fam["sandbox"]["keep"])  # shared knowledge
@@ -278,3 +285,37 @@ def test_the_picked_scenes_start_the_robot_within_4_m_turned_towards_the_task_ob
                 offs.append(off)
                 got += 1
         assert got and max(offs) > 20.0  # a spread, not always straight at it
+
+
+def test_a_picked_familys_starts_per_task_come_from_the_command_line_not_the_code(tmp_path):
+    """User 2026-11-18: the diagnostic, acceptance and sealed pools are sized by --per-task (default PICKED_PER_TASK),
+    recorded in the family file; the acceptance floor is gate.py's STAGE1 + 1, read from gate.py."""
+    import re
+
+    stage1 = int(re.search(r"^STAGE1 = (\d+)", (ROOT / "scripts/rsi/gate.py").read_text(), re.M).group(1))
+    assert GF.gate_stage1() == stage1
+    meta = json.loads(json.dumps(META))
+    meta["gso"].update(picks="single", scene="logistics_room_gso_single", seed=3)
+    scene = tmp_path / "single"
+    scene.mkdir()
+    (scene / "scene_meta.json").write_text(json.dumps(meta))
+    per = GF.parse_per_task(["diag=7", "sealed=2"])
+    assert per == dict(GF.PICKED_PER_TASK, diag=7, sealed=2)
+    GF.write(scene, tmp_path / "families", per_task=per)
+    fam = json.loads((tmp_path / "families/gso_single_grasp.json").read_text())
+    n = len(fam["tasks"])
+    assert fam["pool_per_task"] == per
+    assert {k: v["n"] for k, v in fam["pools"].items()} == {
+        "diag": 7 * n, "accept": max(per["accept"] * n, stage1 + 1), "sealed": 2 * n,
+    }  # fmt: skip
+    assert GF.main([str(scene), "--families-dir", str(tmp_path / "cli"), "--per-task", "accept=40"]) == 0
+    cli = json.loads((tmp_path / "cli/gso_single_grasp.json").read_text())
+    assert cli["pools"]["accept"]["n"] == 40 * n
+    for bad in (["test=3"], ["diag=0"], ["diag=x"]):
+        with pytest.raises(SystemExit):
+            GF.parse_per_task(bad)
+    drawn = tmp_path / "s7"
+    drawn.mkdir()
+    (drawn / "scene_meta.json").write_text(json.dumps(META))
+    with pytest.raises(SystemExit):  # the drawn instances keep their fixed pools
+        GF.write(drawn, tmp_path / "families", per_task=per)

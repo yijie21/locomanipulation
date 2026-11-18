@@ -32,7 +32,9 @@ start.sample_start; user 2026-11-06: with the nine others fixed, 13 of s0's 21 t
 A hand-picked scene (`logistics_room_gso_single` / `_bimanual`, user 2026-11-17; prepare_logistics_scene.py --picks)
 gets one family instead: `gso_single_grasp` (every picked one-hand object) or `gso_bimanual_lift` (every picked
 two-hand object and the carton), goal `held(X)` + `lifted(X, 0.30, 60)` (`--lift 0.20` the fallback) judged over the
-last 5 s for both, the main skill library as the start; files `gso_single_grasp.json` + `gso_single_grasp_tasks.jsonl`.
+last 5 s for both, the main skill library as the start, pools sized by the task count (`--per-task diag=3 accept=4
+sealed=5`, the default; the acceptance pool at least gate.STAGE1 + 1); files `gso_single_grasp.json` +
+`gso_single_grasp_tasks.jsonl`.
 
 Writes `<families-dir>/gso_grasp_s<seed>.json`, `gso_bimanual_s<seed>.json`, `gso_pack_s<seed>.json`,
 `gso_pack_bimanual_s<seed>.json`, `gso_all_s<seed>.json` and the shared `gso_s<seed>_tasks.jsonl`. A family's `sandbox.keep` lists its file,
@@ -78,6 +80,46 @@ TILT_DEG = 60
 # the hand-picked test scenes (user 2026-11-17; prepare_logistics_scene.py --picks): one family each, every object
 # lifted 0.30 m (0.20 if that proves out of reach) and held, judged over the last 5 s, from the main skill library
 PICKED_LIFT_M = 0.30
+# the picked families' pools: starts per task, the default of `--per-task` (user 2026-11-18: by the task count, as
+# gso_pack_all; with a fixed 30 / 40 / 50 the 20 one-hand tasks had 1-2 diagnostic and 2 acceptance starts each, so a
+# change that helped one object could never win the gate's net 3). The family file records the numbers it was written
+# with (`pool_per_task`) and each pool's `n`; the sandbox, the loop and sealed.py read `n` from there.
+PICKED_PER_TASK = {"diag": 3, "accept": 4, "sealed": 5}
+
+
+def gate_stage1() -> int:
+    """gate.py's STAGE1, read from its source (importing gate.py here would put a module named `gate` in sys.modules,
+    a name the scalebfm experiment's scripts share): an acceptance pool must hold more starts than the gate's stage 1."""
+    import ast
+
+    tree = ast.parse((HERE / "gate.py").read_text())
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "STAGE1" for t in node.targets):
+            return int(ast.literal_eval(node.value))
+    raise SystemExit("gate.py has no STAGE1")
+
+
+def picked_pools(pool_seed: int, n_tasks: int, per_task: dict[str, int]) -> dict:
+    """The pools of a picked family: `per_task[pool]` starts per task, the acceptance pool at least gate.STAGE1 + 1
+    starts; seeds `pool_seed` + 0 / 100000 / 200000."""
+    floor = {"accept": gate_stage1() + 1}
+    return {
+        pool: {"seed": pool_seed + i * 100_000, "n": max(int(per_task[pool]) * n_tasks, floor.get(pool, 0))}
+        for i, pool in enumerate(POOL_SIZES)
+    }
+
+
+def parse_per_task(items: list[str] | None) -> dict[str, int]:
+    """`--per-task diag=3 accept=4 sealed=5` (any of them; the rest PICKED_PER_TASK) -> {pool: starts per task}."""
+    out = dict(PICKED_PER_TASK)
+    for item in items or []:
+        key, _, value = item.partition("=")
+        if key not in out or not value.isdigit() or int(value) < 1:
+            raise SystemExit(f"--per-task {item!r}: want POOL=N with POOL one of {sorted(out)} and N >= 1")
+        out[key] = int(value)
+    return out
+
+
 # where the robot starts in the picked scenes (user 2026-11-17): 0.5-4 m from the task object, turned towards it
 # within +-80 deg (uniform)
 PICKED_SPAWN = {"rooms": "all", "distance_m": [0.5, 4.0], "face_target_deg": [-80, 80]}
@@ -345,7 +387,13 @@ def family_pack_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows:
     }
 
 
-def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lift: float = PICKED_LIFT_M) -> dict:
+def write_picked(
+    scene_dir: Path,
+    meta: dict,
+    families_dir: Path = FAMILIES,
+    lift: float = PICKED_LIFT_M,
+    per_task: dict[str, int] | None = None,
+) -> dict:
     """The one family of a hand-picked scene (`gso.picks`, prepare_logistics_scene.py --picks): gso_single_grasp or
     gso_bimanual_lift and its tasks file; returns {family name: task count}."""
     gso = meta["gso"]
@@ -389,7 +437,8 @@ def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lif
         "spawn": PICKED_SPAWN,
         **TIMING,
         **STOPS,
-        "pools": {pool: {"seed": spec["pool_seed"] + i * 100_000, "n": n} for i, (pool, n) in enumerate(POOL_SIZES.items())},
+        "pool_per_task": per_task or dict(PICKED_PER_TASK),
+        "pools": picked_pools(spec["pool_seed"], len(rows), per_task or PICKED_PER_TASK),
         "plan": spec["plan"],
         "skills_note": spec["skills_note"],
         "sandbox": {
@@ -407,7 +456,9 @@ def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lif
     return {name: len(rows)}
 
 
-def write(scene_dir: Path, families_dir: Path = FAMILIES, lift: float | None = None) -> dict:
+def write(
+    scene_dir: Path, families_dir: Path = FAMILIES, lift: float | None = None, per_task: dict[str, int] | None = None
+) -> dict:
     """The four families, gso_all, gso_pack_all and the tasks file for the scene, or a picked scene's one family
     (`write_picked`); returns {family name: task count}."""
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
@@ -415,9 +466,11 @@ def write(scene_dir: Path, families_dir: Path = FAMILIES, lift: float | None = N
     if not gso:
         raise SystemExit(f"{scene_dir} is not a GSO scene (no `gso` block in scene_meta.json)")
     if gso.get("picks"):
-        return write_picked(scene_dir, meta, families_dir, PICKED_LIFT_M if lift is None else lift)
-    if lift is not None:
-        raise SystemExit("--lift is for a hand-picked scene; the drawn instances keep LIFT_M")
+        return write_picked(scene_dir, meta, families_dir, PICKED_LIFT_M if lift is None else lift, per_task)
+    if lift is not None or per_task is not None:
+        raise SystemExit(
+            "--lift and --per-task are for a hand-picked scene; the drawn instances keep LIFT_M and POOL_SIZES"
+        )
     seed, reach = int(gso["seed"]), float(gso["reach_depth_m"])
     scene_rel = (
         str(scene_dir.resolve().relative_to(REPO)) if scene_dir.resolve().is_relative_to(REPO) else str(scene_dir)
@@ -455,8 +508,11 @@ def main(argv=None) -> int:
     ap.add_argument("--families-dir", type=Path, default=FAMILIES)
     ap.add_argument("--lift", type=float, default=None, help=f"m; a hand-picked scene's lift (default {PICKED_LIFT_M}; "
                     "user 2026-11-17: 0.20 if 0.30 proves out of reach)")  # fmt: skip
+    ap.add_argument("--per-task", nargs="+", metavar="POOL=N", default=None, help="a hand-picked scene's starts per "
+                    f"task, any of diag / accept / sealed (default {PICKED_PER_TASK}); the acceptance pool holds at "
+                    "least gate.STAGE1 + 1")  # fmt: skip
     a = ap.parse_args(argv)
-    out = write(a.scene_dir, a.families_dir, a.lift)
+    out = write(a.scene_dir, a.families_dir, a.lift, parse_per_task(a.per_task) if a.per_task else None)
     print(json.dumps({"families_dir": str(a.families_dir), "tasks": out}))
     return 0
 
