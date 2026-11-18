@@ -1,0 +1,42 @@
+{
+ "note": "objects picked by hand for the two RSI test scenes (user 2026-11-17): written by scripts/gso_gallery.py --pick --serve, read by scripts/prepare_logistics_scene.py --picks single|bimanual; `seed` places them",
+ "scenes": {
+  "bimanual": {
+   "seed": 0,
+   "objects": [
+    "Curver_Storage_Bin_Black_Small",
+    "Asus_X99Deluxe_Motherboard_ATX_LGA2011v3_Socket",
+    "Asus_Z97IPLUS_Motherboard_Mini_ITX_LGA1150_Socket",
+    "Embark_Lunch_Cooler_Blue",
+    "Mad_Gab_Refresh_Card_Game",
+    "Samsung_CLTC406S_Toner_Cartridge_Cyan_1pack",
+    "Threshold_Basket_Natural_Finish_Fabric_Liner_Small"
+   ]
+  },
+  "single": {
+   "seed": 0,
+   "objects": [
+    "Cole_Hardware_Hammer_Black",
+    "CoQ10",
+    "ACE_Coffee_Mug_Kristen_16_oz_cup",
+    "FisherPrice_Make_A_Match_Game_Thomas_Friends",
+    "HeavyDuty_Flashlight",
+    "Marc_Anthony_True_Professional_Strictly_Curls_Curl_Defining_Lotion",
+    "Black_Forest_Fruit_Snacks_Juicy_Filled_Centers_10_pouches_9_oz_total",
+    "Seagate_Archive_HDD_8_TB_Internal_hard_drive_SATA_6Gbs_35_ST8000AS0002",
+    "Cole_Hardware_School_Bell_Solid_Brass_38",
+    "Nestle_Raisinets_Milk_Chocolate_35_oz_992_g",
+    "AllergenFree_JarroDophilus",
+    "Brother_Printing_Cartridge_PC501",
+    "Cole_Hardware_Mini_Honey_Dipper",
+    "Ecoforms_Plant_Container_QP_Turquoise",
+    "Granimals_20_Wooden_ABC_Blocks_Wagon_g2TinmUGGHI",
+    "Just_For_Men_ShampooIn_Haircolor_Light_Brown_25",
+    "Marc_Anthony_Skip_Professional_Oil_of_Morocco_Conditioner_with_Argan_Oil",
+    "Pass_The_Popcorn_Movie_Guessing_Game",
+    "Wrigley_Orbit_Mint_Variety_18_Count",
+    "Sony_Acid_Music_Studio"
+   ]
+  }
+ }
+}

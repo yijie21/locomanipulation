@@ -8,11 +8,13 @@ in the file). Only objects of the categories in `--use-categories` can be drawn;
 shape. The default is every label but Shoe, Toys, Stuffed Toys, Mouse, Media Cases, Legos, Keyboard, Car Seat, Action
 Figures and Hat (user 2026-11-05; gso_objects.USED_CATEGORIES), with the unlabelled models (`(none)`). `all` uses
 every category; `--exclude-categories A B` uses every category but those. Names are the labels of categories.json,
-matched without case. The scene builder draws from this file, never from the 2 GB of meshes.
+matched without case. The hand-kept list `hand_choices.json` (user 2026-11-17; clicked in `scripts/gso_gallery.py
+--serve`) excludes or includes an object over its category and sets its shape kind over the shape rules. The scene builder draws from this file, never from the 2 GB of
+meshes.
 
     $VENV_SIM_PY scripts/gso_catalog.py [--models assets/mujoco_scanned_objects/models] [--out .../catalog.json]
         [--categories .../categories.json] [--use-categories "Consumer Goods" Bag ... | all]
-        [--exclude-categories Shoe Toys ...] [--jaw 0.095] [--bimanual-width 0.20 0.45]
+        [--exclude-categories Shoe Toys ...] [--hand-choices .../hand_choices.json] [--jaw 0.095] [--bimanual-width 0.20 0.45]
         [--bimanual-min-height 0.10] [--density 300] ...
 """
 
@@ -61,6 +63,8 @@ def main(argv=None) -> int:
     ap.add_argument("--out", type=Path, default=ASSETS / "catalog.json")
     ap.add_argument("--categories", type=Path, default=ASSETS / "categories.json",
                     help="scripts/gso_categories.py's file: the dataset's category label per model")  # fmt: skip
+    ap.add_argument("--hand-choices", type=Path, default=ASSETS / G.HAND_CHOICES_FILE,
+                    help="the hand-kept list {objects: {name: {excluded, exclude_why, shape, shape_why}}}; missing: none")  # fmt: skip
     d = G.Thresholds()
     pick = ap.add_mutually_exclusive_group()
     pick.add_argument("--use-categories", nargs="+", default=None, metavar="CATEGORY",
@@ -112,9 +116,12 @@ def main(argv=None) -> int:
         "categories": (str(a.categories.relative_to(ROOT)) if a.categories.is_relative_to(ROOT) else str(a.categories))
         if a.categories.is_file()
         else None,
-    }
+        "hand_choices": (str(a.hand_choices.relative_to(ROOT)) if a.hand_choices.is_relative_to(ROOT)
+                             else str(a.hand_choices)) if a.hand_choices.is_file() else None,
+    }  # fmt: skip
     t0 = time.time()
-    cat = G.build_catalog(a.models, th, source, categories=categories)
+    by_hand = G.load_hand_choices(a.hand_choices)
+    cat = G.build_catalog(a.models, th, source, categories=categories, by_hand=by_hand)
     a.out.write_text(json.dumps(cat, indent=1) + "\n")
     print(json.dumps({"out": str(a.out), "counts": cat["counts"], "not_used_categories": cat["not_used_categories"], "thresholds": {f.name: getattr(th, f.name) for f in fields(th)},
                       "seconds": round(time.time() - t0, 1)}, indent=1))  # fmt: skip

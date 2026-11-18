@@ -12,6 +12,7 @@ Unitree G1 人形机器人的移动操作仿真。现在的主线是**场景 RSI
 | [场景 RSI runbook：ADT 公寓](docs/rsi.md) | RSI 在 ADT 公寓场景的应用：复现的全部命令，分四级：L0 冒烟、L1 一个任务族的内环、L2 一轮外环、L3 从头复现；另有核对已记录结果和看视频的命令 |
 | [场景 RSI runbook：物流间](docs/rsi_logistics_room.md) | RSI 在物流间场景的应用：建场景、可行性探针、内环、封存集、MuJoCo 和 Unreal 视频，双手抱起纸箱、举高 20 cm 并稳住 5 秒 |
 | [场景 RSI runbook：物流间 1030](docs/rsi_logistic_room_1030.md) | 物流间加 Google Scanned Objects：1030 件扫描物体的目录与筛选，每个场景实例抽 10 件放到平台上，单手 / 双手两个任务族自动生成，5 个实例的预览图，Unreal 关卡 |
+| [场景 RSI runbook：物流间 1030 单手 / 双手测试场景](docs/rsi_logistic_room_1030_single_bimanual.md) | 网页上人工挑选物体的两个固定场景：20 件单手物体（无纸箱）、7 件双手物体加纸箱，抬高 30 cm 保持 5 秒；挑选页、建场景、起点检查、冒烟、MuJoCo 和 Unreal 预览 |
 | [场景 RSI 详解](docs/rsi_design.md) | 系统怎么工作、为什么这样设计：分层、内环的五个角色、三个起点池、验收门、写回与回归、人插手的地方、试过没采用的 |
 | [代码结构与系统流水线](docs/RSI_system_pipeline.md) | 代码分三层各管什么、外环 / 内环 / 一局各走哪些步、数据落在哪、PAST 场景图记录器接在哪、看到的薄弱处（2026-11-01 的静态分析） |
 | [进展报告](docs/handoff/scene-rsi-report-20261019.md) | 进化到哪一步：每次被接受的改动、做成了哪些任务、穿模和接触问题的修正与重测 |

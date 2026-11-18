@@ -27,7 +27,7 @@ CATALOG = {
                      "grasp_height_m": 0.431, "rest": {"stands": True}},
         "gso_0001": {"name": "Red_Mug</script>", "phrase": "red mug", "category": None, "graspable": "single",
                      "why": "fits", "split": "train", "mass_kg": 0.2, "extent_m": [0.08, 0.08, 0.1],
-                     "grasp_height_m": 0.421, "rest": None},
+                     "grasp_height_m": 0.421, "rest": None, "fits_carton": True},
     },
 }  # fmt: skip
 
@@ -49,6 +49,36 @@ def test_the_page_carries_every_object_and_marks_the_excluded_category():
     assert "__DATA__" not in page and "Red_Mug</script>" not in page  # a name cannot close the data script
     data = json.loads(page.split("const D=", 1)[1].split(";\nconst $", 1)[0])
     assert {d["key"] for d in data} == {"gso_0000", "gso_0001"} and "excluded categories 1: Shoe" in page
+
+
+def test_the_page_carries_the_shape_scores_the_kind_by_the_rules_and_the_choices_by_hand():
+    rows = G.entries(CATALOG, {"gso_0001": {"fill": 0.42, "solid": 0.9}})
+    assert rows[1]["fill"] == 0.42 and rows[0]["fill"] is None
+    # `kind` is by the shape rules alone (the shoe's shape is two-hand); `auto` adds the category (the shoe is none)
+    assert [r["kind"] for r in rows] == ["bimanual", "single"] and [r["auto"] for r in rows] == ["none", "single"]
+    assert [r["excluded"] for r in rows] == [True, False] and [r["fits"] for r in rows] == [False, True]
+    cat = json.loads(json.dumps(CATALOG))
+    cat["objects"]["gso_0001"].update(graspable="none", by_hand={"excluded": True, "exclude_why": "toy or figurine"})
+    assert G.entries(cat)[1]["auto"] == "single"  # a rebuilt catalog's hand choice does not hide the rules' kind
+    page = G.page(CATALOG, choices={"Red_Mug</script>": {"excluded": True, "exclude_why": "irregular shape"}})
+    assert "let CH={" in page and "Red_Mug</script>" not in page and "<option>checked by eye</option>" in page
+    assert "+'\\n']" in page  # the download handler's newline stays a JS escape, not a break inside the string
+
+
+def test_the_choices_are_saved_sorted_and_only_for_catalog_objects_in_the_entry_shape(tmp_path):
+    path = tmp_path / "hand_choices.json"
+    names = {"B_Thing", "A_Thing"}
+    G.save_marks(path, {"objects": {"B_Thing": {"excluded": True, "exclude_why": "irregular shape"},
+                                    "A_Thing": {"shape": "bimanual", "shape_why": "checked by eye", "junk": 1}}},
+                 names)  # fmt: skip
+    doc = json.loads(path.read_text())
+    assert list(doc["objects"]) == ["A_Thing", "B_Thing"]
+    assert doc["objects"]["A_Thing"] == {"shape": "bimanual", "shape_why": "checked by eye"}  # unknown keys dropped
+    for bad in ({"objects": {"Nope": {"excluded": True}}}, {"objects": {"A_Thing": {"shape": "both"}}},
+                {"objects": {"A_Thing": {}}}, {"objects": {"A_Thing": "irregular shape"}}, {"objects": []}, []):  # fmt: skip
+        with pytest.raises(ValueError):
+            G.save_marks(path, bad, names)
+    assert json.loads(path.read_text()) == doc  # a refused body leaves the file alone
 
 
 def test_one_object_renders_when_the_meshes_and_offscreen_gl_are_there(tmp_path):

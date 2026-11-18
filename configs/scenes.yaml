@@ -368,6 +368,22 @@ logistics_room_1030_s9:  # the logistics room with the carton and 10 Google Scan
     repeats: 8
     build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_1030_s9
 
+logistics_room_gso_single:  # the logistics room without the carton and with the 20 single-hand Google Scanned Objects picked by hand (user 2026-11-17; assets/mujoco_scanned_objects/scene_picks.json, scripts/gso_gallery.py --pick --serve), placed with the file's seed on the platform within reach of an edge (docs/rsi_logistic_room_1030_single_bimanual.md). Family gso_single_grasp. Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_gso_single
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_gso_single --robot mars --rsi --picks single
+  unreal:  # the warehouse room level with this scene's robot, carton and picked objects imported
+    level: logistics_room_gso_single  # /Game/Levels/logistics_room_gso_single in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_gso_single
+
+logistics_room_gso_bimanual:  # the logistics room with the carton and the 5-9 two-hand Google Scanned Objects picked by hand (user 2026-11-17; assets/mujoco_scanned_objects/scene_picks.json), the objects within reach of an edge and the carton on its hug band (docs/rsi_logistic_room_1030_single_bimanual.md). Family gso_bimanual_lift. Then scene_settle.py --write and scene_lint.py
+  dir: outputs/scene_discovery/logistics_room_gso_bimanual
+  build: third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/prepare_logistics_scene.py outputs/scene_discovery/logistics_room_gso_bimanual --robot mars --rsi --picks bimanual
+  unreal:  # the warehouse room level with this scene's robot, carton and picked objects imported
+    level: logistics_room_gso_bimanual  # /Game/Levels/logistics_room_gso_bimanual in the host project ($UE_PROJECT)
+    repeats: 8
+    build: $BRIDGE_PY -m locomani.sim.unreal.build_level logistics_room_gso_bimanual
+
 adt_apartment_mars:
   dir: outputs/scene_discovery/adt_apartment_mars
   build: >-

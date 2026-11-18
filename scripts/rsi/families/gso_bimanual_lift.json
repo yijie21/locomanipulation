@@ -1,0 +1,126 @@
+{
+ "name": "gso_bimanual_lift",
+ "about": "logistics_room_gso_bimanual (user 2026-11-17): held(X) and lifted(X, 0.30, 60) with both hands, judged over the round's last 5 s, on the 8 objects and the carton picked by hand (assets/mujoco_scanned_objects/scene_picks.json, catalog.json bimanual objects of the training split, plus the 0.3 kg open carton) on the 0.371 m pallet platform, placed with seed 0; every task object starts within 0.35 m of a platform edge, 0.18 m free beside the walls the hug squeezes and in front, the robot anywhere in the room it can walk from; objects: nor_cal_box = open cardboard box, gso_0187 = curver storage bin black small, gso_0052 = asus x99deluxe motherboard atx lga2011v3 socket, gso_0055 = asus z97iplus motherboard mini itx lga1150 socket, gso_0261 = embark lunch cooler blue, gso_0434 = mad gab refresh card game, gso_0796 = samsung cltc406s toner cartridge cyan 1pack, gso_0889 = threshold basket natural finish fabric liner small",
+ "scene": "outputs/scene_discovery/logistics_room_gso_bimanual",
+ "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with an open cardboard box and 7 scanned household objects on it)",
+ "tasks_file": "scripts/rsi/families/gso_bimanual_lift_tasks.jsonl",
+ "tasks": [
+  "lift_nor_cal_box",
+  "lift_gso_0187",
+  "lift_gso_0052",
+  "lift_gso_0055",
+  "lift_gso_0261",
+  "lift_gso_0434",
+  "lift_gso_0796",
+  "lift_gso_0889"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "hold_s": 2.0,
+ "judge_s": 5.0,
+ "stop_rate": 0.8,
+ "max_wall_h": 5.0,
+ "max_run_iters": 5,
+ "pools": {
+  "diag": {
+   "seed": 9500000,
+   "n": 30
+  },
+  "accept": {
+   "seed": 9600000,
+   "n": 40
+  },
+  "sealed": {
+   "seed": 9700000,
+   "n": 50
+  }
+ },
+ "plan": "scripts/rsi/plans/gso_bimanual_lift.md",
+ "skills_note": "the main skill library as it stands: its two-hand hug pick (skills/bimanual.py); sandbox.seed null",
+ "sandbox": {
+  "seed": null,
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/prep.py",
+   "scripts/rsi/past.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/plans/gso_bimanual_lift.md",
+   "scripts/rsi/plans/gso_bimanual.md",
+   "scripts/rsi/families/gso_bimanual_lift.json",
+   "scripts/rsi/families/gso_bimanual_lift_tasks.jsonl"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "diag_pool",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep",
+   "locomani.tasks.scene.past"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "lint.json",
+   "settle.json",
+   "upright.json",
+   "feasibility",
+   "preview"
+  ]
+ }
+}

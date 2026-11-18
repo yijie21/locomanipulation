@@ -1,0 +1,138 @@
+{
+ "name": "gso_single_grasp",
+ "about": "logistics_room_gso_single (user 2026-11-17): held(X) and lifted(X, 0.30, 60) with one hand, judged over the round's last 5 s, on the 20 objects picked by hand (assets/mujoco_scanned_objects/scene_picks.json, catalog.json single objects of the training split) on the 0.371 m pallet platform, placed with seed 0; every task object starts within 0.35 m of a platform edge, the robot anywhere in the room it can walk from; objects: gso_0154 = cole hardware hammer black, gso_0138 = coq10, gso_0016 = ace coffee mug kristen 16 oz cup, gso_0289 = fisherprice make a match game thomas friends, gso_0344 = heavyduty flashlight, gso_0439 = marc anthony true professional strictly curls curl defining lotion, gso_0090 = black forest fruit snacks juicy filled centers 10 pouches 9 oz total, gso_0817 = seagate archive hdd 8 tb internal hard drive sata 6gbs 35 st8000as0002, gso_0162 = cole hardware school bell solid brass 38, gso_0513 = nestle raisinets milk chocolate 35 oz 992 g, gso_0037 = allergenfree jarrodophilus, gso_0102 = brother printing cartridge pc501, gso_0155 = cole hardware mini honey dipper, gso_0233 = ecoforms plant container qp turquoise, gso_0323 = granimals 20 wooden abc blocks wagon, gso_0377 = just for men shampooin haircolor light brown 25, gso_0436 = marc anthony skip professional oil of morocco conditioner with argan oil, gso_0608 = pass the popcorn movie guessing game, gso_1019 = wrigley orbit mint variety 18 count, gso_0830 = sony acid music studio",
+ "scene": "outputs/scene_discovery/logistics_room_gso_single",
+ "scene_note": "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m pallet platform 0.371 m high with 20 scanned household objects on it)",
+ "tasks_file": "scripts/rsi/families/gso_single_grasp_tasks.jsonl",
+ "tasks": [
+  "pick_gso_0154",
+  "pick_gso_0138",
+  "pick_gso_0016",
+  "pick_gso_0289",
+  "pick_gso_0344",
+  "pick_gso_0439",
+  "pick_gso_0090",
+  "pick_gso_0817",
+  "pick_gso_0162",
+  "pick_gso_0513",
+  "pick_gso_0037",
+  "pick_gso_0102",
+  "pick_gso_0155",
+  "pick_gso_0233",
+  "pick_gso_0323",
+  "pick_gso_0377",
+  "pick_gso_0436",
+  "pick_gso_0608",
+  "pick_gso_1019",
+  "pick_gso_0830"
+ ],
+ "spawn": {
+  "rooms": "all",
+  "distance_m": [
+   0.5,
+   null
+  ]
+ },
+ "hold_s": 2.0,
+ "judge_s": 5.0,
+ "stop_rate": 0.8,
+ "max_wall_h": 5.0,
+ "max_run_iters": 5,
+ "pools": {
+  "diag": {
+   "seed": 9000000,
+   "n": 30
+  },
+  "accept": {
+   "seed": 9100000,
+   "n": 40
+  },
+  "sealed": {
+   "seed": 9200000,
+   "n": 50
+  }
+ },
+ "plan": "scripts/rsi/plans/gso_single_grasp.md",
+ "skills_note": "the main skill library as it stands: its one-hand pick (skills/pick.py); sandbox.seed null",
+ "sandbox": {
+  "seed": null,
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/prep.py",
+   "scripts/rsi/past.py",
+   "scripts/rsi/experience",
+   "scripts/rsi/rules.md",
+   "scripts/rsi/prompts",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/plans/gso_single_grasp.md",
+   "scripts/rsi/plans/gso_grasp.md",
+   "scripts/rsi/families/gso_single_grasp.json",
+   "scripts/rsi/families/gso_single_grasp_tasks.jsonl"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "diag_pool",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep",
+   "locomani.tasks.scene.past"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "scene_exclude": [
+   "lint.json",
+   "settle.json",
+   "upright.json",
+   "feasibility",
+   "preview"
+  ]
+ }
+}

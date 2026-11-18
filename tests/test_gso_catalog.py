@@ -235,10 +235,56 @@ def test_the_tracked_catalog_draws_only_the_used_categories_and_every_name_has_a
     assert cat["thresholds"]["used_categories"] == list(G.USED_CATEGORIES)
     assert cat["not_used_categories"] == sorted(G.NOT_USED_CATEGORIES)
     assert all(o["name"] in labels and o["category"] == labels[o["name"]] for o in cat["objects"].values())
+    # an unused category's object is none unless a hand choice (hand_choices.json, user 2026-11-17) decided it
     out = [o for o in cat["objects"].values() if (o["category"] or G.UNLABELLED) not in G.USED_CATEGORIES]
-    assert len(out) == cat["counts"]["excluded"] > 0
-    assert all(o["graspable"] == "none" for o in out)
+    by_rule = [o for o in out if "excluded" not in (o.get("by_hand") or {})]
+    assert len(by_rule) == cat["counts"]["excluded"] > 0
+    assert all(o["graspable"] == "none" for o in by_rule)
+    assert all(o["graspable"] == "none" for o in cat["objects"].values() if (o.get("by_hand") or {}).get("excluded"))
     for kind in ("single", "bimanual"):
         for pool in G.POOLS:
             keys = G.pool_keys(cat, kind, pool)
-            assert keys and all((cat["objects"][k]["category"] or G.UNLABELLED) in G.USED_CATEGORIES for k in keys)
+            assert keys and all((cat["objects"][k]["category"] or G.UNLABELLED) in G.USED_CATEGORIES
+                                or (cat["objects"][k].get("by_hand") or {}).get("excluded") is False for k in keys)  # fmt: skip
+
+
+CUBE = ("v 0 0 0\nv 0.1 0 0\nv 0 0.1 0\nv 0.1 0.1 0\nv 0 0 0.1\nv 0.1 0 0.1\nv 0 0.1 0.1\nv 0.1 0.1 0.1\n"
+        "f 1 3 4 2\nf 5 6 8 7\nf 1 2 6 5\nf 3 7 8 4\nf 1 5 7 3\nf 2 4 8 6\n")  # fmt: skip
+
+
+def test_the_hand_choices_exclude_over_the_category_and_set_the_shape_over_the_shape_rules(tmp_path):
+    fits = (0.06, 0.10, 0.15)  # a single-hand shape
+    out = {"excluded": True, "exclude_why": "toy or figurine"}
+    assert G.graspable(fits, TH, None, category=None, by_hand=out) == ("none", "excluded by hand: toy or figurine")
+    back = {"excluded": False, "exclude_why": "fine"}
+    assert G.graspable(fits, TH, None, category="Shoe", by_hand=back)[0] == "single"  # included past its category
+    shape = {"shape": "bimanual", "shape_why": "checked by eye"}
+    assert G.graspable(fits, TH, None, category=None, by_hand=shape) == (
+        "bimanual", "shape set to bimanual by hand: checked by eye")  # fmt: skip
+    assert G.graspable(fits, TH, None, category="Shoe", by_hand=shape)[0] == "none"  # the category still excludes it
+    assert G.graspable((0.5, 0.6, 0.15), TH, None, category="Shoe", by_hand={**back, "shape": "single"})[0] == "single"
+    assert G.graspable(fits, TH, None, category=None, by_hand={**out, "shape": "single"})[0] == "none"
+    d = tmp_path / "models" / "Odd_Thing"
+    d.mkdir(parents=True)
+    (d / "model.obj").write_text("v -0.03 -0.05 0\nv 0.03 -0.05 0\nv 0.03 0.05 0.15\nv -0.03 0.05 0.15\n")
+    (d / "model_collision_0.obj").write_text(TETRA)
+    rec = G.catalog_entry(0, d, TH, rest=False, category="Shoe", by_hand={**back, **shape})
+    assert rec["graspable"] == "bimanual" and rec["by_hand"] == {**back, **shape}
+    assert G.catalog_entry(0, d, TH, rest=False)["by_hand"] is None
+    with pytest.raises(ValueError, match="no model"):
+        G.build_catalog(tmp_path / "models", G.Thresholds(used_categories=None), workers=1, by_hand={"Typo_Name": out})
+    assert G.load_hand_choices(tmp_path / "missing.json") == {}
+    (tmp_path / "c.json").write_text('{"note": "n", "objects": {"Odd_Thing": {"shape": "single"}}}')
+    assert G.load_hand_choices(tmp_path / "c.json") == {"Odd_Thing": {"shape": "single", "shape_why": ""}}
+    for bad in ('"irregular shape"', '{"kind": "single"}', '{"shape": "both"}', '{"excluded": "yes"}',
+                '{"excluded": true, "exclude_why": 3}'):  # fmt: skip
+        (tmp_path / "c.json").write_text('{"objects": {"Odd_Thing": %s}}' % bad)
+        with pytest.raises(ValueError, match="Odd_Thing"):
+            G.load_hand_choices(tmp_path / "c.json")
+
+
+def test_the_shape_scores_call_a_cube_full_and_box_like(tmp_path):
+    (tmp_path / "model.obj").write_text(CUBE)
+    (tmp_path / "model_collision_0.obj").write_text(CUBE)
+    sc = G.shape_scores(tmp_path)
+    assert sc["fill"] == pytest.approx(1.0, abs=0.02) and sc["solid"] == pytest.approx(1.0, abs=0.02)

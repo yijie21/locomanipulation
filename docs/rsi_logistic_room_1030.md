@@ -51,6 +51,18 @@ $PY scripts/gso_gallery.py               # --force 全部重画；--size 384；-
 做什么：用 MuJoCo 离屏把目录里每件物体单独画一张（扫描网格和贴图、浅色地面、同一个斜上方视角、按包围盒取景），再写一个本地网页：卡片上是图、短语、键、质量、尺寸和单手 / 双手 / none、类别、是否排除的标签；可以按名字搜索，按种类、类别、划分、是否排除筛选，按质量或最长边排序；点卡片看大图和目录里的全部字段（含 `why`）。已画的图默认保留，网页每次重写。
 得到什么：`outputs/gso_gallery/index.html`（浏览器直接打开）和 `img/<键>.jpg` 1030 张，共约 18 MB，约 1 分钟。
 
+人工逐件排除 / 保留，并改形状种类（用户 2026-11-17：类别排除之后仍有很多形状不规则的物体；要列出全部 1030 件逐件点选排除，并在每件的 shape 标签下手动选 single / bimanual / none）：
+
+```bash
+$PY scripts/gso_gallery.py --serve       # --port 8765；远程机器上经 VSCode 的端口转发打开
+```
+
+做什么：同上写好网页，再在本机 `127.0.0.1:8765` 起一个小服务。打开 `http://127.0.0.1:8765/index.html`，列出全部 1030 件，每件有两项，各自先按规则、都能人工改：
+- **use**（排除 / 保留）：先按类别规则（被排除的类别是 Excluded），点按钮翻转；把被排除类别的物体点成保留，就是越过类别规则放回来。
+- **shape**（形状种类）：先按形状规则（尺寸、静置测试；规则给的那个按钮下面标着 rule），点 Single / Bimanual / None 改。
+物体保留时按它的 shape 种类进场景，排除时是 none；人工设过的卡片带橙色外框和标签，进不了场景的卡片图变灰。鼠标停在卡片上按 1 / 2 / 3 改 shape、0 让 shape 回到规则、x 翻转排除。原因取页头的下拉框（不规则形状、玩具或人偶、开口容器、难抓、扫描坏了、目测确认，或自己写）。页头“All shown”两排按钮把当前筛出的卡片一起设 shape（Single / Bimanual / None / 回到规则）或排除（Exclude / Include / 回到规则），先确认。筛选有：现在排除 / 保留的、保留且能抓且放得进纸箱的（即能进场景的）、人工设过的（任一项 / 排除 / shape）、放得进 / 放不进纸箱的、类别排除的；“Shape:” 下拉框按当前 shape 种类筛；排序可按“最不像盒子”“最空心”。每张卡片带两个形状分（`gso_objects.shape_scores`：`fill` 凸包 / 主轴包围盒体积，动物、人偶、工具偏低；`solid` V-HACD 壳体 / 凸包体积，花盆、筐、收纳盒这类开口容器偏低）；右上角 ⓘ 看大图和全部字段。人工的选择即使和规则一样也记下（规则以后改了也不丢），只有“回到规则”才删掉；每次点击立即写进 `assets/mujoco_scanned_objects/hand_choices.json`（`{"objects": {模型名: {"excluded": true/false, "exclude_why": 原因, "shape": "single" | "bimanual" | "none", "shape_why": 原因}}}`，两项可以只有一项；进仓库）；不加 `--serve`、直接打开文件时选择只存在浏览器里，用页头的下载按钮存出同一个文件放到那里。形状分第一次算约 5 秒，存在 `outputs/gso_gallery/shape.json`。换了代码要重启 `--serve`（Ctrl-C 再起）。
+之后重建目录（`$PY scripts/gso_catalog.py`）：`excluded` 压过类别规则（排除记 `none`，`why` 写 `excluded by hand: <原因>`），`shape` 压过形状规则（`why` 写 `shape set to bimanual by hand: <原因>`），记录多 `by_hand`，`counts.by_hand` 计数（排除、保留、各 shape 种类），`counts.excluded` 只数没被人工设过排除的类别排除物体。名单里有不是模型名的、或项不合格式，建目录报错停下。实例只抽放得进纸箱的（`fits_carton` 不受人工选择影响）。要让 s0–s9 换掉物体，按第 9 节删实例目录重建（关卡也要重建）。
+
 ## 2. 建场景实例、出预览图
 
 ```bash
@@ -171,7 +183,7 @@ PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 --build
 
 做什么：按 `configs/scenes.yaml` 里 `logistics_room_1030_s0` 的 `unreal.build` 建关卡：把场景的会动部分（机器人、纸箱、10 件物体和它们的扫描纹理）导出成 URLab 的 MJCF 导入进 `/Game/Levels/logistics_room_1030_s0`（房间是 warehouse 的关卡）。导出器剥掉碰撞壳之前先把每件物体的质量和惯量烤成显式 `<inertial>`，不然扫描物体没有质量、编译失败。s1–s9 换名字各建一次（每个实例一份关卡，10 件物体各不相同）；重建场景实例后关卡要重建（`source.json` 记着场景 XML 的哈希，不一致 `run_context.unreal_scene` 会拒绝）。
 第三条给每个实例出一张 Unreal 图（用户 11-04）：把关卡里的第三视角机位（1280 × 960、fovy 45）依次放到平台正上方 2 m 和房间远角（和 MuJoCo 预览图同样的两个视角），各拍一帧静止场景（沉降后的物体、机器人在起点），图下列出物体；`--build` 让它先给缺关卡或关卡过期（场景哈希不符）的实例建关卡，不加就报错停下。图已存在且比关卡新的实例跳过（`--force` 重画），每做完一个实例就并进 `index_unreal.json`，所以中途停了再跑同一条命令只补剩下的。编辑器每载一个关卡占的内存不还（11-13 在 31 GB 的机器上做到第 8 个时涨到 22 GB，被 OOM 杀掉，连带关掉了启动它的 VSCode），所以每做 `--restart-every` 个（默认 5，0 不重启）就用 `stop_unreal.sh` / `start_unreal.sh --gpu <--gpu，默认 0>` 重启一次。在 VSCode 的终端里跑时，把编辑器放进自己的 scope 并限内存，超了只杀它：`systemd-run --user --scope -p MemoryMax=24G bash scripts/start_unreal.sh --gpu 0`。
-得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 39–97 s（s0–s9 的 11-05 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 十张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 15–31 s（主要是载关卡、起 PIE）。之后 Unreal 视频见第 6 节最后一段（`report_unreal.py --media`，场景名从 `media.json` 来）。
+得到什么：`$UNREAL_ASSETS/logistics_room_1030_s<seed>/`（`mjcf/`、`source.json`），每个 39–97 s（s0–s9 的 11-05 都建了）；`outputs/gso_preview/logistics_room_1030_s<seed>_unreal.png` 十张（2560 × 1184：左俯视、右房间视角、下方物体列表）和 `index_unreal.json`，每张 15–31 s（主要是载关卡、起 PIE）。之后 Unreal 视频见第 6 节最后一段（`scripts/rsi/report/report_unreal.py --media`，场景名从 `media.json` 来）。
 
 ## 8. 评测没见过的物体
 
@@ -184,6 +196,7 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 
 ## 9. 改阈值与判据
 
+- 人工排除 / 保留和人工定的 shape 种类：`assets/mujoco_scanned_objects/hand_choices.json`（第 1 节 `gso_gallery.py --serve` 点选；`gso_catalog.py --hand-choices` 换文件）。
 - 筛选阈值和排除的类别：`scripts/gso_catalog.py` 的参数（默认值在 `src/locomani/sim/gso_objects.py` 的 `Thresholds`，`--use-categories` 默认见上面第 1 节，类别名见 `categories.json` 的 `counts`）；改了重建目录，已建的实例记着它们用的 `catalog_sha256`，不受影响；要让已建实例换物体就删掉它的目录重建（关卡也要重建）。
 - 放得进纸箱的规则：`gso_catalog.py --carton-inner 0.43 0.30 --carton-rim 0.33 --fit-margin 0.02`（`Thresholds.carton_inner_m` / `carton_rim_m` / `fit_margin_m`，目录版本 3，字段 `fits_carton` / `fit_why`）；纸箱的抱取带是 `prepare_logistics_scene.py` 的 `CARTON_PLACEMENT`（任务族从 `gso.carton_placement` 读，旧场景文件没有就用 `gso_family.CARTON_BAND`）。
 - 任务判据：`scripts/rsi/gso_family.py` 的 `LIFT_M`（0.10 / 0.20 m）、`TILT_DEG`（60）、`POOL_SIZES`；改了重跑它，再改三份方案和 `scripts/rsi/rules.md`，算一次人工干预。
@@ -201,3 +214,5 @@ $PY scripts/prepare_logistics_scene.py $SC --robot mars --rsi --gso-seed 100 --p
 - `gso_pack_check.py` 或一局报 `Error opening file 'gso/gso_0050/model_collision_0.obj'`：场景目录旁的 `<实例>_physics/` 是 11-05 之前写的旧副本（相对网格路径没改成绝对的，场景文件没更新它就不重写），删掉重跑；报 `FileNotFoundError: /workspace/models/scalebfm/…`：`LOCOMANI_WORKSPACE` 没设（第 0 节）。
 - 起点采样打印 `seed N: skipped (no spot on A ...)`：这个 seed 摆不下，纸箱的抱取带、两手留空的通道或其余物体找不到位置，跳过它是正常的，池也这样跳。每局开始时平台上的其余物体也会重新随机摆放（任务行的 `shuffle_others`，11-06）；关掉它，s0 的 21 个任务里有 13 个一个起点也抽不到。
 - 内环第一行就崩、`loop.log` 里找不到任务族或场景：沙盒看不到没提交的文件，先提交任务族文件；场景目录要在 `outputs/scene_discovery/` 下。
+
+人工挑选物体的两个测试场景 `logistics_room_gso_single`（20 件单手物体、无纸箱）和 `logistics_room_gso_bimanual`（7 件双手物体加纸箱），见 [单手 / 双手测试场景 runbook](rsi_logistic_room_1030_single_bimanual.md)。

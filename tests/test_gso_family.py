@@ -211,3 +211,32 @@ def test_the_tracked_s0_families_match_the_built_scene_and_draw_starts_on_the_re
                 c, cq = st.placements[GF.CARTON]
                 yaw = 2 * np.arctan2(cq[3], cq[0])
                 assert placement_ok(surf, c[:2], yaw, fam["rows"][t]["placement"]["objects"][GF.CARTON])
+
+
+def test_a_hand_picked_scene_gets_one_family_lifted_030_and_judged_over_the_last_5_s(tmp_path):
+    """User 2026-11-17: logistics_room_gso_single / _bimanual each get one family, every object lifted 0.30 m (0.20
+    the fallback) and held, judged over the last 5 s for one hand too, from the main skill library."""
+    for which, name, ids in (("single", "gso_single_grasp", ["pick_gso_0001"]),
+                             ("bimanual", "gso_bimanual_lift", ["lift_nor_cal_box", "lift_gso_0002"])):  # fmt: skip
+        meta = json.loads(json.dumps(META))
+        meta["gso"].update(picks=which, scene=f"logistics_room_gso_{which}", seed=3)
+        scene = tmp_path / which
+        scene.mkdir()
+        (scene / "scene_meta.json").write_text(json.dumps(meta))
+        assert GF.write(scene, tmp_path / "families") == {name: len(ids)}
+        fam = json.loads((tmp_path / f"families/{name}.json").read_text())
+        rows = [json.loads(x) for x in (tmp_path / f"families/{name}_tasks.jsonl").read_text().splitlines()]
+        assert fam["tasks"] == [r["id"] for r in rows] == ids
+        assert all(r["goal"][1].endswith(", 0.30, 60)") and (r["hold_s"], r["judge_s"]) == (2.0, 5.0) for r in rows)
+        assert (fam["hold_s"], fam["judge_s"]) == (2.0, 5.0) and fam["sandbox"]["seed"] is None
+        assert fam["plan"] in fam["sandbox"]["keep"] and (ROOT / fam["plan"]).is_file()
+        assert all(p in fam["sandbox"]["keep"] for p in (fam["tasks_file"], f"scripts/rsi/families/{name}.json"))
+        assert ("hands_clear_m" in rows[0]["placement"]) == (which == "bimanual")
+    assert not (tmp_path / "families/gso_s3_tasks.jsonl").exists()  # none of the drawn instance's families
+    GF.write(tmp_path / "single", tmp_path / "low", lift=0.20)
+    low = (tmp_path / "low/gso_single_grasp_tasks.jsonl").read_text()
+    assert "lifted(gso_0001, 0.20, 60)" in low and "20 cm" in low
+    with pytest.raises(SystemExit):  # a drawn instance keeps its lifts
+        (tmp_path / "s7").mkdir()
+        (tmp_path / "s7/scene_meta.json").write_text(json.dumps(META))
+        GF.write(tmp_path / "s7", tmp_path / "families", lift=0.2)

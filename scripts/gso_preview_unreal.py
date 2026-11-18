@@ -9,6 +9,8 @@ start). Needs the Unreal editor (bash scripts/start_unreal.sh --gpu N) and every
 
     PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --seeds 10 [--build] [--out outputs/gso_preview]
         [--scenes outputs/scene_discovery] [--force] [--restart-every 5 --gpu 0]
+    PYTHONPATH=src "$BRIDGE_PY" scripts/gso_preview_unreal.py --picks single bimanual --build   # the hand-picked
+        # scenes logistics_room_gso_single / _bimanual (user 2026-11-17)
 
 Writes `<out>/<scene>_unreal.png` per instance and merges its entry into `<out>/index_unreal.json` as each is done.
 An instance whose picture is newer than its level is skipped (`--force` draws it again). The editor keeps what each
@@ -169,14 +171,18 @@ def main(argv=None) -> int:
         "--restart-every", type=int, default=5, help="restart the editor after this many instances; 0 never"
     )
     ap.add_argument("--gpu", type=int, default=0, help="the card a restarted editor runs on (start_unreal.sh --gpu)")
+    ap.add_argument("--picks", nargs="+", choices=("single", "bimanual"), default=None,
+                    help="the hand-picked scenes logistics_room_gso_<name> instead of the drawn ones (user 2026-11-17)")  # fmt: skip
     a = ap.parse_args(argv)
     index_path = a.out / "index_unreal.json"
     index = json.loads(index_path.read_text()) if index_path.is_file() else {}
     used = 0  # instances the running editor has built or drawn
-    for seed in range(a.first_seed, a.first_seed + a.seeds):
-        scene_dir = a.scenes / SCENE.format(seed=seed)
+    dirs = ([a.scenes / f"logistics_room_gso_{w}" for w in a.picks] if a.picks
+            else [a.scenes / SCENE.format(seed=seed) for seed in range(a.first_seed, a.first_seed + a.seeds)])  # fmt: skip
+    for scene_dir in dirs:
         if not (scene_dir / "scene_locomani.xml").is_file():
-            raise SystemExit(f"no instance {scene_dir}: $VENV_SIM_PY scripts/gso_preview.py --seeds {seed + 1}")
+            raise SystemExit(f"no instance {scene_dir}: $VENV_SIM_PY scripts/gso_preview.py "
+                             + (f"--picks {' '.join(a.picks)}" if a.picks else f"--seeds {a.first_seed + a.seeds}"))  # fmt: skip
         state = level_state(scene_dir)
         png = a.out / f"{scene_dir.name}_unreal.png"
         if state == "ok" and not a.force and up_to_date(scene_dir, png):

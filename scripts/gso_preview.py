@@ -9,6 +9,9 @@ reads), the lint (scripts/scene_lint.py, which must report 0 errors), the two ta
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 $VENV_SIM_PY scripts/gso_preview.py --seeds 10 [--out outputs/gso_preview]
         [--scenes outputs/scene_discovery] [--pool train] [--objects 10 --bimanual 4] [--families-dir ... | --no-families]
 
+`--picks single bimanual` does the same for the hand-picked scenes `logistics_room_gso_single` / `_bimanual` (user
+2026-11-17; prepare_logistics_scene.py --picks), each with its one family (gso_family.write_picked).
+
 An instance already built under --scenes is reused as it is (delete its directory to draw it again). Writes
 `<out>/<scene>.png` per instance and `<out>/index.json` (the objects, their kinds, the lint and drop-test results).
 """
@@ -33,18 +36,26 @@ import scene_drop_test  # noqa: E402
 import scene_lint  # noqa: E402
 import scene_settle  # noqa: E402
 
+from locomani.sim import gso_objects as G  # noqa: E402
+
 SCENE = "logistics_room_1030_s{seed}"
 CAMERAS = (prepare_logistics_scene.PLATFORM_TOP_CAMERA, "reverse_room")
 VIEW_W, VIEW_H = 960, 720
 CAPTION_LINE_PX = 22
 
 
-def build_instance(scene_dir: Path, seed: int, pool: str, objects: int, bimanual: int) -> dict:
-    """The build pipeline of one instance into `scene_dir` (which must not exist): build, settle, drop test, lint.
+def build_instance(
+    scene_dir: Path, seed: int, pool: str, objects: int, bimanual: int, picks: str | None = None
+) -> dict:
+    """The build pipeline of one instance into `scene_dir` (which must not exist): build, settle, drop test, lint;
+    `picks` builds the hand-picked scene of that name instead of a draw (prepare_logistics_scene.py --picks).
     Returns {"lint_errors": n, "drop_failures": n}; raises SystemExit when the lint reports an error."""
     rel = str(scene_dir.relative_to(ROOT)) if scene_dir.is_relative_to(ROOT) else str(scene_dir)
-    prepare_logistics_scene.main([rel, "--robot", "mars", "--rsi", "--gso-seed", str(seed), "--pool", pool,
-                                  "--objects", str(objects), "--bimanual", str(bimanual)])  # fmt: skip
+    if picks:
+        prepare_logistics_scene.main([rel, "--robot", "mars", "--rsi", "--picks", picks])
+    else:
+        prepare_logistics_scene.main([rel, "--robot", "mars", "--rsi", "--gso-seed", str(seed), "--pool", pool,
+                                      "--objects", str(objects), "--bimanual", str(bimanual)])  # fmt: skip
     scene_settle.main(["--scene", rel, "--write"])
     drop_failures = scene_drop_test.main(["--scene", str(Path(rel) / "scene_meta.json")])
     lint_errors = scene_lint.main(["--scene", rel])
@@ -87,7 +98,8 @@ def render(scene_dir: Path, out_png: Path, meta: dict) -> None:
     font = ImageFont.load_default(size=16)
     gso = meta.get("gso", {})
     title = (
-        f"{scene_dir.name}: seed {gso.get('seed')}, pool {gso.get('pool')}, {len(rows)} free objects on the platform"
+        f"{scene_dir.name}: {'picked by hand, placed with ' if gso.get('picks') else ''}seed {gso.get('seed')}, "
+        f"pool {gso.get('pool')}, {len(rows)} free objects on the platform"
     )
     draw.text((12, VIEW_H + 6), title, fill=(255, 255, 255), font=font)
     for j, row in enumerate(rows):
@@ -98,22 +110,36 @@ def render(scene_dir: Path, out_png: Path, meta: dict) -> None:
     canvas.save(out_png)
 
 
-def preview(seeds, scenes: Path, out: Path, pool: str, objects: int, bimanual: int, families_dir: Path | None) -> dict:
-    index = {}
-    for seed in seeds:
+def preview(
+    seeds,
+    scenes: Path,
+    out: Path,
+    pool: str,
+    objects: int,
+    bimanual: int,
+    families_dir: Path | None,
+    picks: list[str] | None = None,
+) -> dict:
+    """Build (or reuse) and draw each instance: the drawn `logistics_room_1030_s<seed>` of `seeds`, or with `picks`
+    the hand-picked scenes of those names; `<out>/index.json` keeps the entries of instances not drawn this time."""
+    index_path = out / "index.json"
+    index = json.loads(index_path.read_text()) if index_path.is_file() else {}
+    targets = ([(scenes / G.PICK_SCENES[w]["scene"], None, w) for w in picks] if picks
+               else [(scenes / SCENE.format(seed=seed), seed, None) for seed in seeds])  # fmt: skip
+    for scene_dir, seed, which in targets:
         t0 = time.time()
-        scene_dir = scenes / SCENE.format(seed=seed)
         if scene_dir.exists():
             print(f"[preview] reusing {scene_dir}", flush=True)
             checks = {"reused": True}
         else:
-            checks = build_instance(scene_dir, seed, pool, objects, bimanual)
+            checks = build_instance(scene_dir, seed, pool, objects, bimanual, which)
         meta = json.loads((scene_dir / "scene_meta.json").read_text())
         families = gso_family.write(scene_dir, families_dir) if families_dir else {}
         png = out / f"{scene_dir.name}.png"
         render(scene_dir, png, meta)
         index[scene_dir.name] = {
-            "scene": str(scene_dir), "png": str(png), "seed": seed, "pool": pool, "families": families,
+            "scene": str(scene_dir), "png": str(png), "seed": meta["gso"]["seed"], "pool": meta["gso"]["pool"],
+            **({"picks": which} if which else {}), "families": families,
             "objects": {k: {"phrase": o["semantic"]["phrase"], "graspable": o["semantic"]["graspable"],
                             "in_reach_band": (o.get("gso") or {}).get("in_reach_band")}
                         for k, o in meta["objects"].items() if o.get("free")},
@@ -121,8 +147,8 @@ def preview(seeds, scenes: Path, out: Path, pool: str, objects: int, bimanual: i
         }  # fmt: skip
         print(f"[preview] {scene_dir.name}: {png} ({index[scene_dir.name]['seconds']} s)", flush=True)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "index.json").write_text(json.dumps(index, indent=1) + "\n")
-    return index
+    index_path.write_text(json.dumps(dict(sorted(index.items())), indent=1) + "\n")
+    return {d.name: index[d.name] for d, _, _ in targets}
 
 
 def main(argv=None) -> int:
@@ -136,11 +162,14 @@ def main(argv=None) -> int:
     ap.add_argument("--bimanual", type=int, default=4)
     ap.add_argument("--families-dir", type=Path, default=gso_family.FAMILIES)
     ap.add_argument("--no-families", action="store_true", help="do not write the two task families per instance")
+    ap.add_argument("--picks", nargs="+", choices=sorted(G.PICK_SCENES), default=None,
+                    help="the hand-picked scenes instead of the drawn ones (user 2026-11-17): logistics_room_gso_<name>")  # fmt: skip
     a = ap.parse_args(argv)
     if os.environ.get("MUJOCO_GL") not in ("egl", "osmesa"):
         print("[preview] MUJOCO_GL is not egl or osmesa: the offscreen render needs one of them", file=sys.stderr)
     seeds = range(a.first_seed, a.first_seed + a.seeds)
-    index = preview(seeds, a.scenes, a.out, a.pool, a.objects, a.bimanual, None if a.no_families else a.families_dir)
+    index = preview(seeds, a.scenes, a.out, a.pool, a.objects, a.bimanual, None if a.no_families else a.families_dir,
+                    a.picks)  # fmt: skip
     print(
         json.dumps(
             {k: {"png": v["png"], "families": v["families"], "checks": v["checks"]} for k, v in index.items()}, indent=1

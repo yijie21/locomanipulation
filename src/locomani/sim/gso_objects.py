@@ -9,9 +9,14 @@ Three things live here, each a plain function over plain data:
 - the catalog (`build_catalog`): every object's size, hull volume, mass, rest test, dataset category, graspability and
   train / held-out split, from the meshes, the thresholds and `categories.json` (the dataset's own labels, fetched from
   Gazebo Fuel by `scripts/gso_categories.py`; an object whose category is not in `Thresholds.used_categories` is
-  `none`: the user keeps shoes, toys and the like out of the logistics room, 2026-11-04 / 05); written once to `assets/mujoco_scanned_objects/catalog.json` by
+  `none`: the user keeps shoes, toys and the like out of the logistics room, 2026-11-04 / 05; an object in the
+  hand-kept list `hand_choices.json`, clicked in scripts/gso_gallery.py --serve, 2026-11-17, can exclude or include
+  an object over its category and set its shape kind over the shape rules); written once to `assets/mujoco_scanned_objects/catalog.json` by
   `scripts/gso_catalog.py` and read by the scene builder;
 - the draw (`sample_keys`): which objects a scene instance gets, from a seed, a pool and the single / bimanual ratio;
+- the picks (`check_picks`, `picked_keys`, `place_picked`): the objects picked by hand in scripts/gso_gallery.py
+  --pick --serve for the two test scenes `logistics_room_gso_single` (20 objects, no carton) / `_bimanual` (user 2026-11-17), kept in
+  `scene_picks.json`;
 - the placement (`place_objects`) and the MJCF / scene-file records (`add_to_scene`, `object_record`).
 """
 
@@ -47,6 +52,9 @@ KEY_FORMAT = (
 )
 POOLS = ("train", "eval_unseen", "all")
 GRASPABLE = ("single", "bimanual", "none")
+# beside catalog.json (user 2026-11-17): {"objects": {model name: {"excluded": bool, "exclude_why": str,
+# "shape": single | bimanual | none, "shape_why": str}}}, each entry holding either choice or both
+HAND_CHOICES_FILE = "hand_choices.json"
 UNLABELLED = "(none)"  # how a model without a dataset label is named in a category list (categories.json `counts`)
 # the dataset's labels (categories.json) kept out of the logistics room (user 2026-11-04: shoes; 2026-11-05: also toys,
 # stuffed toys, mice, media cases, Legos, keyboards, the car seat, action figures and hats) ...
@@ -154,14 +162,28 @@ def category_used(category: str | None, thresholds: Thresholds) -> bool:
     return used is None or (category or UNLABELLED) in used
 
 
-def graspable(extent, thresholds: Thresholds, rest: dict | None = None, category: str | None = None) -> tuple[str, str]:
+def graspable(
+    extent,
+    thresholds: Thresholds,
+    rest: dict | None = None,
+    category: str | None = None,
+    by_hand: dict | None = None,
+) -> tuple[str, str]:
     """(`single` | `bimanual` | `none`, why) from the object's resting extents (x, y, z in metres), its rest test
-    (`rest_test`; None skips that check) and its dataset category (None: unlabelled, the category UNLABELLED)."""
+    (`rest_test`; None skips that check), its dataset category (None: unlabelled, the category UNLABELLED) and the
+    hand-kept choices for it (`load_hand_choices`; None: none): `excluded` decides over the category (excluded is
+    `none`), `shape` gives the kind over the shape rules (size, rest test) of an object that is not excluded."""
     narrow, wide = sorted(float(e) for e in extent[:2])
     height = float(extent[2])
     grasp_height = thresholds.surface_top_m + height / 2
-    if not category_used(category, thresholds):
+    hand = by_hand or {}
+    if "excluded" in hand:
+        if hand["excluded"]:
+            return "none", f"excluded by hand: {hand.get('exclude_why') or 'no reason given'}"
+    elif not category_used(category, thresholds):
         return "none", f"category {category or UNLABELLED}: not among the used categories (user 2026-11-05)"
+    if "shape" in hand:
+        return hand["shape"], f"shape set to {hand['shape']} by hand: {hand.get('shape_why') or 'no reason given'}"
     if rest is not None and not rest["stands"]:
         return "none", f"does not stand at rest on a plane: tilted {rest['tilt_deg']} deg, slid {rest['slid_mm']} mm"
     if height < thresholds.min_height_m:
@@ -250,6 +272,54 @@ def rest_test(model_dir: Path, mass_kg: float, hull_volume_m3: float) -> dict:
             "stands": bool(stands)}  # fmt: skip
 
 
+def check_hand_choice(name: str, c) -> dict:
+    """One hand-kept entry, checked: a dict with `excluded` (bool) and / or `shape` (a GRASPABLE kind), each with an
+    optional reason string (`exclude_why`, `shape_why`, at most 200 characters); returned with only those keys."""
+    if not isinstance(c, dict) or not ({"excluded", "shape"} & set(c)):
+        raise ValueError(f"{name}: want {{'excluded': bool and / or 'shape': one of {GRASPABLE}}}, got {c!r}")
+    out = {}
+    if "excluded" in c:
+        if not isinstance(c["excluded"], bool):
+            raise ValueError(f"{name}: `excluded` must be true or false")
+        out["excluded"] = c["excluded"]
+        out["exclude_why"] = c.get("exclude_why", "")
+    if "shape" in c:
+        if c["shape"] not in GRASPABLE:
+            raise ValueError(f"{name}: `shape` must be one of {GRASPABLE}")
+        out["shape"] = c["shape"]
+        out["shape_why"] = c.get("shape_why", "")
+    if any(not isinstance(v, str) or len(v) > 200 for k, v in out.items() if k.endswith("_why")):
+        raise ValueError(f"{name}: a reason is a string of at most 200 characters")
+    return out
+
+
+def load_hand_choices(path: Path) -> dict[str, dict]:
+    """{model name: checked entry (`check_hand_choice`)} from the hand-kept list (HAND_CHOICES_FILE;
+    scripts/gso_gallery.py --serve writes it); a missing file chooses nothing, a malformed entry stops the read."""
+    path = Path(path)
+    if not path.is_file():
+        return {}
+    try:
+        return {str(n): check_hand_choice(n, c) for n, c in (json.loads(path.read_text()).get("objects") or {}).items()}
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from None
+
+
+def shape_scores(model_dir: Path) -> dict:
+    """How box-like and how solid the scan is, for sorting the gallery (user 2026-11-17): `fill` is the convex hull's
+    volume over the box along the mesh's principal axes (a box or a can is near 0.6-1; a figurine, an animal, a tool
+    lower), `solid` the V-HACD hulls' volume over the convex hull (an open pot, basket or bin is low)."""
+    from scipy.spatial import ConvexHull
+
+    v, _ = _read_obj(Path(model_dir) / "model.obj")
+    hull = ConvexHull(v).volume
+    c = v - v.mean(0)
+    _, _, axes = np.linalg.svd(c[:: max(1, len(c) // 5000)], full_matrices=False)
+    box = float(np.prod(np.ptp(c @ axes.T, axis=0)))
+    parts = sum(hull_volume(h) for h in sorted(Path(model_dir).glob("model_collision_*.obj")))
+    return {"fill": round(hull / max(box, 1e-12), 3), "solid": round(parts / max(hull, 1e-12), 3)}
+
+
 def load_categories(path: Path) -> dict[str, str | None]:
     """{model name: category or None} from `categories.json` (scripts/gso_categories.py)."""
     doc = json.loads(Path(path).read_text())
@@ -257,10 +327,16 @@ def load_categories(path: Path) -> dict[str, str | None]:
 
 
 def catalog_entry(
-    index: int, model_dir: Path, thresholds: Thresholds, rest: bool = True, category: str | None = None
+    index: int,
+    model_dir: Path,
+    thresholds: Thresholds,
+    rest: bool = True,
+    category: str | None = None,
+    by_hand: dict | None = None,
 ) -> dict:
     """One object's record from its directory (`model.obj`, the hulls); `index` gives its key. `rest` runs the rest
-    test (the simulator; off for a unit test of the geometry alone); `category` is the dataset's label for it."""
+    test (the simulator; off for a unit test of the geometry alone); `category` is the dataset's label for it;
+    `by_hand` the hand-kept choices for it (`check_hand_choice`; None: none)."""
     name = model_dir.name
     v, _ = _read_obj(model_dir / "model.obj")
     mn, mx = v.min(0), v.max(0)
@@ -269,7 +345,7 @@ def catalog_entry(
     volume = sum(hull_volume(h) for h in hulls)
     mass = float(np.clip(volume * thresholds.density_kg_m3, *thresholds.mass_range_kg))
     rested = rest_test(model_dir, mass, volume) if rest else None
-    kind, why = graspable(extent, thresholds, rested, category)
+    kind, why = graspable(extent, thresholds, rested, category, by_hand)
     fits, fit_why = fits_carton(extent, thresholds)
     return {
         "key": KEY_FORMAT.format(index=index),
@@ -290,6 +366,7 @@ def catalog_entry(
         "fits_carton": fits,
         "fit_why": fit_why,
         "split": split_of(name, thresholds.held_out_fraction),
+        "by_hand": by_hand,
     }
 
 
@@ -303,12 +380,16 @@ def build_catalog(
     source: dict | None = None,
     workers: int | None = None,
     categories: dict[str, str | None] | None = None,
+    by_hand: dict[str, dict] | None = None,
 ) -> dict:
     """Every `models/<name>/model.obj` as a record, keyed `gso_NNNN` in sorted-name order (the key never changes while
     the model set does not); `workers` processes (default: the machine's cores, at most 16). `categories` (from
     `load_categories`) must name every model unless `thresholds.used_categories` is None: a model missing from the
     labels would silently count as unlabelled and be drawn, or dropped, by mistake. `counts.excluded` is the number of
-    objects whose category is not used; `not_used_categories` lists those categories."""
+    objects whose category is not used and that have no hand-kept choice; `not_used_categories` lists those
+    categories. `by_hand` (from `load_hand_choices`) excludes / includes the named models over their category and sets
+    their shape kinds over the shape rules; a name that is no model stops the build (a typo would silently keep the
+    object in); `counts.by_hand` counts the choices."""
     thresholds = thresholds or Thresholds()  # fmt: skip
     dirs = sorted(p for p in models.iterdir() if (p / "model.obj").is_file())
     if not dirs:
@@ -319,7 +400,11 @@ def build_catalog(
         if unknown:
             raise ValueError(f"{len(unknown)} models have no entry in categories.json (scripts/gso_categories.py), "
                              f"e.g. {unknown[:3]}: cannot select {list(thresholds.used_categories)}")  # fmt: skip
-    jobs = [(i, d, thresholds, True, categories.get(d.name)) for i, d in enumerate(dirs)]
+    by_hand = by_hand or {}
+    stray = sorted(set(by_hand) - {d.name for d in dirs})
+    if stray:
+        raise ValueError(f"{len(stray)} names in the hand-kept exclusion list are no model, e.g. {stray[:3]}")
+    jobs = [(i, d, thresholds, True, categories.get(d.name), by_hand.get(d.name)) for i, d in enumerate(dirs)]
     workers = workers or min(16, os.cpu_count() or 1)
     with ProcessPoolExecutor(workers) as pool:
         records = list(pool.map(_entry, jobs, chunksize=8))
@@ -328,8 +413,14 @@ def build_catalog(
     counts["held_out"] = sum(1 for o in objects.values() if o["split"] == "held_out")
     counts["fits_carton"] = {k: sum(1 for o in objects.values() if o["graspable"] == k and o["fits_carton"])
                              for k in GRASPABLE[:2]}  # fmt: skip
-    out = [o["category"] or UNLABELLED for o in objects.values() if not category_used(o["category"], thresholds)]
+    out = [o["category"] or UNLABELLED for o in objects.values()
+           if not category_used(o["category"], thresholds) and "excluded" not in (o["by_hand"] or {})]  # fmt: skip
     counts["excluded"] = len(out)
+    counts["by_hand"] = {
+        "excluded": sum(1 for c in by_hand.values() if c.get("excluded") is True),
+        "included": sum(1 for c in by_hand.values() if c.get("excluded") is False),
+        "shape": {k: sum(1 for c in by_hand.values() if c.get("shape") == k) for k in GRASPABLE},
+    }
     return {
         "version": CATALOG_VERSION,
         "source": source or {},
@@ -427,6 +518,93 @@ def place_objects(
         taken.append(footprint(obj, found[0], np.array([np.cos(found[1] / 2), 0.0, 0.0, np.sin(found[1] / 2)])))
         out[key] = {"xy": [float(found[0][0]), float(found[0][1])], "yaw": found[1], "in_reach_band": found[2]}
     return out
+
+
+# -- objects picked by hand for the two test scenes (user 2026-11-17): scripts/gso_gallery.py --pick --serve writes
+# PICKS_FILE, scripts/prepare_logistics_scene.py --picks <scene> builds the scene from it
+PICKS_FILE = "scene_picks.json"
+PICK_SCENES = {
+    # user 2026-11-17: the one-hand scene has no carton, so 20 objects fit; the two-hand one keeps it (a task of its own)
+    "single": {"kind": "single", "count": (20, 20), "scene": "logistics_room_gso_single", "carton": False},
+    "bimanual": {"kind": "bimanual", "count": (5, 9), "scene": "logistics_room_gso_bimanual", "carton": True},
+}
+PLACE_ATTEMPTS = 20  # placements of one picked set tried, each with the next seed of the scene's seed
+
+
+def pick_pool(catalog: dict, which: str) -> list[str]:
+    """The keys the picker offers for scene `which` (PICK_SCENES): its kind in the built catalog (hand choices
+    applied) and the training split (the held-out tenth stays unseen); the carton fit is not asked."""
+    kind = PICK_SCENES[which]["kind"]
+    return [k for k, o in catalog["objects"].items() if o["graspable"] == kind and o["split"] == "train"]
+
+
+def check_picks(doc, catalog: dict, complete: bool = False) -> dict:
+    """The picks file `{"scenes": {which: {"seed": int, "objects": [model name, ...]}}}` checked against the catalog:
+    every name an object of that scene's pool (`pick_pool`), none twice; `complete`: each scene's count within its
+    PICK_SCENES range (the builder asks it, the page saves a set still being picked). Returns it normalized."""
+    scenes = doc.get("scenes") if isinstance(doc, dict) else None
+    if not isinstance(scenes, dict) or set(scenes) - set(PICK_SCENES):
+        raise ValueError(f'want {{"scenes": {{one of {sorted(PICK_SCENES)}: {{"seed": int, "objects": [names]}}}}}}')
+    by_name = {o["name"]: k for k, o in catalog["objects"].items()}
+    out = {}
+    for which, s in sorted(scenes.items()):
+        if not isinstance(s, dict) or not isinstance(s.get("objects", []), list):
+            raise ValueError(f"{which}: want {{'seed': int, 'objects': [model names]}}")
+        seed, names = s.get("seed", 0), [str(n) for n in s.get("objects", [])]
+        if not isinstance(seed, int) or isinstance(seed, bool) or seed < 0:
+            raise ValueError(f"{which}: seed must be a whole number >= 0")
+        pool = set(pick_pool(catalog, which))
+        bad = [n for n in names if by_name.get(n) not in pool]
+        if bad:
+            raise ValueError(f"{which}: not {PICK_SCENES[which]['kind']} training objects of the catalog: {bad[:3]}")
+        if len(set(names)) != len(names):
+            raise ValueError(f"{which}: an object is picked twice")
+        lo, hi = PICK_SCENES[which]["count"]
+        if complete and not lo <= len(names) <= hi:
+            raise ValueError(f"{which}: {len(names)} objects picked, want {lo}" + (f"-{hi}" if hi != lo else ""))
+        out[which] = {"seed": seed, "objects": names}
+    return {"scenes": out}
+
+
+def load_picks(path: Path, catalog: dict, complete: bool = False) -> dict:
+    """The checked picks file (`check_picks`); a missing file picks nothing."""
+    path = Path(path)
+    if not path.is_file():
+        return {"scenes": {}}
+    try:
+        return check_picks(json.loads(path.read_text()), catalog, complete)
+    except ValueError as e:
+        raise ValueError(f"{path}: {e}") from None
+
+
+def picked_keys(catalog: dict, picks: dict, which: str) -> list[str]:
+    """The catalog keys of scene `which`'s picked objects, in the order picked."""
+    if which not in picks["scenes"]:
+        raise ValueError(f"no objects picked for the {which} scene: scripts/gso_gallery.py --pick --serve")
+    by_name = {o["name"]: k for k, o in catalog["objects"].items()}
+    return [by_name[n] for n in picks["scenes"][which]["objects"]]
+
+
+def place_picked(
+    boxes: dict[str, list[float]],
+    surface: dict,
+    seed: int,
+    reach_depth_m: float,
+    constraints: dict[str, dict] | None = None,
+    attempts: int = PLACE_ATTEMPTS,
+) -> tuple[dict[str, dict], int]:
+    """`place_objects` for a fixed set: seed `seed` first, then [seed, 1], [seed, 2], ... until every object finds a
+    spot on the reach band; returns (placed, attempt). Raises RuntimeError naming the objects that never found one."""  # fmt: skip
+    stuck: dict[str, int] = {}
+    for attempt in range(attempts):
+        try:
+            return place_objects(boxes, surface, seed if attempt == 0 else [seed, attempt], reach_depth_m,
+                                 constraints=constraints), attempt  # fmt: skip
+        except RuntimeError as e:
+            key = str(e).split(" for ", 1)[1].split(" after ", 1)[0]
+            stuck[key] = stuck.get(key, 0) + 1
+    raise RuntimeError(f"no placement of the {len(boxes)} objects in {attempts} tries; no spot left for "
+                       + ", ".join(f"{k} ({n}x)" for k, n in sorted(stuck.items(), key=lambda kv: -kv[1])))  # fmt: skip
 
 
 def yaw_quat(yaw: float) -> list[float]:

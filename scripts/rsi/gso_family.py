@@ -29,6 +29,11 @@ start.sample_start; user 2026-11-06: with the nine others fixed, 13 of s0's 21 t
     PYTHONPATH=src $VENV_SIM_PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_1030_s0
         [--families-dir scripts/rsi/families]
 
+A hand-picked scene (`logistics_room_gso_single` / `_bimanual`, user 2026-11-17; prepare_logistics_scene.py --picks)
+gets one family instead: `gso_single_grasp` (every picked one-hand object) or `gso_bimanual_lift` (every picked
+two-hand object and the carton), goal `held(X)` + `lifted(X, 0.30, 60)` (`--lift 0.20` the fallback) judged over the
+last 5 s for both, the main skill library as the start; files `gso_single_grasp.json` + `gso_single_grasp_tasks.jsonl`.
+
 Writes `<families-dir>/gso_grasp_s<seed>.json`, `gso_bimanual_s<seed>.json`, `gso_pack_s<seed>.json`,
 `gso_pack_bimanual_s<seed>.json`, `gso_all_s<seed>.json` and the shared `gso_s<seed>_tasks.jsonl`. A family's `sandbox.keep` lists its file,
 the tasks file and the plan, as the existing families do; `sandbox.seed` null keeps the main skill library.
@@ -70,6 +75,17 @@ PACK_KINDS = ("pack", "pack_bimanual")
 TIMING = {"hold_s": 2.0, "judge_s": 5.0}
 LIFT_M = {"gso_grasp": 0.10, "gso_bimanual": 0.20, "gso_pack": 0.20, "gso_pack_bimanual": 0.20}
 TILT_DEG = 60
+# the hand-picked test scenes (user 2026-11-17; prepare_logistics_scene.py --picks): one family each, every object
+# lifted 0.30 m (0.20 if that proves out of reach) and held, judged over the last 5 s, from the main skill library
+PICKED_LIFT_M = 0.30
+PICKED = {
+    "single": {"name": "gso_single_grasp", "kind": "single", "plan": "scripts/rsi/plans/gso_single_grasp.md",
+               "base_plan": "scripts/rsi/plans/gso_grasp.md", "pool_seed": 9_000_000,
+               "skills_note": "the main skill library as it stands: its one-hand pick (skills/pick.py); sandbox.seed null"},
+    "bimanual": {"name": "gso_bimanual_lift", "kind": "bimanual", "plan": "scripts/rsi/plans/gso_bimanual_lift.md",
+                 "base_plan": "scripts/rsi/plans/gso_bimanual.md", "pool_seed": 9_500_000,
+                 "skills_note": "the main skill library as it stands: its two-hand hug pick (skills/bimanual.py); sandbox.seed null"},
+}  # fmt: skip
 CARTON = "nor_cal_box"
 # where the pack rows put the carton when the scene file has no `gso.carton_placement` (an instance built before
 # 2026-11-05): prepare_logistics_scene.CARTON_PLACEMENT, the hug's stance band, long side along the edge
@@ -108,13 +124,14 @@ STRIP = [
 SCENE_EXCLUDE = ["lint.json", "settle.json", "upright.json", "feasibility", "preview"]
 
 
-def rows_for(meta: dict, kind: str, reach: float) -> list[dict]:
+def rows_for(meta: dict, kind: str, reach: float, lift: float | None = None, timed: bool = False) -> list[dict]:
     """The task rows of one family kind (KINDS) from the scene file: `held` + `lifted` on each object of its kind, or
-    -- the pack kinds -- `in(X, carton)` + `held` + `lifted` of the carton for each such X but the carton itself."""
+    -- the pack kinds -- `in(X, carton)` + `held` + `lifted` of the carton for each such X but the carton itself.
+    `lift` (m) replaces the kind's LIFT_M; `timed` judges a one-hand row over the last 5 s too (the picked scenes)."""
     room = meta["room"]["rooms"] and next(iter(meta["room"]["rooms"]))
     pack = kind.startswith("pack")
     carton_band = (meta.get("gso") or {}).get("carton_placement") or CARTON_BAND
-    lift = LIFT_M[KINDS[kind]]
+    lift = LIFT_M[KINDS[kind]] if lift is None else lift
     band = {"depth_m": [0.0, round(reach, 3)]}
     out = []
     for key, o in meta["objects"].items():
@@ -123,11 +140,15 @@ def rows_for(meta: dict, kind: str, reach: float) -> list[dict]:
             continue
         p = sem["phrase"]
         placement: dict = {**band, "shuffle_others": True}
-        if kind == "single":
+        if kind == "single" and timed:
+            prompts = [f"pick up the {p} and hold it {int(round(lift * 100))} cm above the platform",
+                       f"grab the {p}, lift it off the platform and hold it there"]  # fmt: skip
+            tid, goal = f"pick_{key}", [f"held({key})", f"lifted({key}, {lift:.2f}, {TILT_DEG})"]
+        elif kind == "single":
             prompts = [f"pick up the {p}", f"grab the {p} and lift it off the platform"]
             tid, goal = f"pick_{key}", [f"held({key})", f"lifted({key}, {lift:.2f}, {TILT_DEG})"]
         elif kind == "bimanual":
-            prompts = [f"lift the {p} {int(lift * 100)} cm off the platform with both hands and hold it",
+            prompts = [f"lift the {p} {int(round(lift * 100))} cm off the platform with both hands and hold it",
                        f"pick up the {p} with both hands and hold it level"]  # fmt: skip
             tid, goal = f"lift_{key}", [f"held({key})", f"lifted({key}, {lift:.2f}, {TILT_DEG})"]
             placement["hands_clear_m"] = HANDS_CLEAR_M
@@ -146,7 +167,9 @@ def rows_for(meta: dict, kind: str, reach: float) -> list[dict]:
                     "hands_clear_m": HANDS_CLEAR_M,
                 }
             placement["objects"] = own
-        timing = {} if kind == "single" else TIMING  # per row too: gso_all mixes the kinds (family.timing)
+        timing = (
+            {} if kind == "single" and not timed else TIMING
+        )  # per row too: gso_all mixes the kinds (family.timing)
         out.append({"id": tid, "goal": goal, "prompts": prompts, "room": room, "placement": placement, **timing})
     return out
 
@@ -319,12 +342,76 @@ def family_pack_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows:
     }
 
 
-def write(scene_dir: Path, families_dir: Path = FAMILIES) -> dict:
-    """The four families, gso_all, gso_pack_all and the tasks file for the scene; returns {family name: task count}."""
+def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lift: float = PICKED_LIFT_M) -> dict:
+    """The one family of a hand-picked scene (`gso.picks`, prepare_logistics_scene.py --picks): gso_single_grasp or
+    gso_bimanual_lift and its tasks file; returns {family name: task count}."""
+    gso = meta["gso"]
+    which = gso["picks"]
+    spec = PICKED[which]
+    name, kind = spec["name"], spec["kind"]
+    reach = float(gso["reach_depth_m"])
+    scene_rel = (
+        str(scene_dir.resolve().relative_to(REPO)) if scene_dir.resolve().is_relative_to(REPO) else str(scene_dir)
+    )
+    tasks_file = f"scripts/rsi/families/{name}_tasks.jsonl"
+    rows = rows_for(meta, kind, reach, lift=lift, timed=True)
+    if not rows:
+        raise SystemExit(f"{scene_dir}: no {kind} object for {name}")
+    if kind == "bimanual" and not any(r["id"] == f"lift_{CARTON}" for r in rows):
+        raise SystemExit(f"{CARTON} is not a bimanual object of {scene_dir}")
+    families_dir.mkdir(parents=True, exist_ok=True)
+    (families_dir / Path(tasks_file).name).write_text("".join(json.dumps(r) + "\n" for r in rows))
+    names = {r["id"].split("_", 1)[1]: meta["objects"][r["id"].split("_", 1)[1]]["semantic"]["phrase"] for r in rows}
+    hands = "one hand" if kind == "single" else "both hands"
+    n_obj = sum(1 for k, o in meta["objects"].items() if o.get("free") and k != CARTON)
+    fam = {
+        "name": name,
+        "about": (
+            f"{gso['scene']} (user 2026-11-17): held(X) and lifted(X, {lift:.2f}, {TILT_DEG}) with {hands}, judged "
+            f"over the round's last {TIMING['judge_s']:g} s, on the {len(rows)} {'objects' if kind == 'single' else 'objects and the carton'}"
+            f" picked by hand (assets/mujoco_scanned_objects/scene_picks.json, catalog.json {kind} objects of the training "
+            f"split{f', plus the {carton_mass(meta):g} kg open carton' if kind == 'bimanual' else ''}) on the 0.371 m "
+            f"pallet platform, placed with seed {gso['seed']}; every task object starts within {reach} m of a platform "
+            f"edge" + ("" if kind == "single" else f", {HANDS_CLEAR_M} m free beside the walls the hug squeezes and in front")
+            + ", the robot anywhere in the room it can walk from; objects: " + ", ".join(f"{k} = {v}" for k, v in names.items())
+        ),
+        "scene": scene_rel,
+        "scene_note": (
+            "in a simulated logistics room (a scanned warehouse room: storage racks along the walls, one 1.2 x 0.9 m "
+            f"pallet platform 0.371 m high with {'an open cardboard box and ' if CARTON in meta['objects'] else ''}"
+            f"{n_obj} scanned household objects on it)"
+        ),
+        "tasks_file": tasks_file,
+        "tasks": [r["id"] for r in rows],
+        "spawn": {"rooms": "all", "distance_m": [0.5, None]},
+        **TIMING,
+        **STOPS,
+        "pools": {pool: {"seed": spec["pool_seed"] + i * 100_000, "n": n} for i, (pool, n) in enumerate(POOL_SIZES.items())},
+        "plan": spec["plan"],
+        "skills_note": spec["skills_note"],
+        "sandbox": {
+            "seed": None,
+            "keep": KEEP_COMMON + [spec["plan"], spec["base_plan"], f"scripts/rsi/families/{name}.json", tasks_file],
+            "closure": CLOSURE,
+            "strip": STRIP,
+            "scene_exclude": SCENE_EXCLUDE,
+        },
+    }  # fmt: skip
+    (families_dir / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
+    return {name: len(rows)}
+
+
+def write(scene_dir: Path, families_dir: Path = FAMILIES, lift: float | None = None) -> dict:
+    """The four families, gso_all, gso_pack_all and the tasks file for the scene, or a picked scene's one family
+    (`write_picked`); returns {family name: task count}."""
     meta = json.loads((scene_dir / "scene_meta.json").read_text())
     gso = meta.get("gso")
     if not gso:
         raise SystemExit(f"{scene_dir} is not a GSO scene (no `gso` block in scene_meta.json)")
+    if gso.get("picks"):
+        return write_picked(scene_dir, meta, families_dir, PICKED_LIFT_M if lift is None else lift)
+    if lift is not None:
+        raise SystemExit("--lift is for a hand-picked scene; the drawn instances keep LIFT_M")
     seed, reach = int(gso["seed"]), float(gso["reach_depth_m"])
     scene_rel = (
         str(scene_dir.resolve().relative_to(REPO)) if scene_dir.resolve().is_relative_to(REPO) else str(scene_dir)
@@ -360,8 +447,10 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("scene_dir", type=Path)
     ap.add_argument("--families-dir", type=Path, default=FAMILIES)
+    ap.add_argument("--lift", type=float, default=None, help=f"m; a hand-picked scene's lift (default {PICKED_LIFT_M}; "
+                    "user 2026-11-17: 0.20 if 0.30 proves out of reach)")  # fmt: skip
     a = ap.parse_args(argv)
-    out = write(a.scene_dir, a.families_dir)
+    out = write(a.scene_dir, a.families_dir, a.lift)
     print(json.dumps({"families_dir": str(a.families_dir), "tasks": out}))
     return 0
 

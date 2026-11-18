@@ -1,0 +1,1083 @@
+{
+ "note": "choices by hand for the logistics room's objects (user 2026-11-17): `excluded` over the category rule, `shape` (single / bimanual / none) over the shape rules; written by scripts/gso_gallery.py --serve, read by scripts/gso_catalog.py",
+ "objects": {
+  "11pro_SL_TRX_FG": {
+   "excluded": true,
+   "exclude_why": "irregular shape",
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "2_of_Jenga_Classic_Game": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "3D_Dollhouse_Happy_Brother": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "45oz_RAMEKIN_ASST_DEEP_COLORS": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Air_Hogs_Wind_Flyers_Set_Airplane_Red": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Android_Figure_Chrome": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Android_Figure_Orange": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Android_Figure_Panda": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Aroma_Stainless_Steel_Milk_Frother_2_Cup": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Asus_M5A78LMUSB3_Motherboard_Micro_ATX_Socket_AM3": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Asus_M5A99FX_PRO_R20_Motherboard_ATX_Socket_AM3": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Asus_Sabertooth_990FX_20_Motherboard_ATX_Socket_AM3": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Asus_Sabertooth_Z97_MARK_1_Motherboard_ATX_LGA1150_Socket": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Asus_X99Deluxe_Motherboard_ATX_LGA2011v3_Socket": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Asus_Z87PRO_Motherboard_ATX_LGA1150_Socket": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Asus_Z97AR_LGA_1150_Intel_ATX_Motherboard": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Avengers_Thor_PLlrpYniaeB": {
+   "excluded": false,
+   "exclude_why": "irregular shape"
+  },
+  "BIA_Cordon_Bleu_White_Porcelain_Utensil_Holder_900028": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "BIA_Porcelain_Ramekin_With_Glazed_Rim_35_45_oz_cup": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Baby_Elements_Stacking_Cups": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Beyonc_Life_is_But_a_Dream_DVD": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Big_Dot_Aqua_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Big_Dot_Pink_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Big_O_Sponges_Assorted_Cellulose_12_pack": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "BlackBlack_Nintendo_3DSXL": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Black_Decker_CM2035B_12Cup_Thermal_Coffeemaker": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "BlueBlack_Nintendo_3DSXL": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Bradshaw_International_11642_7_Qt_MP_Plastic_Bowl": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Breyer_Horse_Of_The_Year_2015": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Chef_Style_Round_Cake_Pan_9_inch_pan": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Chefmate_8_Frypan": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Circo_Fish_Toothbrush_Holder_14995988": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Clorox_Premium_Choice_Gloves_SM_1_pair": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Antislip_Surfacing_Material_White": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Cole_Hardware_Bowl_Scirocco_YellowBlue": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Cole_Hardware_Butter_Dish_Square_Red": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Deep_Bowl_Good_Earth_1075": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Cole_Hardware_Dishtowel_Blue": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Dishtowel_BlueWhite": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Dishtowel_Multicolors": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Dishtowel_Red": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Dishtowel_Stripe": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Electric_Pot_Assortment_55": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Cole_Hardware_Electric_Pot_Cabana_55": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Cole_Hardware_Mug_Classic_Blue": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Cole_Hardware_Plant_Saucer_Brown_125": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Plant_Saucer_Glazed_9": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Saucer_Electric": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cole_Hardware_Saucer_Glazed_6": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cootie_Game": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Cootie_Game_tDhURNbfU5J": {
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "Corningware_CW_by_Corningware_3qt_Oblong_Casserole_Dish_Blue": {
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "Craftsman_Grip_Screwdriver_Phillips_Cushion": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Creatine_Monohydrate": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Crosley_Alarm_Clock_Vintage_Metal": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "DPC_Thinsulate_Isolate_Gloves_Brown": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Design_Ideas_Drawer_Store_Organizer": {
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "Diamond_Visions_Scissors_Red": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Dixie_10_ounce_Bowls_35_ct": {
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "Dog": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Don_Franciscos_Gourmet_Coffee_Medium_Decaf_100_Colombian_12_oz_340_g": {
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "Down_To_Earth_Ceramic_Orchid_Pot_Asst_Blue": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Down_To_Earth_Orchid_Pot_Ceramic_Lime": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Down_To_Earth_Orchid_Pot_Ceramic_Red": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Cup_B4_SAN": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Garden_Pot_GP16ATurquois": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Bowl_Turquoise_7": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_B4_Har": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_FB6_Tur": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_GP16AMOCHA": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_GP16A_Coral": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_QP6CORAL": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_QP6HARVEST": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_Quadra_Sand_QP6": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_Quadra_Turquoise_QP12": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_S14Turquoise": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_S24NATURAL": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_S24Turquoise": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_URN_NAT": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_URN_SAN": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_Urn_55_Avocado": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Container_Urn_55_Mocha": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Plate_S11Turquoise": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Saucer_S14MOCHA": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Saucer_S14NATURAL": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Saucer_S17MOCHA": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Saucer_S20MOCHA": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Saucer_SQ1HARVEST": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Plant_Saucer_SQ8COR": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Planter_Bowl_Cole_Hardware": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Planter_Pot_GP12AAvocado": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Planter_Pot_QP6Ebony": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Plate_S20Avocado": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Pot_Nova_6_Turquoise": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ecoforms_Quadra_Saucer_SQ1_Avocado": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ecoforms_Saucer_SQ3_Turquoise": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Elephant": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Envision_Home_Dish_Drying_Mat_Red_6_x_18": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Firefly_Clue_Board_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Fisher_price_Classic_Toys_Buzzy_Bee": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Focus_8643_Lime_Squeezer_10x35x188_Enamelled_Aluminum_Light": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Footed_Bowl_Sand": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Frozen_Olafs_In_Trouble_PopOMatic_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Frozen_Olafs_In_Trouble_PopOMatic_Game_OEu83W9T8pD": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Frozen_Scrabble_Jr": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Fruity_Friends": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Gigabyte_GA78LMTUSB3_50_Motherboard_Micro_ATX_Socket_AM3": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Gigabyte_GA970AUD3P_10_Motherboard_ATX_Socket_AM3": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Gigabyte_GAZ97XSLI_10_motherboard_ATX_LGA1150_Socket_Z97": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "GoPro_HERO3_Composite_Cable": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Google_Cardboard_Original_package": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Granimals_20_Wooden_ABC_Blocks_Wagon_85VdSftGsLi": {
+   "shape": "none",
+   "shape_why": "irregular shape"
+  },
+  "Granimals_20_Wooden_ABC_Blocks_Wagon_g2TinmUGGHI": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Great_Dinos_Triceratops_Toy": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Grreat_Choice_Dog_Double_Dish_Plastic_Blue": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Grreatv_Choice_Dog_Bowl_Gray_Bones_Plastic_20_fl_oz_total": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "HP_1800_Tablet_8GB_7": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Hasbro_Dont_Wake_Daddy_Board_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Hasbro_Dont_Wake_Daddy_Board_Game_NJnjGna4u1a": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Hasbro_Life_Board_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Hasbro_Monopoly_Hotels_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Home_Fashions_Washcloth_Linen": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Home_Fashions_Washcloth_Olive_Green": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Horse_Dreams_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Horses_in_Pink_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "In_Green_Company_Surface_Saver_Ring_10_Terra_Cotta": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "InterDesign_Over_Door": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "JA_Henckels_International_Premio_Cutlery_Block_Set_14Piece": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Jawbone_UP24_Wireless_Activity_Tracker_Pink_Coral_L": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "KS_Chocolate_Cube_Box_Assortment_By_Neuhaus_2010_Ounces": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Kingston_DT4000MR_G2_Management_Ready_USB_64GB": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Kotex_U_Tween_Pads_16_pads": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Kotobuki_Saucer_Dragon_Fly": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "LEGO_Creationary_Game": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Lenovo_Yoga_2_11": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Little_Debbie_Chocolate_Cupcakes_8_ct": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Little_Debbie_Cloud_Cakes_10_ct": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Logitech_Ultimate_Ears_Boom_Wireless_Speaker_Night_Black": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Mad_Gab_Refresh_Card_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Magnifying_Glassassrt": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Markings_Desk_Caddy": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Markings_Letter_Holder": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_Cart_Turtle_Block": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_Chunky_Puzzle_Vehicles": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_Felt_Food_Pizza_Set": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_Pattern_Blocks_and_Boards": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_Pound_and_Roll": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_See_Spell": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Melissa_Doug_Shape_Sorting_Clock": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Melissa_Doug_Traffic_Signs_and_Vehicles": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "My_Monopoly_Board_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Neat_Solutions_Character_Bib_2_pack": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Nescafe_16Count_Dolce_Gusto_Cappuccino_Capsules": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Nestle_Candy_19_oz_Butterfinger_Singles_116567": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Nightmare_Before_Christmas_Collectors_Edition_Operation": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Nikon_1_AW1_w11275mm_Lens_Silver": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Nintendo_2DS_Crimson_Red": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Nordic_Ware_Original_Bundt_Pan": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Now_Designs_Bowl_Akita_Black": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Now_Designs_Dish_Towel_Mojave_18_x_28": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Now_Designs_Snack_Bags_Bicycle_2_count": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "OXO_Cookie_Spatula": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "OXO_Soft_Works_Can_Opener_SnapLock": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Object": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Object_REmvBDJStub": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ocedar_Snap_On_Dust_Pan_And_Brush_1_ct": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Office_Depot_HP_564XL_Remanufactured_Ink_Cartridges_Color_Cyan_Magenta_Yellow_3_count": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Olive_Kids_Butterfly_Garden_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Olive_Kids_Paisley_Pencil_Case": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Olive_Kids_Robots_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ortho_Forward_Facing": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ortho_Forward_Facing_3Q6J2oKJD92": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ortho_Forward_Facing_CkAW6rL25xH": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Ortho_Forward_Facing_QCaor9ImJ2G": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Pennington_Electric_Pot_Cabana_4": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Perricone_MD_Best_of_Perricone_7Piece_Collection_MEGsO6GIsyL": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Perricone_MD_Face_Finishing_Moisturizer_4_oz": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Perricone_MD_Health_Weight_Management_Supplements": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Perricone_MD_Hypoallergenic_Firming_Eye_Cream_05_oz": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Perricone_MD_Skin_Clear_Supplements": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Perricone_MD_Skin_Total_Body_Supplements": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Philips_Sonicare_Tooth_Brush_2_count": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Pinwheel_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Pony_C_Clamp_1440": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Poppin_File_Sorter_Blue": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Poppin_File_Sorter_Pink": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Poppin_File_Sorter_White": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Progressive_Rubber_Spatulas_3_count": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Provence_Bath_Towel_Royal_Blue": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "RJ_Rabbit_Easter_Basket_Blue": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Racoon": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Razer_Goliathus_Control_Edition_Small_Soft_Gaming_Mouse_Mat": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Razer_Kraken_Pro_headset_Full_size_Black": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "RedBlack_Nintendo_3DSXL": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Remington_1_12_inch_Hair_Straightener": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Remington_TStudio_Hair_Dryer": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Remington_TStudio_Silk_Ceramic_Hair_Straightener_2_Inch_Floating_Plates": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Retail_Leadership_Summit": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Retail_Leadership_Summit_eCT3zqHYIkX": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Retail_Leadership_Summit_tQFCizMt6g0": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Rexy_Glove_Heavy_Duty_Gloves_Medium": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Rexy_Glove_Heavy_Duty_Large": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Room_Essentials_Bowl_Turquiose": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Room_Essentials_Dish_Drainer_Collapsible_White": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Room_Essentials_Kitchen_Towels_16_x_26_2_count": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Room_Essentials_Mug_White_Yellow": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Room_Essentials_Salad_Plate_Turquoise": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Rubbermaid_Large_Drainer": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Samsung_CLTC406S_Toner_Cartridge_Cyan_1pack": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Sapota_Threshold_4_Ceramic_Round_Planter_Red": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Sea_to_Summit_Xl_Bowl": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Seagate_3TB_Central_shared_storage": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Seagate_Archive_HDD_8_TB_Internal_hard_drive_SATA_6Gbs_35_ST8000AS0002": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Shark": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Shaxon_100_Molded_Category_6_RJ45RJ45_Shielded_Patch_Cord_White": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Snack_Catcher_Snack_Dispenser": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Sonicare_2_Series_Toothbrush_Plaque_Control": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Sonny_School_Bus": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Spectrum_Wall_Mount": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Spritz_Easter_Basket_Plastic_Teal": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Squirrel": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Squirt_Strain_Fruit_Basket": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Squirtin_Barnyard_Friends_4pk": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Super_Mario_3D_World_Deluxe_Set": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Super_Mario_3D_World_Deluxe_Set_yThuvW9vZed": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Sushi_Mat": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Swiss_Miss_Hot_Cocoa_KCups_Milk_Chocolate_12_count": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Tag_Dishtowel_18_x_26": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Tag_Dishtowel_Basket_Weave_Red_18_x_26": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Tag_Dishtowel_Dobby_Stripe_Blue_18_x_26": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Tag_Dishtowel_Green": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Tag_Dishtowel_Waffle_Gray_Checks_18_x_26": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Tetris_Link_Game": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "The_Coffee_Bean_Tea_Leaf_KCup_Packs_Jasmine_Green_Tea_16_count": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "The_Scooper_Hooper": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Thomas_Friends_Wooden_Railway_Porter_5JzRhMm3a9o": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Bamboo_Ceramic_Soap_Dish": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Bead_Cereal_Bowl_White": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Threshold_Bistro_Ceramic_Dinner_Plate_Ruby_Ring": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Dinner_Plate_Square_Rim_White_Porcelain": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Hand_Towel_Blue_Medallion_16_x_27": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Performance_Bath_Sheet_Sandoval_Blue_33_x_63": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Porcelain_Coffee_Mug_All_Over_Bead_White": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Threshold_Porcelain_Pitcher_White": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Porcelain_Serving_Bowl_Coupe_White": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Porcelain_Spoon_Rest_White": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Threshold_Porcelain_Teapot_White": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Threshold_Ramekin_White_Porcelain": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Threshold_Salad_Plate_Square_Rim_Porcelain": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Textured_Damask_Bath_Towel_Pink": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Threshold_Tray_Rectangle_Porcelain": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Top_Paw_Dog_Bow_Bone_Ceramic_13_fl_oz_total": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Top_Paw_Dog_Bowl_Blue_Paw_Bone_Ceramic_25_fl_oz_total": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Toys_R_Us_Treat_Dispenser_Smart_Puzzle_Foobler": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Toysmith_Windem_Up_Flippin_Animals_Dog": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Travel_Mate_P_series_Notebook": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "TriStar_Products_PPC_Power_Pressure_Cooker_XL_in_Black": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "U_By_Kotex_Cleanwear_Heavy_Flow_Pads_32_Ct": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Ubisoft_RockSmith_Real_Tone_Cable_Xbox_360": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Utana_5_Porcelain_Ramekin_Large": {
+   "shape": "single",
+   "shape_why": "irregular shape"
+  },
+  "Victor_Reversible_Bookend": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Vtech_Roll_Learn_Turtle": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Weisshai_Great_White_Shark": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Whey_Protein_3_Flavor_Variety_Pack_12_Packets": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Whey_Protein_Chocolate_12_Packets": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Whey_Protein_Vanilla_12_Packets": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Wilton_PreCut_Parchment_Sheets_10_x_15_24_sheets": {
+   "shape": "bimanual",
+   "shape_why": "irregular shape"
+  },
+  "Wishbone_Pencil_Case": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  },
+  "Womens_Bluefish_2Eye_Boat_Shoe_in_White_Tumbled_YG44xIePRHw": {
+   "excluded": true,
+   "exclude_why": "irregular shape"
+  }
+ }
+}

@@ -41,6 +41,7 @@ GUIDES = {
     # and its design page. The VLA pages above are archived in place.
     "docs/rsi_logistics_room.md": 200,  # 2026-10-24: the logistics-room runbook (TODO 38)
     "docs/rsi_logistic_room_1030.md": 220,  # 2026-11-04: the logistics_room_1030 runbook (ten scanned objects per instance, two families)
+    "docs/rsi_logistic_room_1030_single_bimanual.md": 230,  # 2026-11-17 (user): the two hand-picked test scenes' runbook
     "docs/rsi.md": 400,  # 2026-11-01 (user): 245 -> 400 for section 5.1 (two seeds) and the from-scratch run commands; before: + sections 8 and 9 (2026-10-23)
     "docs/rsi_design.md": 150,
     "docs/agents/doc-ownership.md": 50,
@@ -73,6 +74,7 @@ COMMAND_DOCUMENTS = (
     "docs/rsi.md",  # 2026-10-20: the main line's runbook
     "docs/rsi_logistics_room.md",  # 2026-10-24: the scene RSI runbook on the logistics room (TODO 38)
     "docs/rsi_logistic_room_1030.md",  # 2026-11-04: the runbook of the logistics room with scanned objects
+    "docs/rsi_logistic_room_1030_single_bimanual.md",  # 2026-11-17: the two hand-picked test scenes
 )
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
