@@ -90,6 +90,7 @@ def table(out: Path) -> None:
     tr = tr[~D["fell"][tr].astype(bool) & (D["pelvis_z"][tr] < 0)]  # standing reaches, as the task commands
     out.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(out / "lookup.npz", side=np.sign(D["side"][tr]).astype(np.int8), pitch=D["pitch"][tr].astype(np.float32),
+                        chain=np.minimum(D["chain"][tr], 1).astype(np.int8),
                         dyaw=D["dyaw"][tr].astype(np.float32), target=D["target"][tr].astype(np.float32),
                         off=(D["pos_f"][tr] - D["target"][tr]).astype(np.float32))  # fmt: skip
     for s in (0, 1):
@@ -99,8 +100,11 @@ def table(out: Path) -> None:
     print(f"lookup.npz: {len(tr)} standing training reaches; wm_s0.pt, wm_s1.pt from {HOSTDATA}", flush=True)
 
 
-def lookup(T: dict, side: int, goal: np.ndarray, dyaw: float, pitch: float) -> tuple[np.ndarray, int]:
-    base = T["side"] == side
+def lookup(T: dict, side: int, goal: np.ndarray, dyaw: float, pitch: float, chain: int) -> tuple[np.ndarray, int]:
+    """Median landing offset of training reaches like this one: same hand, same place in the chain (first reach or a
+    later one -- the self model sees `chain` too; review 2026-11-18), target / wrist turn / pitch nearby; the box doubles
+    until 20 match."""
+    base = (T["side"] == side) & (T["chain"] == min(chain, 1))
     t = T["target"]
     for k in (1.0, 2.0, 4.0, 8.0):
         m = base & (np.abs(t[:, 2] - goal[2]) < 0.05 * k) & (np.abs(t[:, 0] - goal[0]) < 0.10 * k)
@@ -144,6 +148,7 @@ class TaskDriver(H.HostDriver):
         import mujoco
 
         m = self.m
+        self.base0 = (np.array(self.env.robot_base_pos, float).copy(), np.array(self.env.robot_base_ori, float).copy())
         self.feet = [mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link") for s in ("left", "right")]
         self.wrist_fk = {s: mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_wrist_yaw_link") for s in ("left", "right")}
         assert m is not None
@@ -151,13 +156,20 @@ class TaskDriver(H.HostDriver):
     def reset_episode(self, ep: int) -> None:
         from robocasa.utils.scene_initial_jitter import apply_initial_pose_jitter
 
+        # the jitter utility writes the jittered pose into env.robot_base_pos / robot_base_ori and a soft reset keeps
+        # it, so without this the jitter accumulated within a worker (review 2026-11-18: pelvis up to 30 cm off)
+        self.env.robot_base_pos[:] = self.base0[0]
+        self.env.robot_base_ori[:] = self.base0[1]
         self.env.reset()
+        self.mj.mj_forward(self.m, self.d)
+        self.spawn0 = self.d.xpos[self.pelvis].copy()
         ok = apply_initial_pose_jitter(self.env, robot_radius=JITTER, object_radius=0.0, rng=np.random.default_rng(ep),
                                        include_robot=True, include_objects=False)  # fmt: skip
         self.mj.mj_forward(self.m, self.d)
         self.comp = self.env.robots[0].composite_controller
         self.buf = None
         self.jitter_ok = bool(ok)
+        self.spawn_xy = self.d.xpos[self.pelvis][:2].copy()
 
     def waypoints(self) -> list[dict]:
         from rl.kimodo.heft import adapters as AD
@@ -174,6 +186,20 @@ class TaskDriver(H.HostDriver):
             w0 = out[0]
             out.insert(0, dict(w0, goal=w0["goal"] - STANDOFF * w0["ad"], label="pre-touch"))
         return out
+
+    def hand_contact(self, side: str) -> str | None:
+        """The scene body the `side` hand or wrist touches now, or None."""
+        mj, m, d = self.mj, self.m, self.d
+        for i in range(d.ncon):
+            c = d.contact[i]
+            n1 = mj.mj_id2name(m, mj.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[c.geom1])) or ""
+            n2 = mj.mj_id2name(m, mj.mjtObj.mjOBJ_BODY, int(m.geom_bodyid[c.geom2])) or ""
+            if n1.startswith("robot0_") == n2.startswith("robot0_"):
+                continue
+            rb, ob = (n1, n2) if n1.startswith("robot0_") else (n2, n1)
+            if rb.startswith(f"robot0_{side}_hand") or rb.startswith(f"robot0_{side}_wrist"):
+                return ob
+        return None
 
     def joint_fraction(self) -> float:
         return float(self.env.target_semantic_joint.fraction(self.env.sim))
@@ -266,12 +292,14 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
     fell, lost, why, success_at, fracs = None, None, "", None, []
     anchor, servo = None, None
     reset_id = 7000000 + ep
+    contact, side_now = {}, wps[0]["side"] if wps else "right"  # the scene body the acting hand touches, per frame
     while True:
         dr.push(frames[min(f, len(frames) - 1)])
         if dr.buf is None:
             dr.buf = dr._find_buffer()
         dr.step()
         x = rows[f] = dr.sample()
+        contact[f] = dr.hand_contact(side_now)
         fracs.append(dr.joint_fraction())
         if success_at is None and bool(dr.env._check_success()):
             success_at = f
@@ -287,12 +315,14 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
             frames = servo_step(dr, servo, x, frames, f)
         if k < len(wps) and f == next_cmd:
             wp = wps[k]
+            side_now = wp["side"]
             c, gh = command(x, wp)
             tic = time.time()
             info = dict(k=k, label=wp["label"], side=wp["side"], goal_w=wp["goal"].tolist(), ad=wp["ad"].tolist(), goal_h=gh.tolist(),
-                        dyaw_deg=math.degrees(c["dyaw"]), pitch_deg=math.degrees(c["pitch"]))  # fmt: skip
+                        dyaw_deg=math.degrees(c["dyaw"]), pitch_deg=math.degrees(c["pitch"]),
+                        p_cmd=x["root"][:3].tolist(), yaw_cmd=L.yaw_of(L._qmat(x["root"][3:])))  # fmt: skip
             if method == "lookup":
-                off, n_nb = lookup(T, 1 if wp["side"] == "right" else -1, gh, c["dyaw"], c["pitch"])
+                off, n_nb = lookup(T, 1 if wp["side"] == "right" else -1, gh, c["dyaw"], c["pitch"], k)
                 c["target"] = clip_t(gh - off, wp["side"])
                 info.update(lookup_off_cm=(100 * off).tolist(), lookup_n=n_nb)
             if method.startswith("selfmodel"):
@@ -319,10 +349,18 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
             if method.startswith("selfmodel") and "plan" in best:
                 blend, last, rec = best["plan"]
                 x0_live = best["x0"]
+                info["pred_exec_h"] = best["pos"].tolist()
             else:
-                blend, last, rec = dr.plan(x, frames[f], c)
-                rec.update(chain=min(k, 1))
                 x0_live = None
+                if P is not None:  # the self model's prediction of exactly this command, planned from this state
+                    try:
+                        (blend, last, rec), Dx = P.features(dr, rows, f, frames, c, k, reset_id)
+                        info["pred_exec_h"] = P.predict(Dx)[0].tolist()
+                    except (np.linalg.LinAlgError, ValueError):
+                        blend, last, rec = dr.plan(x, frames[f], c)
+                else:
+                    blend, last, rec = dr.plan(x, frames[f], c)
+                rec.update(chain=min(k, 1))
             info["think_s"] = time.time() - tic
             rec.update(chain=min(k, 1), f_cmd=f, f_end=f + len(blend))
             tail = L.POST_S + (L.PRE_S if k < len(wps) - 1 else 0.2) + L.MARGIN_S
@@ -333,7 +371,7 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                         x0_live=None if x0_live is None else x0_live.tolist(), _rec=rec)  # fmt: skip
             wrec.append(info)
             if method == "feedback":
-                servo = servo_start(dr, x, wp, c, rec, last, f, rec["f_end"] + post)
+                servo = servo_start(dr, x, wp, c, rec, last, f, rec["f_end"] + post, frames)
                 info["servo"] = servo["leads"]  # filled as the servo runs
             next_cmd = rec["f_end"] + post + int(round(L.PRE_S * L.FPS))
             end_frame = rec["f_end"] + post
@@ -355,7 +393,9 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 D["walk"] = np.zeros((1, 3), np.float32)
                 D["target_b"] = D["target"]
                 P.DT.derive(D)
-                w["x0_check"] = float(np.abs(D["x0"][0] - np.asarray(w["x0_live"])).max())
+                # same rows up to the command and the same plan record: this shows only that the live features use no
+                # future rows (review 2026-11-18), not that the implementation is right
+                w["x0_nofuture"] = float(np.abs(D["x0"][0] - np.asarray(w["x0_live"])).max())
     # per waypoint: where the hand point was at the end of its window
     for w in wrec:
         fw = min(w["f_win"], max(rows))
@@ -364,8 +404,17 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
         e = hand - np.asarray(w["goal_w"])
         ad = np.asarray(w["ad"])
         along = float(e @ ad)
+        fa = min(w["f_end"], max(rows))
+        pa, Ra = rows[fa]["wr"][w["side"]]
+        Rh, p0 = L.rot_z(w["yaw_cmd"]), np.asarray(w["p_cmd"])
+        act_h = np.r_[(Rh.T @ np.r_[hand[:2] - p0[:2], 0.0])[:2], hand[2]]
+        touched = [g for g in range(w["f_cmd"], fw + 1) if contact.get(g)]
         w.update(hand_w=hand.tolist(), err_cm=100 * float(np.linalg.norm(e)), along_cm=100 * along,
-                 perp_cm=100 * float(np.linalg.norm(e - along * ad)), complete=fw == w["f_win"])  # fmt: skip
+                 perp_cm=100 * float(np.linalg.norm(e - along * ad)), complete=fw == w["f_win"],
+                 err_arrive_cm=100 * float(np.linalg.norm(pa + Ra @ L.HAND_OFF - np.asarray(w["goal_w"]))),
+                 contact_win=contact.get(fw), first_contact=touched[0] if touched else None, act_h=act_h.tolist())  # fmt: skip
+        if "pred_exec_h" in w:
+            w["pred_err_cm"] = 100 * float(np.linalg.norm(np.asarray(w["pred_exec_h"]) - act_h))
         w.pop("_rec", None)
         w.pop("x0_live", None)
     steps = len(rows)
@@ -377,16 +426,18 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 waypoints=wrec, _rows=rows, _frames=frames)  # fmt: skip
 
 
-def servo_start(dr: TaskDriver, x: dict, wp: dict, c: dict, rec: dict, last, f: int, f_stop: int) -> dict:
-    """The command frame: world axes, origin at the pelvis at the command. The goal is known there (the sighting); the
-    feet are anchored there from encoders + IMU at the command."""
+def servo_start(dr: TaskDriver, x: dict, wp: dict, c: dict, rec: dict, last, f: int, f_stop: int, frames: np.ndarray) -> dict:
+    """The command frame: world axes, origin at the pelvis at the command; the feet anchored there from encoders + IMU.
+    The servo's error is Motor's (motor.py _servo): the reference's hand NOW minus the measured hand -- not the final
+    goal minus the hand, which winds the integral up to its cap during the transit (review 2026-11-18). The reference is
+    the plan as first made (`frames0`), before the servo's own shifts."""
     R = L._qmat(x["root"][3:])
     rel = dr.body_rel(x["q"][dr.to_mj])
     # the plan lives in reference coordinates (lml_selfmodel.OnlineDriver._plan shifts it by `delta` onto the
-    # reference root); the IK re-solve must be asked in those
-    return dict(f_cmd=f, f_stop=f_stop, f_end=rec["f_end"], side=wp["side"], goal_c=wp["goal"] - x["root"][:3],
+    # reference root); the IK re-solve is asked in those, the error is formed in measured ones
+    return dict(f_cmd=f, f_stop=f_stop, f_end=rec["f_end"], side=wp["side"], p_cmd=x["root"][:3].copy(),
                 feet_c=R @ rel["feet"], lead=np.zeros(3), goal_ref=wp["goal"] + np.asarray(rec["delta"]),
-                rot_w=np.asarray(rec["rot_w"]), last=last, n=0, leads=[])  # fmt: skip
+                delta=np.asarray(rec["delta"]), frames0=frames.copy(), rot_w=np.asarray(rec["rot_w"]), last=last, n=0, leads=[])  # fmt: skip
 
 
 def servo_step(dr: TaskDriver, sv: dict, x: dict, frames: np.ndarray, f: int) -> np.ndarray:
@@ -396,7 +447,9 @@ def servo_step(dr: TaskDriver, sv: dict, x: dict, frames: np.ndarray, f: int) ->
     rel = dr.body_rel(x["q"][dr.to_mj])
     pel_c = sv["feet_c"] - R @ rel["feet"]
     hand_c = pel_c + R @ rel[sv["side"]]
-    e = sv["goal_c"] - hand_c
+    rf = sv["frames0"][min(f, len(sv["frames0"]) - 1)]
+    ref_hand_w = dr.pl.fk_world(rf[:3], rf[3:7], rf[7:])[sv["side"]][0] - sv["delta"]  # reference coords -> measured
+    e = (ref_hand_w - sv["p_cmd"]) - hand_c
     sv["lead"] = np.clip(sv["lead"] + SERVO_KI * SERVO_EVERY * L.DT * e, -SERVO_CAP, SERVO_CAP)
     sv["n"] += 1
     sv["leads"].append((f, (100 * e).round(2).tolist(), (100 * sv["lead"]).round(2).tolist()))
@@ -429,7 +482,7 @@ def run(out: Path, task: str, method: str, eps: list[int], worker: int) -> None:
     if not todo:
         return
     T = dict(np.load(out / "lookup.npz")) if method == "lookup" else None
-    P = Predictor(out / ("wm_s1.pt" if method == "selfmodel_s1" else "wm_s0.pt")) if method.startswith("selfmodel") else None
+    P = Predictor(out / ("wm_s1.pt" if method == "selfmodel_s1" else "wm_s0.pt"))
     dr = TaskDriver(task, seed=worker)
     for e in todo:
         t0 = time.time()
