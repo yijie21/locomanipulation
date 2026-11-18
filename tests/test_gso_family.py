@@ -231,6 +231,7 @@ def test_a_hand_picked_scene_gets_one_family_lifted_030_and_judged_over_the_last
         assert (fam["hold_s"], fam["judge_s"]) == (2.0, 5.0) and fam["sandbox"]["seed"] is None
         assert fam["spawn"] == {"rooms": "all", "distance_m": [0.5, 4.0], "face_target_deg": [-80, 80]}  # user 11-17
         assert fam["plan"] in fam["sandbox"]["keep"] and (ROOT / fam["plan"]).is_file()
+        assert {"scripts/rsi/knowledge.py", "scripts/rsi/knowledge"} <= set(fam["sandbox"]["keep"])  # shared knowledge
         assert all(p in fam["sandbox"]["keep"] for p in (fam["tasks_file"], f"scripts/rsi/families/{name}.json"))
         assert ("hands_clear_m" in rows[0]["placement"]) == (which == "bimanual")
     assert not (tmp_path / "families/gso_s3_tasks.jsonl").exists()  # none of the drawn instance's families

@@ -208,3 +208,32 @@ class ReflectScrub(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PhysicsLink(unittest.TestCase):
+    def test_the_sandbox_links_an_existing_physics_directory_so_the_first_round_can_write_the_copy(self):
+        """2026-11-17: a sandbox links `<scene>_physics` to the repository's; when that directory was missing (the
+        scene and its copy deleted and rebuilt, no round run yet) the link dangled and world.physics_scene's
+        mkdir(exist_ok=True) raised FileExistsError in the sandbox's first round. sandbox.physics_target creates it."""
+        from locomani.tasks.scene.world import physics_scene
+
+        sandbox = _load("sandbox_physics_link", HERE / "sandbox.py")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo, box = Path(tmp) / "repo", Path(tmp) / "box"
+            scene = "outputs/scene_discovery/s"
+            (repo / scene).mkdir(parents=True)
+            (repo / scene / "scene_locomani.xml").write_text(
+                '<mujoco><asset/><worldbody><body name="pelvis"><freejoint/><geom type="box" size="0.1 0.1 0.1" mass="1"/>'
+                "</body></worldbody></mujoco>"
+            )
+            (repo / scene / "scene_meta.json").write_text("{}")
+            (box / scene).parent.mkdir(parents=True)
+            (box / scene).symlink_to(repo / scene)
+            dangling = box / f"{scene}_physics"
+            dangling.symlink_to(repo / f"{scene}_physics")
+            with self.assertRaises(FileExistsError):  # the bug: a link to nothing
+                physics_scene(box / scene)
+            dangling.unlink()
+            dangling.symlink_to(sandbox.physics_target(repo, scene))
+            out = physics_scene(box / scene)
+            self.assertTrue((repo / f"{scene}_physics" / "robot.xml").is_file() and out == dangling)

@@ -394,7 +394,10 @@ def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lif
         "skills_note": spec["skills_note"],
         "sandbox": {
             "seed": None,
-            "keep": KEEP_COMMON + [spec["plan"], spec["base_plan"], f"scripts/rsi/families/{name}.json", tasks_file],
+            # the knowledge library and its code (user 2026-11-17: gso_single_grasp's entries reach gso_bimanual_lift;
+            # the loop evaluates the library before each Reviewer, loop.knowledge_step)
+            "keep": KEEP_COMMON + ["scripts/rsi/knowledge.py", "scripts/rsi/knowledge", spec["plan"], spec["base_plan"],
+                                   f"scripts/rsi/families/{name}.json", tasks_file],  # fmt: skip
             "closure": CLOSURE,
             "strip": STRIP,
             "scene_exclude": SCENE_EXCLUDE,

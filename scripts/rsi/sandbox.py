@@ -184,6 +184,16 @@ def knowledge_without(dest: Path, family: str) -> None:
     kn.index(lib)
 
 
+def physics_target(repo: Path, scene: str) -> Path:
+    """`<scene>_physics/` in the repository, the directory a sandbox links its scene's physics copy to (world.
+    physics_scene writes it on the first round). Created empty when missing: a link to nothing makes the round's
+    `mkdir(exist_ok=True)` raise FileExistsError -- the state right after a scene directory and its physics copy are
+    deleted and rebuilt (2026-11-17, the hand-picked gso scenes' smoke check)."""
+    target = repo / f"{scene}_physics"
+    target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in)."""
     if dest.exists():
@@ -203,7 +213,7 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
         links += [
             (f"{scene}/{e.name}", e) for e in sorted((REPO / scene).iterdir()) if e.name not in spec["scene_exclude"]
         ]
-        links.append((f"{scene}_physics", REPO / f"{scene}_physics"))
+        links.append((f"{scene}_physics", physics_target(REPO, scene)))
     for rel, target in links:
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
         (dest / rel).symlink_to(target)

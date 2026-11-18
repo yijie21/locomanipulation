@@ -80,6 +80,8 @@
    "scripts/rsi/prompts",
    "tests/conftest.py",
    "tests/test_scene_task_runner.py",
+   "scripts/rsi/knowledge.py",
+   "scripts/rsi/knowledge",
    "scripts/rsi/plans/gso_bimanual_lift.md",
    "scripts/rsi/plans/gso_bimanual.md",
    "scripts/rsi/families/gso_bimanual_lift.json",

@@ -20,6 +20,7 @@
 - 双手场景选 5–9 件，尽量多。
 - 单手场景不放纸箱，所以能放 20 件。
 - 我们做到冒烟为止；什么时候跑 RSI 内环由用户决定。
+- 内环先跑单手，用它的账本建共享知识库，再跑双手（第 7 节）。
 
 决策记录在 TODO 40.22；代码在分支 `henry-dev`。
 
@@ -159,25 +160,78 @@ $PY scripts/gso_pack_check.py --family gso_bimanual_lift      # 第一个任务�
 
 得到什么：`outputs/gso_pack_check/<族>/<任务>_s<seed>.json` 和 `.npz`。11-17 的结果见本页开头：链能跑通，抬高不够。
 
-## 7. 跑内环（由用户决定什么时候跑）
+## 7. 跑内环：先单手，存共享知识，再双手
+
+顺序（用户 11-17）：先跑 `gso_single_grasp`，跑完后用它的账本建知识库并提交，再跑 `gso_bimanual_lift`，让双手的内环读到单手学到的东西。
+
+知识库（`scripts/rsi/knowledge.py`，规则 39）里每条条目的形式是“条件 → 失败特征 → 修法”。建双手沙盒时，`sandbox.py` 只删掉双手任务族自己的条目，单手的条目保留。双手内环每一轮在 Reviewer 之前，会在现任的诊断局上逐条判断条件是否成立，把命中的条目写进沙盒的 `HITS.md`，Reviewer 和 Engineer 的提示里会带上它。技能代码不能读知识库。两个任务族文件的 `sandbox.keep` 都包含 `scripts/rsi/knowledge.py` 和知识库目录，否则沙盒会把它们删掉。
+
+沙盒只导出已提交的代码，所以每一步之前先确认要用的东西都已提交：
 
 ```bash
-git status --short scripts/rsi/families/   # 沙盒只导出已提交的代码：任务族文件要先提交
-S=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-single-a
-python3 scripts/rsi/sandbox.py $S gso_single_grasp
-cd $S && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_single_grasp --max-iters 1 > loop.log 2>&1 &
-cd -
+git status --short scripts/rsi/   # 应为空
 ```
 
-做什么：和 1030 runbook 第 5 节一样。跑双手就把三处 `gso_single_grasp` 换成 `gso_bimanual_lift`，沙盒目录另起一个，比如 `gso-bimanual-a`。
+**7.1 单手内环**
 
+```bash
+S1=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-single-a
+python3 scripts/rsi/sandbox.py $S1 gso_single_grasp
+cd $S1 && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_single_grasp > loop.log 2>&1 &
+cd -
+cd $S1 && $PY scripts/rsi/loop.py status gso_single_grasp; cd -      # 看进度
+```
+
+做什么：和 1030 runbook 第 5 节一样：建沙盒、抽池，然后在后台跑内环，直到满足终止条件。
 - **池**：诊断 30、验收 40、封存 50。
 - **池种子**：单手 9000000 / 9100000 / 9200000，双手 9500000 / 9600000 / 9700000，和其他族不重叠。
-- **终止条件**：和别的 gso 族一样，验收赢到 80 %、跑满 5 小时或做满 5 轮，先满足哪条就停。
+- **终止条件**：验收池上赢到 80 %、跑满 5 小时或做满 5 轮，先满足哪条就停。只想先试一轮，加 `--max-iters 1`。
 - 场景目录必须在本机 `outputs/scene_discovery/` 下（第 3 节）。
 - 规则第 30 条照旧：技能代码里不能出现物体名字。
 
-得到什么：账本 `$S/outputs/scene_rsi_20261016/gso_single_grasp/loop/ledger.jsonl`；看进度用 `cd $S && $PY scripts/rsi/loop.py status gso_single_grasp; cd -`。
+得到什么：账本 `$S1/outputs/scene_rsi_20261016/gso_single_grasp/loop/ledger.jsonl`，最后一行 `stop` 写着停下的原因。
+
+**7.2 单手封存集**
+
+```bash
+cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
+python3 -c "import json,sys; s=json.load(open(sys.argv[1])); print(s['final'], s['versions'])" $S1/outputs/scene_rsi_20261016_hidden/gso_single_grasp/sealed/summary.json
+```
+
+做什么：在 50 局封存集上跑种子和每一版被接受的现任，打印最终版本的名字和各版本的成功数（同 rsi.md 第 5.3 节）。约 1–2 小时；不想等可以先做 7.3，建知识库不需要封存集。
+
+**7.3 用单手的账本建共享知识库并提交**
+
+```bash
+PYTHONPATH=src $PY scripts/rsi/knowledge.py evidence $S1 gso_single_grasp        # 可选：先看证据表，不调用模型
+PYTHONPATH=src $PY scripts/rsi/knowledge.py build $S1 gso_single_grasp
+git -C scripts/rsi add knowledge && git commit -m "knowledge: gso_single_grasp entries"
+```
+
+做什么：
+- `build` 从单手沙盒的账本和场景图记录（`.past.jsonl`）里抽出机制，每个机制用一次模型调用写条件，再按每件物体上的证据分成 `shared`（在几件物体上都净正）或 `local`。
+- 输出在主仓库 `scripts/rsi/` 下的 `knowledge/gso_single_grasp/`：每条条目一个 JSON，加 `BUILD.md`（每个机制进了还是丢了、为什么）和 `INDEX.md`。
+- 默认用全部轮次，`--iters 0-3` 只用其中几轮。
+- 沙盒没有这个任务族的账本时，`build` 拒绝运行。
+- 约每个机制 1 USD，共 10–15 分钟。
+- 第三条把条目提交，双手沙盒才能导出它们。
+
+单手学到的技能改动（`skills/pick.py` 等）不会因为这一步进入双手的起点。双手的起点仍是主技能库。要把单手的最终现任也带过去，先按 rsi.md 第 5.3 节运行 `python3 scripts/rsi/writeback.py $S1 gso_single_grasp`，`make test` 通过后提交。这是另一个决定，不是共享知识的一部分。
+
+**7.4 双手内环，带着单手的知识**
+
+```bash
+S2=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-bimanual-a
+python3 scripts/rsi/sandbox.py $S2 gso_bimanual_lift
+ls $S2/scripts/rsi/knowledge/                                         # 应列出 gso_single_grasp 和 INDEX.md
+cd $S2 && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_bimanual_lift > loop.log 2>&1 &
+cd -
+grep '"step": "knowledge"' $S2/outputs/scene_rsi_20261016/gso_bimanual_lift/loop/ledger.jsonl   # 每轮一行，hits 是命中失败局的条目数
+```
+
+做什么：和 7.1 一样，换成双手任务族和新的沙盒目录。每轮 Reviewer 之前，内环在现任的诊断局上对单手的条目求值，结果写进沙盒的 `scripts/rsi/` 下的 `knowledge/HITS.md` 和这一轮的 `knowledge_hits.json`。Reviewer 的假设引用了某条条目，会写在 `knowledge_refs` 里。`hits` 为 0 说明单手的条目条件在双手的局上都不成立（比如条件写的是单手抓取才有的量），这时双手内环等于没有带知识。
+
+得到什么：账本 `$S2/outputs/scene_rsi_20261016/gso_bimanual_lift/loop/ledger.jsonl`；封存集同 7.2，族名换成 `gso_bimanual_lift`。双手跑完也可以照 7.3 建它自己的条目，供以后的任务族用。
 
 ## 8. Unreal 关卡与预览图
 

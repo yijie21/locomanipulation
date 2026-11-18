@@ -92,6 +92,8 @@
    "scripts/rsi/prompts",
    "tests/conftest.py",
    "tests/test_scene_task_runner.py",
+   "scripts/rsi/knowledge.py",
+   "scripts/rsi/knowledge",
    "scripts/rsi/plans/gso_single_grasp.md",
    "scripts/rsi/plans/gso_grasp.md",
    "scripts/rsi/families/gso_single_grasp.json",
