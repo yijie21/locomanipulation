@@ -229,6 +229,7 @@ def test_a_hand_picked_scene_gets_one_family_lifted_030_and_judged_over_the_last
         assert fam["tasks"] == [r["id"] for r in rows] == ids
         assert all(r["goal"][1].endswith(", 0.30, 60)") and (r["hold_s"], r["judge_s"]) == (2.0, 5.0) for r in rows)
         assert (fam["hold_s"], fam["judge_s"]) == (2.0, 5.0) and fam["sandbox"]["seed"] is None
+        assert fam["spawn"] == {"rooms": "all", "distance_m": [0.5, 4.0], "face_target_deg": [-80, 80]}  # user 11-17
         assert fam["plan"] in fam["sandbox"]["keep"] and (ROOT / fam["plan"]).is_file()
         assert all(p in fam["sandbox"]["keep"] for p in (fam["tasks_file"], f"scripts/rsi/families/{name}.json"))
         assert ("hands_clear_m" in rows[0]["placement"]) == (which == "bimanual")
@@ -240,3 +241,39 @@ def test_a_hand_picked_scene_gets_one_family_lifted_030_and_judged_over_the_last
         (tmp_path / "s7").mkdir()
         (tmp_path / "s7/scene_meta.json").write_text(json.dumps(META))
         GF.write(tmp_path / "s7", tmp_path / "families", lift=0.2)
+
+
+def test_the_picked_scenes_start_the_robot_within_4_m_turned_towards_the_task_object():
+    """User 2026-11-17: in logistics_room_gso_single / _bimanual the robot starts 0.5-4 m from the task object,
+    turned towards it within +-80 deg, the angle drawn uniformly (start.sample_start's `face_target_deg`)."""
+    from locomani.primitives.navigator import build
+    from locomani.tasks.scene.start import sample_start
+    from locomani.tasks.scene.world import BODY_RADIUS_M
+
+    for name in ("gso_single_grasp", "gso_bimanual_lift"):
+        if not (ROOT / f"scripts/rsi/families/{name}.json").is_file():
+            pytest.skip(f"no {name} family")
+        fam = json.loads((ROOT / f"scripts/rsi/families/{name}.json").read_text())
+        scene = ROOT / fam["scene"]
+        if not (scene / "scene_meta.json").is_file():
+            pytest.skip(f"{fam['scene']} not built (docs/rsi_logistic_room_1030_single_bimanual.md section 3)")
+        fam = F.load(name)
+        occ, nav = build(fam["meta"], body_radius=BODY_RADIUS_M)
+        got, offs = 0, []
+        for t in fam["tasks"][:3]:
+            task = F.task(fam, t)
+            for i in range(10):
+                try:
+                    st = sample_start(fam["meta"], occ, nav, list(task.objects), np.random.default_rng(i), seed=i,
+                                      spawn=fam["spawn"], placement=fam["rows"][t]["placement"])  # fmt: skip
+                except RuntimeError:
+                    continue
+                p = np.asarray(st.placements[t.split("_", 1)[1]][0][:2])
+                d = p - np.asarray(st.robot_xy)
+                assert 0.5 <= float(np.hypot(*d)) <= 4.0
+                heading = np.array([np.cos(st.robot_yaw), np.sin(st.robot_yaw)])
+                off = np.degrees(np.arccos(np.clip(float(heading @ d) / float(np.hypot(*d)), -1.0, 1.0)))
+                assert off <= 80.0 + 1e-6
+                offs.append(off)
+                got += 1
+        assert got and max(offs) > 20.0  # a spread, not always straight at it

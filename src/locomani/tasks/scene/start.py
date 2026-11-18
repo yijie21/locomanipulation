@@ -244,7 +244,9 @@ def sample_start(
     """`objects` = the task's movable objects (moved), the first one anchors the robot's spawn. `spawn` (a task
     family's option, TODO 31): {"rooms": "all"} draws the robot from every room's spawn region (the reachability check
     keeps only the rooms the navigation map connects to the object), {"distance_m": [lo, hi]} replaces
-    SPAWN_DISTANCE_M (hi None: no upper limit). `placement` (a family's or a task's option, TODO 33.5, D5):
+    SPAWN_DISTANCE_M (hi None: no upper limit), {"face_target_deg": [lo, hi]} turns the robot towards the first task
+    object, off it by an angle drawn uniformly in [lo, hi] deg, instead of a random heading (user 2026-11-17, the
+    hand-picked gso scenes: [-80, 80]). `placement` (a family's or a task's option, TODO 33.5, D5):
     {"depth_m": [lo, hi]} and {"yaw_deg": [lo, hi]} constrain the task objects' spots (placement_ok), {"blocker":
     {"key": K, "gap_m": g}} sets the free object K between the first task object and its nearest approach edge
     (place_blocker); {"objects": {K: {...}}} gives task object K its own depth / yaw / edge conditions in place of
@@ -259,7 +261,7 @@ def sample_start(
     footprint first, anywhere on their own surface clear of what is placed and of the task objects' corridors; one that
     finds no spot raises RuntimeError (the pool skips the seed). Without these options every start is drawn as before."""
     spawn = dict(spawn or {})
-    unknown = set(spawn) - {"rooms", "distance_m"}
+    unknown = set(spawn) - {"rooms", "distance_m", "face_target_deg"}
     if unknown or spawn.get("rooms", "all") != "all":
         raise KeyError(f"spawn option: unknown {sorted(unknown) or spawn.get('rooms')}")
     want = dict(placement or {})
@@ -348,5 +350,12 @@ def sample_start(
             d = float(np.linalg.norm(xy - anchor))
             if not (d_lo <= d <= d_hi) or not nav.reachable(xy):
                 continue
-        return Start(seed, (float(xy[0]), float(xy[1])), float(rng.uniform(-np.pi, np.pi)), placements)
+        yaw = float(rng.uniform(-np.pi, np.pi))  # the one heading draw: the other families' starts stay as they were
+        face = spawn.get("face_target_deg")
+        if face is not None and anchor is not None:  # the body x axis (forward) at the task object, off by the draw
+            lo_f, hi_f = (float(v) for v in face)
+            off = lo_f + (yaw + np.pi) / (2 * np.pi) * (hi_f - lo_f)
+            bearing = float(np.arctan2(anchor[1] - xy[1], anchor[0] - xy[0]))
+            yaw = float(np.arctan2(np.sin(bearing + np.radians(off)), np.cos(bearing + np.radians(off))))
+        return Start(seed, (float(xy[0]), float(xy[1])), yaw, placements)
     raise RuntimeError("no reachable spawn point in the room's spawn region")

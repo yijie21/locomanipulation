@@ -19,7 +19,8 @@ edge and the carton on the hug's band (0.18-0.31 m in, long side along the edge)
   then 2 s standing still (`hold_s`).
 
 Each start keeps 0.18 m free beside the walls the hug squeezes and in front, moves the other objects (`shuffle_others`)
-and spawns the robot anywhere in the room it can walk from, 0.5 m or more away.
+and spawns the robot where it can walk from, 0.5-4 m from the task object and turned towards it within +-80 deg,
+drawn uniformly (user 2026-11-17; the family's `spawn.face_target_deg`).
 
 ## 2. Structure
 

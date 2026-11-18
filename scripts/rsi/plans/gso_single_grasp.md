@@ -18,8 +18,9 @@ scene (user 2026-11-17: the room it left holds twenty objects). The goal:
 - both checked every 0.1 s and holding at every check over the round's last 5 s (`judge_s`): the end of the plan and
   then 2 s standing still (`hold_s`). This is stricter than `gso_grasp`'s 10 cm at the round's end.
 
-Every start moves the other objects of the platform too (`shuffle_others`); the robot spawns anywhere in the room it
-can walk from, 0.5 m or more away.
+Every start moves the other objects of the platform too (`shuffle_others`); the robot spawns where it can walk from,
+0.5-4 m from the task object and turned towards it within +-80 deg, drawn uniformly (user 2026-11-17; the family's
+`spawn.face_target_deg`).
 
 ## 2. Structure
 

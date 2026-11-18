@@ -78,6 +78,9 @@ TILT_DEG = 60
 # the hand-picked test scenes (user 2026-11-17; prepare_logistics_scene.py --picks): one family each, every object
 # lifted 0.30 m (0.20 if that proves out of reach) and held, judged over the last 5 s, from the main skill library
 PICKED_LIFT_M = 0.30
+# where the robot starts in the picked scenes (user 2026-11-17): 0.5-4 m from the task object, turned towards it
+# within +-80 deg (uniform)
+PICKED_SPAWN = {"rooms": "all", "distance_m": [0.5, 4.0], "face_target_deg": [-80, 80]}
 PICKED = {
     "single": {"name": "gso_single_grasp", "kind": "single", "plan": "scripts/rsi/plans/gso_single_grasp.md",
                "base_plan": "scripts/rsi/plans/gso_grasp.md", "pool_seed": 9_000_000,
@@ -373,7 +376,7 @@ def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lif
             f"split{f', plus the {carton_mass(meta):g} kg open carton' if kind == 'bimanual' else ''}) on the 0.371 m "
             f"pallet platform, placed with seed {gso['seed']}; every task object starts within {reach} m of a platform "
             f"edge" + ("" if kind == "single" else f", {HANDS_CLEAR_M} m free beside the walls the hug squeezes and in front")
-            + ", the robot anywhere in the room it can walk from; objects: " + ", ".join(f"{k} = {v}" for k, v in names.items())
+            + ", the robot 0.5-4 m away where it can walk from, turned towards the task object within 80 deg; objects: " + ", ".join(f"{k} = {v}" for k, v in names.items())
         ),
         "scene": scene_rel,
         "scene_note": (
@@ -383,7 +386,7 @@ def write_picked(scene_dir: Path, meta: dict, families_dir: Path = FAMILIES, lif
         ),
         "tasks_file": tasks_file,
         "tasks": [r["id"] for r in rows],
-        "spawn": {"rooms": "all", "distance_m": [0.5, None]},
+        "spawn": PICKED_SPAWN,
         **TIMING,
         **STOPS,
         "pools": {pool: {"seed": spec["pool_seed"] + i * 100_000, "n": n} for i, (pool, n) in enumerate(POOL_SIZES.items())},
