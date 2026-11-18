@@ -33,6 +33,8 @@ PY=$VENV_SIM_PY
 
 ## 1. 装物体库、建目录（每台机器一次）
 
+筛选规则、人工筛选和各步筛掉多少件，集中写在[扫描物体的筛选](gso_object_selection.md)；本节只列命令。
+
 ```bash
 bash scripts/install_gso.sh            # 或 bash scripts/install_gso.sh --from <已经下载的 mujoco_scanned_objects 目录>
 python3 scripts/gso_categories.py      # 只在要刷新类别标签时；categories.json 已在仓库里
