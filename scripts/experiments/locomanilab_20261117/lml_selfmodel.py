@@ -398,15 +398,19 @@ SEG_SCALARS2 = SEG_SCALARS + ("lost",)  # protocol 2
 SEG_VECTORS = ("target", "rot6", "start", "ref_q", "ref_pel", "sidestep", "wrist_dev")
 
 
-def save(segs: list[dict], path: Path) -> None:
-    """gen_reach.save's layout."""
-    pack = {k: np.concatenate([s[k] for s in segs]) for k in ("S", "W", "J", "C")}
-    pack["n_steps"] = np.array([len(s["S"]) for s in segs])
+def pack(segs: list[dict]) -> dict:
+    """gen_reach.save's layout, in memory."""
+    out = {k: np.concatenate([s[k] for s in segs]) for k in ("S", "W", "J", "C")}
+    out["n_steps"] = np.array([len(s["S"]) for s in segs])
     for k in SEG_SCALARS2 if "lost" in segs[0] else SEG_SCALARS:
-        pack[k] = np.array([s[k] for s in segs])
+        out[k] = np.array([s[k] for s in segs])
     for k in SEG_VECTORS:
-        pack[k] = np.stack([s[k] for s in segs])
-    np.savez_compressed(path, **pack)
+        out[k] = np.stack([s[k] for s in segs])
+    return out
+
+
+def save(segs: list[dict], path: Path) -> None:
+    np.savez_compressed(path, **pack(segs))
 
 
 CHUNK = 50  # resets per saved file: a rerun skips finished chunks, so a container restart loses at most one
