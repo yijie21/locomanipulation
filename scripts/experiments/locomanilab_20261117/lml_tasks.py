@@ -61,6 +61,10 @@ ITERS = 6  # pose_invert.ITERS_POSE
 LAMBDA = 1.0  # invert_eval.LAMBDA: predicted spread's weight
 SERVO_KI, SERVO_CAP, SERVO_EVERY = 2.0, 0.08, 5  # scalebfm MotorConfig servo_ki / servo_cap; every 5 ticks = 0.1 s
 JITTER = 0.05  # tasks.yaml reset_jitter
+# A pre-touch waypoint this far before the first (touch) waypoint, against its approach direction, so the hand is placed
+# in free space before it meets the part (0: the adapter's waypoints only). Smoke 2026-11-18: aimed straight at a point
+# ON the drawer front, the fingers met the front early and friction held the hand ~15 cm off the point whatever the method
+STANDOFF = float(os.environ.get("LML_STANDOFF", "0"))
 
 
 def reachwm():
@@ -166,6 +170,9 @@ class TaskDriver(H.HostDriver):
             out.append(dict(goal=gp, ad=ad / np.linalg.norm(ad), side="left" if w.eef == "LeftHand" else "right", label=w.label,
                             needs_root=bool(w.needs_root)))  # fmt: skip
         self.notes = g.notes
+        if STANDOFF > 0 and out:
+            w0 = out[0]
+            out.insert(0, dict(w0, goal=w0["goal"] - STANDOFF * w0["ad"], label="pre-touch"))
         return out
 
     def joint_fraction(self) -> float:
