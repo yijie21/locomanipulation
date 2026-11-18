@@ -198,11 +198,20 @@ LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience libr
     "entry's numbers come from other objects and surfaces: they are hypotheses for this family, to check on these "
     "rounds, and where this family's rounds disagree, trust the rounds.\n"
 )
-KNOWLEDGE_NOTE = (  # plan docs/handoff/shared-knowledge-plan-20261111.md section 5.3
-    "The knowledge library's hits, scripts/rsi/knowledge/HITS.md: entries (condition -> failure signature -> repair) "
-    "from other families' finished loops whose condition holds on this incumbent's diagnostic rounds, each with the "
-    "rounds it hits, what worked and what did not elsewhere. Nothing listed means no condition holds. An entry's "
-    "numbers come from other objects: a hypothesis built on one cites its id in `knowledge_refs`.\n"
+KNOWLEDGE_NOTE = (  # plan docs/handoff/shared-knowledge-plan-20261111.md section 5.3; one shared file, user 2026-11-18
+    "The knowledge library, scripts/rsi/knowledge/KNOWLEDGE.md: read it whole. Every entry (condition -> failure "
+    "signature -> repair) the loops of this family and of others have learned, tagged one-hand pick (single) or "
+    "two-hand pick (bimanual), each marked with the rounds of this incumbent's diagnostic pool its condition holds on, "
+    "with what worked and what did not; and, in an alternating run, the code syncs between the two families. An "
+    "entry's numbers come from other objects or another task: a hypothesis built on one cites its id in "
+    "`knowledge_refs`.\n"
+)
+SHARED_SKILLS_NOTE = (  # scripts/rsi/alternate.py (user 2026-11-18): two families, one skills package
+    "This skills package is shared with the family {other} ({other_kind}; its skill is skills/{other_skill}); this "
+    "family's own skill is skills/{own_skill}. After each iteration the driver merges this family's incumbent into "
+    "{other}'s and keeps the merge there only if it loses no more of {other}'s acceptance starts than it wins, and "
+    "the other way round. A change to a module both skills use reaches {other}: keep such a change correct for both, "
+    "and do not edit skills/{other_skill} for this family's tasks.\n"
 )
 SCOPES = {  # TODO 32.11 (Harness2's scoped proposals): each scoped Reviewer gives at most two hypotheses in its scope
     "P": "YOUR SCOPE: HOW THE ROBOT DOES IT. You own the skill's procedure -- the order and timing of walk, stance, reach, "
@@ -414,7 +423,8 @@ def prompt_vars() -> dict:
         N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
         LIBRARY=(LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "")
-        + (KNOWLEDGE_NOTE if (HERE / "knowledge" / "HITS.md").exists() else ""),
+        + (KNOWLEDGE_NOTE if (HERE / "knowledge" / "KNOWLEDGE.md").exists() else "")
+        + (SHARED_SKILLS_NOTE.format(**spec["shares_skills_with"]) if spec.get("shares_skills_with") else ""),
     )
 
 
@@ -1544,12 +1554,14 @@ def snapshot(n: int) -> None:
 
 
 def knowledge_step(n: int, base: Path, it_dir: Path) -> None:
-    """Plan docs/handoff/shared-knowledge-plan-20261111.md section 5.1: the knowledge library's hits on the
-    incumbent's diagnostic rounds (`base`, after refresh_diag_pool), as scripts/rsi/knowledge/HITS.md (gitignored, so
-    changed_files() never counts it as a stray) and it_dir/knowledge_hits.json. The previous HITS.md is removed first,
-    so a failure never leaves another incumbent's hits for the Reviewer. One `knowledge` ledger row every iteration
-    (hits may be 0); a library bug is logged, never raised."""
-    (REPO / "scripts" / "rsi" / "knowledge" / "HITS.md").unlink(missing_ok=True)
+    """Plan docs/handoff/shared-knowledge-plan-20261111.md section 5.1: the whole knowledge library, each entry marked
+    with the incumbent's diagnostic rounds (`base`, after refresh_diag_pool) its condition holds on, as
+    scripts/rsi/knowledge/KNOWLEDGE.md (gitignored, so changed_files() never counts it as a stray), and
+    it_dir/knowledge_hits.json. The previous file is removed first, so a failure never leaves another incumbent's
+    marks for the Reviewer. One `knowledge` ledger row every iteration (hits may be 0); a library bug is logged,
+    never raised."""
+    for old in ("KNOWLEDGE.md", "HITS.md"):  # HITS.md: the hits-only file before 2026-11-18
+        (REPO / "scripts" / "rsi" / "knowledge" / old).unlink(missing_ok=True)
     try:
         import knowledge as KN
 
@@ -1562,7 +1574,7 @@ def knowledge_step(n: int, base: Path, it_dir: Path) -> None:
 def round_features(base: Path) -> list[dict]:
     """The incumbent's diagnostic rounds as one flat row each, in the columns a knowledge entry's condition may use
     (records.CONDITION_COLUMNS: the start's geometry and affordance, the scene-graph relations per step kind, the
-    first unexpected transition, the failure class). The Reviewer reads a HITS.md condition and its rounds off the
+    first unexpected transition, the failure class). The Reviewer reads a KNOWLEDGE.md condition and its rounds off the
     same numbers, instead of rebuilding them from `past.py show`. A broken round file is skipped by records.scan."""
     rows = RC.scan([(base, FAMILY), (LOOP / "pool_diag", FAMILY)], RC.machine(), RC.scene_meta(REPO, FAMILY))
     return RC.condition_table(rows)
@@ -2418,6 +2430,8 @@ RECORDER_TOKENS = (
     "rsi/knowledge",
     "knowledge_hits",
     "HITS.md",
+    "KNOWLEDGE.md",
+    "knowledge.jsonl",
 )  # strings a skill has no business holding (rules.md 38 / 39)
 RECORDER_TAG = "(rules.md 38 / 39)"
 
@@ -2962,6 +2976,45 @@ def cmd_redraw(a) -> int:
     return 0
 
 
+def cmd_sync(a) -> int:
+    """scripts/rsi/alternate.py (user 2026-11-18): another family's incumbent merged into this family's skills package
+    (`--candidate`, a gate candidate directory the driver wrote), judged by gate.py --non-inferior on this family's
+    acceptance pool: kept iff it loses no more starts than it wins (c <= b). One `gate` ledger row carrying `sync`
+    (the driver's account: from which family, which files) and no `iter`: it counts as a gate call and a use of the
+    acceptance pool, not as an iteration. Accepted, it is the incumbent the next iteration starts from. Prints the
+    verdict as one JSON line; exit 0 accepted, 1 rejected or void, 3 a gate error."""
+    STATE.mkdir(parents=True, exist_ok=True)
+    unlock_hidden()
+    redraw_accept()
+    cand = a.candidate.resolve()
+    source = json.loads(a.source) if a.source else {}
+    before = len(gate_lines())
+    gate_args = [str(SIM_PY), str(HERE / "gate.py"), FAMILY, "--gate", str(GATE_DIR), "--pool", str(accept_pool()),
+                 "--candidate", str(cand), "--gpus", GPUS, "--procs", str(PROCS), "--non-inferior"]  # fmt: skip
+    r = subprocess.run(gate_args, cwd=REPO, capture_output=True, text=True, env=dict(os.environ, PYTHONPATH="src"))
+    with (STATE / "sync_gate.log").open("a") as fh:
+        fh.write(f"--- {now()} {cand}\n{r.stdout}{r.stderr}")
+    new = gate_lines()[before:]
+    try:
+        verdict = json.loads(new[-1]) if new else None
+    except ValueError:
+        verdict = None
+    if r.returncode not in (0, 1) or verdict is None or verdict.get("hash") != candidate_hash(cand):
+        ledger(
+            dict(step="gate_error", sync=source, rc=r.returncode, log=str(STATE / "sync_gate.log"), new_lines=len(new))
+        )
+        print(json.dumps(dict(error=f"gate error (rc {r.returncode}, see {STATE / 'sync_gate.log'})")))
+        return 3
+    void = bool(verdict.get("void"))
+    accepted = bool(verdict["accepted"]) and not void
+    ledger(dict(step="gate", accepted=accepted, reason=verdict["reason"], hash=verdict["hash"],
+                result=verdict.get("result"), pool=str(accept_pool()), void=void, rule=verdict.get("rule"),
+                sync=source))  # fmt: skip
+    print(json.dumps(dict(accepted=accepted, void=void, reason=verdict["reason"], hash=verdict["hash"],
+                          result={k: (verdict.get("result") or {}).get(k) for k in GATE_KEYS})))  # fmt: skip
+    return 0 if accepted else 1
+
+
 def cmd_status(_a) -> int:
     es = entries()
     meta = jload(STATE / "meta.json", {})
@@ -3019,6 +3072,12 @@ def main(argv=None) -> int:
                    "hypotheses, probes and Manager decision and runs only the Engineer and the gate (TODO 32.8)")  # fmt: skip
     s = sub.add_parser("status")
     s.add_argument("family")
+    y = sub.add_parser(
+        "sync", help="another family's incumbent merged in, judged non-inferior (scripts/rsi/alternate.py)"
+    )
+    y.add_argument("family")
+    y.add_argument("--candidate", type=Path, required=True, help="a gate candidate directory: skills/ + candidate.json")
+    y.add_argument("--source", default="", help="JSON: the driver's account of the merge (from, files, conflicts)")
     d = sub.add_parser("redraw", help="re-draw the diagnostic pool for the present incumbent now (TODO 33.23)")
     d.add_argument("family")
     for flag, key in (("--diag-min-fails", "diag_min_fails"), ("--diag-target-fails", "diag_target_fails"),
@@ -3026,7 +3085,8 @@ def main(argv=None) -> int:
         d.add_argument(flag, dest=key, type=int, default=None)
     a = ap.parse_args(argv)
     configure(a.family)
-    return cmd_run(a) if a.cmd == "run" else cmd_redraw(a) if a.cmd == "redraw" else cmd_status(a)
+    cmds = {"run": cmd_run, "redraw": cmd_redraw, "sync": cmd_sync, "status": cmd_status}
+    return cmds[a.cmd](a)
 
 
 if __name__ == "__main__":

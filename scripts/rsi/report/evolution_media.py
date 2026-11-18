@@ -50,12 +50,20 @@ def versions(loop: Path) -> list[dict]:
     out = [dict(name="种子", hash=seed, iter=None, diag=loop / "diag" / f"incumbent_{seed}", summary="")]
     for e in es:
         if e.get("step") == "gate" and e.get("accepted") and not e.get("void"):
-            mgr = next((m for m in es if m.get("step") == "manager" and m.get("iter") == e["iter"]), {})
+            n = e.get("iter")  # none on a code sync of an alternating run (loop.py sync, scripts/rsi/alternate.py)
+            mgr = (
+                next((m for m in es if m.get("step") == "manager" and m.get("iter") == n), {}) if n is not None else {}
+            )
             d = loop / "diag" / f"candidate_{e['hash']}"
             if not d.exists():
                 d = loop / "diag" / f"incumbent_{e['hash']}"
-            out.append(dict(name=f"第 {len(out)} 版", hash=e["hash"], iter=e["iter"], diag=d,
-                            summary=mgr.get("summary_zh", ""), result=e.get("result", {})))  # fmt: skip
+            summary = (
+                mgr.get("summary_zh", "")
+                if e.get("sync") is None
+                else f"从 {e['sync'].get('from', '另一个任务族')} 同步的代码"
+            )
+            out.append(dict(name=f"第 {len(out)} 版", hash=e["hash"], iter=n, diag=d, summary=summary,
+                            result=e.get("result", {})))  # fmt: skip
     return out
 
 

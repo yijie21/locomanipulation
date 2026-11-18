@@ -20,7 +20,7 @@
 - 双手场景选 5–9 件，尽量多。
 - 单手场景不放纸箱，所以能放 20 件。
 - 我们做到冒烟为止；什么时候跑 RSI 内环由用户决定。
-- 内环先跑单手，用它的账本建共享知识库，再跑双手（第 7 节）。
+- 用户 11-18：内环有三种模式，单手单独跑、双手单独跑、两个任务族交替并共享知识和代码（第 7 节）。
 
 决策记录在 TODO 40.22；代码在分支 `henry-dev`。
 
@@ -135,7 +135,7 @@ $PY scripts/scene_feasibility.py --scene outputs/scene_discovery/logistics_room_
 ## 5. 检查代码
 
 ```bash
-make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/test_gso_catalog.py tests/test_gso_gallery.py tests/test_gso_preview.py"; echo "exit $?"
+make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/test_gso_catalog.py tests/test_gso_gallery.py tests/test_gso_preview.py tests/test_rsi_knowledge.py tests/test_rsi_alternate.py"; echo "exit $?"
 ```
 
 做什么：
@@ -143,6 +143,8 @@ make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/tes
 - 试摆：固定 seed 结果一样；放不下时写出物体名；单手场景不放纸箱也能摆下 20 件。
 - 挑选页的数据和保存。
 - 任务族：抬 0.30 m、最后 5 s 判、`--lift 0.20` 降高度、主库起点、方案文件在沙盒的保留列表里。
+- 知识库：共享文件的读写、按来源任务族替换、`tag`、`KNOWLEDGE.md` 的全文和标注、重建时沿用未变的机制。
+- 交替驱动：三方合并和冲突、参数覆盖值写进常数、轮流和续跑、一方停下、异常阻塞、同步被拒；`gate.py` 的不变差规则；`loop.py sync` 的账本行。
 - 目录、图库和预览的原有测试。
 
 约 1 分钟。
@@ -160,78 +162,90 @@ $PY scripts/gso_pack_check.py --family gso_bimanual_lift      # 第一个任务�
 
 得到什么：`outputs/gso_pack_check/<族>/<任务>_s<seed>.json` 和 `.npz`。11-17 的结果见本页开头：链能跑通，抬高不够。
 
-## 7. 跑内环：先单手，存共享知识，再双手
+## 7. 跑内环：三种模式
 
-顺序（用户 11-17）：先跑 `gso_single_grasp`，跑完后用它的账本建知识库并提交，再跑 `gso_bimanual_lift`，让双手的内环读到单手学到的东西。
+用户 11-18 定的三种模式：
 
-知识库（`scripts/rsi/knowledge.py`，规则 39）里每条条目的形式是“条件 → 失败特征 → 修法”。建双手沙盒时，`sandbox.py` 只删掉双手任务族自己的条目，单手的条目保留。双手内环每一轮在 Reviewer 之前，会在现任的诊断局上逐条判断条件是否成立，把命中的条目写进沙盒的 `HITS.md`，Reviewer 和 Engineer 的提示里会带上它。技能代码不能读知识库。两个任务族文件的 `sandbox.keep` 都包含 `scripts/rsi/knowledge.py` 和知识库目录，否则沙盒会把它们删掉。
+| 模式 | 做什么 | 知识 | 代码 |
+|---|---|---|---|
+| 1 | 单手 `gso_single_grasp` 单独跑 | 开跑前不带任何知识；跑完建库 | 各自的沙盒 |
+| 2 | 双手 `gso_bimanual_lift` 单独跑 | 同上 | 同上 |
+| 3 | 两个任务族交替，一个迭代 = 单手一轮加双手一轮 | 一个共享文件，两边都写、都整个读 | 一个技能包，每半轮合并给对方 |
 
-沙盒只导出已提交的代码，所以每一步之前先确认要用的东西都已提交：
+知识库（规则 39）的条目都在一个文件 `knowledge.jsonl` 里，每条带 `tag`：`single`（单手抓起）或 `bimanual`（双手抱起）。内环每一轮在 Reviewer 之前把整个库写成 `KNOWLEDGE.md`，每条下面标出它的条件在现任的哪些诊断局上成立（只标注，不过滤），Reviewer 和 Engineer 整个读。技能代码不能读知识库。
+
+沙盒只导出已提交的代码，开跑前先确认要用的东西都已提交：
 
 ```bash
 git status --short scripts/rsi/   # 应为空
 ```
 
-**7.1 单手内环**
+**7.1 模式 1：单手单独跑**
 
 ```bash
 S1=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-single-a
-python3 scripts/rsi/sandbox.py $S1 gso_single_grasp
+python3 scripts/rsi/sandbox.py $S1 gso_single_grasp --fresh
 cd $S1 && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_single_grasp > loop.log 2>&1 &
 cd -
 cd $S1 && $PY scripts/rsi/loop.py status gso_single_grasp; cd -      # 看进度
 ```
 
-做什么：和 1030 runbook 第 5 节一样：建沙盒、抽池，然后在后台跑内环，直到满足终止条件。
-- **池**：诊断 30、验收 40、封存 50。
-- **池种子**：单手 9000000 / 9100000 / 9200000，双手 9500000 / 9600000 / 9700000，和其他族不重叠。
-- **终止条件**：验收池上赢到 80 %、跑满 5 小时或做满 5 轮，先满足哪条就停。只想先试一轮，加 `--max-iters 1`。
-- 场景目录必须在本机 `outputs/scene_discovery/` 下（第 3 节）。
-- 规则第 30 条照旧：技能代码里不能出现物体名字。
+做什么：和 1030 runbook 第 5 节一样：建沙盒、抽池，然后在后台跑内环，直到满足终止条件。`--fresh` 让沙盒既不带知识库也不带经验库，这次运行不继承任何以前的知识。
+- **池**：诊断 30、验收 40、封存 50。池种子：单手 9000000 / 9100000 / 9200000，双手 9500000 / 9600000 / 9700000。
+- **终止条件**：验收池上赢到 80 %、跑满 5 小时、做满 5 轮或验收门调用满 12 次，先满足哪条就停。只想先试一轮，加 `--max-iters 1`。
+- 场景目录必须在本机 `outputs/scene_discovery/` 下（第 3 节）。规则第 30 条照旧：技能代码里不能出现物体名字。
 
 得到什么：账本 `$S1/outputs/scene_rsi_20261016/gso_single_grasp/loop/ledger.jsonl`，最后一行 `stop` 写着停下的原因。
 
-**7.2 单手封存集**
+跑完记录知识，再跑封存集：
 
 ```bash
-cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
-python3 -c "import json,sys; s=json.load(open(sys.argv[1])); print(s['final'], s['versions'])" $S1/outputs/scene_rsi_20261016_hidden/gso_single_grasp/sealed/summary.json
-```
-
-做什么：在 50 局封存集上跑种子和每一版被接受的现任，打印最终版本的名字和各版本的成功数（同 rsi.md 第 5.3 节）。约 1–2 小时；不想等可以先做 7.3，建知识库不需要封存集。
-
-**7.3 用单手的账本建共享知识库并提交**
-
-```bash
-PYTHONPATH=src $PY scripts/rsi/knowledge.py evidence $S1 gso_single_grasp        # 可选：先看证据表，不调用模型
 PYTHONPATH=src $PY scripts/rsi/knowledge.py build $S1 gso_single_grasp
 git -C scripts/rsi add knowledge && git commit -m "knowledge: gso_single_grasp entries"
+cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
 ```
 
 做什么：
-- `build` 从单手沙盒的账本和场景图记录（`.past.jsonl`）里抽出机制，每个机制用一次模型调用写条件，再按每件物体上的证据分成 `shared`（在几件物体上都净正）或 `local`。
-- 输出在主仓库 `scripts/rsi/` 下的 `knowledge/gso_single_grasp/`：每条条目一个 JSON，加 `BUILD.md`（每个机制进了还是丢了、为什么）和 `INDEX.md`。
-- 默认用全部轮次，`--iters 0-3` 只用其中几轮。
-- 沙盒没有这个任务族的账本时，`build` 拒绝运行。
-- 约每个机制 1 USD，共 10–15 分钟。
-- 第三条把条目提交，双手沙盒才能导出它们。
+- `build` 从账本和场景图记录（`.past.jsonl`）里抽出机制，每个机制用一次模型调用写条件、失败特征和修法，再按每件物体上的证据分成 `shared` 或 `local`。条目写进主仓库 `scripts/rsi/` 下 `knowledge/knowledge.jsonl`，替换这个任务族以前的条目，别的任务族的条目保留；`tag` 按任务的物体自动判成 `single`。
+- 同一个机制的证据没变时，重建直接沿用上次的结果，不再调用模型。约每个机制 1 USD，共 10–15 分钟。建库日志在 `knowledge/build/gso_single_grasp.md`。
+- 第二条把条目提交，以后的沙盒才能导出它们。
+- 第三条在 50 局封存集上跑种子和每一版被接受的现任（同 rsi.md 第 5.3 节），约 1–2 小时。
 
-单手学到的技能改动（`skills/pick.py` 等）不会因为这一步进入双手的起点。双手的起点仍是主技能库。要把单手的最终现任也带过去，先按 rsi.md 第 5.3 节运行 `python3 scripts/rsi/writeback.py $S1 gso_single_grasp`，`make test` 通过后提交。这是另一个决定，不是共享知识的一部分。
+**7.2 模式 2：双手单独跑**
 
-**7.4 双手内环，带着单手的知识**
+把 7.1 里的 `gso_single_grasp` 都换成 `gso_bimanual_lift`，沙盒目录换成 `gso-bimanual-a`。`tag` 自动判成 `bimanual`。
+
+**7.3 模式 3：单手和双手交替**
 
 ```bash
-S2=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-bimanual-a
-python3 scripts/rsi/sandbox.py $S2 gso_bimanual_lift
-ls $S2/scripts/rsi/knowledge/                                         # 应列出 gso_single_grasp 和 INDEX.md
-cd $S2 && CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/loop.py run gso_bimanual_lift > loop.log 2>&1 &
-cd -
-grep '"step": "knowledge"' $S2/outputs/scene_rsi_20261016/gso_bimanual_lift/loop/ledger.jsonl   # 每轮一行，hits 是命中失败局的条目数
+R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-a
+python3 scripts/rsi/alternate.py init $R gso_single_grasp gso_bimanual_lift
+CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 > $R/run.log 2>&1 &
+$PY scripts/rsi/alternate.py status $R                                  # 看进度
 ```
 
-做什么：和 7.1 一样，换成双手任务族和新的沙盒目录。每轮 Reviewer 之前，内环在现任的诊断局上对单手的条目求值，结果写进沙盒的 `scripts/rsi/` 下的 `knowledge/HITS.md` 和这一轮的 `knowledge_hits.json`。Reviewer 的假设引用了某条条目，会写在 `knowledge_refs` 里。`hits` 为 0 说明单手的条目条件在双手的局上都不成立（比如条件写的是单手抓取才有的量），这时双手内环等于没有带知识。
+做什么：
+- `init` 建两个 `--fresh` 沙盒 `$R/a`（单手）和 `$R/b`（双手）、一个空的共享知识目录 `$R/knowledge`，以及合并用的共同祖先 `$R/sync/base`。两个沙盒的任务族文件里写上 `shares_skills_with`，Reviewer 和 Engineer 的提示会说明技能包和另一个任务族共用：`pick.py` 归单手，`bimanual.py` 归双手，共用的模块改了会影响对方。
+- `run` 先单手、后双手，轮流各做半轮，两个半轮算一个迭代。每个半轮：
+  1. 把共享知识复制进这一方的沙盒并提交，跑一轮内环（`loop.py run --max-iters 1`）。
+  2. 用这一方到目前为止的整本账本重建它的条目。
+  3. 把这一方的现任技能包（参数覆盖值写进常数）三方合并进另一方的现任。两边改了同一处时保留另一方的版本，记为冲突。合并结果在另一方的验收池上过“不变差”验收门（`loop.py sync`，`gate.py --non-inferior`）：少赢不超过多赢就成为另一方的新现任，否则作废。这次验收在另一方的账本里记一行 `gate`，计入它的验收门调用次数；结果也写进共享的 `sync.jsonl`，两边的 `KNOWLEDGE.md` 末尾都能看到。
+- 一方正常停下（80 %、5 小时、它自己的 5 轮、验收门 12 次）后，跳过它的半轮，也不再往它合并代码；它的条目继续给对方用。
+- 一方的内环异常停下（角色调用失败、崩溃）或同步验收出错时，整个运行停下，`run.log` 最后一行写着原因；查完再跑同一条 `run` 命令，从停下的那一步接着跑。建库得到 0 条或失败只记录，不停。
+- 每个阶段做完都存一次状态（`$R/alternate.json`），中途停了再跑 `run` 会接着跑。同一个运行目录同时只能有一个驱动。
 
-得到什么：账本 `$S2/outputs/scene_rsi_20261016/gso_bimanual_lift/loop/ledger.jsonl`；封存集同 7.2，族名换成 `gso_bimanual_lift`。双手跑完也可以照 7.3 建它自己的条目，供以后的任务族用。
+得到什么：`$R/knowledge/knowledge.jsonl`（两边的条目）、`sync.jsonl`（每次合并的文件、冲突、多赢 / 少赢、接受与否）、`$R/logs/`（每个半轮的内环和同步验收日志）。一个迭代约 2 小时：两轮内环各约 45 分钟，两次建库各 10–15 分钟，两次同步验收各 10–20 分钟。
+
+跑完把知识发布到主仓库，再分别跑两边的封存集：
+
+```bash
+python3 scripts/rsi/alternate.py publish $R
+git -C scripts/rsi add knowledge && git commit -m "knowledge: gso single / bimanual alternating run"
+cd $R/a && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
+cd $R/b && $PY scripts/rsi/sealed.py gso_bimanual_lift; cd -
+```
+
+做什么：`publish` 把运行里的条目合进主仓库的 `knowledge.jsonl`，替换这两个任务族以前的条目，别的保留；提交由你来做。封存集里同步过来的版本也算一个现任版本。两边的最终代码要不要写回主技能库（`writeback.py`），由你决定。
 
 ## 8. Unreal 关卡与预览图
 

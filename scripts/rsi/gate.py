@@ -33,6 +33,11 @@ one, so a change that moves starts along the chain can be accepted before any st
 stops' 80 % and the sealed pool still count stage 4 alone. Rounds without a stage are judged on ok / fail as before.
 On acceptance the candidate's rounds become the incumbent's. The verdict JSON is the only output a loop role reads.
 
+`--non-inferior` (rule `sync`; scripts/rsi/alternate.py, user 2026-11-18): another family's code merged into this
+family's skills package. Not written for this family's tasks, so it need not win: no stage-1 cut, the whole pool at
+once, accepted iff the candidate loses no more starts than it wins (c <= b; `non_inferior_fails`). The static checks,
+the sentinel and complete pairing are as above. "Rejected before" counts only rejections under the same rule.
+
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/gate.py pick_single --gate <dir> --pool <accept pool> \\
         --candidate <dir> [--procs 12 --gpus 0,1] [--dry-run]
@@ -62,6 +67,7 @@ SENTINELS = 5
 MIN_NET = 3
 LOSS_SHARE = 3  # c <= b / LOSS_SHARE
 GATE_RULE = 2  # 1: b - c >= 3 and p <= 0.05 (to 2026-10-22); 2: b - c >= 3 and c <= b / 3 (TODO 33.8)
+SYNC_RULE = "sync"  # --non-inferior: c <= b (scripts/rsi/alternate.py)
 SEED_SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 
 
@@ -149,6 +155,11 @@ def verdict_fails(t: dict) -> list[str]:
     return fails
 
 
+def non_inferior_fails(t: dict) -> list[str]:
+    """Why a full-pool tally is rejected under --non-inferior (rule `sync`): it loses more starts than it wins."""
+    return [f"losses {t['c']} > wins {t['b']}"] if t["c"] > t["b"] else []
+
+
 def overrides(cand: Path) -> dict:
     return json.loads((cand / "candidate.json").read_text()).get("set") or {}
 
@@ -232,7 +243,9 @@ def main(argv=None) -> int:
     ap.add_argument("--procs", type=int, default=int(os.environ.get("RSI_PROCS", "12")))
     ap.add_argument("--gpus", default=os.environ.get("RSI_GPUS", "0,1"))
     ap.add_argument("--dry-run", action="store_true", help="static checks only")
+    ap.add_argument("--non-inferior", action="store_true", help="rule `sync`: accept iff c <= b on the whole pool")
     a = ap.parse_args(argv)
+    rule = SYNC_RULE if a.non_inferior else GATE_RULE
     gate = a.gate
     gate.mkdir(parents=True, exist_ok=True)
     ledger = gate / "ledger.jsonl"
@@ -245,7 +258,7 @@ def main(argv=None) -> int:
     inc = json.loads(inc_state.read_text())
     labels = B.pool_labels(a.pool)
     h = candidate_hash(a.candidate)
-    verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE,
+    verdict = dict(candidate=str(a.candidate), hash=h, rule=rule,
                    started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))  # fmt: skip
     verdict["call"] = len([x for x in history if not x.get("dry_run")]) + 1
 
@@ -270,7 +283,7 @@ def main(argv=None) -> int:
     except Exception as e:
         return finish(False, f"the candidate does not load: {type(e).__name__}: {e}")
     if any(x["hash"] == h and not x["accepted"] and not x.get("dry_run") and not x.get("void")
-           and x.get("rule", 1) == GATE_RULE for x in history):  # fmt: skip
+           and x.get("rule", 1) == rule for x in history):  # fmt: skip
         return finish(False, "this exact candidate was rejected before")
     if h == candidate_hash(Path(inc["dir"])):
         return finish(False, "the candidate is the incumbent")
@@ -285,8 +298,9 @@ def main(argv=None) -> int:
     jobs = [
         B.Job(inc_dir / "skills", inc_rounds, overrides(inc_dir)),  # the incumbent's own rounds, once per incumbent
         B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(sentinel_labels(labels))),
-        B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(stage1_labels(labels))),
-    ]
+        B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"),
+              None if a.non_inferior else tuple(stage1_labels(labels))),  # --non-inferior: the whole pool at once
+    ]  # fmt: skip
     B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus)
     inc_out = B.outcomes(inc_rounds)
     again = B.outcomes(work / "sentinel")
@@ -296,6 +310,18 @@ def main(argv=None) -> int:
     drift = [k for k in again if (again[k]["ok"], again[k].get("t_end")) != (inc_out[k]["ok"], inc_out[k].get("t_end"))]
     if drift:
         return finish(False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void")
+    if a.non_inferior:
+        miss = incomplete(labels, inc_out, B.outcomes(work / "candidate"))
+        if miss:
+            return void("final", miss)
+        t = tally(B.outcomes(work / "candidate"), inc_out)
+        fails = non_inferior_fails(t)
+        if fails:
+            return finish(False, "; ".join(fails), result=t)
+        inc_state.write_text(
+            json.dumps(dict(dir=str(work / "cand"), rounds=str(work / "candidate"), since=verdict["call"]))
+        )
+        return finish(True, "accepted (non-inferior)", result=t)
     s1 = stage1_labels(labels)
     miss = incomplete(s1, inc_out, B.outcomes(work / "candidate"))
     if miss:

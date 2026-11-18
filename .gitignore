@@ -35,6 +35,8 @@ MUJOCO_LOG.TXT
 /outputs
 /third_party
 
-# the knowledge library's hits for the running incumbent, written by the scene RSI loop each iteration
-# (scripts/rsi/knowledge.py write_hits); ignored so the loop's changed_files() never sees it as an Engineer's stray
+# the knowledge library as the roles read it, marked with the running incumbent's rounds (KNOWLEDGE.md; HITS.md
+# before 2026-11-18), written by the scene RSI loop each iteration (scripts/rsi/knowledge.py write_hits); ignored so
+# the loop's changed_files() never sees it as an Engineer's stray
 scripts/rsi/knowledge/HITS.md
+scripts/rsi/knowledge/KNOWLEDGE.md

@@ -91,6 +91,16 @@ class Columns(unittest.TestCase):
         c = RC.affordance_columns(META, "pick_Wolf_1", START, [rec])
         self.assertEqual(c["start.side_fits_n"], 2.0)
 
+    def test_affordance_columns_of_a_shuffled_start_take_the_task_ids_object(self):
+        """2026-11-18: a gso start places every object of the platform (shuffle_others); without a PAST record the
+        target is the object the task id names after its verb, if the scene has it."""
+        both = dict(START, start=dict(START["start"], placements={"Wolf_1": [[0.1, 0.2, 0.888], [1, 0, 0, 0]],
+                                                                  "Mug_2": [[0.5, 0.2, 0.77], [1, 0, 0, 0]]}))  # fmt: skip
+        c = RC.affordance_columns(META, "pick_Wolf_1", both, None)
+        self.assertAlmostEqual(c["start.obj_height_m"], 0.095)
+        self.assertAlmostEqual(c["start.grasp_z_m"], 0.888)
+        self.assertEqual(RC.affordance_columns(META, "pick_Nothing_9", both, None), {})  # no such object: no guess
+
     def test_affordance_columns_without_meta_is_empty(self):
         self.assertEqual(RC.affordance_columns(None, "pick_Wolf_1", START, None), {})
 
@@ -595,18 +605,29 @@ class Consolidate(unittest.TestCase):
                     )
                 )
             out = root / "knowledge"
-            (out / "fam").mkdir(parents=True)
-            (out / "fam" / "old.json").write_text(json.dumps(dict(ENTRY, id="fam/old")))  # a dropped mechanism's entry
-            (out / "other").mkdir()
-            (out / "other" / "e.json").write_text(json.dumps(dict(ENTRY, id="other/e")))
+            KN.save_entries(out, [dict(ENTRY, id="fam/old", source=dict(family="fam")),  # a dropped mechanism's entry
+                                  dict(ENTRY, id="other/e", tag="bimanual", source=dict(family="other"))])  # fmt: skip
             summary = KN.build(root, "fam", out, stub=True, ctx_root=root / "ctx")
-            self.assertEqual(summary["entries"], 1)
-            self.assertTrue((out / "fam" / "H1_hang.json").exists())
-            self.assertFalse((out / "fam" / "old.json").exists())  # I6: a rebuild leaves no stale entry
-            self.assertTrue((out / "other" / "e.json").exists())  # only this family's directory is cleared
-            self.assertTrue((out / "fam" / "BUILD.md").exists())
+            self.assertEqual((summary["entries"], summary["tag"]), (1, "mixed"))  # no tasks in the family file: mixed
+            ids = [e["id"] for e in KN.entries(out)]
+            self.assertIn("fam/H1_hang", ids)
+            self.assertNotIn("fam/old", ids)  # I6: a rebuild leaves no stale entry
+            self.assertIn("other/e", ids)  # only this family's entries are replaced
+            e = next(e for e in KN.entries(out) if e["id"] == "fam/H1_hang")
+            self.assertEqual((e["tag"], e["source"]["family"]), ("mixed", "fam"))
+            self.assertTrue((out / "build" / "fam.md").exists())
             self.assertIn("H1_hang", (out / "INDEX.md").read_text())
             self.assertNotIn("fam/old", (out / "INDEX.md").read_text())
+            # the same evidence again: the cached entry, no Consolidator call (an alternating run rebuilds each half)
+            calls = []
+            orig = KN.consolidate
+            KN.consolidate = lambda *a, **k: calls.append(1) or orig(*a, **k)
+            try:
+                again = KN.build(root, "fam", out, stub=True, ctx_root=root / "ctx")
+            finally:
+                KN.consolidate = orig
+            self.assertEqual((again["entries"], calls), (1, []))
+            self.assertIn("same evidence", (out / "build" / "fam.md").read_text())
 
 
 ENTRY = dict(id="fam/H1_hang", version=1, status="candidate", scope="shared", scope_why="positive on Wolf_1",
@@ -628,38 +649,50 @@ class Hits(unittest.TestCase):
         e = dict(ENTRY, condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 5}]})
         self.assertEqual(KN.hits([e], ROWS), [])
 
-    def test_render_hits_shows_repair_and_hides_object_names_from_evidence(self):
-        md = KN.render_hits(KN.hits([ENTRY], ROWS[:5]), {ENTRY["id"]: ENTRY})
+    def test_the_role_file_shows_every_entry_marks_its_rounds_and_hides_object_names(self):
+        """User 2026-11-18: the roles read the whole library; the incumbent's rounds are a mark, not a filter."""
+        quiet = dict(ENTRY, id="other/quiet", tag="bimanual", source=dict(family="other", iters=[2]),
+                     condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 5}]})  # fmt: skip
+        ents = [dict(ENTRY, tag="single", source=dict(family="fam", iters=[0, 1])), quiet]
+        md = KN.render_library(ents, KN.hits(ents, ROWS[:5]))
         self.assertIn("fam/H1_hang", md)
+        self.assertIn("other/quiet", md)  # its condition holds nowhere, it is shown all the same
+        self.assertIn("holds on none of its diagnostic rounds", md)
         self.assertIn("filter stances", md)
         self.assertIn("raise D_MIN", md)
-        self.assertIn("pick_Wolf_1_s1 (failed)", md)
+        self.assertIn("2 failed round(s): pick_Wolf_1_s1, pick_Wolf_1_s2", md)
+        self.assertIn("from fam iterations [0, 1]", md)
+        self.assertLess(md.index("(tag single)"), md.index("(tag bimanual)"))
         self.assertNotIn("by_object", md)
-        self.assertNotIn("positive on Wolf_1", md)
+        self.assertNotIn("positive on Wolf_1", md)  # scope_why names objects: never shown
 
-    def test_render_hits_header_does_not_claim_verification(self):
-        md = KN.render_hits(KN.hits([ENTRY], ROWS[:5]), {ENTRY["id"]: ENTRY})
+    def test_the_role_file_does_not_claim_verification(self):
+        md = KN.render_library([ENTRY], KN.hits([ENTRY], ROWS[:5]))
         self.assertNotIn("verified", md)  # every entry is status=candidate
 
-    def test_render_hits_without_hits_is_one_line(self):
-        md = KN.render_hits([], {})
-        self.assertEqual(md.strip().count("\n"), 0)
-        self.assertIn("no entry", md)
+    def test_the_role_file_lists_the_code_syncs(self):
+        syncs = [dict(iter=1, **{"from": "a_fam", "to": "b_fam"}, merged=["pick.py"], copied=[], deleted=[],
+                      conflicts=["place.py: 1 hunk(s) changed on both sides"], accepted=True, result=dict(b=0, c=0)),
+                 dict(iter=1, **{"from": "b_fam", "to": "a_fam"}, skipped="the merge changes nothing")]  # fmt: skip
+        md = KN.render_library([], [], syncs)
+        self.assertIn("a_fam -> b_fam: merged pick.py; kept b_fam's side of place.py", md)
+        self.assertIn("0 wins, 0 losses -> accepted", md)
+        self.assertIn("nothing merged (the merge changes nothing)", md)
 
-    def test_all_ok_hits_go_last_and_collapsed(self):
+    def test_all_ok_hits_are_marked_as_rounds_it_already_succeeds_on(self):
         e2 = dict(
             ENTRY, id="fam/other", condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 1.0}]}
         )
         hs = KN.hits([ENTRY, e2], ROWS[:5])
         self.assertEqual([h["id"] for h in hs], ["fam/H1_hang", "fam/other"])
-        md = KN.render_hits(hs, {ENTRY["id"]: ENTRY, e2["id"]: e2})
-        self.assertIn("already succeeds", md)
+        md = KN.render_library([ENTRY, e2], hs)
+        self.assertLess(md.index("### fam/H1_hang"), md.index("### fam/other"))  # failed hits first
+        self.assertIn("0 failed round(s); and on", md)
 
     def test_write_hits_reads_the_library_and_writes_both_files(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
-            (root / "scripts/rsi/knowledge/fam").mkdir(parents=True)
-            (root / "scripts/rsi/knowledge/fam/H1_hang.json").write_text(json.dumps(ENTRY))
+            KN.save_entries(root / "scripts/rsi/knowledge", [ENTRY])
             (root / "scripts/rsi/families").mkdir(parents=True)
             (root / "scripts/rsi/families/fam.json").write_text(json.dumps({"scene": "outputs/scene"}))
             (root / "outputs/scene").mkdir(parents=True)
@@ -675,26 +708,67 @@ class Hits(unittest.TestCase):
             n = KN.write_hits(root, rounds, root / "it", "fam")
             self.assertEqual(n, 1)
             self.assertTrue((root / "it/knowledge_hits.json").exists())
-            self.assertIn("fam/H1_hang", (root / "scripts/rsi/knowledge/HITS.md").read_text())
+            self.assertIn("fam/H1_hang", (root / "scripts/rsi/knowledge/KNOWLEDGE.md").read_text())
 
     def test_write_hits_without_a_library_is_a_no_op(self):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(KN.write_hits(Path(d), Path(d), Path(d) / "it", "fam"), 0)
             self.assertFalse((Path(d) / "it").exists())
 
+    def test_write_hits_with_only_syncs_writes_the_role_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            lib = Path(d) / "scripts/rsi/knowledge"
+            lib.mkdir(parents=True)
+            (lib / KN.SYNCS).write_text(
+                json.dumps({"iter": 1, "from": "x", "to": "y", "skipped": "y has stopped"}) + "\n"
+            )
+            self.assertEqual(KN.write_hits(Path(d), Path(d), Path(d) / "it", "fam"), 0)
+            self.assertIn("y has stopped", (lib / "KNOWLEDGE.md").read_text())
+
+    def test_tag_of_reads_the_tasks_objects(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "scripts/rsi/families").mkdir(parents=True)
+            meta = dict(META, objects={"m1": dict(semantic=dict(graspable="single")),
+                                       "m2": dict(semantic=dict(graspable="single")),
+                                       "box": dict(semantic=dict(graspable="bimanual"))})  # fmt: skip
+            (root / "outputs/scene").mkdir(parents=True)
+            (root / "outputs/scene/scene_meta.json").write_text(json.dumps(meta))
+            rows = [dict(id="pick_m1", goal=["held(m1)"]), dict(id="pick_m2", goal=["held(m2)", "lifted(m2, 0.30, 60)"]),
+                    dict(id="lift_box", goal=["held(box)"])]  # fmt: skip
+            (root / "t.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+            for name, tasks, extra in (("one", ["pick_m1", "pick_m2"], {}), ("both", ["pick_m1", "lift_box"], {}),
+                                       ("two", ["lift_box"], {}), ("named", ["pick_m1"], {"knowledge_tag": "x"})):  # fmt: skip
+                (root / f"scripts/rsi/families/{name}.json").write_text(
+                    json.dumps(dict(scene="outputs/scene", tasks_file="t.jsonl", tasks=tasks, **extra))
+                )
+            got = [KN.tag_of(root, n) for n in ("one", "both", "two", "named")]
+        self.assertEqual(got, ["single", "mixed", "bimanual", "x"])
+
 
 class Wiring(unittest.TestCase):
     def test_knowledge_without_drops_own_and_excluded_families(self):
         with tempfile.TemporaryDirectory() as d:
             dest = Path(d)
-            for fam in ("fam", "old", "keep_me"):
-                (dest / "scripts/rsi/knowledge" / fam).mkdir(parents=True)
-                (dest / "scripts/rsi/knowledge" / fam / "e.json").write_text(json.dumps(dict(ENTRY, id=f"{fam}/e")))
+            lib = dest / "scripts/rsi/knowledge"
+            KN.save_entries(lib, [dict(ENTRY, id=f"{f}/e", source=dict(family=f)) for f in ("fam", "old", "keep_me")])
+            (lib / "KNOWLEDGE.md").write_text("an earlier incumbent's marks\n")
             (dest / "scripts/rsi/families").mkdir(parents=True)
             (dest / "scripts/rsi/families/fam.json").write_text(json.dumps({"library_exclude": ["old"]}))
             sandbox.knowledge_without(dest, "fam")
-            left = sorted(p.name for p in (dest / "scripts/rsi/knowledge").iterdir() if p.is_dir())
-        self.assertEqual(left, ["keep_me"])
+            left = [e["id"] for e in KN.entries(lib)]
+            self.assertFalse((lib / "KNOWLEDGE.md").exists())
+        self.assertEqual(left, ["keep_me/e"])
+
+    def test_a_fresh_sandbox_holds_neither_library(self):
+        with tempfile.TemporaryDirectory() as d:
+            dest = Path(d)
+            KN.save_entries(dest / "scripts/rsi/knowledge", [ENTRY])
+            (dest / "scripts/rsi/experience/fam").mkdir(parents=True)
+            (dest / "scripts/rsi/experience/INDEX.md").write_text("x\n")
+            sandbox.without_libraries(dest)
+            self.assertFalse((dest / "scripts/rsi/knowledge").exists())
+            self.assertFalse((dest / "scripts/rsi/experience").exists())
 
     def test_knowledge_without_is_a_no_op_without_the_directory(self):
         with tempfile.TemporaryDirectory() as d:
@@ -703,9 +777,10 @@ class Wiring(unittest.TestCase):
     def test_skills_may_not_name_the_knowledge_library(self):
         with tempfile.TemporaryDirectory() as d:
             (Path(d) / "x.py").write_text('P = "scripts/rsi/knowledge/HITS.md"\n')
+            (Path(d) / "y.py").write_text('Q = "KNOWLEDGE.md"\n')
             hits_ = LP.named_objects(Path(d), names=set())
-        self.assertEqual(len(hits_), 1)
-        self.assertIn(LP.RECORDER_TAG, hits_[0])
+        self.assertEqual(len(hits_), 2)
+        self.assertTrue(all(LP.RECORDER_TAG in h for h in hits_))
 
     def test_named_void_cites_rules_38_and_39_for_recorder_hits(self):
         rows: list[dict] = []
@@ -721,13 +796,21 @@ class Wiring(unittest.TestCase):
         props = LP.HYPOTHESES_SCHEMA["properties"]["hypotheses"]["items"]["properties"]
         self.assertEqual(props["knowledge_refs"], {"type": "array", "items": {"type": "string"}})
 
-    def test_knowledge_note_names_the_hits_file(self):
-        self.assertIn("HITS.md", LP.KNOWLEDGE_NOTE)
+    def test_knowledge_note_names_the_role_file(self):
+        self.assertIn("KNOWLEDGE.md", LP.KNOWLEDGE_NOTE)
+        self.assertIn("read it whole", LP.KNOWLEDGE_NOTE)
         self.assertIn("knowledge_refs", LP.KNOWLEDGE_NOTE)
 
+    def test_the_shared_skills_note_names_both_skill_files(self):
+        note = LP.SHARED_SKILLS_NOTE.format(other="b_fam", other_kind="two-hand pick", other_skill="bimanual.py",
+                                            own_skill="pick.py")  # fmt: skip
+        self.assertIn("skills/bimanual.py", note)
+        self.assertIn("skills/pick.py", note)
+        self.assertIn("b_fam", note)
+
     def test_hits_md_is_gitignored_so_it_is_never_a_stray(self):
-        """C1: changed_files() is `git status --porcelain -uall`; HITS.md written after the sandbox's commit must not
-        show up there, or after_engineer / revert_strays void every draft."""
+        """C1: changed_files() is `git status --porcelain -uall`; the role file written after the sandbox's commit
+        must not show up there, or after_engineer / revert_strays void every draft."""
         import subprocess
 
         with tempfile.TemporaryDirectory() as d:
@@ -739,12 +822,12 @@ class Wiring(unittest.TestCase):
             git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
             (root / "scripts/rsi/knowledge").mkdir(parents=True)
             (root / "scripts/rsi/knowledge/HITS.md").write_text("hits\n")
+            (root / "scripts/rsi/knowledge/KNOWLEDGE.md").write_text("library\n")
             self.assertEqual(git("status", "--porcelain", "-uall").stdout, "")
 
     def _hook_fixture(self, root: Path) -> Path:
         """A tiny library and one failing diag round under a temp REPO; returns the rounds directory."""
-        (root / "scripts/rsi/knowledge/fam").mkdir(parents=True)
-        (root / "scripts/rsi/knowledge/fam/H1_hang.json").write_text(json.dumps(ENTRY))
+        KN.save_entries(root / "scripts/rsi/knowledge", [ENTRY])
         (root / "scripts/rsi/families").mkdir(parents=True)
         (root / "scripts/rsi/families/fam.json").write_text(json.dumps({"scene": "outputs/scene"}))
         (root / "outputs/scene").mkdir(parents=True)
@@ -776,7 +859,7 @@ class Wiring(unittest.TestCase):
             finally:
                 for k, v in saved.items():
                     setattr(LP, k, v)
-            self.assertIn("fam/H1_hang", (root / "scripts/rsi/knowledge/HITS.md").read_text())
+            self.assertIn("fam/H1_hang", (root / "scripts/rsi/knowledge/KNOWLEDGE.md").read_text())
             self.assertTrue((root / "it/knowledge_hits.json").exists())
             self.assertEqual(list((root / "scripts/rsi/knowledge").glob("*.tmp")), [])
         self.assertEqual(rows, [dict(step="knowledge", iter=3, hits=1)])
@@ -786,7 +869,7 @@ class Wiring(unittest.TestCase):
             root = Path(d)
             rounds = self._hook_fixture(root)
             e = dict(ENTRY, condition={"all": [{"feature": "start.support_top_m", "op": ">", "value": 5}]})
-            (root / "scripts/rsi/knowledge/fam/H1_hang.json").write_text(json.dumps(e))
+            KN.save_entries(root / "scripts/rsi/knowledge", [e])
             rows: list[dict] = []
             saved = self._with_loop_globals(root, rows)
             try:
@@ -800,7 +883,8 @@ class Wiring(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
             rounds = self._hook_fixture(root)
-            (root / "scripts/rsi/knowledge/HITS.md").write_text("an earlier incumbent's hits\n")
+            (root / "scripts/rsi/knowledge/KNOWLEDGE.md").write_text("an earlier incumbent's marks\n")
+            (root / "scripts/rsi/knowledge/HITS.md").write_text("an older hits file\n")
             rows: list[dict] = []
             saved = self._with_loop_globals(root, rows)
             orig = KN.write_hits
@@ -815,6 +899,7 @@ class Wiring(unittest.TestCase):
                 KN.write_hits = orig
                 for k, v in saved.items():
                     setattr(LP, k, v)
+            self.assertFalse((root / "scripts/rsi/knowledge/KNOWLEDGE.md").exists())
             self.assertFalse((root / "scripts/rsi/knowledge/HITS.md").exists())
         self.assertEqual(len(rows), 1)
         self.assertEqual((rows[0]["step"], rows[0]["iter"]), ("knowledge", 2))
@@ -847,20 +932,17 @@ class Wiring(unittest.TestCase):
         RP = _replay()
         with tempfile.TemporaryDirectory() as d:
             dst, given = Path(d) / "sb", Path(d) / "given"
-            (dst / "scripts/rsi/knowledge/exported").mkdir(parents=True)
-            (dst / "scripts/rsi/knowledge/exported/e.json").write_text(json.dumps(dict(ENTRY, id="exported/e")))
+            KN.save_entries(dst / "scripts/rsi/knowledge", [dict(ENTRY, id="exported/e")])
             (dst / "scripts/rsi/families").mkdir(parents=True)
             (dst / "scripts/rsi/families/fam.json").write_text(json.dumps({"library_exclude": ["old"]}))
-            for fam in ("fam", "old"):
-                (given / fam).mkdir(parents=True)
-                (given / fam / "e.json").write_text(json.dumps(dict(ENTRY, id=f"{fam}/e")))
-            (given / "HITS.md").write_text("stale\n")
+            KN.save_entries(given, [dict(ENTRY, id=f"{f}/e", source=dict(family=f)) for f in ("fam", "old")])
+            (given / "KNOWLEDGE.md").write_text("stale\n")
             RP.install_knowledge(dst, given)
             lib = dst / "scripts/rsi/knowledge"
-            self.assertEqual(sorted(p.name for p in lib.iterdir() if p.is_dir()), ["fam", "old"])
-            self.assertFalse((lib / "HITS.md").exists())
+            self.assertEqual(sorted(e["id"] for e in KN.entries(lib)), ["fam/e", "old/e"])
+            self.assertFalse((lib / "KNOWLEDGE.md").exists())
             self.assertIn("fam/e", (lib / "INDEX.md").read_text())
-            self.assertTrue((given / "HITS.md").exists())  # the given directory is not touched
+            self.assertTrue((given / "KNOWLEDGE.md").exists())  # the given directory is not touched
 
     def test_setup_checks_the_knowledge_path_before_building(self):
         RP = _replay()

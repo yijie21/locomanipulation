@@ -283,13 +283,13 @@ xdg-open outputs/scene_rsi_20261016/past_view/ga-past-b__incumbent_0fa018936751/
 PYTHONPATH=src $PY scripts/rsi/knowledge.py build <沙盒> <任务族> --iters 0-3
 ```
 
-做什么：从这个沙盒的账本和场景图记录抽知识条目，写到 `scripts/rsi/` 下的 `knowledge/<任务族>/`，加 `BUILD.md`（每个机制进了还是丢了、为什么）和 `INDEX.md`。约每个机制 1 USD，10 到 15 分钟。
+做什么：从这个沙盒的账本和场景图记录抽知识条目，写进 `scripts/rsi/` 下的 `knowledge/knowledge.jsonl`（一个共享文件，每条带 `tag`：`single` 单手抓起、`bimanual` 双手抱起、`mixed` 其他；用户 11-18），替换这个任务族以前的条目，别的保留；建库日志在 `knowledge/build/<任务族>.md`（每个机制进了还是丢了、为什么），加 `INDEX.md`。证据没变的机制沿用上次的结果，不再调用模型。约每个机制 1 USD，10 到 15 分钟。
 
 ```bash
 PYTHONPATH=src $PY scripts/rsi/knowledge.py eval <沙盒> <沙盒>/outputs/scene_rsi_20261016/<任务族>/diag/incumbent_<hash> <任务族> --out /tmp/hits
 ```
 
-做什么：把库里每条条目在这版现任的诊断局上求值，写 `/tmp/hits/knowledge_hits.json` 和沙盒里的 `<沙盒>/scripts/rsi/knowledge/HITS.md`；打印命中失败局的条目数。内环每轮 Reviewer 之前自动做这一步。
+做什么：把库里每条条目在这版现任的诊断局上求值，写 `/tmp/hits/knowledge_hits.json` 和沙盒里的 `<沙盒>/scripts/rsi/knowledge/KNOWLEDGE.md`（整个库，每条下面标出条件成立的局）；打印命中失败局的条目数。内环每轮 Reviewer 之前自动做这一步。`sandbox.py --fresh` 建的沙盒不带知识库和经验库；两个任务族交替跑、共享知识和代码见 `scripts/rsi/alternate.py` 和[单手 / 双手测试场景 runbook](rsi_logistic_room_1030_single_bimanual.md) 第 7 节。
 
 
 ## 6. L2：一轮外环

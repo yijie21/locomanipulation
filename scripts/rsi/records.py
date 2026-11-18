@@ -128,7 +128,8 @@ def affordance_columns(meta: dict | None, task: str, start: dict | None, records
     """Knowledge-library columns known before the round runs (plan docs/handoff/shared-knowledge-plan-20261111.md
     section 3.2): the target's support top, height, narrowest width, mass, container flag, its centre height at the
     start and that height over the support. The target is the PAST records' `roles.target`, else the start's only
-    placement. `start.side_fits_n` comes from a schema 0.2 record's `affordance.one_hand`; 0.1 records lack it."""
+    placement, else the object the task id names after its verb (`lift_gso_0187`; 2026-11-18: the gso starts place
+    every object of the platform). `start.side_fits_n` comes from a schema 0.2 record's `affordance.one_hand`; 0.1 records lack it."""
     if not meta or not start:
         return {}
     placements = (start.get("start") or {}).get("placements") or {}
@@ -138,6 +139,9 @@ def affordance_columns(meta: dict | None, task: str, start: dict | None, records
     )
     if target is None and len(placements) == 1:
         target = next(iter(placements))
+    if target is None and "_" in task:  # a start that moves every object (`shuffle_others`) and no record: the task's
+        guess = task.split("_", 1)[1]  # object by its id, `<verb>_<object key>` (gso_family), if the scene has it
+        target = guess if guess in (meta.get("objects") or {}) else None
     o = (meta.get("objects") or {}).get(target)
     if not o:
         return {}

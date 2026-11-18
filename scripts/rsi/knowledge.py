@@ -1,11 +1,17 @@
 """The two-layer knowledge library (docs/handoff/shared-knowledge-plan-20261111.md): entries of the form condition ->
-failure signature -> repair, built from a finished loop's ledger and PAST scene-graph records, scoped `shared` or
-`local` by their per-object evidence, and retrieved by evaluating each entry's condition on the incumbent's
-diagnostic rounds. Roles read the hits (HITS.md); skills may not (rules.md 39).
+failure signature -> repair, built from a loop's ledger and PAST scene-graph records, scoped `shared` or `local` by
+their per-object evidence. Skills may not read it (rules.md 39).
 
-    python3 scripts/rsi/knowledge.py build <sandbox> <family> [--iters 0-3] [--out scripts/rsi/knowledge] [--stub]
+One shared file (user 2026-11-18): every entry is a line of `<library>/knowledge.jsonl`, tagged by the kind of task its
+family learned it on (`tag`: `single` one-hand pick, `bimanual` two-hand pick, `mixed` otherwise; tag_of) with its
+`source` (family, sandbox, iterations). A build replaces the entries of its own family and keeps every other one.
+Before each Reviewer the loop writes `<library>/KNOWLEDGE.md` (write_hits): the WHOLE library, one section per tag,
+each entry marked with the incumbent's diagnostic rounds its condition holds on (a mark, never a filter), and the code
+syncs of an alternating run (`sync.jsonl`, scripts/rsi/alternate.py). Roles read KNOWLEDGE.md whole.
+
+    python3 scripts/rsi/knowledge.py build <sandbox> <family> [--iters 0-3] [--out scripts/rsi/knowledge] [--tag single] [--stub]
     python3 scripts/rsi/knowledge.py evidence <sandbox> <family> [--iters 0-3]        # the tables only, no model call
-    python3 scripts/rsi/knowledge.py eval <sandbox root> <rounds dir> --out <dir>      # knowledge_hits.json + HITS.md
+    python3 scripts/rsi/knowledge.py eval <sandbox root> <rounds dir> --out <dir>      # knowledge_hits.json + KNOWLEDGE.md
     python3 scripts/rsi/knowledge.py index [--out scripts/rsi/knowledge]
     python3 scripts/rsi/knowledge.py report <sandbox> [<sandbox> ...]                 # the replay A/B table
 """
@@ -32,6 +38,10 @@ import records as RC  # noqa: E402
 
 VISIBLE = "outputs/scene_rsi_20261016"
 OUT = HERE / "knowledge"
+LIBRARY = "knowledge.jsonl"  # the entries, one per line (user 2026-11-18: one shared file, tagged)
+SYNCS = "sync.jsonl"  # an alternating run's code syncs (scripts/rsi/alternate.py), shown in KNOWLEDGE.md
+ROLE_FILE = "KNOWLEDGE.md"  # what the Reviewer and the Engineer read, rewritten before each Reviewer (gitignored)
+TAGS = {"single": "one-hand pick", "bimanual": "two-hand pick", "mixed": "mixed tasks"}
 MODEL = os.environ.get("RSI_MODEL", "claude-opus-5-5")
 MIN_FLIPS = 2  # triggered flipped rounds an entry needs
 SEPARATION_P = 0.10  # Fisher's p for "the condition separates flipped from unchanged rounds" (tables of >= records.MIN_REFUTE rows)
@@ -509,9 +519,11 @@ def build(
     iters: set[int] | None = None,
     stub: bool = False,
     ctx_root: Path | None = None,
+    tag: str | None = None,
 ) -> dict:
-    """Plan section 3: mechanisms -> evidence tables -> the Consolidator -> validation, scope -> entries,
-    BUILD.md and INDEX.md under `out`. `ctx_root` holds the Consolidator's context directories."""
+    """Plan section 3: mechanisms -> evidence tables -> the Consolidator -> validation, scope -> entries tagged `tag`
+    (default tag_of) replacing the family's earlier ones in `out`/knowledge.jsonl, the build log build/<family>.md and
+    INDEX.md. `ctx_root` holds the Consolidator's context directories."""
     loop = sandbox / VISIBLE / family / "loop"
     meta = RC.scene_meta(sandbox, family) or {}
     names = names_from_meta(meta)
@@ -525,18 +537,30 @@ def build(
             / "rsi_knowledge"
             / family
         )
-    dest = out / family
-    dest.mkdir(parents=True, exist_ok=True)
-    for stale in dest.glob("*.json"):  # a rebuild replaces the family's entries: a dropped mechanism keeps none
-        stale.unlink()
-    log = [f"# build {family} from {sandbox} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
+    tag = tag or tag_of(sandbox, family)
+    new: list[dict] = []
+    log = [f"# build {family} ({tag}) from {sandbox} ({time.strftime('%Y-%m-%d %H:%M')})", ""]
     kept, cost = 0, 0.0
+    # a mechanism whose evidence is as at the last build keeps that build's outcome without a model call: an
+    # alternating run (scripts/rsi/alternate.py) rebuilds a family after each of its iterations
+    cache_path = out / "build" / f"{family}.cache.json"
+    cache, fresh_cache = jload(cache_path, {}) or {}, {}
     for m in mechanisms(loop, iters):
         table = evidence_table(m, rows)
         if not table:
             log.append(f"- {m['slug']}: no diagnostic rows under its incumbent version -- skipped")
             continue
         ranked = rank_columns(table, RC.CONDITION_COLUMNS)  # the Consolidator sees only section 3.2's columns
+        key = evidence_key(m, table, ranked, scene_note, tag, stub)
+        if key in cache:
+            fresh_cache[key] = hit = cache[key]
+            if hit.get("entry"):
+                new.append(hit["entry"])
+                kept += 1
+                log.append(f"- {m['slug']}: {hit['entry']['scope']} (as at the last build: same evidence)")
+            else:
+                log.append(f"- {m['slug']}: dropped as at the last build (same evidence) -- {hit.get('why', '')}")
+            continue
         entry, problems, outside = None, [], []
         for attempt in range(2):
             so, acct = consolidate(
@@ -556,37 +580,91 @@ def build(
         note = f"; {len(outside)} paths outside the context dir" if outside else ""
         if entry is None:
             log.append(f"- {m['slug']}: dropped -- " + "; ".join(problems) + note)
+            if not (problems and problems[0].startswith(("declined: call failed", "declined: void"))):
+                fresh_cache[key] = dict(entry=None, why="; ".join(problems))  # a failed or voided call: next build
             continue
-        entry.update(id=f"{family}/{slugify(m['slug'])}", version=1, status="candidate",
+        entry.update(id=f"{family}/{slugify(m['slug'])}", version=1, status="candidate", tag=tag,
                      source=dict(family=family, sandbox=sandbox.name, iters=sorted({n for n, _ in m["ids"]}),
                                  mechanism_ids=[h for _, h in m["ids"]], gate=m["gate"],
                                  built_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
                      audit=dict(names_checked=True, hidden_checked=True))  # fmt: skip
-        (dest / f"{slugify(m['slug'])}.json").write_text(json.dumps(entry, indent=1, ensure_ascii=False) + "\n")
+        new.append(entry)
+        fresh_cache[key] = dict(entry=entry)
         kept += 1
         log.append(
             f"- {m['slug']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}"
         )
     log.append(f"\n{kept} entries, model cost {cost:.2f} USD")
-    (dest / "BUILD.md").write_text("\n".join(log) + "\n")
+    # a rebuild replaces the family's entries (a dropped mechanism keeps none) and leaves every other family's
+    save_entries(out, [e for e in entries(out) if source_family(e) != family] + new)
+    (out / "build").mkdir(parents=True, exist_ok=True)
+    (out / "build" / f"{family}.md").write_text("\n".join(log) + "\n")
+    _write_atomic(cache_path, json.dumps(fresh_cache, ensure_ascii=False) + "\n")
     index(out)
-    return dict(entries=kept, cost_usd=round(cost, 2))
+    return dict(entries=kept, cost_usd=round(cost, 2), tag=tag)
+
+
+def evidence_key(m: dict, table: list[dict], ranked: list[dict], scene_note: str, tag: str, stub: bool) -> str:
+    """What a mechanism's entry is built from -- its hypotheses, flips, gate verdict, evidence table, the scene note,
+    the tag --, hashed: the same key, the same entry."""
+    import hashlib
+
+    blob = json.dumps(dict(mech={k: m[k] for k in ("slug", "ids", "claims", "insteads", "flips", "gate")},
+                           table=render_evidence(m, table, ranked), scene_note=scene_note, tag=tag, stub=stub),
+                      sort_keys=True, default=str)  # fmt: skip
+    return hashlib.sha256(blob.encode()).hexdigest()[:16]
+
+
+def source_family(e: dict) -> str:
+    """The family an entry was built from (`source.family`; an older entry without it: its id's prefix)."""
+    return (e.get("source") or {}).get("family") or str(e.get("id", "")).split("/", 1)[0]
 
 
 def entries(out: Path = OUT) -> list[dict]:
-    return [json.loads(p.read_text()) for p in sorted(out.glob("*/*.json"))]
+    """Every entry of the library at `out` (its knowledge.jsonl), in file order; none when it has no file."""
+    return jl(Path(out) / LIBRARY)
+
+
+def save_entries(out: Path, ents: list[dict]) -> None:
+    """knowledge.jsonl := `ents`, sorted by tag then id, written atomically."""
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    ents = sorted(ents, key=lambda e: (e.get("tag") or "", e.get("id") or ""))
+    _write_atomic(out / LIBRARY, "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in ents))
+
+
+def tag_of(sandbox: Path, family: str) -> str:
+    """The kind of task the family's entries come from: `single` when every task's object is a one-hand object of the
+    scene file (`semantic.graspable`), `bimanual` when every one is a two-hand object, else `mixed`. A family file's
+    `knowledge_tag` names it outright."""
+    fam = jload(Path(sandbox) / "scripts" / "rsi" / "families" / f"{family}.json", {}) or {}
+    if fam.get("knowledge_tag"):
+        return str(fam["knowledge_tag"])
+    meta = RC.scene_meta(Path(sandbox), family) or {}
+    tasks_file = Path(sandbox) / str(fam.get("tasks_file") or "")
+    rows = {r.get("id"): r for r in jl(tasks_file)} if fam.get("tasks_file") else {}
+    kinds = set()
+    for t in fam.get("tasks") or []:
+        goal = (rows.get(t) or {}).get("goal") or []
+        m = re.match(r"\s*\w+\(\s*([^,\s)]+)", goal[0]) if goal else None
+        obj = (meta.get("objects") or {}).get(m.group(1)) if m else None
+        kinds.add(((obj or {}).get("semantic") or {}).get("graspable"))
+    return kinds.pop() if kinds in ({"single"}, {"bimanual"}) else "mixed"
 
 
 def index(out: Path = OUT) -> None:
-    rows = ["# Knowledge library", "", "One entry per mechanism (scripts/rsi/knowledge.py build). Roles read HITS.md, not this index.", "",
-            "| id | scope | status | condition | objects | reads as |", "|---|---|---|---|---|---|"]  # fmt: skip
+    """INDEX.md, the people's table of the library (the roles read KNOWLEDGE.md)."""
+    rows = ["# Knowledge library", "",
+            f"One entry per mechanism, in {LIBRARY} (scripts/rsi/knowledge.py build). The roles read {ROLE_FILE}, the "
+            "whole library marked with the incumbent's rounds, not this index.", "",
+            "| id | tag | scope | status | condition | objects | reads as |", "|---|---|---|---|---|---|---|"]  # fmt: skip
     for e in entries(out):
         cond = " and ".join(f"{c['feature']} {c['op']} {c['value']}" for c in e["condition"].get("all", []))
         rows.append(
-            f"| {e['id']} | {e['scope']} | {e['status']} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
+            f"| {e['id']} | {e.get('tag', '')} | {e['scope']} | {e['status']} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
         )
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "INDEX.md").write_text("\n".join(rows) + "\n")
+    Path(out).mkdir(parents=True, exist_ok=True)
+    (Path(out) / "INDEX.md").write_text("\n".join(rows) + "\n")
 
 
 def hits(ents: list[dict], rows: list[dict]) -> list[dict]:
@@ -611,49 +689,96 @@ def _cond_text(c: dict) -> str:
     return " and ".join(parts)
 
 
-def render_hits(hs: list[dict], by_id: dict[str, dict]) -> str:
-    """HITS.md (plan section 5.3). Object names from the evidence never reach it: only this family's round labels."""
-    if not hs:
-        return "no entry's condition holds on this incumbent's diagnostic rounds\n"
-    lines = ["# Knowledge entries whose condition holds on this incumbent's diagnostic rounds", "",
-             "Candidate entries from other loops whose condition holds on the rounds listed; what worked there is a hypothesis here, this family's rounds decide. "
-             "Cite an entry you use by its id in `knowledge_refs`.", ""]  # fmt: skip
-    tail = []
-    for h in hs:
-        e = by_id[h["id"]]
-        if h["failed"] == 0:
-            tail.append(
-                f"- {h['id']}: condition holds on {len(h['rounds'])} round(s) the incumbent already succeeds on"
-            )
-            continue
-        rounds = ", ".join(f"{l} ({'ok' if ok else 'failed'})" for l, ok in h["rounds"])
-        lines += [f"## {h['id']}  ({h['scope']}, v{h['version']}, {h['status']})",
-                  f"Hits this incumbent's diagnostic rounds: {rounds}",
-                  f"Condition: {_cond_text(e['condition'])}",
-                  f"Reads as: {e['signature'].get('reads_as', '')}",
-                  f"Worked elsewhere: {e['repair'].get('works', '')} (where: {e['repair'].get('where', '')})"]  # fmt: skip
-        if e["repair"].get("does_not"):
-            lines.append("Did not work: " + "; ".join(e["repair"]["does_not"]))
-        lines.append("")
-    if tail:
-        lines += ["## Conditions that hold only where the incumbent already succeeds", *tail, ""]
+def _entry_lines(e: dict, h: dict | None) -> list[str]:
+    """One entry of KNOWLEDGE.md. Object names from the evidence never reach it (no `by_object`, no `scope_why`):
+    only the reading family's own round labels."""
+    src = e.get("source") or {}
+    head = f"### {e['id']}  ({e['scope']}, v{e.get('version', 1)}, {e.get('status', '')}; from {source_family(e)}"
+    head += f" iterations {src['iters']})" if src.get("iters") else ")"
+    if h is None:
+        mark = "This incumbent: the condition holds on none of its diagnostic rounds"
+    else:
+        failed = [l for l, ok in h["rounds"] if not ok]
+        ok = [l for l, good in h["rounds"] if good]
+        mark = f"This incumbent: the condition holds on {len(failed)} failed round(s)" + (
+            f": {', '.join(failed)}" if failed else ""
+        )
+        if ok:
+            mark += f"; and on {len(ok)} round(s) it succeeds on: {', '.join(ok)}"
+    lines = [head, mark, f"Condition: {_cond_text(e['condition'])}", f"Reads as: {e['signature'].get('reads_as', '')}",
+             f"Worked: {e['repair'].get('works', '')} (where: {e['repair'].get('where', '')})"]  # fmt: skip
+    if e["repair"].get("does_not"):
+        lines.append("Did not work: " + "; ".join(e["repair"]["does_not"]))
+    return lines + [""]
+
+
+def _sync_line(s: dict) -> str:
+    """One code sync of an alternating run (scripts/rsi/alternate.py `sync.jsonl`)."""
+    head = f"- iteration {s.get('iter')}: {s.get('from')} -> {s.get('to')}: "
+    if s.get("skipped"):
+        return head + f"nothing merged ({s['skipped']})"
+    files = ", ".join(s.get("merged", []) + s.get("copied", [])) or "none"
+    if s.get("deleted"):
+        files += "; deleted " + ", ".join(s["deleted"])
+    text = head + f"merged {files}"
+    if s.get("conflicts"):
+        text += f"; kept {s.get('to')}'s side of " + "; ".join(s["conflicts"])
+    r = s.get("result") or {}
+    if "b" in r:
+        text += f"; on {s.get('to')}'s acceptance pool {r['b']} wins, {r['c']} losses"
+    return (
+        text
+        + f" -> {'accepted' if s.get('accepted') else 'rejected'}"
+        + (f" ({s['reason']})" if s.get("reason") and not s.get("accepted") else "")
+    )
+
+
+def render_library(ents: list[dict], hs: list[dict], syncs: list[dict] | None = None) -> str:
+    """KNOWLEDGE.md (user 2026-11-18): every entry, one section per tag, each marked with the incumbent's diagnostic
+    rounds its condition holds on (hits), then the code syncs between the families of an alternating run."""
+    by_hit = {h["id"]: h for h in hs}
+    lines = ["# Knowledge library: every entry, marked with this incumbent's diagnostic rounds", "",
+             "Entries (condition -> failure signature -> repair) the loops of this family and of others have learned, "
+             "tagged by the kind of task: one-hand pick (single) and two-hand pick (bimanual). Read them all. What "
+             "worked on other objects or another task is a hypothesis here; this family's rounds decide. Under each "
+             "entry: the rounds of this incumbent its condition holds on. Cite an entry you use by its id in "
+             "`knowledge_refs`.", ""]  # fmt: skip
+    tags = sorted(
+        {e.get("tag") or "untagged" for e in ents},
+        key=lambda t: (t not in TAGS, list(TAGS).index(t) if t in TAGS else 0, t),
+    )
+    for t in tags:
+        sec = [e for e in ents if (e.get("tag") or "untagged") == t]
+        sec.sort(key=lambda e: (-(by_hit.get(e["id"]) or {}).get("failed", 0), e["id"]))
+        lines += [f"## {TAGS.get(t, t).capitalize()} (tag {t}): {len(sec)} entr{'y' if len(sec) == 1 else 'ies'}", ""]
+        for e in sec:
+            lines += _entry_lines(e, by_hit.get(e["id"]))
+    if syncs:
+        lines += ["## Code syncs between the families", "",
+                  "After each family's iteration its incumbent's skills package was merged into the other family's "
+                  "and kept there only if it lost no more starts than it won on that family's acceptance pool.", ""]  # fmt: skip
+        lines += [_sync_line(x) for x in syncs] + [""]
     return "\n".join(lines)
 
 
 def write_hits(root: Path, rounds_dir: Path, out_dir: Path, family: str, pool: Path | None = None) -> int:
     """Evaluate the library under `root` on the rounds in `rounds_dir` (start files from `pool`, by default the
-    pool_diag beside the rounds' diag directory); write <out_dir>/knowledge_hits.json and
-    <root>/scripts/rsi/knowledge/HITS.md. Returns the entries hitting a failed round. No library: nothing written."""
+    pool_diag beside the rounds' diag directory); write <out_dir>/knowledge_hits.json and the whole library, marked,
+    as <root>/scripts/rsi/knowledge/KNOWLEDGE.md. Returns the entries hitting a failed round. No entry and no sync:
+    nothing written."""
     lib = root / "scripts" / "rsi" / "knowledge"
     ents = entries(lib) if lib.is_dir() else []
-    if not ents:
+    syncs = jl(lib / SYNCS) if lib.is_dir() else []
+    if not ents and not syncs:
         return 0
-    pool = pool or rounds_dir.parents[1] / "pool_diag"
-    rows = RC.scan([(rounds_dir, family), (pool, family)], RC.machine(), RC.scene_meta(root, family))
-    hs = hits(ents, rows)
+    hs: list[dict] = []
+    if ents:
+        pool = pool or rounds_dir.parents[1] / "pool_diag"
+        rows = RC.scan([(rounds_dir, family), (pool, family)], RC.machine(), RC.scene_meta(root, family))
+        hs = hits(ents, rows)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_atomic(out_dir / "knowledge_hits.json", json.dumps(hs, indent=1) + "\n")
-    _write_atomic(lib / "HITS.md", render_hits(hs, {e["id"]: e for e in ents}))
+    _write_atomic(lib / ROLE_FILE, render_library(ents, hs, syncs))
     return sum(h["failed"] > 0 for h in hs)
 
 
@@ -711,6 +836,9 @@ def main(argv=None) -> int:
     b.add_argument("--out", type=Path, default=OUT)
     b.add_argument("--ctx-root", type=Path, help="where the Consolidator's context directories go")
     b.add_argument("--stub", action="store_true", help="no model call: a test double writes the conditions")
+    b.add_argument(
+        "--tag", help="the entries' tag (default: tag_of -- single, bimanual or mixed by the tasks' objects)"
+    )
     ix = sub.add_parser("index")
     ix.add_argument("--out", type=Path, default=OUT)
     ev2 = sub.add_parser("eval")
@@ -754,7 +882,7 @@ def main(argv=None) -> int:
         if a.iters:
             lo, _, hi = a.iters.partition("-")
             iters = set(range(int(lo), int(hi or lo) + 1))
-        print(json.dumps(build(a.sandbox.resolve(), a.family, a.out, iters, a.stub, a.ctx_root)))
+        print(json.dumps(build(a.sandbox.resolve(), a.family, a.out, iters, a.stub, a.ctx_root, a.tag)))
         return 0
     if a.cmd == "index":
         index(a.out)

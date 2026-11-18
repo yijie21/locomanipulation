@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 25, 2026-11-11)
+# Rules for the scene RSI loop (TODO 27, version 26, 2026-11-18)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -271,8 +271,19 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     columns, the failure signature it goes with, what repaired it and what did not, and the per-object evidence;
     the driver scopes each entry `shared` (held and helped on two or more objects) or `local` (one object, or
     narrowed to the positive objects' start.* ranges) and never by an object's name (rule 30's check runs on the
-    entry's text). Before each Reviewer the driver evaluates every entry on the incumbent's diagnostic rounds and
-    writes the ones that hold to scripts/rsi/knowledge/HITS.md (prompt: what worked elsewhere is a hypothesis
-    here; this family's rounds decide; cite an entry's id in `knowledge_refs`). The skills package may not read it:
-    a draft whose skills code names `rsi/knowledge`, `knowledge_hits` or `HITS.md` is void, as rule 38's recorder
-    (code: loop.py named_objects). The library never enters the gate, the sentinel or the regression.
+    entry's text). The entries live in one file, scripts/rsi/knowledge/knowledge.jsonl, each tagged by the kind of
+    task it was learned on (`single` one-hand pick, `bimanual` two-hand pick; version 26, user 2026-11-18). Before
+    each Reviewer the driver writes scripts/rsi/knowledge/KNOWLEDGE.md: the whole library, every entry marked with
+    the incumbent's diagnostic rounds its condition holds on (a mark, not a filter), and an alternating run's code
+    syncs; the Reviewer and the Engineer read it whole (prompt: what worked elsewhere is a hypothesis here; this
+    family's rounds decide; cite an entry's id in `knowledge_refs`). The skills package may not read it: a draft
+    whose skills code names `rsi/knowledge`, `knowledge_hits`, `HITS.md`, `KNOWLEDGE.md` or `knowledge.jsonl` is
+    void, as rule 38's recorder (code: loop.py named_objects). The library never enters the gate, the sentinel or
+    the regression.
+40. Two families sharing one skills package (the alternating driver alternate.py, run outside the sandboxes; version
+    26, user 2026-11-18). An alternating run gives each family one iteration in turn. After a family's iteration its
+    incumbent is merged into the other family's skills package and enters there only through that family's gate
+    under the non-inferior rule (gate.py --non-inferior: it may not lose more of the other family's acceptance
+    starts than it wins); the verdict counts as one of that family's gate calls (code). Each family's prompts name
+    the other family and its skill file; a change to a module both skills use must stay correct for both, and an
+    Engineer does not edit the other family's skill file for its own tasks (prompt).

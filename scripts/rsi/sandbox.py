@@ -3,7 +3,11 @@ ADT scene data linked to the origin (read-only), its own git history (the driver
 family's diagnostic and acceptance pools drawn inside it (the acceptance pool in the hidden tree). The loop then runs
 from the sandbox: `<sandbox>/scripts/rsi/loop.py run <family>`.
 
-    python3 scripts/rsi/sandbox.py /workspace/code/rsi-scene/<name> pick_single
+    python3 scripts/rsi/sandbox.py /workspace/code/rsi-scene/<name> pick_single [--fresh]
+
+`--fresh` (user 2026-11-18): the sandbox holds neither the knowledge library (scripts/rsi/knowledge) nor the
+experience library (scripts/rsi/experience): the run inherits no earlier family's knowledge. scripts/rsi/alternate.py
+builds its two sandboxes this way and installs the shared library itself.
 
 A family file's `sandbox` block (TODO 31, user 2026-10-20: the loop starts from the motor layer and must not find the
 earlier skill catalog, the scene RSI records or the earlier grasp programs) changes what the sandbox holds:
@@ -165,23 +169,36 @@ def library_without(dest: Path, family: str) -> None:
     reflect.index(lib)
 
 
+def _knowledge_module():
+    mod = importlib.util.spec_from_file_location("rsi_knowledge", HERE / "knowledge.py")
+    kn = importlib.util.module_from_spec(mod)
+    mod.loader.exec_module(kn)
+    return kn
+
+
 def knowledge_without(dest: Path, family: str) -> None:
     """The sandbox's knowledge library (scripts/rsi/knowledge, plan docs/handoff/shared-knowledge-plan-20261111.md)
-    without `family`'s own entries and those of the family file's `library_exclude`; nothing when it holds none.
-    HITS.md is written by the loop before each Reviewer (knowledge.write_hits)."""
+    without the entries built from `family` and from the families of the family file's `library_exclude` (by each
+    entry's `source.family` in knowledge.jsonl); nothing when it holds none. KNOWLEDGE.md is written by the loop before
+    each Reviewer (knowledge.write_hits)."""
     lib = dest / "scripts" / "rsi" / "knowledge"
     if not lib.is_dir():
         return
     fam_file = dest / "scripts" / "rsi" / "families" / f"{family}.json"
     fam = json.loads(fam_file.read_text()) if fam_file.exists() else {}
-    for name in [family, *fam.get("library_exclude", [])]:
-        if (lib / name).is_dir():
-            shutil.rmtree(lib / name)
-    (lib / "HITS.md").unlink(missing_ok=True)
-    mod = importlib.util.spec_from_file_location("rsi_knowledge", HERE / "knowledge.py")
-    kn = importlib.util.module_from_spec(mod)
-    mod.loader.exec_module(kn)
+    drop = {family, *fam.get("library_exclude", [])}
+    kn = _knowledge_module()
+    kn.save_entries(lib, [e for e in kn.entries(lib) if kn.source_family(e) not in drop])
+    for f in ("KNOWLEDGE.md", "HITS.md"):
+        (lib / f).unlink(missing_ok=True)
     kn.index(lib)
+
+
+def without_libraries(dest: Path) -> None:
+    """--fresh: neither the knowledge library nor the experience library in the sandbox (user 2026-11-18)."""
+    for rel in ("scripts/rsi/knowledge", "scripts/rsi/experience"):
+        if (dest / rel).exists():
+            shutil.rmtree(dest / rel)
 
 
 def physics_target(repo: Path, scene: str) -> Path:
@@ -194,8 +211,9 @@ def physics_target(repo: Path, scene: str) -> Path:
     return target
 
 
-def build(dest: Path, family: str, ref: str = "HEAD") -> None:
-    """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in)."""
+def build(dest: Path, family: str, ref: str = "HEAD", fresh: bool = False) -> None:
+    """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in). `fresh`:
+    no knowledge and no experience library (without_libraries)."""
     if dest.exists():
         raise SystemExit(f"{dest} exists")
     dest.mkdir(parents=True)
@@ -203,6 +221,8 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True)
     spec = apply_spec(dest, family)
     default_strip(dest)
+    if fresh:
+        without_libraries(dest)
     library_without(dest, family)
     knowledge_without(dest, family)
     hide_seeds(dest, family)
@@ -263,11 +283,12 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("dest", type=Path)
     ap.add_argument("family")
+    ap.add_argument("--fresh", action="store_true", help="no knowledge and no experience library in the sandbox")
     a = ap.parse_args(argv)
     families = sorted(f.stem for f in (HERE / "families").glob("*.json"))
     if a.family not in families:  # before anything is written: a typo used to leave a half-extracted tree behind
         raise SystemExit(f"no family {a.family!r} in scripts/rsi/families; known: {', '.join(families)}")
-    build(a.dest.resolve(), a.family)
+    build(a.dest.resolve(), a.family, fresh=a.fresh)
     return 0
 
 

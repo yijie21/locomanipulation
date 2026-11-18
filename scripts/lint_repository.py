@@ -42,7 +42,7 @@ GUIDES = {
     "docs/rsi_logistics_room.md": 200,  # 2026-10-24: the logistics-room runbook (TODO 38)
     "docs/rsi_logistic_room_1030.md": 220,  # 2026-11-04: the logistics_room_1030 runbook (ten scanned objects per instance, two families)
     "docs/gso_object_selection.md": 160,  # 2026-11-17 (user): how the scanned objects are filtered, by rule then by hand
-    "docs/rsi_logistic_room_1030_single_bimanual.md": 280,  # 2026-11-17 (user): the two hand-picked test scenes' runbook; 230 -> 280 for section 7 (single first, the shared knowledge, then bimanual)
+    "docs/rsi_logistic_room_1030_single_bimanual.md": 300,  # 2026-11-17 (user): the two hand-picked test scenes' runbook; 230 -> 280 for section 7 (single first, the shared knowledge, then bimanual); 2026-11-18: 300 for the three loop modes
     "docs/rsi.md": 400,  # 2026-11-01 (user): 245 -> 400 for section 5.1 (two seeds) and the from-scratch run commands; before: + sections 8 and 9 (2026-10-23)
     "docs/rsi_design.md": 150,
     "docs/agents/doc-ownership.md": 50,

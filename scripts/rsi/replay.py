@@ -81,14 +81,16 @@ def rebuild_parks(loop: Path, n: int) -> dict:
 def install_knowledge(dst: Path, knowledge: Path) -> None:
     """Plan docs/handoff/shared-knowledge-plan-20261111.md section 7.2: the library under test, used as given -- the
     family's own entries stay (a temporal-split library is built from the very iterations being replayed), so
-    sandbox.knowledge_without is not applied. The exported copy is replaced, HITS.md dropped, INDEX.md rebuilt."""
+    sandbox.knowledge_without is not applied. The exported copy is replaced, KNOWLEDGE.md (and the older HITS.md)
+    dropped, INDEX.md rebuilt."""
     import knowledge as KN
 
     lib = dst / "scripts" / "rsi" / "knowledge"
     if lib.exists():
         shutil.rmtree(lib)
     shutil.copytree(knowledge, lib)
-    (lib / "HITS.md").unlink(missing_ok=True)
+    for f in ("KNOWLEDGE.md", "HITS.md"):
+        (lib / f).unlink(missing_ok=True)
     KN.index(lib)
 
 

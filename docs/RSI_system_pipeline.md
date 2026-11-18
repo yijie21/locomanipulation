@@ -46,7 +46,7 @@ scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit
 ├── digest.py / failure_class.py / records.py / isolate.py / design.py / diag_pool.py / try.py
 │                           给 Reviewer 的视图：摘要、失败类型、记录库、动作层归因、设计探针、诊断池重抽、角色自测
 ├── reflect.py + experience/   经验库：每个跑完的任务族一条反思
-├── knowledge.py (765)      两层知识库：建库（build）、在诊断局上求值（eval → HITS.md）、重放对照表（report）（11-11）
+├── knowledge.py             两层知识库：建库（build，一个带 tag 的共享文件，11-18）、整库写成 KNOWLEDGE.md 并标注命中（eval）、重放对照表（report）（11-11）
 ├── replay.py               从跑完的运行的某一轮起重放，比较流程改动；--knowledge 装入指定的库
 ├── past.py                 show / compare 看场景图记录（TODO 39）
 ├── prompts/{reviewer,manager,engineer,composer,reflector,consolidator}.md   角色提示词
@@ -105,15 +105,15 @@ scripts/adt_download.py     只取序列的 main_groundtruth（约 20 MB）和�
    │
    ├─ 0 驱动程序准备：现任跑诊断池 (50 局，batch.py 12 进程) → diag/incumbent_<hash>/{.json, .npz, .past.jsonl}
    │     诊断池失败 < 10 局就重抽 (diag_pool.py)；撤销已被做成的搁置；
-   │     知识库钩子 (knowledge_step，11-11)：每条条目的条件在这些诊断局上求值 → 沙盒的 scripts/rsi/knowledge/HITS.md
-   │     + iter_NN/knowledge_hits.json，账本记一行 knowledge；库为空时不生成 HITS.md，提示里也没有知识块；
+   │     知识库钩子 (knowledge_step，11-11)：每条条目的条件在这些诊断局上求值 → 沙盒的 scripts/rsi/knowledge/KNOWLEDGE.md（整库加标注，11-18）
+   │     + iter_NN/knowledge_hits.json，账本记一行 knowledge；库为空时不生成 KNOWLEDGE.md，提示里也没有知识块；
    │     同类失败 ≥ 2 局时单独重跑那条命令，判动作层还是技能 (isolate.py)；
    │     生成 diag_digest.md (digest.py：失败类型计数、每任务几何事实、首失败步骤、区分数、场景图转移一节)
    │     + reviewer_context.json (现任、参数、round_features 每局一行的条件列表、mechanisms 机制表、压缩 history、focus、parked、attribution、designs_last)
    │
    ├─ 1 Reviewer (claude -p, high)：读规则 / 方案 / 上下文 / 摘要 → .past.jsonl → NPZ 最后手段
    │     工具：graspability / body.reach / choose / prep / records.query / try.py (≤ 40 局/次, ≤ 240 局/轮)
-   │     有命中时还读 HITS.md（规则 39）
+   │     有库时还整个读 KNOWLEDGE.md（规则 39）
    │     输出 hypotheses.json：≤ 4 条 {claim, instead, evidence, delta.set, predicted_fixed / broken, needs_code?, measure?, design?, knowledge_refs?}
    │     + infeasible 声明（硬约束 check 程序 + 出路 + 1–3 次尝试）
    │
@@ -268,7 +268,7 @@ loop.named_objects：skills/ 里引用记录器 → 草稿作废（规则 38）
           → Consolidator（LLM）只写 condition / signature / repair，程序校验列名和物体名
           → 程序按 evidence.by_object 定 scope：多个物体净正是 shared，只有一个物体净正是 local，
             local 用物体特征区间收窄条件（narrowed_by）
-          → 下一轮在现任诊断局上求值条件，命中的写进 HITS.md 给 Reviewer
+          → 下一轮在现任诊断局上求值条件，整库加命中标注写进 KNOWLEDGE.md 给 Reviewer
 ```
 
 这里判断"10 个任务之间是否共享"的依据就是 `by_object`：一条修法在几个物体上净正。截至 11-16，仓库里没有 `scripts/rsi/knowledge/` 目录，即还没对 `ga-past-b` 跑过 `build`，HITS.md 从未生成；设计稿里的 `hand_hooked_under_slab`（狼摆件 3 / 3、盆栽反例）是示意，不是实测产出。
