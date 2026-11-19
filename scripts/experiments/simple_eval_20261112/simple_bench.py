@@ -15,7 +15,8 @@ An episode:
     from the grasp, and reached directly its fingers swept the box over in 26 of 27 trial episodes), and the entry to the
     grasp along that normal at 0.08 m/s, starting halfway between the hand and the pregrasp command, with its IK from the
     reference pose;
-  - close the fingers, lift LIFT_M from where the last command's reference ended, hold 1 s.
+  - close the fingers, lift LIFT_M from where the last command's reference ended (LIFT_CROUCH_M from a crouch, the
+    pelvis rising LIFT_M), hold 1 s.
 One command per reach; nothing measured of the hand corrects it.
 
 Methods (the command for the pregrasp and the entry; the waypoint is always sent as it is):
@@ -72,6 +73,7 @@ PICK_TASKS = ("XMovePickTeleop", "XMoveBendPickTeleop", "BendPickMP", "TabletopG
 CLEAR_OUT, CLEAR_UP = 0.10, 0.10  # m, room_grasp.CLEAR_OUT; the data's waypoint is 0.10 over the surface
 ENTRY_SPEED, ENTRY_CONT = 0.08, 0.5  # the data's REACH_GRASP_SPEED and REACH_GRASP_CONT
 LIFT_M = 0.15
+LIFT_CROUCH_M = 0.25  # from a crouch (pelvis ~0.56 m) the hand rises ~60 % of the command: 0.15 lifted the box 5-8 cm
 GRASPR_ID0 = 1300000  # data_graspr_odo's reset ids: three reaches each, the third the entry
 WM = "outputs/reachwm_20261030/invert/wrist_graspr_odo/wm_ref.pt"
 LOOKUP_DATA = ",".join(
@@ -334,8 +336,8 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         kw = P.cont(m, side)
         h0 = float(m.jaw_centre(side)[0][2])
         look["phase"] = "lift"
-        # from a crouch the pelvis rises with the hand: held at the crouch's height the arm alone lifts the box 5-8 cm
-        m.reach(side, kw["start"] + np.r_[0.0, 0.0, LIFT_M], kw["start_rot"],
+        # from a crouch the pelvis rises with the hand, and the hand is sent higher (LIFT_CROUCH_M)
+        m.reach(side, kw["start"] + np.r_[0.0, 0.0, LIFT_M if pz < 0 else LIFT_CROUCH_M], kw["start_rot"],
                 pelvis_z=None if pz < 0 else float(pz) + LIFT_M, speed=0.1, servo=False, **kw)  # fmt: skip
         m.hold(1.0)
         row["hand_rise_cm"] = round(100 * (float(m.jaw_centre(side)[0][2]) - h0), 2)
