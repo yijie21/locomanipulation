@@ -86,7 +86,14 @@ class Lookup:
     command's miss is the mean of (final palm - command) over the K training reaches nearest in the command (heading
     frame, and the pelvis height when crouched)."""
 
-    def __init__(self, spec: str, k: int):
+    def __init__(self, spec: str, k: int, cache: str | None = None):
+        self.k = k
+        if cache and Path(cache).exists():  # the tables of an earlier build of the same spec
+            z = np.load(cache, allow_pickle=True)
+            assert str(z["spec"]) == spec, (str(z["spec"]), spec)
+            self.tabs = {tuple(key): (z[f"X{i}"], z[f"Y{i}"]) for i, key in enumerate(z["keys"].tolist())}
+            self.n = {key: len(v[0]) for key, v in self.tabs.items()}
+            return
         import data as DT
 
         D = DT.load(spec)
@@ -96,7 +103,7 @@ class Lookup:
         for j in range(1, len(r)):
             pos[j] = pos[j - 1] + 1 if r[j] == r[j - 1] else 0
         entry = (r >= GRASPR_ID0) & (r < GRASPR_ID0 + 100000) & (pos == 2)
-        u, self.k, self.tabs = D["u"], k, {}
+        u, self.tabs = D["u"], {}
         for e in (False, True):
             for sd in (1.0, -1.0):
                 for stand in (True, False):
@@ -104,6 +111,13 @@ class Lookup:
                     X = np.c_[D["target"][i], np.zeros(len(i)) if stand else u[i, 11]].astype(np.float64)
                     self.tabs[(e, sd, stand)] = (X, (D["pos_f"][i] - D["target"][i]).astype(np.float64))
         self.n = {key: len(v[0]) for key, v in self.tabs.items()}
+        if cache:
+            keys = list(self.tabs)
+            arrs = {f"X{i}": self.tabs[key][0] for i, key in enumerate(keys)}
+            arrs.update({f"Y{i}": self.tabs[key][1] for i, key in enumerate(keys)})
+            tmp = f"{cache}.{os.getpid()}.npz"
+            np.savez(tmp, spec=spec, keys=np.array(keys, dtype=object), **arrs)
+            os.replace(tmp, cache)
 
     def miss(self, t: np.ndarray, sd: float, pz: float, entry: bool) -> np.ndarray:
         X, Y = self.tabs[(entry, sd, pz < 0)]
@@ -345,6 +359,9 @@ def main() -> None:
     ap.add_argument("--squeeze", type=float, default=0.6, help="how far past the closed posture the fingers are driven")
     ap.add_argument("--wm", default=WM, help="the exported self model (method model)")
     ap.add_argument("--lookup-data", default=LOOKUP_DATA)
+    ap.add_argument(
+        "--lookup-cache", default="outputs/reachwm_20261030/lookup_tables.npz", help="built once, then read"
+    )
     ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
     ap.add_argument("--column", choices=("truth", "perception"), default="truth")
@@ -367,7 +384,7 @@ def main() -> None:
         models["inverse"] = IM.load(a.inverse)
         print("inverse model", a.inverse, len(models["inverse"]), "members", flush=True)
     elif a.method == "lookup":
-        models["lookup"] = Lookup(a.lookup_data, a.k)
+        models["lookup"] = Lookup(a.lookup_data, a.k, a.lookup_cache)
         print("lookup tables", models["lookup"].n, flush=True)
     eps = EP.episodes(a.task)
     if "-" in a.episodes:
