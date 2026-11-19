@@ -372,6 +372,7 @@ COMPOSER_SCHEMA = {  # TODO 32.9
     "properties": {
         "decision": {"enum": ["merge", "adopt", "keep"]},
         "adopted": {"type": "integer"},
+        "merged": {"type": "array", "items": {"type": "integer"}},  # `merge`: the drafts whose edits the package keeps
         "adopted_pool": {"type": "string"},  # TODO 33.8: adopt a candidate_pool entry (its hash) as it stands
         "set": {"type": "object"},
         "mechanism": {"type": "string"},
@@ -2651,7 +2652,11 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     stray = revert_strays(base_changes)
     put_skills(Path(inc["dir"]) / "skills")
     jdump(it_dir / "composer.json", comp)
-    ledger(dict(step="compose", iter=n, decision=comp["decision"], adopted=comp.get("adopted"), notes=comp["notes"],
+    numbers = {
+        c["number"] for c in cands
+    }  # the drafts a merge kept (knowledge.draft_verdicts credits their gate verdict)
+    merged = sorted({k for k in comp.get("merged") or [] if k in numbers}) if comp["decision"] == "merge" else None
+    ledger(dict(step="compose", iter=n, decision=comp["decision"], adopted=comp.get("adopted"), merged=merged, notes=comp["notes"],
                 mechanism=comp.get("mechanism", ""), set=comp.get("set"), stray=stray, void=bool(leaks or stray),
                 leaks=leaks, **acct))  # fmt: skip
     if leaks or stray:  # its working copy leaves the visible tree as a voided draft does

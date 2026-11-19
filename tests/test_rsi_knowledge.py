@@ -203,7 +203,7 @@ class Mechanisms(unittest.TestCase):
              "inc1:pick_Plant4_1_s3": "broken"},
         )  # fmt: skip
         self.assertEqual([x["hash"] for x in m["drafts"]], ["aaa", "bbb"])
-        self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True))
+        self.assertEqual(m["gate"], dict(b=4, c=0, accepted=True, via="draft"))
 
     def test_mechanism_without_flips_or_gate_is_dropped(self):
         with tempfile.TemporaryDirectory() as d:
@@ -214,7 +214,7 @@ class Mechanisms(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             m = {x["slug"]: x for x in KN.mechanisms(two_iteration_loop(Path(d)), iters={0})}["H1_hang"]
         self.assertEqual(m["ids"], [(0, "H1_hang")])
-        self.assertEqual(m["gate"], dict(b=1, c=0, accepted=False))
+        self.assertEqual(m["gate"], dict(b=1, c=0, accepted=False, via="draft"))
 
     def test_void_gate_row_leaves_gate_none(self):
         with tempfile.TemporaryDirectory() as d:
@@ -610,10 +610,10 @@ class Consolidate(unittest.TestCase):
             summary = KN.build(root, "fam", out, stub=True, ctx_root=root / "ctx")
             self.assertEqual((summary["entries"], summary["tag"]), (1, "mixed"))  # no tasks in the family file: mixed
             ids = [e["id"] for e in KN.entries(out)]
-            self.assertIn("fam/H1_hang", ids)
+            self.assertIn("fam/i00_H1_hang", ids)  # the mechanism's first iteration names it
             self.assertNotIn("fam/old", ids)  # I6: a rebuild leaves no stale entry
             self.assertIn("other/e", ids)  # only this family's entries are replaced
-            e = next(e for e in KN.entries(out) if e["id"] == "fam/H1_hang")
+            e = next(e for e in KN.entries(out) if e["id"] == "fam/i00_H1_hang")
             self.assertEqual((e["tag"], e["source"]["family"]), ("mixed", "fam"))
             self.assertTrue((out / "build" / "fam.md").exists())
             self.assertIn("H1_hang", (out / "INDEX.md").read_text())
@@ -998,6 +998,70 @@ def cited_loop(root: Path) -> Path:
     return write_loop(root, ledger, per_iter)
 
 
+class GateAttribution(unittest.TestCase):
+    """2026-11-18: a gate verdict reaches the drafts it judged -- a draft alone, the Composer's adopted draft, or the
+    drafts a merge kept (`merged`) --, with b and c read from the row's `result` as loop.py writes them."""
+
+    DRAFTS = [dict(number=1, hypothesis="H1", hash="d1"), dict(number=2, hypothesis="H2", hash="d2"),
+              dict(number=3, hypothesis="H3", hash="d3")]  # fmt: skip
+
+    def test_a_drafts_own_hash(self):
+        rows = [dict(step="gate", iter=0, hash="d2", accepted=False, result=dict(b=1, c=2))]
+        self.assertEqual(KN.draft_verdicts(rows, self.DRAFTS), {2: dict(b=1, c=2, accepted=False, via="draft")})
+
+    def test_a_merge_credits_only_the_drafts_it_kept(self):
+        rows = [dict(step="compose", iter=0, decision="merge", merged=[1, 3]),
+                dict(step="gate", iter=0, hash="m1", accepted=True, result=dict(b=5, c=1))]  # fmt: skip
+        got = KN.draft_verdicts(rows, self.DRAFTS)
+        self.assertEqual(sorted(got), [1, 3])
+        self.assertEqual(got[1], dict(b=5, c=1, accepted=True, via="merged"))
+
+    def test_an_adopted_draft_with_overrides_and_an_older_merge(self):
+        adopt = [dict(step="compose", iter=0, decision="adopt", adopted=2),
+                 dict(step="gate", iter=0, hash="x9", accepted=True, result=dict(b=4, c=0))]  # fmt: skip
+        self.assertEqual(KN.draft_verdicts(adopt, self.DRAFTS)[2]["via"], "adopted")
+        old = [dict(step="compose", iter=0, decision="merge"), dict(step="gate", iter=0, hash="m1", accepted=True)]
+        self.assertEqual(KN.draft_verdicts(old, self.DRAFTS), {})  # which drafts went in is not known
+
+    def test_a_sync_verdict_is_no_drafts(self):
+        rows = [dict(step="gate", hash="d1", accepted=True, sync={"from": "other"})]
+        self.assertEqual(KN.draft_verdicts(rows, self.DRAFTS), {})
+
+    def test_a_mechanism_gets_its_merged_candidates_verdict(self):
+        ledger = [dict(step="probe", iter=0, results=[dict(id="H1", fixed=["pick_Wolf_1_s1"], broken=[])]),
+                  dict(step="manager", iter=0, decision="engineer", hypotheses=["H1", "H2"], repeats=[]),
+                  dict(step="compose", iter=0, decision="merge", merged=[1]),
+                  dict(step="gate", iter=0, hash="m1", accepted=True, result=dict(b=6, c=1))]  # fmt: skip
+        per_iter = {0: {"hypotheses.json": dict(hypotheses=[dict(id="H1", claim="c", instead="i"),
+                                                             dict(id="H2", claim="c", instead="i")]),
+                        "candidates.json": [dict(number=1, hypothesis="H1", hash="d1", fixed=["pick_Wolf_1_s1"], broken=[]),
+                                            dict(number=2, hypothesis="H2", hash="d2", fixed=[], broken=[])],
+                        "reviewer_context.json": dict(incumbent=dict(hash="inc0"))}}  # fmt: skip
+        with tempfile.TemporaryDirectory() as d:
+            ms = {m["key"]: m for m in KN.mechanisms(write_loop(Path(d), ledger, per_iter))}
+        self.assertEqual(ms["i00_H1"]["gate"], dict(b=6, c=1, accepted=True, via="merged"))
+        self.assertNotIn("i00_H2", ms)  # not merged, no flip: nothing to learn from
+
+    def test_two_mechanisms_named_alike_in_different_iterations_get_different_keys(self):
+        """A hypothesis id is unique within its iteration only: two `H1`s rooted in iterations 0 and 2 are two
+        entries, not one."""
+        H = lambda i: dict(id=i, claim="c", instead="i")  # noqa: E731
+        ledger = [dict(step="probe", iter=0, results=[dict(id="H1", fixed=["t_s1"], broken=[])]),
+                  dict(step="probe", iter=2, results=[dict(id="H1", fixed=["t_s2"], broken=[])])]  # fmt: skip
+        ctx = {"reviewer_context.json": dict(incumbent=dict(hash="inc"))}
+        per_iter = {0: {"hypotheses.json": dict(hypotheses=[H("H1")]), **ctx},
+                    2: {"hypotheses.json": dict(hypotheses=[H("H1")]), **ctx}}  # fmt: skip
+        with tempfile.TemporaryDirectory() as d:
+            keys = sorted(m["key"] for m in KN.mechanisms(write_loop(Path(d), ledger, per_iter)))
+        self.assertEqual(keys, ["i00_H1", "i02_H1"])
+
+    def test_the_composer_names_the_drafts_it_merged(self):
+        LP = _scene_loop()
+        self.assertEqual(LP.COMPOSER_SCHEMA["properties"]["merged"], {"type": "array", "items": {"type": "integer"}})
+        self.assertIn("`merged`", (REPO / "scripts/rsi/prompts/composer.md").read_text())
+        self.assertIn("merged=merged", (REPO / "scripts/rsi/loop.py").read_text())
+
+
 class Lifecycle(unittest.TestCase):
     """User 2026-11-18: an entry's citations (Reviewer knowledge_refs) and how the citing hypotheses ended set its
     standing -- tested, candidate, doubtful, and for the reader resolved -- which orders KNOWLEDGE.md."""
@@ -1016,6 +1080,19 @@ class Lifecycle(unittest.TestCase):
             ("x/d", "H7"): ("hypothesis", True, "draft", "helped"),  # the Composer adopted its draft (with overrides)
         })  # fmt: skip
         self.assertEqual(len(rows), 7)  # H2 names x/b twice: one citation
+
+    def test_a_merge_that_names_its_drafts_credits_only_them(self):
+        H = lambda i, refs: dict(id=i, claim="c", instead="i", knowledge_refs=refs)  # noqa: E731
+        ledger = [dict(step="probe", iter=0, results=[dict(id="H1", status="mixed"), dict(id="H2", status="mixed")]),
+                  dict(step="compose", iter=0, decision="merge", merged=[2]),
+                  dict(step="gate", iter=0, hash="m1", accepted=True, result=dict(b=4, c=0))]  # fmt: skip
+        per_iter = {0: {"hypotheses.json": dict(hypotheses=[H("H1", ["x/a"]), H("H2", ["x/b"])]),
+                        "candidates.json": [dict(number=1, hypothesis="H1", hash="d1"),
+                                            dict(number=2, hypothesis="H2", hash="d2")]}}  # fmt: skip
+        with tempfile.TemporaryDirectory() as d:
+            rows = {r["entry"]: r for r in KN.usage_rows(write_loop(Path(d), ledger, per_iter), "fam", "r")}
+        self.assertEqual((rows["x/b"]["accepted"], rows["x/b"]["outcome"]), ("merged", "helped"))
+        self.assertEqual((rows["x/a"]["accepted"], rows["x/a"]["outcome"]), (None, "unclear"))  # not in the merge
 
     def test_a_recount_replaces_the_runs_rows_and_keeps_the_others(self):
         with tempfile.TemporaryDirectory() as d:

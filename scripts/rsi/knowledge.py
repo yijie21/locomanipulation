@@ -88,6 +88,36 @@ def _note_flips(flips: dict[str, str], version: str | None, res: dict) -> None:
         flips.update({flip_key(version, x): "broken" for x in res.get("broken") or []})
 
 
+def gate_bc(g: dict) -> tuple:
+    """A gate ledger row's wins and losses: loop.py writes them under `result`; older rows and tests at the top."""
+    r = g.get("result") or {}
+    return g.get("b", r.get("b")), g.get("c", r.get("c"))
+
+
+def draft_verdicts(rows: list[dict], drafts: list[dict]) -> dict[int, dict]:
+    """{draft number: {b, c, accepted, via}} for one iteration's gate calls (its ledger rows), sync verdicts aside.
+    A gated hash that is a draft's is that draft's (`draft`: alone or as the second shot); a composed candidate is the
+    adopted draft's (`adopted`: the Composer took it, with overrides, so another hash) or, for a merge, the drafts the
+    Composer lists in `merged` (`merged`; 2026-11-18). A merge row without that list (an older ledger) credits no
+    draft here; usage_rows then credits every draft of the iteration."""
+    by_hash = {c.get("hash"): c.get("number") for c in drafts if c.get("hash")}
+    comp = next((r for r in reversed(rows) if r.get("step") == "compose" and not r.get("void")), {})
+    out: dict[int, dict] = {}
+    for g in rows:
+        if g.get("step") != "gate" or g.get("void") or g.get("sync") is not None or not g.get("hash"):
+            continue
+        b, c = gate_bc(g)
+        v = dict(b=b, c=c, accepted=bool(g.get("accepted")))
+        if g["hash"] in by_hash:
+            out[by_hash[g["hash"]]] = dict(v, via="draft")
+        elif comp.get("decision") == "adopt" and comp.get("adopted") is not None:
+            out[comp["adopted"]] = dict(v, via="adopted")
+        elif comp.get("decision") == "merge":
+            for k in comp.get("merged") or []:
+                out[k] = dict(v, via="merged")
+    return out
+
+
 def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
     """One dict per mechanism (module docstring): hypotheses linked by the Manager's `repeats`, their probe and draft
     flips, the gate's verdict on their drafts. Mechanisms with no flip and no gate verdict are left out. `flips` is
@@ -139,20 +169,21 @@ def mechanisms(loop: Path, iters: set[int] | None = None) -> list[dict]:
                     for p in r.get("results") or []:
                         if (n, p.get("id")) in ids:
                             _note_flips(flips, inc.get("hash"), p)
-            cands = [c for c in jload(loop / f"iter_{n:02d}" / "candidates.json", []) or []
-                     if isinstance(c, dict) and (n, c.get("hypothesis")) in ids]  # fmt: skip
+            all_drafts = [c for c in jload(loop / f"iter_{n:02d}" / "candidates.json", []) or [] if isinstance(c, dict)]
+            verdicts = draft_verdicts(by_iter[n], all_drafts)
+            cands = [c for c in all_drafts if (n, c.get("hypothesis")) in ids]
             for c in cands:
                 _note_flips(flips, inc.get("hash"), c)
                 drafts.append(
                     dict(iter=n, number=c.get("number"), hash=c.get("hash"), mechanism=c.get("mechanism") or "")
                 )
-                for g in by_iter[n]:
-                    if g.get("step") == "gate" and g.get("hash") == c.get("hash") and not g.get("void"):
-                        gate = dict(b=g.get("b"), c=g.get("c"), accepted=bool(g.get("accepted")))
+                if c.get("number") in verdicts:
+                    gate = verdicts[c["number"]]
         if not flips and gate is None:
             continue
         first = members[0]
-        out.append(dict(slug=first[1], ids=members, claims=[hyps[m].get("claim", "") for m in members],
+        # `key` names the entry: a hypothesis id is unique within its iteration only (the Manager links `NN:id`)
+        out.append(dict(slug=first[1], key=f"i{first[0]:02d}_{first[1]}", ids=members, claims=[hyps[m].get("claim", "") for m in members],
                         insteads=[hyps[m].get("instead", "") for m in members], incumbent=incumbent, flips=flips,
                         drafts=drafts, gate=gate))  # fmt: skip
     return out
@@ -230,7 +261,10 @@ def render_evidence(mech: dict, table: list[dict], ranked: list[dict], top: int 
     for c, i in zip(mech["claims"], mech["insteads"], strict=True):
         lines += [f"- claim: {c}", f"  instead: {i}"]
     if mech["gate"]:
-        lines.append(f"- gate: b {mech['gate']['b']} c {mech['gate']['c']} accepted {mech['gate']['accepted']}")
+        g = mech["gate"]
+        lines.append(
+            f"- gate: b {g['b']} c {g['c']} accepted {g['accepted']}" + (f" ({g['via']})" if g.get("via") else "")
+        )
     lines += ["", "## columns that separate flipped from unchanged rounds (best first)", ""]
     for c in ranked[:top]:
         lines.append(
@@ -558,7 +592,7 @@ def build(
     for m in mechanisms(loop, iters):
         table = evidence_table(m, rows)
         if not table:
-            log.append(f"- {m['slug']}: no diagnostic rows under its incumbent version -- skipped")
+            log.append(f"- {m['key']}: no diagnostic rows under its incumbent version -- skipped")
             continue
         ranked = rank_columns(table, RC.CONDITION_COLUMNS)  # the Consolidator sees only section 3.2's columns
         key = evidence_key(m, table, ranked, scene_note, tag, stub)
@@ -567,9 +601,9 @@ def build(
             if hit.get("entry"):
                 new.append(hit["entry"])
                 kept += 1
-                log.append(f"- {m['slug']}: {hit['entry']['scope']} (as at the last build: same evidence)")
+                log.append(f"- {m['key']}: {hit['entry']['scope']} (as at the last build: same evidence)")
             else:
-                log.append(f"- {m['slug']}: dropped as at the last build (same evidence) -- {hit.get('why', '')}")
+                log.append(f"- {m['key']}: dropped as at the last build (same evidence) -- {hit.get('why', '')}")
             continue
         entry, problems, outside = None, [], []
         for attempt in range(2):
@@ -577,7 +611,7 @@ def build(
                 m,
                 table,
                 ranked,
-                ctx_root / slugify(m["slug"]) / str(attempt),
+                ctx_root / slugify(m["key"]) / str(attempt),
                 scene_note,
                 stub=_stub_output(table) if stub else None,
                 problems=problems or None,
@@ -589,11 +623,11 @@ def build(
                 break
         note = f"; {len(outside)} paths outside the context dir" if outside else ""
         if entry is None:
-            log.append(f"- {m['slug']}: dropped -- " + "; ".join(problems) + note)
+            log.append(f"- {m['key']}: dropped -- " + "; ".join(problems) + note)
             if not (problems and problems[0].startswith(("declined: call failed", "declined: void"))):
                 fresh_cache[key] = dict(entry=None, why="; ".join(problems))  # a failed or voided call: next build
             continue
-        entry.update(id=f"{family}/{slugify(m['slug'])}", version=1, status="candidate", tag=tag,
+        entry.update(id=f"{family}/{slugify(m['key'])}", version=1, status="candidate", tag=tag,
                      source=dict(family=family, sandbox=sandbox.name, iters=sorted({n for n, _ in m["ids"]}),
                                  mechanism_ids=[h for _, h in m["ids"]], gate=m["gate"],
                                  built_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())),
@@ -602,7 +636,7 @@ def build(
         fresh_cache[key] = dict(entry=entry)
         kept += 1
         log.append(
-            f"- {m['slug']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}"
+            f"- {m['key']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}"
         )
     log.append(f"\n{kept} entries, model cost {cost:.2f} USD")
     # a rebuild replaces the family's entries (a dropped mechanism keeps none) and leaves every other family's
@@ -622,7 +656,7 @@ def evidence_key(m: dict, table: list[dict], ranked: list[dict], scene_note: str
     the tag --, hashed: the same key, the same entry."""
     import hashlib
 
-    blob = json.dumps(dict(mech={k: m[k] for k in ("slug", "ids", "claims", "insteads", "flips", "gate")},
+    blob = json.dumps(dict(mech={k: m.get(k) for k in ("key", "slug", "ids", "claims", "insteads", "flips", "gate")},
                            table=render_evidence(m, table, ranked), scene_note=scene_note, tag=tag, stub=stub),
                       sort_keys=True, default=str)  # fmt: skip
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
@@ -650,8 +684,8 @@ def usage_rows(loop: Path, family: str, run: str) -> list[dict]:
     """Every citation of a library entry in one family's loop (user 2026-11-18): one row per (hypothesis, entry id in
     its `knowledge_refs`), with how the hypothesis ended. `status`: the Prober's (verified, refuted, mixed, hypothesis);
     `picked`: the Manager chose it to build; `accepted`: `draft` when a draft of it passed the gate (alone, adopted by
-    the Composer, or as the second shot), `merged` when the Composer merged the iteration's drafts and that passed (the
-    ledger does not say which drafts went in, so every hypothesis with a valid draft that iteration is credited);
+    the Composer, or as the second shot), `merged` when a merged candidate that passed kept its draft (the Composer's
+    `merged` list; an older ledger without it credits every draft of the iteration; draft_verdicts);
     `outcome`: helped (verified or accepted), failed (refuted, not accepted) or unclear. `run`: the sandbox, so two runs
     of one family do not overwrite each other."""
     rows = jl(loop / "ledger.jsonl")
@@ -669,20 +703,19 @@ def usage_rows(loop: Path, family: str, run: str) -> list[dict]:
             if r.get("step") == "manager" and not r.get("void"):
                 picked |= {x for x in [r.get("hypothesis"), *(r.get("hypotheses") or [])] if x}
         drafts = [c for c in jload(it / "candidates.json", []) or [] if isinstance(c, dict)]
-        by_hash = {c.get("hash"): c.get("hypothesis") for c in drafts}
-        comp = next((r for r in reversed(mine) if r.get("step") == "compose" and not r.get("void")), {})
-        adopted = next((c.get("hypothesis") for c in drafts if c.get("number") == comp.get("adopted")), None)
+        hyp_of = {c.get("number"): c.get("hypothesis") for c in drafts}
         credit: dict[str, str] = {}
-        for g in mine:
-            if g.get("step") != "gate" or not g.get("accepted") or g.get("void") or g.get("sync") is not None:
-                continue
-            if g.get("hash") in by_hash:
-                credit[by_hash[g["hash"]]] = "draft"
-            elif comp.get("decision") == "adopt" and adopted:
-                credit[adopted] = "draft"
-            elif comp.get("decision") == "merge":
-                for c in drafts:
-                    credit.setdefault(c.get("hypothesis"), "merged")
+        for k, v in draft_verdicts(mine, drafts).items():
+            if v["accepted"] and hyp_of.get(k):
+                credit[hyp_of[k]] = "merged" if v["via"] == "merged" else "draft"
+        comp = next((r for r in reversed(mine) if r.get("step") == "compose" and not r.get("void")), {})
+        if comp.get("decision") == "merge" and not comp.get("merged") and any(
+            g.get("step") == "gate" and g.get("accepted") and not g.get("void") and g.get("sync") is None
+            and g.get("hash") not in {c.get("hash") for c in drafts}
+            for g in mine
+        ):  # an older ledger's merge, which drafts went in unknown: every draft of the iteration  # fmt: skip
+            for c in drafts:
+                credit.setdefault(c.get("hypothesis"), "merged")
         for h in cited:
             status = (probe.get(h["id"]) or {}).get("status") or h.get("status") or "hypothesis"
             acc = credit.get(h["id"])
@@ -1016,7 +1049,7 @@ def main(argv=None) -> int:
             md = render_evidence(m, t, rank_columns(t, RC.CONDITION_COLUMNS))
             if a.out:
                 a.out.mkdir(parents=True, exist_ok=True)
-                (a.out / f"{m['slug']}.md").write_text(md)
+                (a.out / f"{m['key']}.md").write_text(md)
             else:
                 print(md)
         return 0
