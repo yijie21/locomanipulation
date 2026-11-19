@@ -417,17 +417,19 @@ def fb_spec(method: str) -> dict | None:
       b<cm>     a constant offset of <cm> in a random direction (fixed by the episode): a calibration error
     `smfb_k<ki>_<sensor>`: the same measurement, the servo in "residual" mode (step 5): it starts at the label time and
     integrates goal - measured hand onto the self model's command (no reference to compare with: the self model's
-    reference deliberately ends off the goal). A `@p<kg>` suffix is ignored here (see base_method)."""
+    reference deliberately ends off the goal). An optional `_c<cm>` after the sensor sets the cap (default FB_CAP; step 5:
+    a payload asks for corrections beyond 15 cm). A `@p<kg>` suffix is ignored here (see base_method)."""
     method = base_method(method)[0]
     if method == "feedback":
         return dict(ki=SERVO_KI, cap=SERVO_CAP, ref_lag=0, to_end=False, sensor="ideal", level=0.0, lat=0, mode="motor")
-    m = re.fullmatch(r"(fb|smfb)_k([0-9.]+)_(ideal|[nlob][0-9.]+)", method)
+    m = re.fullmatch(r"(fb|smfb)_k([0-9.]+)_(ideal|[nlob][0-9.]+)(?:_c([0-9.]+))?", method)
     if m is None:
         return None
     s = m[3]
     sensor, level = ("ideal", 0.0) if s == "ideal" else (s[0], float(s[1:]))
     lat = int(round(level / 1000 * L.FPS)) if sensor == "l" else 0
-    return dict(ki=float(m[2]), cap=FB_CAP, ref_lag=BUF_LAG, to_end=True, sensor=sensor, level=level, lat=lat,
+    cap = FB_CAP if m[4] is None else float(m[4]) / 100
+    return dict(ki=float(m[2]), cap=cap, ref_lag=BUF_LAG, to_end=True, sensor=sensor, level=level, lat=lat,
                 mode="motor" if m[1] == "fb" else "residual")  # fmt: skip
 
 
