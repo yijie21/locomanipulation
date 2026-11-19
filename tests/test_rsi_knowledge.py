@@ -678,6 +678,9 @@ class Hits(unittest.TestCase):
         self.assertIn("a_fam -> b_fam: merged pick.py; kept b_fam's side of place.py", md)
         self.assertIn("0 wins, 0 losses -> accepted", md)
         self.assertIn("nothing merged (the merge changes nothing)", md)
+        both = KN.render_library([], [], [dict(iter=2, **{"from": "a_fam", "to": "b_fam"}, merged=[], conflicts=[
+            "pick.py: 1 hunk(s) changed on both sides"], skipped="the merge changes nothing")])  # fmt: skip
+        self.assertIn("nothing merged (the merge changes nothing); kept b_fam's side of pick.py", both)  # 2026-11-19
 
     def test_an_entry_that_holds_only_where_the_incumbent_succeeds_is_resolved_for_this_reader(self):
         e2 = dict(

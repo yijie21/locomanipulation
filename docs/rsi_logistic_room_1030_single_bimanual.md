@@ -26,20 +26,13 @@
 
 **现状（2026-11-17）**
 
-两个场景都已建好：
-- lint 都是 0 错误、0 警告，落地测试里所有物体都放稳了（20 / 20、8 / 8）。
-- MuJoCo 和 Unreal 的预览图各两张，两个 Unreal 关卡已建。
+两个场景都已建好：lint 都是 0 错误、0 警告，落地测试里所有物体都放稳了（20 / 20、8 / 8）；MuJoCo 和 Unreal 的预览图各两张，两个 Unreal 关卡已建。
 
-起点检查（第 4 节）：
-- 单手 20 个任务，每个都是 20 / 20。
-- 双手 8 个任务，每个 6–13 / 20。
-- 用户原本选了 8 件双手物体，结果 9 个任务里有 7 个一个起点都抽不到。按用户同意的“可以减少几个”，去掉了占地最大的布艺收纳方块（32 × 28 cm）。
+起点检查（第 4 节）：单手 20 个任务每个都是 20 / 20，双手 8 个任务每个 6–13 / 20。用户原本选了 8 件双手物体，结果 9 个任务里有 7 个一个起点都抽不到；按用户同意的“可以减少几个”，去掉了占地最大的布艺收纳方块（32 × 28 cm）。
 
 可行性探针：单手场景有两件报 `beyond the hand's reach from the edge`，是塑料花盆 `gso_0233` 和木头字母积木车 `gso_0323`。这只是提示，不挡流程。
 
-冒烟各一局（第 6 节），整条链都能跑通，目标都不成立：
-- 单手：锤子 `pick_gso_0154` 在伸进去时被碰偏了 5 cm。马克杯 `pick_gso_0016` 抓住并抬离台面约 5 cm（当时目标是 30 cm，现在是 20 cm）。
-- 双手：纸箱 `lift_nor_cal_box` 两手夹住后抬起约 14 cm（当时目标是 30 cm，现在是 20 cm，仍然不够）。
+冒烟各一局（第 6 节），整条链都能跑通，目标都不成立（当时目标是 30 cm，现在是 20 cm）：单手的锤子 `pick_gso_0154` 在伸进去时被碰偏了 5 cm，马克杯 `pick_gso_0016` 抓住并抬离台面约 5 cm；双手的纸箱 `lift_nor_cal_box` 两手夹住后抬起约 14 cm，仍然不够。
 
 这是预期的：主库单手抓取只抬 0.10 m（`pick.LIFT_M`），双手抱起只抬 0.15 m（`bimanual.LIFT_DZ_M`），都不读目标里的高度；抬到 20 cm 要靠内环来学。
 
@@ -51,6 +44,8 @@
 | 起点检查（20 个 seed × 全部任务） | 几秒 |
 | 一个 Unreal 关卡加一张 Unreal 预览图 | 约 1 分钟（预览图 12–16 s） |
 | 冒烟一局（仿真 28–60 s） | 4–7 s |
+
+**模式 3 冒烟（2026-11-18）**：用第 7.3 节的冒烟命令（`--stub` 角色、`--stub-knowledge`，不调用模型）连跑 3 个迭代，驱动实际运行约 22 分钟；为了测合并和冲突，先在两边现任里放了假改动。两边的内环、真实的不变差同步验收（双手 32 局、单手 80 局）、知识装入和 `KNOWLEDGE.md`、`pause` 后续跑、冲突、`status` / `publish` 都走通，修了四处 bug。做法、修复，以及一个发现但没改的建库问题（按物体特征写的条件在证据表里没有对照），见 [TODO 40.26](../TODO.md)。
 
 ## 0. 每个新终端先执行
 
@@ -219,6 +214,20 @@ cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
 
 **7.3 模式 3：单手和双手交替**
 
+先冒烟一个迭代（可选，不调用模型，但要占一张 GPU）：
+
+```bash
+R0=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-smoke
+python3 scripts/rsi/alternate.py init $R0 gso_single_grasp gso_bimanual_lift
+CUDA_VISIBLE_DEVICES=0 $PY scripts/rsi/alternate.py run $R0 --iters 1 --loop-args "--stub" --stub-knowledge > $R0/run.log 2>&1
+$PY scripts/rsi/alternate.py status $R0      # blocked: no；最后一条事件 "why": "1 iterations done"
+rm -rf $R0
+```
+
+做什么：用桩跑一个完整的迭代，角色和建库都不调用模型；诊断池、Prober 和同步验收仍是真实仿真，约 5–10 分钟。桩的候选不过验收门，两边现任不变，所以两次同步都是 `the merge changes nothing`，只查整条链走不走得通。冒烟目录用完就删。
+
+正式运行：
+
 ```bash
 R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-a
 python3 scripts/rsi/alternate.py init $R gso_single_grasp gso_bimanual_lift
@@ -231,14 +240,14 @@ $PY scripts/rsi/alternate.py status $R                                  # 看进
 - `run` 先单手、后双手，轮流各做半轮，两个半轮算一个迭代。每个半轮：
   1. 把共享知识复制进这一方的沙盒并提交，跑一轮内环（`loop.py run --max-iters 1`）。
   2. 用这一方到目前为止的整本账本重建它的条目。
-  3. 把这一方的现任技能包（参数覆盖值写进常数）三方合并进另一方的现任。两边改了同一处时保留另一方的版本，记为冲突。合并结果在另一方的验收池上过“不变差”验收门（`loop.py sync`，`gate.py --non-inferior`）：少赢不超过多赢就成为另一方的新现任，否则作废。这次验收在另一方的账本里记一行 `gate`，计入它的验收门调用次数；结果也写进共享的 `sync.jsonl`，两边的 `KNOWLEDGE.md` 末尾都能看到。
+  3. 把这一方的现任技能包（参数覆盖值写进常数）三方合并进另一方的现任。两边改了同一处时保留另一方（接收方）的版本，记为冲突；冲突的那个文件不更新共同祖先，所以以后每次同步这一处仍是冲突，两边各留自己的版本，每次都记下来；合并结果和接收方现有代码完全一样时，按“合并没有改动”跳过，不调用验收门。合并结果在另一方的验收池上过“不变差”验收门（`loop.py sync`，`gate.py --non-inferior`）：少赢不超过多赢就成为另一方的新现任，否则作废。这次验收在另一方的账本里记一行 `gate`，计入它的验收门调用次数；结果也写进共享的 `sync.jsonl`，两边的 `KNOWLEDGE.md` 末尾都能看到。
 - 终止条件（用户 11-18），满足任一条就停：
   1. 跑完 `--iters` 个迭代（5：单手 5 轮、双手 5 轮）。
   2. 整个运行跑满 `--max-hours` 小时（默认 10），算两边合计的时间：驱动实际在跑的时间累加，驱动停着的时间不算。每个阶段开始前检查，正在跑的阶段会跑完。
   3. 两边都在各自的验收池上赢到 `--stop-rate`（默认 0.8：单手 80 局赢 64 局，双手 32 局赢 26 局）。只有一方赢到时，这一方停下：跳过它的半轮，也不再往它合并代码，它的条目继续给对方用；另一方接着跑。
 - 两边的内环都带 `--alternating` 运行：每个任务族只按停止线停下，不再因为它自己的 5 小时、5 轮、12 次验收门或 Manager 决定停而停；Manager 决定停时只结束这一轮。
 - 一方的内环出错（角色调用失败、审计连续两轮作废、崩溃）或同步验收出错，不算跑完，整个运行停下，`run.log` 最后一行写着原因；查完再跑同一条 `run` 命令，从停下的那一步接着跑。建库得到 0 条或失败只记录，不停。
-- 每个阶段做完都存一次状态（`$R/alternate.json`），中途停了再跑 `run` 会接着跑。同一个运行目录同时只能有一个驱动。
+- 每个阶段做完都存一次状态（`$R/alternate.json`），中途停了再跑 `run` 会接着跑。同一个运行目录同时只能有一个驱动。跑完 `--iters` 个迭代后想多跑几个，就用更大的 `--iters` 再跑同一条 `run` 命令，从下一个迭代接着跑。要给每一次 `loop.py run` 加参数，用 `--loop-args`，例如 `--loop-args "--candidates 3"`。
 
 得到什么：`$R/knowledge/knowledge.jsonl`（两边的条目）、`sync.jsonl`（每次合并的文件、冲突、多赢 / 少赢、接受与否）、`$R/logs/`（每个半轮的内环和同步验收日志）。一个迭代约 2 小时：两轮内环各约 45 分钟，两次建库各 10–15 分钟，两次同步验收各 10–20 分钟。
 
@@ -284,4 +293,7 @@ bash scripts/stop_unreal.sh
 - 报 `not single training objects of the catalog`：目录重建后，这件物体的种类变了或被排除了，回第 2 节换掉。
 - `gso_start_check.py` 报 `no spot on A for <键> clear of the task objects (shuffle_others)`：太挤，见第 4 节。
 - 挑选页数量上限不对，或保存时报 400：服务还是改代码前起的，重启 `--pick --serve`。
+- `alternate.py init` 报 `<目录> exists`：换一个运行目录。报 `its sandbox has no scripts/rsi/knowledge.py`：把 `knowledge.py` 提交，任务族文件的 `sandbox.keep` 里也要有它，再 `init`。
+- `alternate.py run` 报 `another alternate.py (pid N) is running on this directory`：已经有一个驱动在跑，用 `status` 看进度。报 `no alternate.json in <目录>`：这个目录没 `init` 过。
+- `run.log` 最后一行以 `blocked` 开头（退出码 3）：一方的内环或同步验收出错。看 `status` 和 `$R/logs/` 里最后一个日志，修好后再跑同一条 `run` 命令。
 - 其余（GL、Unreal 编辑器、物理副本的路径）同 1030 runbook 第 10 节。

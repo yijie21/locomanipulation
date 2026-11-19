@@ -142,6 +142,40 @@ class Sync(unittest.TestCase):
             self.assertEqual(json.loads((cand / "candidate.json").read_text()), {"set": {"bimanual.D": 45}})
             self.assertEqual(prep["report"]["merged"], ["pick.py"])
 
+    def test_a_merge_whose_every_hunk_kept_the_receivers_side_gives_no_candidate(self):
+        """2026-11-19 smoke run: both sides changed the same line; the merge kept the receiver's, so the candidate was
+        the receiver's incumbent and the gate refused it ("the candidate is the incumbent"), a wasted gate call."""
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            set_incumbent(run, "a", "fa", {"pick.py": "A = 13\nB = 2\nC = 3\n"})
+            set_incumbent(run, "b", "fb", {"pick.py": "A = 14\nB = 2\nC = 3\n"})
+            prep = AL.prepare_sync(run, st, 0, 1)
+        self.assertIsNone(prep["cand"])
+        self.assertEqual(prep["report"]["merged"], [])
+        self.assertEqual(prep["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
+
+    def test_a_conflict_stays_a_conflict_after_an_accepted_sync(self):
+        """2026-11-19 smoke run: b -> a merged bimanual.py and kept a's pick.py (both had changed it). With b's whole
+        package as the next base, a -> b then read a's pick.py as a's only change and overwrote b's without a
+        conflict. The conflicted file keeps the old base: the next sync finds the conflict again and keeps b's."""
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            set_incumbent(run, "a", "fa", {"pick.py": "A = 13\nB = 2\nC = 3\n"})
+            set_incumbent(run, "b", "fb", {"pick.py": "A = 14\nB = 2\nC = 3\n", "bimanual.py": "D = 18\n"})
+            prep = AL.prepare_sync(run, st, 1, 0)  # b -> a
+            self.assertEqual(prep["report"]["merged"], ["bimanual.py"])
+            self.assertEqual(prep["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
+            AL.advance_base(run, Path(prep["theirs"]), prep["report"]["conflicts"])  # the sync passed
+            base = run / "sync/base/skills"
+            self.assertEqual((base / "pick.py").read_text(), BASE["pick.py"])  # the conflicted file: the old base
+            self.assertEqual((base / "bimanual.py").read_text(), "D = 18\n")  # the rest: the sender's
+            set_incumbent(run, "a", "fa", {"pick.py": "A = 13\nB = 2\nC = 3\n", "bimanual.py": "D = 18\n"})
+            back = AL.prepare_sync(run, st, 0, 1)  # a -> b
+        self.assertIsNone(back["cand"])  # b keeps its A = 14
+        self.assertEqual(back["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
+
     def test_nothing_to_merge_gives_no_candidate(self):
         with tempfile.TemporaryDirectory() as d:
             run = fake_run(Path(d))
@@ -354,6 +388,25 @@ class Limits(unittest.TestCase):
         self.assertIn("--alternating", cmd)
         self.assertEqual(cmd[cmd.index("--stop-rate") + 1], "0.8")
         self.assertEqual(cmd[cmd.index("--max-iters") + 1], "1")
+
+
+class Cli(unittest.TestCase):
+    def test_loop_args_that_start_with_a_dash_reach_the_loop(self):
+        """2026-11-19 smoke run: `--loop-args "--stub"` stopped argparse (a value starting with `-` read as an
+        option); the runbook's `--loop-args "--candidates 3"` did too."""
+        seen = {}
+        orig = AL.run_all
+        AL.run_all = lambda run, iters, runner, max_hours=None: (
+            seen.update(args=runner.loop_args, iters=iters) or "done"
+        )
+        try:
+            with tempfile.TemporaryDirectory() as d:
+                run = fake_run(Path(d))
+                for form in (["--loop-args", "--stub --candidates 1"], ["--loop-args=--stub --candidates 1"]):
+                    self.assertEqual(AL.main(["run", str(run), "--iters", "2", *form]), 0)
+                    self.assertEqual(seen, dict(args=["--stub", "--candidates", "1"], iters=2))
+        finally:
+            AL.run_all = orig
 
 
 class NonInferiorGate(unittest.TestCase):

@@ -870,8 +870,9 @@ def reader_status(e: dict, h: dict | None, st: dict | None) -> str:
 def _sync_line(s: dict) -> str:
     """One code sync of an alternating run (scripts/rsi/alternate.py `sync.jsonl`)."""
     head = f"- iteration {s.get('iter')}: {s.get('from')} -> {s.get('to')}: "
-    if s.get("skipped"):
-        return head + f"nothing merged ({s['skipped']})"
+    if s.get("skipped"):  # a skipped sync may still have met a conflict: the roles should see where they differ
+        kept = f"; kept {s.get('to')}'s side of " + "; ".join(s["conflicts"]) if s.get("conflicts") else ""
+        return head + f"nothing merged ({s['skipped']}){kept}"
     files = ", ".join(s.get("merged", []) + s.get("copied", [])) or "none"
     if s.get("deleted"):
         files += "; deleted " + ", ".join(s["deleted"])

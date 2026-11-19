@@ -233,6 +233,14 @@ def prepare_sync(run: Path, st: dict, i_from: int, i_to: int) -> dict:
     write_texts(theirs, folded)
     rep = merge_trees(run / "sync" / "base" / "skills", r_skills, theirs)
     rep["conflicts"] += unfolded
+    # a file whose merge is the receiver's own text changes nothing (every hunk a conflict kept the receiver's side):
+    # without this the candidate was the receiver's incumbent and the gate refused it as such (2026-11-19 smoke run)
+    r_files = tree(r_skills)
+    same_as_ours = {rel for rel, t in rep["texts"].items()
+                    if (t is None and rel not in r_files) or (t is not None and rel in r_files and r_files[rel].read_text() == t)}  # fmt: skip
+    rep["texts"] = {rel: t for rel, t in rep["texts"].items() if rel not in same_as_ours}
+    for k in ("merged", "copied", "deleted"):
+        rep[k] = [rel for rel in rep[k] if rel not in same_as_ours]
     out = dict(work=str(work), theirs=str(theirs), cand=None, report={k: v for k, v in rep.items() if k != "texts"})
     if not rep["texts"]:
         return out
@@ -242,6 +250,26 @@ def prepare_sync(run: Path, st: dict, i_from: int, i_to: int) -> dict:
     (cand / "candidate.json").write_text(json.dumps({"set": r_set}) + "\n")
     out["cand"] = str(cand)
     return out
+
+
+def advance_base(run: Path, theirs: Path, conflicts: list[str]) -> None:
+    """After an accepted sync the merge base is the sender's version, except for a file the merge left in conflict:
+    there the old base stays. The receiver kept its own lines there; with the sender's file as the base, the next sync
+    the other way read the receiver's lines as its only change and overwrote the other side without a conflict (the
+    2026-11-19 smoke run). With the old base the two sides stay in conflict there, each keeping its own, every sync
+    recording it."""
+    base = run / "sync" / "base" / "skills"
+    conflicted = {c.split(":", 1)[0] for c in conflicts}
+    nxt = base.parent / "skills.next"
+    copy_skills(theirs, nxt)
+    for rel in conflicted:
+        if (base / rel).is_file():
+            (nxt / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(base / rel, nxt / rel)
+        elif (theirs / rel).is_file():
+            (nxt / rel).unlink()
+    shutil.rmtree(base)
+    nxt.rename(base)
 
 
 # -- the shared library ---------------------------------------------------------------------------------------------
@@ -409,7 +437,7 @@ def step(run: Path, st: dict, runner) -> None:
                                result=verdict.get("result"), hash=verdict.get("hash"))  # fmt: skip
                     append_sync(run, row)
                     if row["accepted"]:
-                        copy_skills(Path(prep["theirs"]), run / "sync" / "base" / "skills")
+                        advance_base(run, Path(prep["theirs"]), rep["conflicts"])
                     event(st, family=fam, step="sync", accepted=row["accepted"], result=row["result"])
                     st["phase"] = "next"
     if st["phase"] == "next":
@@ -501,6 +529,20 @@ def status(run: Path) -> str:
     return "\n".join(lines)
 
 
+def glue_loop_args(argv: list[str]) -> list[str]:
+    """`--loop-args "--candidates 3"` as `--loop-args=--candidates 3`: argparse reads a value that starts with `-` as
+    another option and refused the runbook's own example (the 2026-11-19 smoke run)."""
+    out, k = [], 0
+    while k < len(argv):
+        if argv[k] == "--loop-args" and k + 1 < len(argv):
+            out.append(f"--loop-args={argv[k + 1]}")
+            k += 2
+        else:
+            out.append(argv[k])
+            k += 1
+    return out
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -522,7 +564,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("publish")
     p.add_argument("run", type=Path)
     p.add_argument("--out", type=Path, default=KN.OUT)
-    a = ap.parse_args(argv)
+    a = ap.parse_args(glue_loop_args(sys.argv[1:] if argv is None else list(argv)))
     run = a.run.resolve()
     if a.cmd == "init":
         st = init(run, a.family_a, a.family_b, a.ref)
