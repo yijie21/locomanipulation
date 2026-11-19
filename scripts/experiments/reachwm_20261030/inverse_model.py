@@ -102,7 +102,10 @@ def main() -> None:
     ok = ~D["fell"].astype(bool)
     tr, va = sp["train"][ok[sp["train"]]], sp["val"][ok[sp["val"]]]
     print(f"{len(D['n_steps'])} segments, train {len(tr)} val {len(va)}, input {X.shape[1]}", flush=True)
-    mu_x, sd_x = X[tr].mean(0), X[tr].std(0) + 1e-6
+    mu_x, sd_x = X[tr].mean(0), X[tr].std(0)
+    # a feature constant in the data (rot6[5] without wrist turns: the palm's normal level) is not scaled: divided by its
+    # 1e-6 spread, a grasp tilted 10 deg put the input at 1e5 and the offset at -311 m (simple_bench, 2026-11-19)
+    sd_x = np.where(sd_x < 1e-3, 1.0, sd_x).astype(np.float32)
     mu_y, sd_y = Y[tr].mean(0), Y[tr].std(0) + 1e-6
     Xt, Yt = torch.as_tensor(X, device=dev), torch.as_tensor(Y, device=dev)
     tri, vai = torch.as_tensor(tr, device=dev), torch.as_tensor(va, device=dev)
