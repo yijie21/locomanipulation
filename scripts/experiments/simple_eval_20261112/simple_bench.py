@@ -306,7 +306,10 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             target = np.r_[st_["p"][:2] + (st_["Rh"] @ np.r_[t_h[:2], 0.0])[:2], t_h[2]]
             s["shift_cm"] = round(100 * float(np.linalg.norm(target - goal_w)), 3)
         servo = method == "servo"
-        m.reach(side, np.asarray(target, float), rot_w, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw)
+        out = m.reach(side, np.asarray(target, float), rot_w, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw)
+        s["ik_cm"] = out.info.get(
+            "ik_err_cm"
+        )  # the whole-body IK's own miss of the command (the reference's, not the body's)
         last_cmd[0] = np.asarray(target, float)
         if m.fell_at is None:
             m.hold(GR.POST_S)
@@ -329,10 +332,13 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         m.hold(0.5)
         row["obj_cm_closed"] = moved()
         kw = P.cont(m, side)
+        h0 = float(m.jaw_centre(side)[0][2])
         look["phase"] = "lift"
-        m.reach(side, kw["start"] + np.r_[0.0, 0.0, LIFT_M], kw["start_rot"], pelvis_z=None if pz < 0 else float(pz),
-                speed=0.1, servo=False, **kw)  # fmt: skip
+        # from a crouch the pelvis rises with the hand: held at the crouch's height the arm alone lifts the box 5-8 cm
+        m.reach(side, kw["start"] + np.r_[0.0, 0.0, LIFT_M], kw["start_rot"],
+                pelvis_z=None if pz < 0 else float(pz) + LIFT_M, speed=0.1, servo=False, **kw)  # fmt: skip
         m.hold(1.0)
+        row["hand_rise_cm"] = round(100 * (float(m.jaw_centre(side)[0][2]) - h0), 2)
     z = float(sim.d.xpos[b][2])
     e = stages[-1] if stages and stages[-1]["stage"] == "entry" else {}
     row.update(stages=stages, palm_cm=e.get("err_cm"), palm_deg=e.get("err_deg"), rise_cm=round(100 * (z - z0), 2),
