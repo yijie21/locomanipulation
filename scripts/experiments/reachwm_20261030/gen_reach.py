@@ -207,10 +207,12 @@ def room_commands(rng) -> list[dict]:
     clear = np.array(
         [back - 0.10 + float(rng.normal(0.0, 0.02)), grasp[1], max(float(pre[2]), surf + 0.10)]
     ) + rng.normal(0.0, 0.01, 3)
-    return [
-        dict(side=side, target=t, dyaw=dyaw, pitch=pitch, pelvis_z=pel, wrist_dev=np.zeros(3))
-        for t in (clear, pre, entry)
-    ]
+    dev = np.zeros(3)
+    if WRIST:  # 2026-11-19 (simple_bench): one turn for the grasp's three reaches, as sample_command draws it; the
+        # dyaw/pitch family keeps the palm's normal level, and SIMPLE's grasps tilt it 10-90 deg down
+        a = rng.normal(size=3)
+        dev = a / np.linalg.norm(a) * math.radians(rng.uniform(WRIST_MIN_DEG, WRIST_MAX_DEG))
+    return [dict(side=side, target=t, dyaw=dyaw, pitch=pitch, pelvis_z=pel, wrist_dev=dev) for t in (clear, pre, entry)]
 
 
 def grasp_commands(rng) -> list[dict]:
