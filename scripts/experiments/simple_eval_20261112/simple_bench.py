@@ -71,6 +71,7 @@ import pick as P  # noqa: E402
 LIMIT_S = {"XMovePickTeleop": 16.0, "XMoveBendPickTeleop": 16.0, "BendPickMP": 8.0, "TabletopGraspMP": 16.0,
            "LocomotionPickBetweenTablesTeleop": 24.0, "HandoverTeleop": 16.0}  # fmt: skip
 HITCH_S = 45.0
+FILM_DT = 0.04  # s, --film's frames (25 Hz)
 PICK_TASKS = ("XMovePickTeleop", "XMoveBendPickTeleop", "BendPickMP", "TabletopGraspMP")
 CLEAR_OUT, CLEAR_UP = 0.10, 0.10  # m, room_grasp.CLEAR_OUT; the data's waypoint is 0.10 over the surface
 ENTRY_SPEED, ENTRY_CONT = 0.08, 0.5  # the data's REACH_GRASP_SPEED and REACH_GRASP_CONT
@@ -196,6 +197,8 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             trace.append([round(float(m.t - t0), 3), look["phase"], (1000 * m.jaw_centre(side)[0]).round(1).tolist(),
                           (1000 * sim.d.xpos[b]).round(1).tolist(), [n for n in contacts(sim, b) if robot[sim.m.body(n).id]],
                           on_t])  # fmt: skip
+        if film is not None and m.t - t0 >= len(film) * FILM_DT - 1e-9:  # the whole state, for isaac_film.py
+            film.append((float(m.t - t0), look["phase"], sim.d.qpos.copy()))
         return ok
 
     def robot_on(bodies: set) -> set:  # robot bodies in contact with any of `bodies`
@@ -210,6 +213,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 
     tables = {sim.m.body(n).id for n in info["tables"]} if a.trace else set()
     trace = [] if a.trace else None
+    film = [] if a.film else None
 
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
@@ -381,6 +385,16 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         row["trace"] = trace
     row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
     row["success_45"] = first[0] is not None and first[0] <= HITCH_S
+    if film is not None:
+        J = range(sim.m.njnt)
+        meta = dict({k: row[k] for k in ("task", "level", "index", "method", "column", "success_45", "success_official",
+                                         "t_success", "palm_cm", "palm_deg")}, lift=info["lift"], target=info["target"],
+                    objects={k: o["body"] for k, o in info["objects"].items()}, dt=FILM_DT)  # fmt: skip
+        os.makedirs(a.film, exist_ok=True)
+        np.savez_compressed(f"{a.film}/{task}_L{ep['level']}_e{ep['index']}_{a.column}_{method}.npz",
+                            t=np.array([f[0] for f in film]), phase=np.array([f[1] for f in film]),
+                            qpos=np.array([f[2] for f in film]), jnt=np.array([sim.m.joint(j).name for j in J]),
+                            jnt_adr=sim.m.jnt_qposadr.copy(), jnt_type=sim.m.jnt_type.copy(), meta=json.dumps(meta))  # fmt: skip
     return row
 
 
@@ -407,6 +421,7 @@ def main() -> None:
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
     ap.add_argument("--column", choices=("truth", "perception"), default="truth")
     ap.add_argument("--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)")
+    ap.add_argument("--film", help="a folder for each episode's whole MuJoCo state at 25 Hz (isaac_film.py renders it)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     a.edges = {}
