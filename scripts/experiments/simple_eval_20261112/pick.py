@@ -51,7 +51,7 @@ def stored_grasp(side: str, obj: str = "0"):
         v = torch.load(GRASPNET / f"dex_grasp/dex3_{side}/{obj}/{f}", map_location="cpu", weights_only=True)
         return v.numpy().ravel().astype(float)
 
-    g, pre = load("0__0.pt"), load("0__0_pregrasp.pt")
+    g, pre = load(f"{obj}__0.pt"), load(f"{obj}__0_pregrasp.pt")  # obj: the GraspNet uid ("10" the chips can)
     st = np.load(GRASPNET / f"stable/{obj}_stable.npy", allow_pickle=True)[0]
     T_ob = np.linalg.inv(T([0.4, 0.0, st[2]], st[3:]))  # the grasps are stored with the object at this pose
     return T_ob @ T(g[:3], g[3:7]), T_ob @ T(pre[:3], pre[3:7]), g[7:], pre[7:]

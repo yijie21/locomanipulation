@@ -33,7 +33,8 @@ LEVELS = ("0", "1", "2")
 OBJ_PULL = (
     -9.81 * 0.1
 )  # N on every object besides its weight (SIMPLE's "pseudo gravity"; a 0.1 kg object weighs double)
-LIFT = {"XMovePickTeleop": 0.09, "XMoveBendPickTeleop": 0.09, "BendPickMP": 0.09, "TabletopGraspMP": 0.018}  # m
+# m; XMoveBendPickTeleop's last version (eef474f^, 2026-08-27) tests reward >= 0.8 of its 0.1 m lift, the others 0.9
+LIFT = {"XMovePickTeleop": 0.09, "XMoveBendPickTeleop": 0.08, "BendPickMP": 0.09, "TabletopGraspMP": 0.018}
 
 
 AMO_PELVIS = (
