@@ -13,7 +13,7 @@ import json
 import numpy as np
 
 TASKS = ("XMovePickTeleop", "XMoveBendPickTeleop", "BendPickMP", "TabletopGraspMP")
-ORDER = ("direct", "lookup", "inverse", "model", "servo")
+ORDER = ("direct", "lookup", "inverse", "model", "model_pose", "servo")
 
 
 def rows_of(d: str) -> dict:
@@ -42,8 +42,8 @@ def main() -> None:
     a = ap.parse_args()
     by = rows_of(a.rows)
     methods = [m for m in ORDER if any(k[1] == m for k in by)]
-    print(f"{'task':22s} {'method':8s} {'n':>3s} {'official':>8s} {'45 s':>5s} {'entry med':>9s} {'p90':>6s} "
-          f"{'pre med':>7s} {'knock':>5s} {'fell':>4s}")  # fmt: skip
+    print(f"{'task':22s} {'method':10s} {'n':>3s} {'official':>8s} {'45 s':>5s} {'entry med':>9s} {'p90':>6s} "
+          f"{'pre med':>7s} {'deg med':>7s} {'knock':>5s} {'fell':>4s}")  # fmt: skip
     for t in TASKS:
         for m in methods:
             rs = list(by.get((t, m), {}).values())
@@ -51,9 +51,10 @@ def main() -> None:
                 continue
             e = np.array([r["palm_cm"] if r["palm_cm"] is not None else np.nan for r in rs], float)
             p = np.array([stage_err(r, "pregrasp") for r in rs], float)
-            print(f"{t:22s} {m:8s} {len(rs):3d} {sum(r['success_official'] for r in rs):8d} "
+            g = np.array([r["palm_deg"] if r.get("palm_deg") is not None else np.nan for r in rs], float)
+            print(f"{t:22s} {m:10s} {len(rs):3d} {sum(r['success_official'] for r in rs):8d} "
                   f"{sum(r['success_45'] for r in rs):5d} {np.nanmedian(e):9.2f} {np.nanpercentile(e, 90):6.2f} "
-                  f"{np.nanmedian(p):7.2f} {sum(knocked_early(r) for r in rs):5d} {sum(r['fell'] is not None for r in rs):4d}")  # fmt: skip
+                  f"{np.nanmedian(p):7.2f} {np.nanmedian(g):7.1f} {sum(knocked_early(r) for r in rs):5d} {sum(r['fell'] is not None for r in rs):4d}")  # fmt: skip
     for m1, m0 in a.pair:
         print(f"\npaired {m1} - {m0} (same episodes):")
         for t in TASKS:

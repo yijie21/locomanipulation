@@ -24,6 +24,8 @@ Methods (the command for the pregrasp and the entry; the waypoint is always sent
   lookup  the wanted position minus the mean miss of the K training reaches of the same kind with the nearest commands
           (the self model's own training split), iterated to a fixed point the same way
   model   the self model's fixed point (room_grasp.py's model arm: wrist_invert.fixed_point on the exported ensemble)
+  model_pose  (2026-11-19, added after the first results: model left the hand 7-17 deg off) the same model's position and
+          wrist fixed point, wrist_invert.refine's pose3g as it is: the position target and the wrist command it picks
   inverse the direct inverse model's command from the state and the wanted position (inverse_model.py, same data),
           one shot
   servo   reference only, not a one-command method: the wanted position with the Motor's palm servo on, which reads the
@@ -283,17 +285,23 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             j = m.jaw_centre(side)[0]
             kw = dict(speed=ENTRY_SPEED, start=j + ENTRY_CONT * (last_cmd[0] - j), ik_from_ref=True)
         s = dict(stage=stage)
-        target = goal_w
-        if invert and method in ("lookup", "model", "inverse"):
+        target, rot_cmd = goal_w, rot_w
+        if invert and method in ("lookup", "model", "model_pose", "inverse"):
             st_ = RGP.state_now(env, rec, side, goal_w, rot_w, chain)
-            if method == "model":
+            if method in ("model", "model_pose"):
                 plan0 = PI.plan_of
                 PI.plan_of = lambda *a_: plan0(*a_, **kw)
                 try:
-                    evs = WI.fixed_point(models["model"], m, st_, st_["goal"], pz, None)
+                    if method == "model":
+                        evs = WI.fixed_point(models["model"], m, st_, st_["goal"], pz, None)
+                        best = min(evs, key=lambda ev: ev["l_pos"])
+                    else:
+                        best = WI.refine(models["model"], m, st_, st_["goal"], pz)["pose3g"][0]
+                        rot_cmd = st_["Rh"] @ WI.cmd_h(st_, best["cmd"])
+                        s.update(pred_att=round(float(best["pred_att"]), 2), att_spread=round(float(best["att_spread"]), 2),
+                                 cmd_dev_deg=round(float(best["dev"]), 2), picked=f'{best.get("stage")}{best.get("k")}')  # fmt: skip
                 finally:
                     PI.plan_of = plan0
-                best = min(evs, key=lambda ev: ev["l_pos"])
                 t_h = best["t"]
                 s.update(pred_err=round(float(best["pred_err"]), 3), pred_std=round(float(best["pred_std"]), 3))
             elif method == "inverse":
@@ -308,7 +316,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             target = np.r_[st_["p"][:2] + (st_["Rh"] @ np.r_[t_h[:2], 0.0])[:2], t_h[2]]
             s["shift_cm"] = round(100 * float(np.linalg.norm(target - goal_w)), 3)
         servo = method == "servo"
-        out = m.reach(side, np.asarray(target, float), rot_w, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw)
+        out = m.reach(side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw)
         s["ik_cm"] = out.info.get(
             "ik_err_cm"
         )  # the whole-body IK's own miss of the command (the reference's, not the body's)
@@ -354,7 +362,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("task", choices=PICK_TASKS)
-    ap.add_argument("--method", choices=("direct", "lookup", "model", "inverse", "servo"), required=True)
+    ap.add_argument("--method", choices=("direct", "lookup", "model", "model_pose", "inverse", "servo"), required=True)
     ap.add_argument("--clear", action="store_true", help="a waypoint outside the table's edge before the pregrasp")
     ap.add_argument("--episodes", default="0-29", help="indices into the task's 30 episodes, 'a-b' or 'i,j,k'")
     ap.add_argument("--side", default="right")
@@ -381,7 +389,7 @@ def main() -> None:
             a.edges[(str(r["level"]), int(r["index"]))] = r.get("edge")
     assert os.environ.get("BFM_ROOT") == "odo" and os.environ.get("REACH_HAND_OFF"), "the self model's data settings"
     models = {}
-    if a.method == "model":
+    if a.method in ("model", "model_pose"):
         import torch
 
         models["model"] = torch.load(a.wm, map_location="cpu", weights_only=False).eval()
