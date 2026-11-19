@@ -31,6 +31,12 @@ By default the waypoint is left out and the pregrasp is the first reach after th
 about 2 s longer. The defaults (no waypoint, the grasp 0.30 m ahead) are the best direct had on 3 of the 30 episodes of
 three tasks (2026-11-19 smoke5: 0.40 m and the waypoint were worse for direct); every method runs with the same.
 
+The "perception" column (--column perception): the robot's own look at the start, cached (blind.py look: SAM 3 on the head
+camera's image, the target's points from depth, GraspGen-X's grasps on them, grasps_graspgen.py), the grasp chosen as
+pick.graspgen_grasp chooses it, the table's edge as blind.py saw it (its rows' "edge"); no second look: after the walk
+the robot takes its pelvis from leg odometry (leg_odo.TickFeed, as room_grasp's feedback arm), and a goal goes to the
+Motor kept where it lies from that believed pelvis (place.Belief.to_sim), heights as seen. Every method gets the same.
+
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
 
@@ -169,19 +175,52 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
-               clear=a.clear)  # fmt: skip
-    T_og, T_op, f_close, f_pre = P.stored_grasp(side, str(info["objects"]["target"]["uid"]))
-
-    def grasp_now():
-        T_wo = P.T(sim.d.xpos[b], sim.d.xquat[b])
-        return T_wo @ T_og, T_wo @ T_op
-
-    Tg, _ = grasp_now()
+               clear=a.clear, column=a.column)  # fmt: skip
     p0, Rp0 = env.pelvis()
-    R0 = E.rot_z(E.yaw_of(Rp0))
+    yaw0 = E.yaw_of(Rp0)
+    R0 = E.rot_z(yaw0)
+    bel = dict(pb=p0.copy(), yb=yaw0, pt=p0.copy(), yt=yaw0)  # believed and true pelvis, tied at the start
+    if a.column == "truth":
+        T_og, _, f_close, f_pre = P.stored_grasp(side, str(info["objects"]["target"]["uid"]))
+
+        def grasp_now():
+            return P.T(sim.d.xpos[b], sim.d.xquat[b]) @ T_og
+
+        edge = min(t["pos"][0] - 0.5 * t["size"][0] for t in info["tables"].values())  # the tables lie square to x
+    else:
+        name = f"{task}_L{ep['level']}_e{ep['index']}"
+        cloud = EP.OUT / "cloud_blind"
+        found = None
+        if (cloud / f"grasp_{name}.npz").exists():
+            T_wo = np.eye(4)
+            T_wo[:3, 3] = np.load(cloud / f"{name}.npz")["p_o"]  # the frame the grasps were worked out in
+            found = P.graspgen_grasp(name, T_wo, yaw0, cloud="cloud_blind")
+        if found is None:
+            return dict(row, why="no grasp", stages=[], palm_cm=None, palm_deg=None, success_end=False, t_success=None,
+                        success_official=False, success_45=False, fell=None, knocked=None, touched=None)  # fmt: skip
+        T_og, _, f_close, f_pre, row["score"] = found
+        Tg_seen = T_wo @ T_og  # the robot's frame at the start, which is the simulator's then
+        row["seen_cm"] = round(
+            100 * float(np.linalg.norm(T_wo[:3, 3] - sim.d.xpos[b])), 2
+        )  # record: cloud median - body
+        edge = a.edges.get((str(ep["level"]), int(ep["index"])))
+
+        def grasp_now():  # place.Belief.to_sim: kept where it lies from the believed pelvis
+            Rz = E.rot_z(bel["yt"] - bel["yb"])
+            M = np.eye(4)
+            M[:3, :3] = Rz @ Tg_seen[:3, :3]
+            M[:2, 3] = bel["pt"][:2] + (Rz @ np.r_[Tg_seen[:2, 3] - bel["pb"][:2], 0.0])[:2]
+            M[2, 3] = Tg_seen[2, 3]
+            return M
+
+        import leg_odo as LO
+
+        odo = LO.TickFeed(env)
+        odo.begin()
+    Tg = grasp_now()
     stance = Tg[:2, 3] - (R0 @ np.r_[a.stand, a.side_off, 0.0])[:2]
-    edge = min(t["pos"][0] - 0.5 * t["size"][0] for t in info["tables"].values())  # the tables lie square to x
-    stance[0] = min(stance[0], edge - a.table_gap)
+    if edge is not None:
+        stance[0] = min(stance[0], edge - a.table_gap)
     w = (R0.T @ np.r_[stance - p0[:2], 0.0])[:2]
     lo, hi = GR.APPROACH_BOX
     walk = np.r_[np.clip(w[0], lo[0], 9.0), np.clip(w[1], lo[1], hi[1])]
@@ -191,11 +230,17 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             GR.open_walk(m, float(walk[0]) / legs, float(walk[1]) / legs, 0.0)
             if m.fell_at is not None:
                 break
-    p1, _ = env.pelvis()
+    p1, Rp1 = env.pelvis()
     row.update(walk=walk.round(3).tolist(), walk_err_cm=(100 * ((R0.T @ (p1 - p0))[:2] - walk)).round(2).tolist())
-    Tg, Tp = grasp_now()  # the second look, from the stance
+    if a.column == "perception":
+        odo.on = False
+        dx, dy, dth = odo.odo.pose()
+        bel.update(pb=p0 + R0 @ np.r_[dx, dy, 0.0], yb=yaw0 + float(dth), pt=p1, yt=E.yaw_of(Rp1))
+        row["odo_cm"] = round(100 * float(np.linalg.norm((bel["pb"] - bel["pt"])[:2])), 2)
+        row["odo_deg"] = round(math.degrees(bel["yb"] - bel["yt"]), 2)
+    Tg = grasp_now()  # truth: the second look, from the stance; perception: the start's look, by odometry
     o_look = look["at"] = sim.d.xpos[b].copy()
-    gw, pw = Tg[:3, 3], Tp[:3, 3]
+    gw = Tg[:3, 3]
     pw = gw - a.pre * Tg[:3, 1]  # the palm link's y is its normal, towards the object
     top = max(t["top"] for t in info["tables"].values())
     ch = R0.T @ (pw - p1)  # heading frame at the start, from the pelvis at the stance
@@ -302,8 +347,13 @@ def main() -> None:
     ap.add_argument("--lookup-data", default=LOOKUP_DATA)
     ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
+    ap.add_argument("--column", choices=("truth", "perception"), default="truth")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    a.edges = {}
+    if a.column == "perception":  # the table's edge as blind.py's look saw it
+        for r in json.load(open(EP.OUT / f"blind_f1_{a.task}.json")):
+            a.edges[(str(r["level"]), int(r["index"]))] = r.get("edge")
     assert os.environ.get("BFM_ROOT") == "odo" and os.environ.get("REACH_HAND_OFF"), "the self model's data settings"
     models = {}
     if a.method == "model":
