@@ -23,6 +23,8 @@ Methods (the command for the pregrasp and the entry; the waypoint is always sent
   lookup  the wanted position minus the mean miss of the K training reaches of the same kind with the nearest commands
           (the self model's own training split), iterated to a fixed point the same way
   model   the self model's fixed point (room_grasp.py's model arm: wrist_invert.fixed_point on the exported ensemble)
+  inverse the direct inverse model's command from the state and the wanted position (inverse_model.py, same data),
+          one shot
   servo   reference only, not a one-command method: the wanted position with the Motor's palm servo on, which reads the
           true palm while it reaches; a check that the grasp, the lift and the success test work when the palm arrives
 By default the waypoint is left out and the pregrasp is the first reach after the walk (chain 0); --clear puts it back,
@@ -221,7 +223,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             kw = dict(speed=ENTRY_SPEED, start=j + ENTRY_CONT * (last_cmd[0] - j), ik_from_ref=True)
         s = dict(stage=stage)
         target = goal_w
-        if invert and method in ("lookup", "model"):
+        if invert and method in ("lookup", "model", "inverse"):
             st_ = RGP.state_now(env, rec, side, goal_w, rot_w, chain)
             if method == "model":
                 plan0 = PI.plan_of
@@ -233,6 +235,12 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
                 best = min(evs, key=lambda ev: ev["l_pos"])
                 t_h = best["t"]
                 s.update(pred_err=round(float(best["pred_err"]), 3), pred_std=round(float(best["pred_std"]), 3))
+            elif method == "inverse":
+                import inverse_model as IM
+
+                x = IM.features(st_["x0b"][None], st_["goal"][None], st_["rot6"][None], [st_["sd"]], [float(pz < 0)],
+                                [0.0 if pz < 0 else pz], [float(entry)])  # fmt: skip
+                t_h = st_["goal"] + IM.predict(models["inverse"], x)[0]
             else:
                 t_h, pe = models["lookup"].invert(st_["goal"], st_["sd"], pz, entry)
                 s.update(pred_err=round(pe, 3))
@@ -279,7 +287,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("task", choices=PICK_TASKS)
-    ap.add_argument("--method", choices=("direct", "lookup", "model", "servo"), required=True)
+    ap.add_argument("--method", choices=("direct", "lookup", "model", "inverse", "servo"), required=True)
     ap.add_argument("--clear", action="store_true", help="a waypoint outside the table's edge before the pregrasp")
     ap.add_argument("--episodes", default="0-29", help="indices into the task's 30 episodes, 'a-b' or 'i,j,k'")
     ap.add_argument("--side", default="right")
@@ -292,6 +300,7 @@ def main() -> None:
     ap.add_argument("--squeeze", type=float, default=0.6, help="how far past the closed posture the fingers are driven")
     ap.add_argument("--wm", default=WM, help="the exported self model (method model)")
     ap.add_argument("--lookup-data", default=LOOKUP_DATA)
+    ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
@@ -302,6 +311,11 @@ def main() -> None:
 
         models["model"] = torch.load(a.wm, map_location="cpu", weights_only=False).eval()
         print("self model", a.wm, flush=True)
+    elif a.method == "inverse":
+        import inverse_model as IM
+
+        models["inverse"] = IM.load(a.inverse)
+        print("inverse model", a.inverse, len(models["inverse"]), "members", flush=True)
     elif a.method == "lookup":
         models["lookup"] = Lookup(a.lookup_data, a.k)
         print("lookup tables", models["lookup"].n, flush=True)
