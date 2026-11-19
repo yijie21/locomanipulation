@@ -208,7 +208,7 @@ class Probe:
             )
         else:
             assert controller == "scalebfm", controller
-            policy = R.Policy("cuda", ScaleBfmBackendConfig())
+            policy = R.Policy(os.environ.get("REACH_BFM_DEVICE", "cuda"), ScaleBfmBackendConfig())  # or "cpu"
             sim = R.Sim(policy.meta, backend=backend)
             self.m = Motor(sim, policy, MotorConfig(), model_xml=str(WALK / "scene_locomani.xml"))
         self.sim = sim

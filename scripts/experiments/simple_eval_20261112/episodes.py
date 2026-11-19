@@ -6,6 +6,7 @@ their poses, the robot's start. `build` writes that layout as a scene directory 
 solver options (third_party/SIMPLE/src/simple/engines/mujoco.py), and SIMPLE's head camera on the torso. `lifted` is SIMPLE's success check for the pick tasks.
 
     python episodes.py XMovePickTeleop        # lists the task's 30 episodes
+    python episodes.py --floor outputs/scene/simple_g1_sonic   # SIMPLE's robot on an empty floor (self model data)
 """
 
 import glob
@@ -59,11 +60,9 @@ def episodes(task: str) -> list[dict]:
     return out
 
 
-def build(ep: dict, out: Path | None = None) -> dict:
-    """Write the episode's scene; -> dict(dir, start xy, start yaw, target body, objects, table top)."""
-    cfg = ep["cfg"]
-    out = out or OUT / "scene" / f"{ep['task']}_L{ep['level']}_e{ep['index']}"
-    out.mkdir(parents=True, exist_ok=True)
+def robot_spec() -> mujoco.MjSpec:
+    """SIMPLE's robot (G1 with Dex3 hands) with its solver options, hand contacts and head camera, on a ground plane.
+    The head camera is also named `head_camera`, the name selfwm_20261029/env.py's Env renders from."""
     spec = mujoco.MjSpec.from_file(str(ROBOT / "g1_29dof_with_hand.xml"))
     spec.meshdir = str(ROBOT / "meshes")
     spec.option.integrator = mujoco.mjtIntegrator.mjINT_IMPLICITFAST
@@ -76,10 +75,35 @@ def build(ep: dict, out: Path | None = None) -> dict:
             g.solref[:2] = [0.005, 1]
     q = np.zeros(4)  # SIMPLE's head camera (engines/mujoco.py, mount eye_in_head): on the torso, pitched down 47.6 deg
     mujoco.mju_mulQuat(q, np.array(HEAD_CAM_QUAT), np.array([0.5, 0.5, -0.5, -0.5]))
-    spec.body("torso_link").add_camera(name=HEAD_CAM, pos=HEAD_CAM_POS, quat=q, fovy=HEAD_CAM_FOVY)
+    for name in (HEAD_CAM, "head_camera"):
+        spec.body("torso_link").add_camera(name=name, pos=HEAD_CAM_POS, quat=q, fovy=HEAD_CAM_FOVY)
+    spec.worldbody.add_geom(name="ground", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[0, 0, 1],
+                            friction=[1.0, 0.005, 0.0001], rgba=[0.75, 0.75, 0.72, 1])  # fmt: skip
+    return spec
+
+
+def write_scene(spec: mujoco.MjSpec, out: Path, meta: dict) -> None:
+    spec.compile()
+    for name, text in (("scene_locomani.xml", spec.to_xml()), ("scene_meta.json", json.dumps(meta))):
+        tmp = out / f"{name}.{os.getpid()}.tmp"  # two runs building the same scene: never leave a half-written file
+        tmp.write_text(text)
+        os.replace(tmp, out / name)
+
+
+def floor(out: Path) -> Path:
+    """SIMPLE's robot on an empty floor: the scene the self model's data is recorded in (REACH_SCENE_DIR)."""
+    out.mkdir(parents=True, exist_ok=True)
+    write_scene(robot_spec(), out, dict(surfaces={}, objects={}, simple=dict(floor=True)))
+    return out
+
+
+def build(ep: dict, out: Path | None = None) -> dict:
+    """Write the episode's scene; -> dict(dir, start xy, start yaw, target body, objects, table top)."""
+    cfg = ep["cfg"]
+    out = out or OUT / "scene" / f"{ep['task']}_L{ep['level']}_e{ep['index']}"
+    out.mkdir(parents=True, exist_ok=True)
+    spec = robot_spec()
     w = spec.worldbody
-    w.add_geom(name="ground", type=mujoco.mjtGeom.mjGEOM_PLANE, size=[0, 0, 1], friction=[1.0, 0.005, 0.0001],
-               rgba=[0.75, 0.75, 0.72, 1])  # fmt: skip
     info = dict(dir=str(out), objects={}, tables={})
     looks = set()
     lift = 0.0
@@ -131,13 +155,7 @@ def build(ep: dict, out: Path | None = None) -> dict:
     q = info["start"]["quat"]
     info["start"]["yaw"] = float(2 * np.arctan2(q[3], q[0]))
     info["target"] = info["objects"]["target"]["body"]
-    spec.compile()
-    for name, text in (("scene_locomani.xml", spec.to_xml()), ("scene_meta.json", json.dumps(dict(surfaces={}, objects={}, simple=info)))):  # fmt: skip
-        tmp = (
-            out / f"{name}.{os.getpid()}.tmp"
-        )  # two runs of one task build the same scene: never leave a half-written file
-        tmp.write_text(text)
-        os.replace(tmp, out / name)
+    write_scene(spec, out, dict(surfaces={}, objects={}, simple=info))
     return info
 
 
@@ -153,6 +171,9 @@ def lifted(task: str, z0: float, z: float) -> bool:
 
 
 if __name__ == "__main__":
+    if sys.argv[1] == "--floor":  # python episodes.py --floor DIR: the self model's data scene
+        print(floor(Path(sys.argv[2])))
+        sys.exit(0)
     for e in episodes(sys.argv[1]):
         i = build(e)
         t = i["objects"]["target"]

@@ -100,6 +100,10 @@ class Env:
                 self.probe.m.sonic, interface=os.environ.get("REACH_SONIC_IFACE", self.probe.m.sonic.interface)
             )
         self.m, self.sim, self.R = self.probe.m, self.probe.sim, self.probe.R
+        # REACH_HAND_OFF (2026-11-19): the hand point in the wrist-yaw frame, "x,y,z" in m, instead of the Dex1 pad
+        # centre (runtime.OFF); SIMPLE's Dex3 palm is "0.0415,0,0" (simple_eval_20261112/pick.py PALM)
+        if os.environ.get("REACH_HAND_OFF"):
+            self.R.OFF[:] = [float(v) for v in os.environ["REACH_HAND_OFF"].split(",")]
         root = os.environ.get(
             "BFM_ROOT", "true"
         )  # what ScaleBFM is told about the pelvis position; "true": the simulator's, as a perfect tracker
