@@ -9,9 +9,12 @@ body and settings the self model's data was recorded with (simple_selfmodel_2026
 An episode:
   - settle 1 s at the episode's start (SIMPLE's episodes start after their settle);
   - the open walk to the stance (gen_reach.open_walk), the grasp STAND ahead of the pelvis and SIDE_OFF to its left;
-  - three reaches, each as the data recorded it (PRE_S hold, the reach with the servo off, POST_S hold): a waypoint BACK
-    behind the pregrasp, the pregrasp, and the entry to the grasp at 0.08 m/s, starting halfway between the hand and the
-    pregrasp command, with its IK from the reference pose;
+  - three reaches, each as the data recorded it (PRE_S hold, the reach with the servo off, POST_S hold): a waypoint
+    CLEAR_OUT outside the table's front edge and CLEAR_UP over its top (room_grasp.py's, and the data's), the pregrasp PRE
+    back from the grasp against the palm's normal (the palm link's y; SIMPLE's stored pregrasp is the open hand 1.7 cm
+    from the grasp, and reached directly its fingers swept the box over in 26 of 27 trial episodes), and the entry to the
+    grasp along that normal at 0.08 m/s, starting halfway between the hand and the pregrasp command, with its IK from the
+    reference pose;
   - close the fingers, lift LIFT_M from where the last command's reference ended, hold 1 s.
 One command per reach; nothing measured of the hand corrects it.
 
@@ -20,6 +23,11 @@ Methods (the command for the pregrasp and the entry; the waypoint is always sent
   lookup  the wanted position minus the mean miss of the K training reaches of the same kind with the nearest commands
           (the self model's own training split), iterated to a fixed point the same way
   model   the self model's fixed point (room_grasp.py's model arm: wrist_invert.fixed_point on the exported ensemble)
+  servo   reference only, not a one-command method: the wanted position with the Motor's palm servo on, which reads the
+          true palm while it reaches; a check that the grasp, the lift and the success test work when the palm arrives
+By default the waypoint is left out and the pregrasp is the first reach after the walk (chain 0); --clear puts it back,
+about 2 s longer. The defaults (no waypoint, the grasp 0.30 m ahead) are the best direct had on 3 of the 30 episodes of
+three tasks (2026-11-19 smoke5: 0.40 m and the waypoint were worse for direct); every method runs with the same.
 
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
@@ -53,7 +61,7 @@ LIMIT_S = {"XMovePickTeleop": 16.0, "XMoveBendPickTeleop": 16.0, "BendPickMP": 8
            "LocomotionPickBetweenTablesTeleop": 24.0, "HandoverTeleop": 16.0}  # fmt: skip
 HITCH_S = 45.0
 PICK_TASKS = ("XMovePickTeleop", "XMoveBendPickTeleop", "BendPickMP", "TabletopGraspMP")
-BACK = P.BACK  # m, the waypoint behind the pregrasp, on the line from the grasp through the pregrasp
+CLEAR_OUT, CLEAR_UP = 0.10, 0.10  # m, room_grasp.CLEAR_OUT; the data's waypoint is 0.10 over the surface
 ENTRY_SPEED, ENTRY_CONT = 0.08, 0.5  # the data's REACH_GRASP_SPEED and REACH_GRASP_CONT
 LIFT_M = 0.15
 GRASPR_ID0 = 1300000  # data_graspr_odo's reset ids: three reaches each, the third the entry
@@ -107,6 +115,17 @@ class Lookup:
         return best[0], 100 * best[1]
 
 
+def contacts(sim, body: int) -> list:
+    """Every body in contact with `body` (the robot's links, tables, other objects)."""
+    m, d, out = sim.m, sim.d, set()
+    for i in range(d.ncon):
+        a, b = m.geom_bodyid[d.contact[i].geom1], m.geom_bodyid[d.contact[i].geom2]
+        other = b if a == body else a if b == body else None
+        if other is not None:
+            out.add(m.body(other).name)
+    return sorted(out)
+
+
 def angle_deg(Ra: np.ndarray, Rb: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(Ra.T @ Rb) - 1) / 2, -1, 1))))
 
@@ -129,15 +148,26 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     m.hold(1.0)
     z0, t0, first = float(sim.d.xpos[b][2]), m.t, [None]
     tick0 = m.tick
+    look = dict(at=None, phase="walk", knocked=None, touched=None)  # the target at the second look; when it first moved
+    # 1 cm; when a robot link first touched it
+    robot = sim.m.body_rootid == sim.m.body_rootid[sim.m.body("pelvis").id]
 
     def tick():  # SIMPLE's success check at every motor tick: when it first holds
         ok = tick0()
         if first[0] is None and EP.lifted(task, z0, float(sim.d.xpos[b][2])):
             first[0] = float(m.t - t0)
+        if look["touched"] is None and look["at"] is not None:
+            links = [n for n in contacts(sim, b) if robot[sim.m.body(n).id]]
+            if links:
+                look["touched"] = dict(t=round(float(m.t - t0), 2), phase=look["phase"], links=links,
+                                       hand=(100 * (m.jaw_centre(side)[0] - look["at"])).round(1).tolist())  # fmt: skip
+        if look["knocked"] is None and look["at"] is not None and np.linalg.norm(sim.d.xpos[b] - look["at"]) > 0.01:
+            look["knocked"] = dict(t=round(float(m.t - t0), 2), phase=look["phase"], touch=contacts(sim, b))
         return ok
 
     m.tick = tick
-    row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off)
+    row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
+               clear=a.clear)  # fmt: skip
     T_og, T_op, f_close, f_pre = P.stored_grasp(side, str(info["objects"]["target"]["uid"]))
 
     def grasp_now():
@@ -162,16 +192,26 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     p1, _ = env.pelvis()
     row.update(walk=walk.round(3).tolist(), walk_err_cm=(100 * ((R0.T @ (p1 - p0))[:2] - walk)).round(2).tolist())
     Tg, Tp = grasp_now()  # the second look, from the stance
+    o_look = look["at"] = sim.d.xpos[b].copy()
     gw, pw = Tg[:3, 3], Tp[:3, 3]
-    step = pw - gw
-    cw = pw + BACK * step / max(1e-6, float(np.linalg.norm(step)))
+    pw = gw - a.pre * Tg[:3, 1]  # the palm link's y is its normal, towards the object
+    top = max(t["top"] for t in info["tables"].values())
+    ch = R0.T @ (pw - p1)  # heading frame at the start, from the pelvis at the stance
+    ch[0] = min(ch[0], float((R0.T @ np.r_[edge - p1[0], 0.0, 0.0])[0]) - CLEAR_OUT)
+    cw = p1 + R0 @ ch
+    cw[2] = max(float(pw[2]), top + CLEAR_UP)
     pz = AE.pelvis_for(float(gw[2]))
-    row.update(grasp_h=(R0.T @ (gw - p1))[:2].round(3).tolist() + [round(float(gw[2]), 3)], pz=pz)
+    row.update(grasp_h=(R0.T @ (gw - p1))[:2].round(3).tolist() + [round(float(gw[2]), 3)], pz=pz,
+               pre_dir=(100 * R0.T @ (pw - gw)).round(1).tolist(), obj_from_grasp=(100 * R0.T @ (o_look - gw)).round(1).tolist())  # fmt: skip
     sim.fingers_cmd[side] = f_pre
     last_cmd = [None]
     stages = []
 
+    def moved() -> float:  # cm, the target since the second look
+        return round(100 * float(np.linalg.norm(sim.d.xpos[b] - o_look)), 2)
+
     def reach(stage: str, goal_w: np.ndarray, rot_w: np.ndarray, chain: int, invert: bool, entry: bool = False):
+        look["phase"] = stage
         rec.start(side)
         m.hold(GR.PRE_S)
         rec.on = False
@@ -181,7 +221,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             kw = dict(speed=ENTRY_SPEED, start=j + ENTRY_CONT * (last_cmd[0] - j), ik_from_ref=True)
         s = dict(stage=stage)
         target = goal_w
-        if invert and method != "direct":
+        if invert and method in ("lookup", "model"):
             st_ = RGP.state_now(env, rec, side, goal_w, rot_w, chain)
             if method == "model":
                 plan0 = PI.plan_of
@@ -198,26 +238,31 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
                 s.update(pred_err=round(pe, 3))
             target = np.r_[st_["p"][:2] + (st_["Rh"] @ np.r_[t_h[:2], 0.0])[:2], t_h[2]]
             s["shift_cm"] = round(100 * float(np.linalg.norm(target - goal_w)), 3)
-        m.reach(side, np.asarray(target, float), rot_w, pelvis_z=None if pz < 0 else float(pz), servo=False, **kw)
+        servo = method == "servo"
+        m.reach(side, np.asarray(target, float), rot_w, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw)
         last_cmd[0] = np.asarray(target, float)
         if m.fell_at is None:
             m.hold(GR.POST_S)
         p, Rm = m.jaw_centre(side)
         s.update(err_cm=round(100 * float(np.linalg.norm(p - goal_w)), 3), err_deg=round(angle_deg(rot_w, Rm), 2),
-                 miss=(100 * (p - goal_w)).round(2).tolist())  # fmt: skip
+                 miss=(100 * (p - goal_w)).round(2).tolist(), obj_cm=moved())  # fmt: skip
         stages.append(s)
         return m.fell_at is None
 
     ok = m.fell_at is None
-    ok = ok and reach("clear", cw, Tp[:3, :3], 0, False)
-    ok = ok and reach("pregrasp", pw, Tp[:3, :3], 1, True)
+    if a.clear:
+        ok = ok and reach("clear", cw, Tg[:3, :3], 0, False)
+    ok = ok and reach("pregrasp", pw, Tg[:3, :3], 1 if a.clear else 0, True)
     ok = ok and reach("entry", gw, Tg[:3, :3], 1, True, entry=True)
     if ok:
+        look["phase"] = "close"
         for u in np.linspace(0, 1, int(0.5 / 0.02)):
             sim.fingers_cmd[side] = f_pre + u * (f_close + a.squeeze * (f_close - f_pre) - f_pre)
             m.hold(0.02)
         m.hold(0.5)
+        row["obj_cm_closed"] = moved()
         kw = P.cont(m, side)
+        look["phase"] = "lift"
         m.reach(side, kw["start"] + np.r_[0.0, 0.0, LIFT_M], kw["start_rot"], pelvis_z=None if pz < 0 else float(pz),
                 speed=0.1, servo=False, **kw)  # fmt: skip
         m.hold(1.0)
@@ -225,7 +270,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     e = stages[-1] if stages and stages[-1]["stage"] == "entry" else {}
     row.update(stages=stages, palm_cm=e.get("err_cm"), palm_deg=e.get("err_deg"), rise_cm=round(100 * (z - z0), 2),
                success_end=bool(EP.lifted(task, z0, z)), t_success=first[0], fell=m.fell_at, t=round(float(m.t - t0), 2),
-               touch=P.touching(sim, b))  # fmt: skip
+               touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"])  # fmt: skip
     row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
     row["success_45"] = first[0] is not None and first[0] <= HITCH_S
     return row
@@ -234,12 +279,16 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("task", choices=PICK_TASKS)
-    ap.add_argument("--method", choices=("direct", "lookup", "model"), required=True)
+    ap.add_argument("--method", choices=("direct", "lookup", "model", "servo"), required=True)
+    ap.add_argument("--clear", action="store_true", help="a waypoint outside the table's edge before the pregrasp")
     ap.add_argument("--episodes", default="0-29", help="indices into the task's 30 episodes, 'a-b' or 'i,j,k'")
     ap.add_argument("--side", default="right")
-    ap.add_argument("--stand", type=float, default=0.45, help="m, the grasp ahead of the pelvis at the stance")
+    ap.add_argument("--stand", type=float, default=0.30, help="m, the grasp ahead of the pelvis at the stance")
     ap.add_argument("--side-off", type=float, default=-0.20, help="m, the grasp to the left of the pelvis")
     ap.add_argument("--table-gap", type=float, default=0.2, help="m, the pelvis stays this far before the table's edge")
+    ap.add_argument(
+        "--pre", type=float, default=0.08, help="m, the pregrasp back from the grasp against the palm normal"
+    )
     ap.add_argument("--squeeze", type=float, default=0.6, help="how far past the closed posture the fingers are driven")
     ap.add_argument("--wm", default=WM, help="the exported self model (method model)")
     ap.add_argument("--lookup-data", default=LOOKUP_DATA)
