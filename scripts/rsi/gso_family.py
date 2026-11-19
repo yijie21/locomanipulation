@@ -31,7 +31,7 @@ start.sample_start; user 2026-11-06: with the nine others fixed, 13 of s0's 21 t
 
 A hand-picked scene (`logistics_room_gso_single` / `_bimanual`, user 2026-11-17; prepare_logistics_scene.py --picks)
 gets one family instead: `gso_single_grasp` (every picked one-hand object) or `gso_bimanual_lift` (every picked
-two-hand object and the carton), goal `held(X)` + `lifted(X, 0.30, 60)` (`--lift 0.20` the fallback) judged over the
+two-hand object and the carton), goal `held(X)` + `lifted(X, 0.20, 60)` (`--lift` another height) judged over the
 last 5 s for both, the main skill library as the start, pools sized by the task count (`--per-task diag=3 accept=4
 sealed=5`, the default; the acceptance pool at least gate.STAGE1 + 1); files `gso_single_grasp.json` +
 `gso_single_grasp_tasks.jsonl`.
@@ -78,8 +78,9 @@ TIMING = {"hold_s": 2.0, "judge_s": 5.0}
 LIFT_M = {"gso_grasp": 0.10, "gso_bimanual": 0.20, "gso_pack": 0.20, "gso_pack_bimanual": 0.20}
 TILT_DEG = 60
 # the hand-picked test scenes (user 2026-11-17; prepare_logistics_scene.py --picks): one family each, every object
-# lifted 0.30 m (0.20 if that proves out of reach) and held, judged over the last 5 s, from the main skill library
-PICKED_LIFT_M = 0.30
+# lifted PICKED_LIFT_M and held, judged over the last 5 s, from the main skill library; 0.20 m since 2026-11-18 (user;
+# 0.30 m before), `--lift` another height
+PICKED_LIFT_M = 0.20
 # the picked families' pools: starts per task, the default of `--per-task` (user 2026-11-18: by the task count, as
 # gso_pack_all; with a fixed 30 / 40 / 50 the 20 one-hand tasks had 1-2 diagnostic and 2 acceptance starts each, so a
 # change that helped one object could never win the gate's net 3). The family file records the numbers it was written
@@ -507,7 +508,7 @@ def main(argv=None) -> int:
     ap.add_argument("scene_dir", type=Path)
     ap.add_argument("--families-dir", type=Path, default=FAMILIES)
     ap.add_argument("--lift", type=float, default=None, help=f"m; a hand-picked scene's lift (default {PICKED_LIFT_M}; "
-                    "user 2026-11-17: 0.20 if 0.30 proves out of reach)")  # fmt: skip
+                    "user 2026-11-18: 0.20, 0.30 before)")  # fmt: skip
     ap.add_argument("--per-task", nargs="+", metavar="POOL=N", default=None, help="a hand-picked scene's starts per "
                     f"task, any of diag / accept / sealed (default {PICKED_PER_TASK}); the acceptance pool holds at "
                     "least gate.STAGE1 + 1")  # fmt: skip

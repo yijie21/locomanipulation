@@ -1,4 +1,4 @@
-# One-hand lifts of twenty hand-picked scanned objects, 30 cm and held: the plan the roles read (logistics_room_gso_single, 2026-11-17)
+# One-hand lifts of twenty hand-picked scanned objects, 20 cm and held: the plan the roles read (logistics_room_gso_single, 2026-11-17)
 
 This run's plan for the scene RSI inner loop's roles. Its section numbers are the ones the role prompts cite (0, 2, 3,
 4, 7, 8). Everything but the goal, the scene and the start is `gso_grasp.md`'s: read that plan's sections 2, 3, 7 and
@@ -6,14 +6,14 @@ This run's plan for the scene RSI inner loop's roles. Its section numbers are th
 
 ## 0. Goal
 
-The robot walks to the pallet platform and lifts one scanned object off it with one hand, 30 cm up, and holds it
+The robot walks to the pallet platform and lifts one scanned object off it with one hand, 20 cm up, and holds it
 there. This run is one task family, `gso_single_grasp`, one task `pick_X` per object of the scene
 `logistics_room_gso_single`: twenty single-hand objects the user picked by hand (user 2026-11-17;
 `assets/mujoco_scanned_objects/scene_picks.json`, from the catalog's `single` objects of the training split after the
 hand choices) placed with a fixed seed on the 0.371 m platform within 0.35 m of an edge; there is no carton in this
 scene (user 2026-11-17: the room it left holds twenty objects). The goal:
 - `held(X)`: the fingers on X and X off every surface;
-- `lifted(X, 0.30, 60)`: X's lowest point 30 cm or more above the platform top, its upright axis less than 60 deg off
+- `lifted(X, 0.20, 60)`: X's lowest point 20 cm or more above the platform top, its upright axis less than 60 deg off
   vertical;
 - both checked every 0.1 s and holding at every check over the round's last 5 s (`judge_s`): the end of the plan and
   then 2 s standing still (`hold_s`). This is stricter than `gso_grasp`'s 10 cm at the round's end.
@@ -33,12 +33,12 @@ As `gso_grasp.md` section 3.
 
 ## 4. Decisions
 
-As `gso_grasp.md` section 4, but D12 is this plan's section 0 (30 cm, judged over the last 5 s). If the user finds
-30 cm out of the arm's reach the family is rewritten at 20 cm (`gso_family.py --lift 0.20`); a role does not lower it.
+As `gso_grasp.md` section 4, but D12 is this plan's section 0 (20 cm, judged over the last 5 s; the user lowered it
+from 30 cm on 2026-11-18). The height is the user's (`gso_family.py --lift`); a role does not change it.
 
 ## 7. What the layers below deliver (measured)
 
-As `gso_grasp.md` section 7; none of it was measured at 30 cm or on these twenty objects.
+As `gso_grasp.md` section 7; none of it was measured at 20 cm or on these twenty objects.
 
 ## 8. Starts that cannot be done (D13)
 

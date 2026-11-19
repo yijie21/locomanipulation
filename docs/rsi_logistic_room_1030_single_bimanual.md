@@ -4,7 +4,7 @@
 
 | 场景 | 平台上的物体 | 任务族 | 目标 |
 |---|---|---|---|
-| `logistics_room_gso_single` | 20 件单手物体，没有纸箱 | `gso_single_grasp`，每件一个 `pick_<键>` | `held(X)` + `lifted(X, 0.30, 60)` |
+| `logistics_room_gso_single` | 20 件单手物体，没有纸箱 | `gso_single_grasp`，每件一个 `pick_<键>` | `held(X)` + `lifted(X, 0.20, 60)` |
 | `logistics_room_gso_bimanual` | 7 件双手物体加纸箱（纸箱 0.3 kg） | `gso_bimanual_lift`，每件一个 `lift_<键>`，纸箱也有一个 | 同上，用双手 |
 
 - **判定**：两个场景一样，都在每局最后 5 秒内每 0.1 s 检查一次，每次都要成立（`hold_s` 2 / `judge_s` 5）。单手也按这个判，比 `gso_grasp_s<seed>` 只在结束时看一次抬高 10 cm 更严。
@@ -15,7 +15,7 @@
 用户 2026-11-17 的决定：
 - 旧的 `logistics_room_1030_s0..s9` 不删也不动。
 - 两个新场景都建 MuJoCo 和 Unreal 版。
-- 只做抓起和抱起，不做装箱；都抬高 30 cm、保持 5 秒；30 cm 太高就降到 20 cm（第 9 节）。
+- 只做抓起和抱起，不做装箱；都抬高 20 cm、保持 5 秒（11-18 从 30 cm 降到 20 cm；第 9 节）。
 - 只用训练划分里的物体，不要求放得进纸箱。
 - 双手场景选 5–9 件，尽量多。
 - 单手场景不放纸箱，所以能放 20 件。
@@ -38,10 +38,10 @@
 可行性探针：单手场景有两件报 `beyond the hand's reach from the edge`，是塑料花盆 `gso_0233` 和木头字母积木车 `gso_0323`。这只是提示，不挡流程。
 
 冒烟各一局（第 6 节），整条链都能跑通，目标都不成立：
-- 单手：锤子 `pick_gso_0154` 在伸进去时被碰偏了 5 cm。马克杯 `pick_gso_0016` 抓住并抬离台面约 5 cm（要 30 cm）。
-- 双手：纸箱 `lift_nor_cal_box` 两手夹住后抬起约 14 cm，目标要 30 cm。
+- 单手：锤子 `pick_gso_0154` 在伸进去时被碰偏了 5 cm。马克杯 `pick_gso_0016` 抓住并抬离台面约 5 cm（当时目标是 30 cm，现在是 20 cm）。
+- 双手：纸箱 `lift_nor_cal_box` 两手夹住后抬起约 14 cm（当时目标是 30 cm，现在是 20 cm，仍然不够）。
 
-这是预期的：主库单手抓取只抬 0.10 m（`pick.LIFT_M`），双手抱起只抬 0.15 m（`bimanual.LIFT_DZ_M`），都不读目标里的高度；30 cm 要靠内环来学。
+这是预期的：主库单手抓取只抬 0.10 m（`pick.LIFT_M`），双手抱起只抬 0.15 m（`bimanual.LIFT_DZ_M`），都不读目标里的高度；抬到 20 cm 要靠内环来学。
 
 耗时是 2026-11-17 在 SRA0889（一张 RTX 5090）上的实测：
 
@@ -142,7 +142,7 @@ make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/tes
 - 挑选文件的校验：种类、训练划分、数量是 20 / 5–9、不能重复。
 - 试摆：固定 seed 结果一样；放不下时写出物体名；单手场景不放纸箱也能摆下 20 件。
 - 挑选页的数据和保存。
-- 任务族：抬 0.30 m、最后 5 s 判、`--lift 0.20` 降高度、主库起点、方案文件在沙盒的保留列表里。
+- 任务族：默认抬 0.20 m、`--lift` 改高度、最后 5 s 判、主库起点、方案文件在沙盒的保留列表里。
 - 知识库：共享文件的读写、按来源任务族替换、`tag`、`KNOWLEDGE.md` 的全文和标注、重建时沿用未变的机制。
 - 交替驱动：三方合并和冲突、参数覆盖值写进常数、轮流和续跑、一方停下、异常阻塞、同步被拒；`gate.py` 的不变差规则；`loop.py sync` 的账本行。
 - 目录、图库和预览的原有测试。
@@ -271,7 +271,7 @@ bash scripts/stop_unreal.sh
 ## 9. 改物体、改判据
 
 - **换物体**：回第 2 节重选，删掉场景目录，再跑第 3、4、8 节。只换摆法就用 `prepare_logistics_scene.py ... --place-seed N`，或者改页头的 seed。
-- **30 cm 够不着**（用户同意降到 20 cm）：运行 `PYTHONPATH=src $PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_gso_single --lift 0.20` 重写任务族，场景不用改。改完要提交，并在方案和账本里记一次人工干预。`--lift` 只对这两个人工挑选的场景有效。
+- **抬升高度**：默认 0.20 m（`gso_family.py` 的 `PICKED_LIFT_M`；用户 11-18 从 0.30 m 降下来）。要换高度就运行 `PYTHONPATH=src $PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_gso_single --lift 0.25` 重写任务族（双手同理），场景不用改；再把两份方案里的高度改掉。改完要提交，并在方案和账本里记一次人工干预。`--lift` 只对这两个人工挑选的场景有效。
 - **数量规则**：`src/locomani/sim/gso_objects.py` 的 `PICK_SCENES`（单手 20 件、无纸箱；双手 5–9 件加纸箱）。
 - **两手留空**：`scripts/rsi/gso_family.py` 的 `HANDS_CLEAR_M`（0.18 m）。
 
