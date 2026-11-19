@@ -276,6 +276,25 @@ class Driver(unittest.TestCase):
             with AL.Lock(run):
                 self.assertEqual((run / "alternate.lock").read_text(), str(os.getpid()))
 
+    def test_the_citations_reach_the_sandbox_and_the_published_library(self):
+        """User 2026-11-18: usage.jsonl (each entry's citations and their outcomes) goes into each sandbox with the
+        library and into the repository's on publish, beside other runs' citations, never twice."""
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            KN.update_usage(run / "knowledge", "/runs/a", "fa", [dict(entry="fb/m", run="/runs/a", family="fa", iter=0,
+                                                                    hypothesis="H1", outcome="helped")])  # fmt: skip
+            AL.install_knowledge(run, run / "b")
+            self.assertEqual(len(KN.jl(run / "b/scripts/rsi/knowledge" / KN.USAGE)), 1)
+            clean = subprocess.run(["git", "status", "--porcelain"], cwd=run / "b", capture_output=True, text=True)
+            self.assertEqual(clean.stdout.strip(), "")
+            out = Path(d) / "lib"
+            KN.update_usage(out, "/runs/old", "fz", [dict(entry="fz/q", run="/runs/old", family="fz", iter=3,
+                                                          hypothesis="H2", outcome="failed")])  # fmt: skip
+            AL.publish(run, out)
+            AL.publish(run, out)  # again: nothing counted twice
+            rows = KN.jl(out / KN.USAGE)
+        self.assertEqual(sorted((r["run"], r["entry"]) for r in rows), [("/runs/a", "fb/m"), ("/runs/old", "fz/q")])
+
     def test_publish_replaces_the_run_families_entries_and_keeps_the_others(self):
         with tempfile.TemporaryDirectory() as d:
             run = fake_run(Path(d))

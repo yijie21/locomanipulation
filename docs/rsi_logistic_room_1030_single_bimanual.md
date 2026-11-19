@@ -174,6 +174,8 @@ $PY scripts/gso_pack_check.py --family gso_bimanual_lift      # 第一个任务�
 
 知识库（规则 39）的条目都在一个文件 `knowledge.jsonl` 里，每条带 `tag`：`single`（单手抓起）或 `bimanual`（双手抱起）。内环每一轮在 Reviewer 之前把整个库写成 `KNOWLEDGE.md`，每条下面标出它的条件在现任的哪些诊断局上成立（只标注，不过滤），Reviewer 和 Engineer 整个读。技能代码不能读知识库。
 
+条目有状态（用户 11-18）：Reviewer 的假设每在 `knowledge_refs` 里引用一条条目，就记一次使用，连同这个假设的结局记进 `usage.jsonl`。结局分三种：有用（Prober 判为有效，或它的代码过了验收门；Composer 合并的候选被接受时，这一轮所有草稿的假设都记“有用”，标为合并）、无效（Prober 判为无效）、不确定（其余）。至少有用 1 次、且有用不少于无效的是 `tested`；无效至少 2 次、且多于有用的是 `doubtful`；其余是 `candidate`。条件只在本方现任已经做成的局上成立的，对本方是 `resolved`。`KNOWLEDGE.md` 每节先列 `tested`、再列 `candidate`（全文），`doubtful` 和 `resolved` 每条一行。建库（`knowledge.py build`）时顺便重算引用记录，只想更新引用记录用 `knowledge.py usage <沙盒> <任务族>`；都不调用模型。
+
 沙盒只导出已提交的代码，开跑前先确认要用的东西都已提交：
 
 ```bash

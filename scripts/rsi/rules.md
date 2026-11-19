@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 26, 2026-11-18)
+# Rules for the scene RSI loop (TODO 27, version 27, 2026-11-18)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -276,7 +276,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     each Reviewer the driver writes scripts/rsi/knowledge/KNOWLEDGE.md: the whole library, every entry marked with
     the incumbent's diagnostic rounds its condition holds on (a mark, not a filter), and an alternating run's code
     syncs; the Reviewer and the Engineer read it whole (prompt: what worked elsewhere is a hypothesis here; this
-    family's rounds decide; cite an entry's id in `knowledge_refs`). The skills package may not read it: a draft
+    family's rounds decide; cite an entry's id in `knowledge_refs`). Each citation is recorded with how the citing
+    hypothesis ended (scripts/rsi/knowledge/usage.jsonl; version 27): an entry that helped where it was cited is
+    `tested`, one cited at least twice without effect is `doubtful`, one whose condition holds only where the
+    reader's incumbent already succeeds is `resolved` for that reader; KNOWLEDGE.md shows tested and candidate
+    entries in full, doubtful and resolved ones a line each (code). The skills package may not read it: a draft
     whose skills code names `rsi/knowledge`, `knowledge_hits`, `HITS.md`, `KNOWLEDGE.md` or `knowledge.jsonl` is
     void, as rule 38's recorder (code: loop.py named_objects). The library never enters the gate, the sentinel or
     the regression.

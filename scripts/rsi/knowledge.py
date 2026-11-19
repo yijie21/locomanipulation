@@ -9,9 +9,17 @@ Before each Reviewer the loop writes `<library>/KNOWLEDGE.md` (write_hits): the 
 each entry marked with the incumbent's diagnostic rounds its condition holds on (a mark, never a filter), and the code
 syncs of an alternating run (`sync.jsonl`, scripts/rsi/alternate.py). Roles read KNOWLEDGE.md whole.
 
+Every entry has a standing (user 2026-11-18): each Reviewer hypothesis that cites it in `knowledge_refs` is one use,
+recorded in `usage.jsonl` with how the hypothesis ended (usage_rows: helped when the Prober verified it or its code
+passed the gate, no effect when the Prober refuted it, else unclear). `tested`: it helped at least once and at least
+as often as not; `doubtful`: no effect twice or more and more often than it helped; else `candidate`; `resolved`, for
+the reader only: its condition holds just where the reader's incumbent already succeeds. KNOWLEDGE.md shows tested and
+candidate entries in full, doubtful and resolved ones a line each. No model call: a build and `usage` count.
+
     python3 scripts/rsi/knowledge.py build <sandbox> <family> [--iters 0-3] [--out scripts/rsi/knowledge] [--tag single] [--stub]
     python3 scripts/rsi/knowledge.py evidence <sandbox> <family> [--iters 0-3]        # the tables only, no model call
     python3 scripts/rsi/knowledge.py eval <sandbox root> <rounds dir> --out <dir>      # knowledge_hits.json + KNOWLEDGE.md
+    python3 scripts/rsi/knowledge.py usage <sandbox> <family> [--out scripts/rsi/knowledge]   # citations only, no build
     python3 scripts/rsi/knowledge.py index [--out scripts/rsi/knowledge]
     python3 scripts/rsi/knowledge.py report <sandbox> [<sandbox> ...]                 # the replay A/B table
 """
@@ -41,6 +49,8 @@ OUT = HERE / "knowledge"
 LIBRARY = "knowledge.jsonl"  # the entries, one per line (user 2026-11-18: one shared file, tagged)
 SYNCS = "sync.jsonl"  # an alternating run's code syncs (scripts/rsi/alternate.py), shown in KNOWLEDGE.md
 ROLE_FILE = "KNOWLEDGE.md"  # what the Reviewer and the Engineer read, rewritten before each Reviewer (gitignored)
+USAGE = "usage.jsonl"  # every citation of an entry and how the citing hypothesis ended (user 2026-11-18, usage_rows)
+STATUS_ORDER = ("tested", "candidate", "doubtful", "resolved")  # KNOWLEDGE.md: full text for the first two
 TAGS = {"single": "one-hand pick", "bimanual": "two-hand pick", "mixed": "mixed tasks"}
 MODEL = os.environ.get("RSI_MODEL", "claude-opus-5-5")
 MIN_FLIPS = 2  # triggered flipped rounds an entry needs
@@ -597,11 +607,14 @@ def build(
     log.append(f"\n{kept} entries, model cost {cost:.2f} USD")
     # a rebuild replaces the family's entries (a dropped mechanism keeps none) and leaves every other family's
     save_entries(out, [e for e in entries(out) if source_family(e) != family] + new)
+    # how this family's hypotheses that cited entries ended (user 2026-11-18): the entries' standing, no model call
+    cited = update_usage(out, str(sandbox), family, usage_rows(loop, family, str(sandbox)))
+    log.append(f"{cited} citation(s) of library entries in this family's ledger recorded in {USAGE}")
     (out / "build").mkdir(parents=True, exist_ok=True)
     (out / "build" / f"{family}.md").write_text("\n".join(log) + "\n")
     _write_atomic(cache_path, json.dumps(fresh_cache, ensure_ascii=False) + "\n")
     index(out)
-    return dict(entries=kept, cost_usd=round(cost, 2), tag=tag)
+    return dict(entries=kept, cost_usd=round(cost, 2), tag=tag, citations=cited)
 
 
 def evidence_key(m: dict, table: list[dict], ranked: list[dict], scene_note: str, tag: str, stub: bool) -> str:
@@ -633,6 +646,87 @@ def save_entries(out: Path, ents: list[dict]) -> None:
     _write_atomic(out / LIBRARY, "".join(json.dumps(e, ensure_ascii=False) + "\n" for e in ents))
 
 
+def usage_rows(loop: Path, family: str, run: str) -> list[dict]:
+    """Every citation of a library entry in one family's loop (user 2026-11-18): one row per (hypothesis, entry id in
+    its `knowledge_refs`), with how the hypothesis ended. `status`: the Prober's (verified, refuted, mixed, hypothesis);
+    `picked`: the Manager chose it to build; `accepted`: `draft` when a draft of it passed the gate (alone, adopted by
+    the Composer, or as the second shot), `merged` when the Composer merged the iteration's drafts and that passed (the
+    ledger does not say which drafts went in, so every hypothesis with a valid draft that iteration is credited);
+    `outcome`: helped (verified or accepted), failed (refuted, not accepted) or unclear. `run`: the sandbox, so two runs
+    of one family do not overwrite each other."""
+    rows = jl(loop / "ledger.jsonl")
+    out = []
+    for it in sorted(p for p in loop.glob("iter_*") if p.is_dir() and p.name[5:].isdigit()):
+        n = int(it.name[5:])
+        hyps = [h for h in (jload(it / "hypotheses.json", {}) or {}).get("hypotheses") or [] if isinstance(h, dict)]
+        cited = [h for h in hyps if h.get("id") and any(isinstance(x, str) for x in h.get("knowledge_refs") or [])]
+        if not cited:
+            continue
+        mine = [r for r in rows if r.get("iter") == n]
+        probe = {p.get("id"): p for r in mine if r.get("step") == "probe" for p in r.get("results") or []}
+        picked = set()
+        for r in mine:
+            if r.get("step") == "manager" and not r.get("void"):
+                picked |= {x for x in [r.get("hypothesis"), *(r.get("hypotheses") or [])] if x}
+        drafts = [c for c in jload(it / "candidates.json", []) or [] if isinstance(c, dict)]
+        by_hash = {c.get("hash"): c.get("hypothesis") for c in drafts}
+        comp = next((r for r in reversed(mine) if r.get("step") == "compose" and not r.get("void")), {})
+        adopted = next((c.get("hypothesis") for c in drafts if c.get("number") == comp.get("adopted")), None)
+        credit: dict[str, str] = {}
+        for g in mine:
+            if g.get("step") != "gate" or not g.get("accepted") or g.get("void") or g.get("sync") is not None:
+                continue
+            if g.get("hash") in by_hash:
+                credit[by_hash[g["hash"]]] = "draft"
+            elif comp.get("decision") == "adopt" and adopted:
+                credit[adopted] = "draft"
+            elif comp.get("decision") == "merge":
+                for c in drafts:
+                    credit.setdefault(c.get("hypothesis"), "merged")
+        for h in cited:
+            status = (probe.get(h["id"]) or {}).get("status") or h.get("status") or "hypothesis"
+            acc = credit.get(h["id"])
+            outcome = "helped" if status == "verified" or acc else "failed" if status == "refuted" else "unclear"
+            for ref in dict.fromkeys(x for x in h["knowledge_refs"] if isinstance(x, str)):
+                out.append(dict(entry=ref, run=run, family=family, iter=n, hypothesis=h["id"], status=status,
+                                picked=h["id"] in picked, accepted=acc, outcome=outcome))  # fmt: skip
+    return out
+
+
+def update_usage(lib: Path, run: str, family: str, rows: list[dict]) -> int:
+    """usage.jsonl := its rows of other runs or families, plus `rows` (this run's family, recounted from its whole
+    ledger: nothing is counted twice). Returns the rows written for this run and family."""
+    keep = [r for r in jl(Path(lib) / USAGE) if (r.get("run"), r.get("family")) != (run, family)]
+    Path(lib).mkdir(parents=True, exist_ok=True)
+    allr = sorted(keep + rows, key=lambda r: (r["entry"], r["family"], r["run"], r["iter"], r["hypothesis"]))
+    _write_atomic(Path(lib) / USAGE, "".join(json.dumps(r, ensure_ascii=False) + "\n" for r in allr))
+    return len(rows)
+
+
+def entry_stats(usage: list[dict]) -> dict[str, dict]:
+    """{entry id: {uses, helped, failed, unclear, accepted}} over every citation in usage.jsonl."""
+    out: dict[str, dict] = {}
+    for r in usage:
+        s = out.setdefault(r["entry"], dict(uses=0, helped=0, failed=0, unclear=0, accepted=0))
+        s["uses"] += 1
+        s[r.get("outcome", "unclear")] = s.get(r.get("outcome", "unclear"), 0) + 1
+        s["accepted"] += bool(r.get("accepted"))
+    return out
+
+
+def status_of(st: dict | None) -> str:
+    """An entry's standing from its citations (user 2026-11-18): `tested` -- helped at least once and at least as often
+    as it failed; `doubtful` -- failed at least twice and more often than it helped; else `candidate`. `resolved` is
+    the reader's (render_library): it depends on whose incumbent reads it."""
+    if not st:
+        return "candidate"
+    if st["helped"] >= 1 and st["helped"] >= st["failed"]:
+        return "tested"
+    if st["failed"] >= 2 and st["failed"] > st["helped"]:
+        return "doubtful"
+    return "candidate"
+
+
 def tag_of(sandbox: Path, family: str) -> str:
     """The kind of task the family's entries come from: `single` when every task's object is a one-hand object of the
     scene file (`semantic.graspable`), `bimanual` when every one is a two-hand object, else `mixed`. A family file's
@@ -657,11 +751,15 @@ def index(out: Path = OUT) -> None:
     rows = ["# Knowledge library", "",
             f"One entry per mechanism, in {LIBRARY} (scripts/rsi/knowledge.py build). The roles read {ROLE_FILE}, the "
             "whole library marked with the incumbent's rounds, not this index.", "",
-            "| id | tag | scope | status | condition | objects | reads as |", "|---|---|---|---|---|---|---|"]  # fmt: skip
+            "| id | tag | scope | status | cited (helped / no effect / unclear) | condition | objects | reads as |",
+            "|---|---|---|---|---|---|---|---|"]  # fmt: skip
+    stats = entry_stats(jl(Path(out) / USAGE))
     for e in entries(out):
         cond = " and ".join(f"{c['feature']} {c['op']} {c['value']}" for c in e["condition"].get("all", []))
+        st = stats.get(e["id"])
+        cites = f"{st['uses']} ({st['helped']} / {st['failed']} / {st['unclear']})" if st else "0"
         rows.append(
-            f"| {e['id']} | {e.get('tag', '')} | {e['scope']} | {e['status']} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
+            f"| {e['id']} | {e.get('tag', '')} | {e['scope']} | {status_of(st)} | {cites} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
         )
     Path(out).mkdir(parents=True, exist_ok=True)
     (Path(out) / "INDEX.md").write_text("\n".join(rows) + "\n")
@@ -689,11 +787,19 @@ def _cond_text(c: dict) -> str:
     return " and ".join(parts)
 
 
-def _entry_lines(e: dict, h: dict | None) -> list[str]:
-    """One entry of KNOWLEDGE.md. Object names from the evidence never reach it (no `by_object`, no `scope_why`):
-    only the reading family's own round labels."""
+def _uses_text(st: dict | None) -> str:
+    if not st:
+        return "Not cited yet"
+    acc = f" ({st['accepted']} passed the gate)" if st["accepted"] else ""
+    return (f"Cited {st['uses']} time(s): helped {st['helped']}{acc}, no effect {st['failed']}, "
+            f"unclear {st['unclear']}")  # fmt: skip
+
+
+def _entry_lines(e: dict, h: dict | None, status: str = "candidate", st: dict | None = None) -> list[str]:
+    """One entry of KNOWLEDGE.md, in full. Object names from the evidence never reach it (no `by_object`, no
+    `scope_why`): only the reading family's own round labels."""
     src = e.get("source") or {}
-    head = f"### {e['id']}  ({e['scope']}, v{e.get('version', 1)}, {e.get('status', '')}; from {source_family(e)}"
+    head = f"### {e['id']}  ({e['scope']}, v{e.get('version', 1)}, {status}; from {source_family(e)}"
     head += f" iterations {src['iters']})" if src.get("iters") else ")"
     if h is None:
         mark = "This incumbent: the condition holds on none of its diagnostic rounds"
@@ -709,7 +815,23 @@ def _entry_lines(e: dict, h: dict | None) -> list[str]:
              f"Worked: {e['repair'].get('works', '')} (where: {e['repair'].get('where', '')})"]  # fmt: skip
     if e["repair"].get("does_not"):
         lines.append("Did not work: " + "; ".join(e["repair"]["does_not"]))
+    lines.append(_uses_text(st))
     return lines + [""]
+
+
+def _short_line(e: dict, status: str, st: dict | None, h: dict | None) -> str:
+    """A doubtful or resolved entry of KNOWLEDGE.md: one line."""
+    why = (f"{_uses_text(st).lower()}; this way did not work" if status == "doubtful"
+           else f"its condition holds on {len((h or {}).get('rounds') or [])} round(s), all of which this incumbent already succeeds on")  # fmt: skip
+    return f"- {e['id']} ({status}): {e['signature'].get('reads_as', '')} -- {why}"
+
+
+def reader_status(e: dict, h: dict | None, st: dict | None) -> str:
+    """The entry's standing for this reader: `resolved` when its condition holds on at least one of this incumbent's
+    diagnostic rounds and every one of them succeeds; else status_of its citations."""
+    if h and h.get("rounds") and h.get("failed", 0) == 0:
+        return "resolved"
+    return status_of(st)
 
 
 def _sync_line(s: dict) -> str:
@@ -733,26 +855,43 @@ def _sync_line(s: dict) -> str:
     )
 
 
-def render_library(ents: list[dict], hs: list[dict], syncs: list[dict] | None = None) -> str:
+def render_library(
+    ents: list[dict], hs: list[dict], syncs: list[dict] | None = None, usage: list[dict] | None = None
+) -> str:
     """KNOWLEDGE.md (user 2026-11-18): every entry, one section per tag, each marked with the incumbent's diagnostic
-    rounds its condition holds on (hits), then the code syncs between the families of an alternating run."""
+    rounds its condition holds on (hits) and with how its citations ended (usage); within a section tested, then
+    candidate entries in full, then doubtful and resolved ones a line each; then the code syncs between the families
+    of an alternating run."""
     by_hit = {h["id"]: h for h in hs}
+    stats = entry_stats(usage or [])
     lines = ["# Knowledge library: every entry, marked with this incumbent's diagnostic rounds", "",
              "Entries (condition -> failure signature -> repair) the loops of this family and of others have learned, "
              "tagged by the kind of task: one-hand pick (single) and two-hand pick (bimanual). Read them all. What "
              "worked on other objects or another task is a hypothesis here; this family's rounds decide. Under each "
-             "entry: the rounds of this incumbent its condition holds on. Cite an entry you use by its id in "
-             "`knowledge_refs`.", ""]  # fmt: skip
+             "entry: the rounds of this incumbent its condition holds on, and how the hypotheses that cited it ended. "
+             "Tested entries helped where they were cited; doubtful ones were cited and did not help; resolved ones "
+             "hold only where this incumbent already succeeds. Cite an entry you use by its id in `knowledge_refs`.",
+             ""]  # fmt: skip
     tags = sorted(
         {e.get("tag") or "untagged" for e in ents},
         key=lambda t: (t not in TAGS, list(TAGS).index(t) if t in TAGS else 0, t),
     )
     for t in tags:
         sec = [e for e in ents if (e.get("tag") or "untagged") == t]
-        sec.sort(key=lambda e: (-(by_hit.get(e["id"]) or {}).get("failed", 0), e["id"]))
+        st_of = {e["id"]: reader_status(e, by_hit.get(e["id"]), stats.get(e["id"])) for e in sec}
+        sec.sort(
+            key=lambda e: (STATUS_ORDER.index(st_of[e["id"]]), -(by_hit.get(e["id"]) or {}).get("failed", 0), e["id"])
+        )
         lines += [f"## {TAGS.get(t, t).capitalize()} (tag {t}): {len(sec)} entr{'y' if len(sec) == 1 else 'ies'}", ""]
+        short = []
         for e in sec:
-            lines += _entry_lines(e, by_hit.get(e["id"]))
+            status, h, st = st_of[e["id"]], by_hit.get(e["id"]), stats.get(e["id"])
+            if status in ("doubtful", "resolved"):
+                short.append(_short_line(e, status, st, h))
+            else:
+                lines += _entry_lines(e, h, status, st)
+        if short:
+            lines += ["Doubtful or resolved here (one line each):", *short, ""]
     if syncs:
         lines += ["## Code syncs between the families", "",
                   "After each family's iteration its incumbent's skills package was merged into the other family's "
@@ -778,7 +917,7 @@ def write_hits(root: Path, rounds_dir: Path, out_dir: Path, family: str, pool: P
         hs = hits(ents, rows)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_atomic(out_dir / "knowledge_hits.json", json.dumps(hs, indent=1) + "\n")
-    _write_atomic(lib / ROLE_FILE, render_library(ents, hs, syncs))
+    _write_atomic(lib / ROLE_FILE, render_library(ents, hs, syncs, jl(lib / USAGE)))
     return sum(h["failed"] > 0 for h in hs)
 
 
@@ -839,6 +978,10 @@ def main(argv=None) -> int:
     b.add_argument(
         "--tag", help="the entries' tag (default: tag_of -- single, bimanual or mixed by the tasks' objects)"
     )
+    us = sub.add_parser("usage", help="record how this family's hypotheses that cited entries ended; no build")
+    us.add_argument("sandbox", type=Path)
+    us.add_argument("family")
+    us.add_argument("--out", type=Path, default=OUT)
     ix = sub.add_parser("index")
     ix.add_argument("--out", type=Path, default=OUT)
     ev2 = sub.add_parser("eval")
@@ -849,7 +992,7 @@ def main(argv=None) -> int:
     rp = sub.add_parser("report")
     rp.add_argument("sandboxes", type=Path, nargs="+")
     a = ap.parse_args(argv)
-    if a.cmd in ("evidence", "build"):  # a wrong path read as "no mechanisms" and built an empty library
+    if a.cmd in ("evidence", "build", "usage"):  # a wrong path read as "no mechanisms" and built an empty library
         ledger = a.sandbox / VISIBLE / a.family / "loop" / "ledger.jsonl"
         if not ledger.exists():
             ap.error(f"no ledger at {ledger}: the sandbox path or the family is wrong")
@@ -883,6 +1026,12 @@ def main(argv=None) -> int:
             lo, _, hi = a.iters.partition("-")
             iters = set(range(int(lo), int(hi or lo) + 1))
         print(json.dumps(build(a.sandbox.resolve(), a.family, a.out, iters, a.stub, a.ctx_root, a.tag)))
+        return 0
+    if a.cmd == "usage":
+        sb = a.sandbox.resolve()
+        n = update_usage(a.out, str(sb), a.family, usage_rows(sb / VISIBLE / a.family / "loop", a.family, str(sb)))
+        index(a.out)
+        print(json.dumps(dict(family=a.family, citations=n, out=str(a.out / USAGE))))
         return 0
     if a.cmd == "index":
         index(a.out)

@@ -205,8 +205,9 @@ LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience libr
 KNOWLEDGE_NOTE = (  # plan docs/handoff/shared-knowledge-plan-20261111.md section 5.3; one shared file, user 2026-11-18
     "The knowledge library, scripts/rsi/knowledge/KNOWLEDGE.md: read it whole. Every entry (condition -> failure "
     "signature -> repair) the loops of this family and of others have learned, tagged one-hand pick (single) or "
-    "two-hand pick (bimanual), each marked with the rounds of this incumbent's diagnostic pool its condition holds on, "
-    "with what worked and what did not; and, in an alternating run, the code syncs between the two families. An "
+    "two-hand pick (bimanual), each marked with the rounds of this incumbent's diagnostic pool its condition holds on "
+    "and with how the hypotheses that cited it ended (tested, candidate, doubtful, resolved), with what worked and what "
+    "did not; and, in an alternating run, the code syncs between the two families. An "
     "entry's numbers come from other objects or another task: a hypothesis built on one cites its id in "
     "`knowledge_refs`.\n"
 )

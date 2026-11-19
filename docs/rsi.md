@@ -283,7 +283,7 @@ xdg-open outputs/scene_rsi_20261016/past_view/ga-past-b__incumbent_0fa018936751/
 PYTHONPATH=src $PY scripts/rsi/knowledge.py build <沙盒> <任务族> --iters 0-3
 ```
 
-做什么：从这个沙盒的账本和场景图记录抽知识条目，写进 `scripts/rsi/` 下的 `knowledge/knowledge.jsonl`（一个共享文件，每条带 `tag`：`single` 单手抓起、`bimanual` 双手抱起、`mixed` 其他；用户 11-18），替换这个任务族以前的条目，别的保留；建库日志在 `knowledge/build/<任务族>.md`（每个机制进了还是丢了、为什么），加 `INDEX.md`。证据没变的机制沿用上次的结果，不再调用模型。约每个机制 1 USD，10 到 15 分钟。
+做什么：从这个沙盒的账本和场景图记录抽知识条目，写进 `scripts/rsi/` 下的 `knowledge/knowledge.jsonl`（一个共享文件，每条带 `tag`：`single` 单手抓起、`bimanual` 双手抱起、`mixed` 其他；用户 11-18），替换这个任务族以前的条目，别的保留；建库日志在 `knowledge/build/<任务族>.md`（每个机制进了还是丢了、为什么），加 `INDEX.md`。证据没变的机制沿用上次的结果，不再调用模型。约每个机制 1 USD，10 到 15 分钟。建库同时把这个任务族的假设引用条目（`knowledge_refs`）的结局记进 `knowledge/usage.jsonl`，定出每条条目的状态（`tested`、`candidate`、`doubtful`）；只更新这一项用 `PYTHONPATH=src $PY scripts/rsi/knowledge.py usage <沙盒> <任务族>`。
 
 ```bash
 PYTHONPATH=src $PY scripts/rsi/knowledge.py eval <沙盒> <沙盒>/outputs/scene_rsi_20261016/<任务族>/diag/incumbent_<hash> <任务族> --out /tmp/hits

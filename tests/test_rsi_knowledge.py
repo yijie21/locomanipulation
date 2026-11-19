@@ -679,15 +679,16 @@ class Hits(unittest.TestCase):
         self.assertIn("0 wins, 0 losses -> accepted", md)
         self.assertIn("nothing merged (the merge changes nothing)", md)
 
-    def test_all_ok_hits_are_marked_as_rounds_it_already_succeeds_on(self):
+    def test_an_entry_that_holds_only_where_the_incumbent_succeeds_is_resolved_for_this_reader(self):
         e2 = dict(
             ENTRY, id="fam/other", condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 1.0}]}
         )
         hs = KN.hits([ENTRY, e2], ROWS[:5])
         self.assertEqual([h["id"] for h in hs], ["fam/H1_hang", "fam/other"])
         md = KN.render_library([ENTRY, e2], hs)
-        self.assertLess(md.index("### fam/H1_hang"), md.index("### fam/other"))  # failed hits first
-        self.assertIn("0 failed round(s); and on", md)
+        self.assertIn("### fam/H1_hang", md)  # it holds on failed rounds: in full
+        self.assertIn("- fam/other (resolved):", md)  # one line: nothing left for it here
+        self.assertIn("all of which this incumbent already succeeds on", md)
 
     def test_write_hits_reads_the_library_and_writes_both_files(self):
         with tempfile.TemporaryDirectory() as d:
@@ -963,6 +964,111 @@ class Wiring(unittest.TestCase):
         src = inspect.getsource(LP.iterate)
         self.assertLess(src.index("refresh_diag_pool("), src.index("knowledge_step("))
         self.assertLess(src.index("unpark("), src.index("knowledge_step("))
+
+
+def cited_loop(root: Path) -> Path:
+    """Three iterations whose hypotheses cite entries x/a, x/b, x/c: a draft accepted alone, a refutation, an untested
+    one not picked, a merged candidate accepted, an adopted draft (with overrides, so another hash) accepted, and a
+    sync verdict that must not count."""
+    H = lambda i, refs, **k: dict(id=i, claim="c", instead="i", knowledge_refs=refs, **k)  # noqa: E731
+    ledger = [
+        dict(step="probe", iter=0, results=[dict(id="H1", status="verified"), dict(id="H2", status="refuted"),
+                                            dict(id="H3", status="hypothesis")]),
+        dict(step="manager", iter=0, decision="engineer", hypothesis="H1", hypotheses=["H1", "H2"]),
+        dict(step="compose", iter=0, decision="keep"),
+        dict(step="gate", iter=0, hash="d1", accepted=True),
+        dict(step="probe", iter=1, results=[dict(id="H4", status="refuted"), dict(id="H5", status="mixed")]),
+        dict(step="manager", iter=1, decision="engineer", hypothesis="H5", hypotheses=["H5", "H6"]),
+        dict(step="compose", iter=1, decision="merge"),
+        dict(step="gate", iter=1, hash="m1", accepted=True),
+        dict(step="gate", hash="s1", accepted=True, sync={"from": "other"}),
+        dict(step="probe", iter=2, results=[dict(id="H7", status="hypothesis")]),
+        dict(step="manager", iter=2, decision="engineer", hypothesis="H7"),
+        dict(step="compose", iter=2, decision="adopt", adopted=1),
+        dict(step="gate", iter=2, hash="a2", accepted=True),
+    ]  # fmt: skip
+    per_iter = {
+        0: {"hypotheses.json": dict(hypotheses=[H("H1", ["x/a"]), H("H2", ["x/b", "x/a", "x/b"]), H("H3", ["x/c"])]),
+            "candidates.json": [dict(number=1, hypothesis="H1", hash="d1"), dict(number=2, hypothesis="H2", hash="d2")]},
+        1: {"hypotheses.json": dict(hypotheses=[H("H4", ["x/b"]), H("H5", ["x/c"]), H("H6", [])]),
+            "candidates.json": [dict(number=1, hypothesis="H5", hash="d5"), dict(number=2, hypothesis="H6", hash="d6")]},
+        2: {"hypotheses.json": dict(hypotheses=[H("H7", ["x/d"])]),
+            "candidates.json": [dict(number=1, hypothesis="H7", hash="d7")]},
+    }  # fmt: skip
+    return write_loop(root, ledger, per_iter)
+
+
+class Lifecycle(unittest.TestCase):
+    """User 2026-11-18: an entry's citations (Reviewer knowledge_refs) and how the citing hypotheses ended set its
+    standing -- tested, candidate, doubtful, and for the reader resolved -- which orders KNOWLEDGE.md."""
+
+    def test_each_citation_gets_the_hypothesis_outcome(self):
+        with tempfile.TemporaryDirectory() as d:
+            rows = KN.usage_rows(cited_loop(Path(d)), "fam", "run1")
+        got = {(r["entry"], r["hypothesis"]): (r["status"], r["picked"], r["accepted"], r["outcome"]) for r in rows}
+        self.assertEqual(got, {
+            ("x/a", "H1"): ("verified", True, "draft", "helped"),  # its own draft passed the gate
+            ("x/b", "H2"): ("refuted", True, None, "failed"),
+            ("x/a", "H2"): ("refuted", True, None, "failed"),
+            ("x/c", "H3"): ("hypothesis", False, None, "unclear"),  # not picked, not measured
+            ("x/b", "H4"): ("refuted", False, None, "failed"),
+            ("x/c", "H5"): ("mixed", True, "merged", "helped"),  # the merged candidate passed: every draft credited
+            ("x/d", "H7"): ("hypothesis", True, "draft", "helped"),  # the Composer adopted its draft (with overrides)
+        })  # fmt: skip
+        self.assertEqual(len(rows), 7)  # H2 names x/b twice: one citation
+
+    def test_a_recount_replaces_the_runs_rows_and_keeps_the_others(self):
+        with tempfile.TemporaryDirectory() as d:
+            lib = Path(d) / "lib"
+            other = dict(entry="x/a", run="run0", family="fam", iter=0, hypothesis="H9", outcome="helped")
+            KN.update_usage(lib, "run0", "fam", [other])
+            rows = KN.usage_rows(cited_loop(Path(d)), "fam", "run1")
+            KN.update_usage(lib, "run1", "fam", rows)
+            KN.update_usage(lib, "run1", "fam", rows)  # again: nothing counted twice
+            allr = KN.jl(lib / KN.USAGE)
+        self.assertEqual(len(allr), 8)
+        st = KN.entry_stats(allr)
+        self.assertEqual(st["x/a"], dict(uses=3, helped=2, failed=1, unclear=0, accepted=1))
+
+    def test_the_standing_rules(self):
+        S = lambda h, f, u=0: dict(uses=h + f + u, helped=h, failed=f, unclear=u, accepted=0)  # noqa: E731
+        self.assertEqual(KN.status_of(None), "candidate")
+        self.assertEqual(KN.status_of(S(1, 0)), "tested")
+        self.assertEqual(KN.status_of(S(2, 2)), "tested")  # helped at least as often as not
+        self.assertEqual(KN.status_of(S(0, 1)), "candidate")  # one failure is not enough
+        self.assertEqual(KN.status_of(S(0, 2)), "doubtful")
+        self.assertEqual(KN.status_of(S(1, 3)), "doubtful")
+        self.assertEqual(KN.status_of(S(0, 0, 4)), "candidate")  # cited, never measured
+
+    def test_the_role_file_orders_by_standing_and_shortens_doubtful_and_resolved(self):
+        never = dict(ENTRY, id="fam/never", tag="single", source=dict(family="fam"))
+        good = dict(ENTRY, id="fam/good", tag="single", source=dict(family="fam"))
+        bad = dict(ENTRY, id="fam/bad", tag="single", source=dict(family="fam"))
+        done = dict(ENTRY, id="fam/done", tag="single", source=dict(family="fam"),
+                    condition={"all": [{"feature": "start.support_top_m", "op": ">=", "value": 1.0}]})  # fmt: skip
+        U = lambda e, o: dict(entry=e, run="r", family="fam", iter=0, hypothesis=e + o, outcome=o)  # noqa: E731
+        usage = [U("fam/good", "helped"), U("fam/bad", "failed"), U("fam/bad", "failed") | {"hypothesis": "h2"}]
+        ents = [never, good, bad, done]
+        md = KN.render_library(ents, KN.hits(ents, ROWS[:5]), None, usage)
+        self.assertLess(md.index("### fam/good"), md.index("### fam/never"))  # tested before candidate
+        self.assertIn("### fam/good  (shared, v1, tested;", md)
+        self.assertIn("Cited 1 time(s): helped 1, no effect 0, unclear 0", md)
+        self.assertIn("Not cited yet", md)
+        self.assertNotIn("### fam/bad", md)  # one line, after the full entries
+        self.assertIn("- fam/bad (doubtful):", md)
+        self.assertIn("no effect 2", md.split("- fam/bad (doubtful):", 1)[1].split("\n", 1)[0])
+        self.assertIn("- fam/done (resolved):", md)  # holds only where this incumbent already succeeds
+        self.assertLess(md.index("### fam/never"), md.index("- fam/bad (doubtful):"))
+
+    def test_the_usage_command_records_citations_and_the_index_shows_the_standing(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            cited_loop(root)
+            out = root / "lib"
+            KN.save_entries(out, [dict(ENTRY, id="x/a", tag="single", source=dict(family="x"))])
+            self.assertEqual(KN.main(["usage", str(root), "fam", "--out", str(out)]), 0)
+            self.assertEqual(len(KN.jl(out / KN.USAGE)), 7)
+            self.assertIn("| x/a | single | shared | tested | 2 (1 / 1 / 0) |", (out / "INDEX.md").read_text())
 
 
 class Report(unittest.TestCase):

@@ -18,7 +18,8 @@ kind and skill file), which loop.py turns into a line of the Reviewer's and the 
    Engineers, Composer, gate). Before its Reviewer the loop writes KNOWLEDGE.md, the whole library marked with F's
    incumbent's rounds (knowledge.write_hits).
 2. build: `knowledge.build` on F's whole ledger so far: F's entries in the shared library are replaced, tagged by
-   F's kind of task (knowledge.tag_of: single / bimanual).
+   F's kind of task (knowledge.tag_of: single / bimanual), and F's citations of entries are recounted into
+   usage.jsonl (knowledge.usage_rows), which sets each entry's standing (tested, candidate, doubtful).
 3. sync: F's incumbent (its parameter overrides folded into the constants, writeback.fold) is merged three-way into
    the other family G's incumbent (`git merge-file`; the base is the version of the last accepted sync, at first the
    common start); where both changed the same lines G's side is kept and the conflict recorded. The merge goes to
@@ -247,12 +248,12 @@ def prepare_sync(run: Path, st: dict, i_from: int, i_to: int) -> dict:
 
 
 def install_knowledge(run: Path, sb: Path) -> bool:
-    """The shared library (knowledge.jsonl, sync.jsonl, INDEX.md; not the build logs, whose scope notes name objects)
+    """The shared library (knowledge.jsonl, sync.jsonl, usage.jsonl, INDEX.md; not the build logs, whose scope notes name objects)
     copied into the sandbox's scripts/rsi/knowledge and committed there; KNOWLEDGE.md is the loop's own (gitignored).
     True when it changed."""
     src, dst = run / "knowledge", sb / "scripts" / "rsi" / "knowledge"
     dst.mkdir(parents=True, exist_ok=True)
-    for name in (KN.LIBRARY, KN.SYNCS, "INDEX.md"):
+    for name in (KN.LIBRARY, KN.SYNCS, KN.USAGE, "INDEX.md"):
         if (src / name).exists():
             shutil.copy2(src / name, dst / name)
         else:
@@ -476,6 +477,11 @@ def publish(run: Path, out: Path) -> dict:
     mine = KN.entries(run / "knowledge")
     fams = set(st["families"]) | {KN.source_family(e) for e in mine}
     KN.save_entries(out, [e for e in KN.entries(out) if KN.source_family(e) not in fams] + mine)
+    runs = {(r.get("run"), r.get("family")) for r in KN.jl(run / "knowledge" / KN.USAGE)}  # the entries' citations
+    for rn, fam in sorted(runs):
+        KN.update_usage(
+            out, rn, fam, [r for r in KN.jl(run / "knowledge" / KN.USAGE) if (r["run"], r["family"]) == (rn, fam)]
+        )
     if (run / "knowledge" / "build").is_dir():
         (out / "build").mkdir(parents=True, exist_ok=True)
         for p in sorted((run / "knowledge" / "build").glob("*.md")):
