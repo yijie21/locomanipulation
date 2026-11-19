@@ -189,7 +189,27 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
                                        hand=(100 * (m.jaw_centre(side)[0] - look["at"])).round(1).tolist())  # fmt: skip
         if look["knocked"] is None and look["at"] is not None and np.linalg.norm(sim.d.xpos[b] - look["at"]) > 0.01:
             look["knocked"] = dict(t=round(float(m.t - t0), 2), phase=look["phase"], touch=contacts(sim, b))
+        if trace is not None and look["phase"] in ("pregrasp", "entry", "close"):
+            # 2026-11-19 (stance/contact diagnosis): every tick of the reaches and the close, jaw and target in mm (world),
+            # the robot links on the target and on a table
+            on_t = sorted({sim.m.body(k).name for k in robot_on(tables)})
+            trace.append([round(float(m.t - t0), 3), look["phase"], (1000 * m.jaw_centre(side)[0]).round(1).tolist(),
+                          (1000 * sim.d.xpos[b]).round(1).tolist(), [n for n in contacts(sim, b) if robot[sim.m.body(n).id]],
+                          on_t])  # fmt: skip
         return ok
+
+    def robot_on(bodies: set) -> set:  # robot bodies in contact with any of `bodies`
+        out = set()
+        for i in range(sim.d.ncon):
+            x, y = sim.m.geom_bodyid[sim.d.contact[i].geom1], sim.m.geom_bodyid[sim.d.contact[i].geom2]
+            if robot[x] and y in bodies:
+                out.add(int(x))
+            elif robot[y] and x in bodies:
+                out.add(int(y))
+        return out
+
+    tables = {sim.m.body(n).id for n in info["tables"]} if a.trace else set()
+    trace = [] if a.trace else None
 
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
@@ -326,6 +346,9 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         p, Rm = m.jaw_centre(side)
         s.update(err_cm=round(100 * float(np.linalg.norm(p - goal_w)), 3), err_deg=round(angle_deg(rot_w, Rm), 2),
                  miss=(100 * (p - goal_w)).round(2).tolist(), obj_cm=moved())  # fmt: skip
+        if trace is not None:  # the wanted and the settled jaw pose, world (mm; rotation matrix rows)
+            s.update(goal_mm=(1000 * goal_w).round(1).tolist(), jaw_mm=(1000 * p).round(1).tolist(),
+                     rot_want=np.asarray(rot_w).round(4).tolist(), rot_jaw=np.asarray(Rm).round(4).tolist())  # fmt: skip
         stages.append(s)
         return m.fell_at is None
 
@@ -354,6 +377,8 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     row.update(stages=stages, palm_cm=e.get("err_cm"), palm_deg=e.get("err_deg"), rise_cm=round(100 * (z - z0), 2),
                success_end=bool(EP.lifted(task, z0, z)), t_success=first[0], fell=m.fell_at, t=round(float(m.t - t0), 2),
                touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"])  # fmt: skip
+    if trace is not None:
+        row["trace"] = trace
     row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
     row["success_45"] = first[0] is not None and first[0] <= HITCH_S
     return row
@@ -381,6 +406,7 @@ def main() -> None:
     ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
     ap.add_argument("--column", choices=("truth", "perception"), default="truth")
+    ap.add_argument("--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     a.edges = {}
