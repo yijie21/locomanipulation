@@ -27,6 +27,11 @@ point (13 cm ahead of wrist_yaw_link) at the waypoint's grasp point, the wrist x
               read where the policy tracks it (BUF_LAG frames behind the newest push), running to the episode's end --
               and its hand measurement degraded by <sensor> (see fb_spec)
 
+`smfb_k<ki>_<sensor>` (step 5, 2026-11-19) is the self model's command, then the same servo trimming what is left: it
+starts at the label time (the self model's hand has settled) and integrates goal minus measured hand. `<method>@p<kg>`
+(step 5) puts a payload of <kg> at the acting hand's point (a point mass 13 cm ahead of wrist_yaw_link) for the episode;
+the controller is not told (PD torques, no gravity compensation) and the self model was trained without it.
+
 `FreeSpace` (step 4) is not a task: the host's empty scene, one standing first reach per episode to a command drawn
 from the data's CORE box (episode i: FREE_SEED + i), so the targets spread over the command distribution instead of
 one point per task. `--first-only` keeps only an episode's first waypoint (the pre-touch one) and `--extra-hold S`
@@ -79,6 +84,10 @@ SERVO_KI, SERVO_CAP, SERVO_EVERY = 2.0, 0.08, 5  # scalebfm MotorConfig servo_ki
 # serves the frame pushed delay_s = 0.14 s = 7 ticks ago (review: reading the newest push made a spurious transit error)
 FB_CAP, BUF_LAG = 0.15, 7
 ERR_OFFS = (0, 25, 50, 75, 100)  # the placement is measured this many frames after the label time (f_win)
+# FreeSpace runs every worker's env with this seed: the start depended on the env seed (step-4 review: ~0.2 mm after one
+# step, 2026-11-19 check: qpos / qvel / every numeric model and data field equal after the reset, the first controller
+# step differs), so with --worker as the seed an episode's result depended on which worker ran it
+FREE_ENV_SEED = 0
 JITTER = 0.05  # tasks.yaml reset_jitter
 # A pre-touch waypoint this far before the first (touch) waypoint, against its approach direction, so the hand is placed
 # in free space before it meets the part (0: the adapter's waypoints only). Smoke 2026-11-18: aimed straight at a point
@@ -160,7 +169,7 @@ class TaskDriver(H.HostDriver):
     def __init__(self, task: str, seed: int = 0):
         self.task = task
         if task == FREE:
-            super().__init__(env_name="EmptyEnv", seed=seed)
+            super().__init__(env_name="EmptyEnv", seed=FREE_ENV_SEED)
             self.base0 = None
         else:
             _private_scene_cache()
@@ -176,9 +185,45 @@ class TaskDriver(H.HostDriver):
         self.feet = [mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link") for s in ("left", "right")]
         self.wrist_fk = {s: mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_wrist_yaw_link") for s in ("left", "right")}
         assert m is not None
+        # nominal inertial parameters of the two wrist_yaw_links (host model), for set_payload
+        self._mass0 = {b: (float(m.body_mass[b]), m.body_ipos[b].copy(), m.body_inertia[b].copy(), m.body_iquat[b].copy())
+                       for b in self.wrist.values()}  # fmt: skip
+        self._scratch = mujoco.MjData(m)
+        self.payload = (0.0, None)
+
+    def set_payload(self, kg: float, side: str | None) -> None:
+        """A point mass of `kg` at the `side` hand point (HAND_OFF in wrist_yaw_link's frame), merged into that body's
+        inertial parameters (mass, centre of mass, inertia about the new centre, principal axes); the other wrist back to
+        nominal. kg 0 restores both. Constants derived from masses are recomputed on a scratch mjData."""
+        mj, m = self.mj, self.m
+        for s, b in self.wrist.items():
+            M0, c0, I0, q0 = self._mass0[b]
+            m.body_mass[b], m.body_ipos[b], m.body_inertia[b], m.body_iquat[b] = M0, c0, I0, q0
+            if s != side or kg <= 0:
+                continue
+            pt = L.HAND_OFF.astype(float)
+            M = M0 + kg
+            c = (M0 * c0 + kg * pt) / M
+            R = np.zeros(9)
+            mj.mju_quat2Mat(R, q0)
+            R = R.reshape(3, 3)
+            E = np.eye(3)
+            Ic = R @ np.diag(I0) @ R.T
+            d1, d2 = c0 - c, pt - c
+            Ic = Ic + M0 * (d1 @ d1 * E - np.outer(d1, d1)) + kg * (d2 @ d2 * E - np.outer(d2, d2))
+            w, V = np.linalg.eigh(Ic)
+            if np.linalg.det(V) < 0:
+                V[:, 0] = -V[:, 0]
+            q = np.zeros(4)
+            mj.mju_mat2Quat(q, V.flatten())
+            m.body_mass[b], m.body_ipos[b], m.body_inertia[b], m.body_iquat[b] = M, c, w, q
+        mj.mj_setConst(m, self._scratch)
+        self.payload = (float(kg), side if kg > 0 else None)
 
     def reset_episode(self, ep: int) -> None:
         self.ep = ep
+        if self.payload[0] > 0:  # the previous episode's payload off before the env resets
+            self.set_payload(0.0, None)
         if self.task == FREE:  # the empty scene: the data's reset (lml_host.HostDriver.reset), nothing jittered
             self.env.rng = np.random.default_rng(1_000_003 * (ep + 1))  # in case the env draws from it
             self.reset()
@@ -369,20 +414,36 @@ def fb_spec(method: str) -> dict | None:
                 that frame (timestamp aligned, the reading a careful implementation makes)
       o<cm>     occlusion of the final approach: no measurement while the true hand point is within <cm> of the goal
                 (the integral holds)
-      b<cm>     a constant offset of <cm> in a random direction (fixed by the episode): a calibration error"""
+      b<cm>     a constant offset of <cm> in a random direction (fixed by the episode): a calibration error
+    `smfb_k<ki>_<sensor>`: the same measurement, the servo in "residual" mode (step 5): it starts at the label time and
+    integrates goal - measured hand onto the self model's command (no reference to compare with: the self model's
+    reference deliberately ends off the goal). A `@p<kg>` suffix is ignored here (see base_method)."""
+    method = base_method(method)[0]
     if method == "feedback":
-        return dict(ki=SERVO_KI, cap=SERVO_CAP, ref_lag=0, to_end=False, sensor="ideal", level=0.0, lat=0)
-    m = re.fullmatch(r"fb_k([0-9.]+)_(ideal|[nlob][0-9.]+)", method)
+        return dict(ki=SERVO_KI, cap=SERVO_CAP, ref_lag=0, to_end=False, sensor="ideal", level=0.0, lat=0, mode="motor")
+    m = re.fullmatch(r"(fb|smfb)_k([0-9.]+)_(ideal|[nlob][0-9.]+)", method)
     if m is None:
         return None
-    s = m[2]
+    s = m[3]
     sensor, level = ("ideal", 0.0) if s == "ideal" else (s[0], float(s[1:]))
     lat = int(round(level / 1000 * L.FPS)) if sensor == "l" else 0
-    return dict(ki=float(m[1]), cap=FB_CAP, ref_lag=BUF_LAG, to_end=True, sensor=sensor, level=level, lat=lat)
+    return dict(ki=float(m[2]), cap=FB_CAP, ref_lag=BUF_LAG, to_end=True, sensor=sensor, level=level, lat=lat,
+                mode="motor" if m[1] == "fb" else "residual")  # fmt: skip
+
+
+def base_method(method: str) -> tuple[str, float]:
+    """`<method>@p<kg>` -> (<method>, kg); no suffix -> (method, 0)."""
+    m = re.fullmatch(r"(.+)@p([0-9.]+)", method)
+    return (m[1], float(m[2])) if m else (method, 0.0)
+
+
+def uses_selfmodel(method: str) -> bool:
+    b = base_method(method)[0]
+    return b.startswith("selfmodel") or b.startswith("smfb_")
 
 
 def valid_method(m: str) -> bool:
-    return m in METHODS or fb_spec(m) is not None
+    return base_method(m)[0] in METHODS or fb_spec(m) is not None
 
 
 # -- one episode ----------------------------------------------------------------------------------------------------
@@ -390,10 +451,14 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
             extra_s: float = 0.0) -> dict:  # fmt: skip
     task = TASKS[dr.task]
     spec = fb_spec(method)
+    kg = base_method(method)[1]
     dr.reset_episode(ep)
     wps = dr.waypoints()
     if first_only:
         wps = wps[:1]
+    if kg > 0 and wps:  # the payload is in the acting hand from the start (the robot is at its reset pose, unstepped)
+        dr.set_payload(kg, wps[0]["side"])
+        dr.mj.mj_forward(dr.m, dr.d)
     extra = int(round(extra_s * L.FPS))
     frames = dr.start_frames()
     rows, wrec = {}, []
@@ -432,11 +497,11 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
             info = dict(k=k, label=wp["label"], side=wp["side"], goal_w=wp["goal"].tolist(), ad=wp["ad"].tolist(), goal_h=gh.tolist(),
                         dyaw_deg=math.degrees(c["dyaw"]), pitch_deg=math.degrees(c["pitch"]),
                         p_cmd=x["root"][:3].tolist(), yaw_cmd=L.yaw_of(L._qmat(x["root"][3:])))  # fmt: skip
-            if method == "lookup":
+            if base_method(method)[0] == "lookup":
                 off, n_nb = lookup(T, 1 if wp["side"] == "right" else -1, gh, c["dyaw"], c["pitch"], k)
                 c["target"] = clip_t(gh - off, wp["side"])
                 info.update(lookup_off_cm=(100 * off).tolist(), lookup_n=n_nb)
-            if method.startswith("selfmodel"):
+            if uses_selfmodel(method):
                 t, evs = gh.copy(), []
                 for it in range(ITERS + 1):
                     cc = dict(c, target=t.copy())
@@ -457,13 +522,13 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                                 pred_miss_cm=100 * float(np.linalg.norm(best["pos"] - gh)), iters=len(evs))  # fmt: skip
                 else:  # no candidate could be planned: the waypoint as asked (counted)
                     info.update(model_fallback=True)
-            if method.startswith("selfmodel") and "plan" in best:
+            if uses_selfmodel(method) and "plan" in best:
                 blend, last, rec = best["plan"]
                 x0_live = best["x0"]
                 info["pred_exec_h"] = best["pos"].tolist()
             else:
                 x0_live = None
-                if P is not None and not method.startswith("fb_"):  # the self model's prediction of exactly this
+                if P is not None and not base_method(method)[0].startswith("fb_"):  # the self model's prediction of exactly this
                     # command, planned from this state (not for fb_*: the servo changes what is executed, review 11-18)
                     try:
                         (blend, last, rec), Dx = P.features(dr, rows, f, frames, c, k, reset_id)
@@ -490,6 +555,8 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
             if spec is not None:
                 f_stop = end_frame if spec["to_end"] else rec["f_end"] + post
                 servo = servo_start(dr, x, wp, c, rec, last, f, f_stop, frames, spec, ep)
+                if spec["mode"] == "residual":  # trims the self model's placement once its hand has settled
+                    servo.update(f_start=rec["f_end"] + post, goal_ref=np.asarray(rec["target_w"]) + np.asarray(rec["delta"]))
                 info["servo"] = servo["leads"]  # filled as the servo runs
                 info["servo_stat"] = servo["stat"]
             k += 1
@@ -570,7 +637,7 @@ def servo_start(dr: TaskDriver, x: dict, wp: dict, c: dict, rec: dict, last, f: 
     return dict(f_cmd=f, f_stop=f_stop, f_end=rec["f_end"], side=wp["side"], p_cmd=x["root"][:3].copy(),
                 feet_c=R @ rel["feet"], lead=np.zeros(3), goal_ref=wp["goal"] + np.asarray(rec["delta"]),
                 goal_w=np.asarray(wp["goal"], float), spec=spec, noise=np.random.default_rng([ep, zlib.crc32(b"noise")]),
-                bias_u=bias / np.linalg.norm(bias), stat=dict(updates=0, blind=0, at_cap=0),
+                bias_u=bias / np.linalg.norm(bias), stat=dict(updates=0, blind=0, at_cap=0), f_start=f,
                 delta=np.asarray(rec["delta"]), frames0=frames.copy(), rot_w=np.asarray(rec["rot_w"]), last=last, n=0, leads=[])  # fmt: skip
 
 
@@ -579,6 +646,8 @@ def servo_step(dr: TaskDriver, sv: dict, rows: dict, frames: np.ndarray, f: int)
     target, the IK re-solves the final pose from the planned one, and the rest of the reference is shifted toward it.
     The measurement is the one of frame g = f - latency, degraded as fb_spec says; the reference is read at g - ref_lag."""
     sp = sv["spec"]
+    if f <= sv["f_start"]:  # residual mode: not before the label time
+        return frames
     g = f - sp["lat"]
     if g <= sv["f_cmd"]:  # nothing measured since the command yet
         return frames
@@ -596,9 +665,12 @@ def servo_step(dr: TaskDriver, sv: dict, rows: dict, frames: np.ndarray, f: int)
         hand_c = hand_c + sp["level"] / 100 * sv["noise"].normal(size=3)
     elif sp["sensor"] == "b":
         hand_c = hand_c + sp["level"] / 100 * sv["bias_u"]
-    rf = sv["frames0"][min(max(g - sp["ref_lag"], 0), len(sv["frames0"]) - 1)]
-    ref_hand_w = dr.pl.fk_world(rf[:3], rf[3:7], rf[7:])[sv["side"]][0] - sv["delta"]  # reference coords -> measured
-    e = (ref_hand_w - sv["p_cmd"]) - hand_c
+    if sp.get("mode") == "residual":
+        e = (sv["goal_w"] - sv["p_cmd"]) - hand_c
+    else:
+        rf = sv["frames0"][min(max(g - sp["ref_lag"], 0), len(sv["frames0"]) - 1)]
+        ref_hand_w = dr.pl.fk_world(rf[:3], rf[3:7], rf[7:])[sv["side"]][0] - sv["delta"]  # reference coords -> measured
+        e = (ref_hand_w - sv["p_cmd"]) - hand_c
     sv["lead"] = np.clip(sv["lead"] + sp["ki"] * SERVO_EVERY * L.DT * e, -sp["cap"], sp["cap"])
     sv["n"] += 1
     sv["stat"]["updates"] += 1
@@ -636,13 +708,13 @@ def run(out: Path, task: str, methods: list[str], eps: list[int], worker: int, s
           f"{len(jobs) - len(todo)}/{len(jobs)} episodes done", flush=True)  # fmt: skip
     if not todo:
         return
-    T = dict(np.load(out / "lookup.npz")) if "lookup" in methods else None
+    T = dict(np.load(out / "lookup.npz")) if any(base_method(m)[0] == "lookup" for m in methods) else None
     preds: dict[str, Predictor] = {}
     dr = TaskDriver(task, seed=worker)
     for method, e in todo:
         od = out / "episodes" / task / method
         od.mkdir(parents=True, exist_ok=True)
-        wm = "wm_s1.pt" if method == "selfmodel_s1" else "wm_s0.pt"
+        wm = "wm_s1.pt" if base_method(method)[0] == "selfmodel_s1" else "wm_s0.pt"
         P = preds[wm] if wm in preds else preds.setdefault(wm, Predictor(out / wm))
         t0 = time.time()
         try:
@@ -656,7 +728,8 @@ def run(out: Path, task: str, methods: list[str], eps: list[int], worker: int, s
             dr = TaskDriver(task, seed=worker)
             continue
         r.pop("_rows"), r.pop("_frames")
-        r.update(wall_s=round(time.time() - t0, 1), first_only=first_only, extra_s=extra_s, servo_spec=fb_spec(method))
+        r.update(wall_s=round(time.time() - t0, 1), first_only=first_only, extra_s=extra_s, servo_spec=fb_spec(method),
+                 payload_kg=base_method(method)[1], payload_side=dr.payload[1])
         tmp = od / f".ep{e:03d}.json"
         tmp.write_text(json.dumps(r, default=_json))
         os.replace(tmp, od / f"ep{e:03d}.json")
