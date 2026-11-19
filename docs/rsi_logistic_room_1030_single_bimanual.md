@@ -206,7 +206,7 @@ cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
 - `build` 从账本和场景图记录（`.past.jsonl`）里抽出机制，每个机制用一次模型调用写条件、失败特征和修法，再按每件物体上的证据分成 `shared` 或 `local`。条目写进主仓库 `scripts/rsi/` 下 `knowledge/knowledge.jsonl`，替换这个任务族以前的条目，别的任务族的条目保留；`tag` 按任务的物体自动判成 `single`。
 - 同一个机制的证据没变时，重建直接沿用上次的结果，不再调用模型。约每个机制 1 USD，共 10–15 分钟。建库日志在 `knowledge/build/gso_single_grasp.md`。
 - 第二条把条目提交，以后的沙盒才能导出它们。
-- 第三条在封存集（单手 100 局）上跑种子和每一版被接受的现任（同 rsi.md 第 5.3 节），约 1–2 小时。
+- 第三条在封存集（单手 100 局）上跑种子和最终现任。后台跑法、每一轮的版本和视频见第 7.4 节。
 
 **7.2 模式 2：双手单独跑**
 
@@ -251,16 +251,74 @@ $PY scripts/rsi/alternate.py status $R                                  # 看进
 
 得到什么：`$R/knowledge/knowledge.jsonl`（两边的条目）、`sync.jsonl`（每次合并的文件、冲突、多赢 / 少赢、接受与否）、`$R/logs/`（每个半轮的内环和同步验收日志）。一个迭代约 2 小时：两轮内环各约 45 分钟，两次建库各 10–15 分钟，两次同步验收各 10–20 分钟。
 
-跑完把知识发布到主仓库，再分别跑两边的封存集：
+跑完把知识发布到主仓库，再按第 7.4 节跑两边的封存集和视频：
 
 ```bash
 python3 scripts/rsi/alternate.py publish $R
 git -C scripts/rsi add knowledge && git commit -m "knowledge: gso single / bimanual alternating run"
-cd $R/a && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
-cd $R/b && $PY scripts/rsi/sealed.py gso_bimanual_lift; cd -
 ```
 
-做什么：`publish` 把运行里的条目合进主仓库的 `knowledge.jsonl`，替换这两个任务族以前的条目，别的保留；提交由你来做。封存集里同步过来的版本也算一个现任版本。两边的最终代码要不要写回主技能库（`writeback.py`），由你决定。
+做什么：`publish` 把运行里的条目合进主仓库的 `knowledge.jsonl`，替换这两个任务族以前的条目，别的保留；提交由你来做。两边的最终代码要不要写回主技能库（`writeback.py`），由你决定。
+
+**7.4 跑完之后：封存集和视频**
+
+三种模式都一样。下面按模式 3 写：`$R/a` 是单手沙盒，`$R/b` 是双手沙盒；模式 1、2 换成各自的沙盒（如 `$S1`），只跑对应的一行。命令都在主仓库根目录下跑，先执行第 0 节。
+
+```bash
+R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-a
+H=outputs/scene_rsi_20261016_hidden
+(cd $R/a && nohup setsid $PY scripts/rsi/sealed.py gso_single_grasp --all > sealed.log 2>&1 &)
+(cd $R/b && nohup setsid $PY scripts/rsi/sealed.py gso_bimanual_lift --all > sealed.log 2>&1 &)
+tail -n 4 $R/a/sealed.log $R/b/sealed.log      # 末尾打印出 summary（最后一项 bucket1）就跑完了
+```
+
+做什么：
+- 在封存集（单手 100 局、双手 40 局，池种子 9200000 和 9700000）上跑最终现任和种子（主库）。`--all` 再跑中间每一版被接受的现任，包括同步过来的版本，可以看出每一轮的代码在封存集上的成绩；不加 `--all` 只跑最终和种子两版。
+- 括号让 `cd` 只在子 shell 里生效，当前目录不变；后台进程关了终端也不停。两条可以同时跑，它们共用第 0 节 `RSI_SIM_SLOTS` 的仿真槽，合计时间和先后跑差不多。
+- 已经跑完的版本会跳过：中途停了，或以后想补 `--all`，再跑同一条命令只补没跑的版本。
+- 第 0 节的 `RSI_GPUS=0` 要设好：不设时 `sealed.py` 用 GPU 0 和 1，而 SRA0889 上 EGL 设备 1 是核显。
+
+得到什么：`$R/a/$H/gso_single_grasp/sealed/summary.json`（双手在 `$R/b/$H/gso_bimanual_lift/sealed/`）。`versions` 里每一版有成功局数 `ok`、总局数 `n`、置信区间和按任务（每件物体）的 `per_task`；`final` 是最终版本的目录名，`final_vs_seed` 是它和种子的配对比较。每局的 `.json` 和轨迹 `.npz` 在 `sealed/<版本>/` 下。2026-11-19 在 SRA0889 上：最终加种子，单手约 6 分钟、双手约 2 分钟；`--all` 再补 3 个中间版本，两条同时跑约 20 分钟。
+
+MuJoCo 视频（等封存集跑完）：
+
+```bash
+V=$(python3 -c "import json;print(json.load(open('$R/a/$H/gso_single_grasp/sealed/summary.json'))['final'])")
+$PY scripts/rsi/report/evolution_media.py --sandbox $R/a --family gso_single_grasp --out outputs/scene_rsi_20261016/gso_single_grasp_media --only task --versions final --rounds $R/a/$H/gso_single_grasp/sealed/$V
+V=$(python3 -c "import json;print(json.load(open('$R/b/$H/gso_bimanual_lift/sealed/summary.json'))['final'])")
+$PY scripts/rsi/report/evolution_media.py --sandbox $R/b --family gso_bimanual_lift --out outputs/scene_rsi_20261016/gso_bimanual_lift_media --only task --versions final --rounds $R/b/$H/gso_bimanual_lift/sealed/$V
+```
+
+做什么：每个任务一段视频，用最终版本在封存集上的局（`--rounds`；不加就用验收池的局）：有成功局取最短的一局，否则取最短的失败局，回放时摆回轨迹里的每个物体。每段开头 6 秒是黑底字幕卡（物体名和封存集成功数）。
+得到什么：`--out` 下 `final_NN_<任务>.mp4`（单手 20 段、双手 8 段）、`tasks_final.json`（每段的任务、局名，最终版本成功时 `final_ok` 为 true）、`media.json` 和 `previews/` 下的压缩预览。各不到 1 分钟。
+
+同一批视频的 Unreal 版（关卡要先按第 8 节建好；编辑器已开着就跳过第一行）：
+
+```bash
+systemd-run --user --scope -p MemoryMax=24G bash scripts/start_unreal.sh --gpu 0
+PYTHONPATH=src "$BRIDGE_PY" scripts/rsi/report/report_unreal.py all --media outputs/scene_rsi_20261016/gso_single_grasp_media --out outputs/scene_rsi_20261016/gso_single_grasp_media_unreal
+PYTHONPATH=src "$BRIDGE_PY" scripts/rsi/report/report_unreal.py all --media outputs/scene_rsi_20261016/gso_bimanual_lift_media --out outputs/scene_rsi_20261016/gso_bimanual_lift_media_unreal
+bash scripts/stop_unreal.sh
+```
+
+做什么：读上一步目录里的 `tasks_final.json` 和 `media.json`（场景名从这里来），把每段的那一局回放进对应的关卡，沿 MuJoCo 版同一条机位轨迹拍，再合成同样的字幕卡。关卡的 `source.json` 哈希和场景 XML 对不上时拒绝渲染，先跑第 8 节的命令重建关卡。渲染时不要同时跑封存集这类重任务：编辑器的守护脚本在 CPU 占满时会杀掉它。
+得到什么：`--out` 下每段 `<名字>.mp4` 和海报 `.jpg`、`previews/`、逐帧 `<名字>/panel0/`，以及 `compare_*.jpg`（同一时刻 Unreal 和 MuJoCo 上下对照，先看它确认对齐）。2026-11-19：编辑器启动约 15 秒，单手 20 段 8.4 分钟，双手 8 段 3.7 分钟；逐帧 JPG 两边共约 2.3 GB。
+
+可选：把成功的 Unreal 视频挑出来，每个任务族一个目录，并剪掉开头的字幕卡：
+
+```bash
+for F in gso_single_grasp gso_bimanual_lift; do
+  M=outputs/scene_rsi_20261016/${F}_media; O=outputs/scene_rsi_20261016/${F}_unreal_success; mkdir -p $O
+  for N in $(python3 -c "import json,os;[print(os.path.basename(r['video'])) for r in json.load(open('$M/tasks_final.json')) if r['final_ok']]"); do
+    ffmpeg -v error -y -i ${M}_unreal/$N -vf "trim=start_frame=150,setpts=PTS-STARTPTS" -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p -movflags +faststart -an $O/$N
+  done
+done
+```
+
+做什么：从 `tasks_final.json` 里挑出 `final_ok` 为 true 的段，剪掉前 150 帧（25 fps 下的 6 秒字幕卡），写进 `<任务族>_unreal_success/`；原片不动。
+得到什么：每段比原片少 150 帧，第一帧就是场景。11-19 两边都是全部成功（20 段和 8 段），每段 2–3 MB。
+
+这些剪过的片和 `--out` 里的原片都不是压缩预览。要发给别人、给播放链接或打包下载，先用 `src/locomani/pipeline/video_preview.py` 压成每个不超过 500,000 字节的预览，做法见[视频导出](rendering.md#video-export)。
 
 ## 8. Unreal 关卡与预览图
 
@@ -275,7 +333,7 @@ bash scripts/stop_unreal.sh
 - 然后从和 MuJoCo 预览图同样的两个视角各拍一帧。
 - 重建场景后再跑同一条命令，关卡会自动重建。
 
-封存集和视频（MuJoCo 版和 Unreal 版）同 1030 runbook 第 6 节，命令里的族名换成上面两个。
+封存集和视频（MuJoCo 版和 Unreal 版）见第 7.4 节。
 
 得到什么：`outputs/gso_preview/logistics_room_gso_*_unreal.png`（2560 宽，高度随物体列表变），以及合并进去的 `index_unreal.json`。
 
