@@ -303,7 +303,9 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     def moved() -> float:  # cm, the target since the second look
         return round(100 * float(np.linalg.norm(sim.d.xpos[b] - o_look)), 2)
 
-    def reach(stage: str, goal_w: np.ndarray, rot_w: np.ndarray, chain: int, invert: bool, entry: bool = False, via=None):
+    def reach(
+        stage: str, goal_w: np.ndarray, rot_w: np.ndarray, chain: int, invert: bool, entry: bool = False, via=None
+    ):
         look["phase"] = stage
         rec.start(side)
         m.hold(GR.PRE_S)
@@ -370,7 +372,9 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     if a.clear:
         ok = ok and reach("clear", cw, Tg[:3, :3], 0, False)
     via = None
-    if a.avoid:  # curobo_avoid_20261120: a path planned around the look's obstacles from this reach's start (plan2.py, via2.py)
+    if (
+        a.avoid
+    ):  # curobo_avoid_20261120: a path planned around the look's obstacles from this reach's start (plan2.py, via2.py)
         f = Path(a.avoid) / f"via_{task}_L{ep['level']}_e{ep['index']}.npz"
         if f.exists():
             via = dict(np.load(f))

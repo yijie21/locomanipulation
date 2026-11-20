@@ -320,6 +320,30 @@ bash $E/render_all.sh $D/film_20261119/npz $D/film/clips
 
 这两天的数字、用户的决定和交给 4090 的清单见 [11-19 到 11-20 的记录](handoff/simple-isaac-eyes-20261120.md)。
 
+**一条命令走多个路点的伸手数据（多路点自身模型，2026-11-20 起）。**
+
+```bash
+V=scripts/experiments/selfmodel_via_20261120; SC=$I/scene/simple_g1_sonic
+C=/path/to/curobo                                   # 4090 上是 loco_outputs/simple_bench_20261119/curobo
+ROUTES=$C/via_tabletop:$C/step2,$C/box/via:$C/box/step2
+PYTHONPATH=src $PY scripts/experiments/simple_eval_20261112/episodes.py --floor $SC
+X="REACH_HAND_OFF=0.0415,0,0 REACH_SCENE_DIR=$SC REACH_GRASP=1 REACH_GRASP_ROOM=1"
+X="$X REACH_GRASP_SPEED=0.08 REACH_GRASP_CONT=0.5 REACH_GRASP_IKREF=1 REACH_WRIST=1"
+env $X REACH_VIA=1 REACH_ID0=2000000 REACH_OUT=$I/data_via_trial \
+    $PY $R/gen_reach.py run --procs 6 --resets 300 --seed 31000000 --gpus 1
+env $X REACH_VIA_REPLAY=$ROUTES REACH_ID0=2100000 REACH_OUT=$I/data_via_replay \
+    $PY $R/gen_reach.py run --procs 6 --resets 140 --seed 33000000 --gpus 1
+for d in data_via_trial data_via_replay; do
+    REACH_OUT=$I/$d $PY $R/gen_reach.py merge
+    $PY -I $V/arm_spheres.py $I/$d $SC && python3 -I $V/via_dev.py $I/$d
+done
+python3 -I $V/via_cover.py $I/data_via_trial $ROUTES
+```
+
+做什么：第一条在空地上放 SIMPLE 的那台机器人，建一次就行。`REACH_VIA=1` 让每次开场的第一段伸手沿一条随机路线走到预抓取点：路线有 0 到 3 个弯，压成最多 16 个路点，和速度、沿途的手腕朝向一起作为一条命令发下去，然后照旧慢速进入。`REACH_VIA_REPLAY` 把 cuRobo 在评测里规划出的真实路线搬到空地上重放，140 次是 35 条各 4 遍：第 1 遍原地出发，后 3 遍先走一小段。`arm_spheres.py` 用记录的关节把执行手臂的 24 个碰撞球逐帧算出来，实际轨迹和参考规划各一份。`via_dev.py` 算手和整条手臂离参考路线最远多少、往哪个方向偏，回放还会算同一条路线各遍之间方向是否一致。`via_cover.py` 检查随机路线的形状有没有把真实路线包住。
+
+得到什么：每个数据目录下 `all.npz` 是原始记录，`arm.npz` 是碰撞球，`via_dev.npz` 是每条路线的偏差。`via_dev.py` 打印按站姿、弯数、速度分组的中位数；回放那份逐条打印方向稳定度，1 是每遍都往同一边偏，0 附近是没有规律。`via_cover.py` 逐条打印真实路线离最近的随机路线有多远，全部不超过 1 才算盖住。数字怎么判、什么结果该停，写在[方案](handoff/notebook-20261120/selfmodel_via_20261120.md)里，第一次正式启动后不再改。真实路线目前只在 4090 上，回放和覆盖检查要先把它们拷到跑的那台机器。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

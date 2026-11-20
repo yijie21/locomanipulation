@@ -181,11 +181,47 @@
   - 实验笔记本是 `~/research-notebook`，不在 git 里，本次的相关条目已复制到 [notebook-20261120/](notebook-20261120/)；
   - grasp_kit 的打包文件和示例见 1.5。
 
+### 3.1 4090 上的命令（2026-11-20 从 STATE.md 移到这里）
+
+```bash
+# 4090
+ssh -p 27984 root@14.103.60.188
+R=/wuji-vefps-D/wuji-il/yijie/ws/code/loco                                   # 仓库
+O=/wuji-vefps-D/wuji-il/yijie/loco_outputs/simple_selfmodel_20261119         # 自身模型数据、模型、运行脚本
+C=/wuji-vefps-D/wuji-il/yijie/loco_outputs/simple_bench_20261119/curobo      # 避障和归因的产出、35 条真实路线
+PY=$R/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python                 # 仿真
+SP=/wuji-vefps-D/wuji-il/yijie/tools/simple_isaac/SIMPLE/.venv/bin/python     # SIMPLE 和 cuRobo，有 numpy
+
+# 把 4090 的仓库更新到这次推送的版本（两个未提交文件和 d8993b35 相同，丢掉后快进）
+cd $R && git status --short && git checkout -- src/locomani/backends/scalebfm/motor.py \
+  scripts/experiments/simple_eval_20261112/simple_bench.py && git fetch origin selfwm && git merge --ff-only origin/selfwm
+
+# 重建检查和偏差统计（在 $R 下跑）
+$PY -I scripts/experiments/selfmodel_via_20261120/fk_check.py outputs/reachwm_20261030/data_graspr_wrist_odo 200 simple_g1_sonic
+$SP -I scripts/experiments/selfmodel_via_20261120/dev_map.py outputs/reachwm_20261030/data_graspr_wrist_odo
+$SP -I scripts/experiments/selfmodel_via_20261120/via_stats.py $C/via_tabletop $C/step2 $C/box/via $C/box/step2
+```
+
+- **现有抓取数据的采集方式**（新模式照这个加开关）：
+  - 数据集定义：`$O/datasets_wrist.sh` 里的 `graspr_wrist_odo` 一行；
+  - 环境变量：`REACH_GRASP=1 REACH_GRASP_ROOM=1 REACH_GRASP_SPEED=0.08 REACH_GRASP_CONT=0.5 REACH_GRASP_IKREF=1 REACH_WRIST=1`；
+  - 分机器采集：`$O/gen_part.sh MACHINE NAME RESETS SEED ID0 [VAR=VAL ...]`；
+  - 合并：`$PY scripts/experiments/reachwm_20261030/gen_reach.py merge`；
+  - 整套流程：`$O/run_wrist_4090.sh`。
+- **其他机器：**
+  - vastgpu 只用 GPU 1；它的 SAM 3 服务、深度服务和 `/tmp/.tmp*` 都不是我们的。
+  - a800 的 tmux `data_scaling_spin17` 不要碰。
+
 ## 4. 下一步
 
-按 [TODO](../../TODO.md) 第 38 节的顺序来。先做两件事：
+按 [TODO](../../TODO.md) 第 38 节的顺序来。
 
-1. 查新。
-2. 在 `scripts/experiments/reachwm_20261030/gen_reach.py` 里加两个开关：随机多路点模式 `REACH_VIA`，回放真实路线模式 `REACH_VIA_REPLAY`。
+**2026-11-20 在 vastgpu 上已经做了的**（细节在方案条目、TODO 38.5 和 DECISIONS 的“续”一节）：
 
-然后试跑，按方案条目里的判据决定要不要正式采集。预测和判据在方案条目里，启动前可以再改；第一次启动以后就不再改，只在"预测修订"一节追加。
+- 查新（38.5.4）：这个分工本身不新，最接近 Dynamic Tube MPC；用户定了两处修改。
+- `gen_reach.py` 的两个开关（38.5.5）、覆盖检查（38.5.6）、全臂标签（38.5.7）和偏差分析都写完，冒烟测试通过。命令在 [运行手册](../selfwm.md) 第 7 节末尾。
+
+**接下来：**
+
+1. 把 35 条真实路线和它们的起点文件拷到跑试跑的机器（用户已同意）。
+2. 试跑，按方案条目里的判据决定要不要正式采集。预测和判据在方案条目里，启动前可以再改；第一次启动以后就不再改，只在"预测修订"一节追加。

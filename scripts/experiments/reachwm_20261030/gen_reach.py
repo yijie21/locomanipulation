@@ -36,6 +36,14 @@ the time since the command C (4). Open floor, nothing to touch.
         $PY scripts/experiments/reachwm_20261030/gen_reach.py run --procs 6 --resets 18000 --seed 11000000
     REACH_APPROACH=1 REACH_APPROACH_NOTURN=1 REACH_ID0=430000 REACH_OUT=outputs/reachwm_20261030/data_approach0 \
         $PY scripts/experiments/reachwm_20261030/gen_reach.py run --procs 6 --resets 6000 --seed 13000000
+    # one command through several via points, on SIMPLE's robot (2026-11-20, see REACH_VIA and REACH_VIA_REPLAY below)
+    X="BFM_ROOT=odo REACH_HAND_OFF=0.0415,0,0 REACH_SCENE_DIR=outputs/scene/simple_g1_sonic REACH_GRASP=1 REACH_GRASP_ROOM=1"
+    X="$X REACH_GRASP_SPEED=0.08 REACH_GRASP_CONT=0.5 REACH_GRASP_IKREF=1 REACH_WRIST=1"
+    env $X REACH_VIA=1 REACH_ID0=2000000 REACH_OUT=outputs/reachwm_20261030/data_via_trial \
+        $PY scripts/experiments/reachwm_20261030/gen_reach.py run --procs 6 --resets 300 --seed 31000000 --gpus 1
+    env $X REACH_VIA_REPLAY=<via dir>:<prep dir>,<via dir>:<prep dir> REACH_ID0=2100000 \
+        REACH_OUT=outputs/reachwm_20261030/data_via_replay \
+        $PY scripts/experiments/reachwm_20261030/gen_reach.py run --procs 6 --resets 35 --seed 33000000 --gpus 1
 """
 
 from __future__ import annotations
@@ -53,7 +61,9 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "selfwm_20261029"))
+sys.path.insert(0, str(HERE.parent / "selfmodel_via_20261120"))
 import env as E  # noqa: E402
+import via_gen as VG  # noqa: E402
 
 OUT = Path(os.environ.get("REACH_OUT", E.REPO / "outputs" / "reachwm_20261030" / "data"))
 # sensitivity probe (2026-10-30): move every reach target by this many metres in a direction drawn from a separate
@@ -128,6 +138,31 @@ GRASP_SPEED = float(os.environ.get("REACH_GRASP_SPEED", "0"))
 GRASP_CONT = float(os.environ.get("REACH_GRASP_CONT", "0"))
 GRASP_IKREF = os.environ.get("REACH_GRASP_IKREF", "0") == "1"
 GRASP_ENTRY = GRASP and bool(GRASP_SPEED or GRASP_CONT or GRASP_IKREF)
+# REACH_VIA=1 (2026-11-20, selfmodel_via_20261120; with REACH_GRASP=1 REACH_GRASP_ROOM=1 and the entry switches): the grasp
+# room's reset, but the hand goes from where the walk left it to the pre-grasp in ONE command through several via points
+# (Motor.reach's via / via_rot, as simple_bench.py --avoid sends a planned path), along a random path drawn at the command
+# (via_gen.random_path: bends, lead-in, wrist turns, speed); then the slow entry as before. Two segments a reset: chain 0
+# the path, chain 1 the entry; the waypoint outside the furniture front is not run. REACH_VIA_SIDE=right|left: one hand
+# only (default: either, as room_commands draws it). Open floor, servo off.
+# Saved on top of the usual fields (heading frame at the command, like target): via_p (16, 3) and via_r6 (16, 6) the via
+# points and the wrist rotations there, n_via, via_speed (m/s), via_gen (via_gen.GEN_KEYS), via_tries and via_tol (the
+# path drawn at that try, simplified to within that many m), via_route (-1), via_start_cm (-1), hand_q (the acting
+# hand's finger joints at the command) and the whole reference plan of every segment: RQ (joints), RP (pelvis position
+# and quaternion), RT (s from the command) of each whole-body IK pose, n_ref poses a segment (the first is where the
+# reference stood at the command) -- "the arm goes where the reference says" is the baseline a model has to beat.
+# REACH_VIA_REPLAY=<via dir>:<prep dir>[,...] (with the same switches; REACH_VIA not needed): reset i runs path
+# i % (number of paths) of via_gen.load_routes -- the cuRobo paths simple_bench.py --avoid ran -- on the open floor, the
+# right hand, the bench's speed, no entry: the first pass from the reset's stand, later passes after the room's short
+# walk. Each path is placed by its own heading frame onto the robot's. via_route: the path's index in <REACH_OUT>/
+# routes.json; via_start_cm: how far the hand starts from where it started in the bench.
+VIA_REPLAY = os.environ.get("REACH_VIA_REPLAY", "")
+VIA = os.environ.get("REACH_VIA", "0") == "1" or bool(VIA_REPLAY)
+VIA_SIDE = os.environ.get("REACH_VIA_SIDE", "")
+ROUTES = VG.load_routes(VIA_REPLAY) if VIA_REPLAY else []
+assert not VIA or (GRASP and GRASP_ROOM), "REACH_VIA / REACH_VIA_REPLAY run with REACH_GRASP=1 REACH_GRASP_ROOM=1"
+assert not VIA_REPLAY or ROUTES, f"REACH_VIA_REPLAY: no via_*.npz with its prep_*.npz under {VIA_REPLAY}"
+ENTRY_CHAIN = 2 if GRASP_ROOM and not VIA else 1  # which of a reset's reaches is the grasp's entry
+FINGERS = ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
 ID0 = int(os.environ.get("REACH_ID0", "0"))  # added to the reset ids, so a second dataset keeps its own split buckets
 # REACH_STUDENT=<student .pt> (2026-11-04, the relabelled controller of relabel_train.py): from the command to the end of
 # the POST_S hold ScaleBFM runs the student's weights, copied into the policy's own parameters in place so the captured
@@ -181,6 +216,7 @@ def sample_command(rng) -> dict:
 def room_commands(rng) -> list[dict]:
     """REACH_GRASP_ROOM: the waypoint, the pre-grasp and the entry of one grasp in the room, heading frame at the stance."""
     side = "right" if rng.random() < 0.5 else "left"
+    side = VIA_SIDE or side
     sd = 1.0 if side == "right" else -1.0
     z = float(rng.uniform(0.10, 1.12))
     back = 0.22 if z < 0.25 else 0.42 if z < 0.50 else 0.30
@@ -212,7 +248,34 @@ def room_commands(rng) -> list[dict]:
         # dyaw/pitch family keeps the palm's normal level, and SIMPLE's grasps tilt it 10-90 deg down
         a = rng.normal(size=3)
         dev = a / np.linalg.norm(a) * math.radians(rng.uniform(WRIST_MIN_DEG, WRIST_MAX_DEG))
-    return [dict(side=side, target=t, dyaw=dyaw, pitch=pitch, pelvis_z=pel, wrist_dev=dev) for t in (clear, pre, entry)]
+    cmds = [dict(side=side, target=t, dyaw=dyaw, pitch=pitch, pelvis_z=pel, wrist_dev=dev) for t in (clear, pre, entry)]
+    if VIA:  # the pre-grasp along a random path, then the entry
+        return [dict(cmds[1], via="random"), cmds[2]]
+    return cmds
+
+
+def replay_command(route: dict) -> dict:
+    """REACH_VIA_REPLAY: one path of via_gen.load_routes as a reach command (heading frame, standing, right hand)."""
+    return dict(side="right", target=route["goal"].copy(), dyaw=0.0, pitch=0.0, pelvis_z=None, wrist_dev=np.zeros(3),
+                rot_h=route["goal_R"], via=route)  # fmt: skip
+
+
+def body_pos(m, name: str) -> np.ndarray:
+    import mujoco
+
+    return m.sim.d.xpos[mujoco.mj_name2id(m.sim.m, mujoco.mjtObj.mjOBJ_BODY, name)].copy()
+
+
+def hand_q(m, side: str) -> np.ndarray:
+    """`side`'s finger joints as the simulator has them (zeros for a hand without these joints)."""
+    import mujoco
+
+    q = np.zeros(len(FINGERS), np.float32)
+    for k, f in enumerate(FINGERS):
+        j = mujoco.mj_name2id(m.sim.m, mujoco.mjtObj.mjOBJ_JOINT, f"{side}_hand_{f}_joint")
+        if j >= 0:
+            q[k] = m.sim.d.qpos[m.sim.m.jnt_qposadr[j]]
+    return q
 
 
 def grasp_commands(rng) -> list[dict]:
@@ -359,13 +422,15 @@ def segment(
     rot_w = E.rot_z(yaw + c["dyaw"]) @ rot_y(c["pitch"])
     if WRIST:
         rot_w = rot_w @ rotvec(c["wrist_dev"])
+    if "rot_h" in c:  # a replayed path's own goal attitude
+        rot_w = Rh @ c["rot_h"]
     k0 = len(rec.S) - 1
     rec.t_cmd = m.t
     rec.plan = None
     if STUDENT:
         use_weights(m, "student")
     kw: dict = {}
-    if GRASP_ENTRY and chain == (2 if GRASP_ROOM else 1):
+    if GRASP_ENTRY and chain == ENTRY_CHAIN:
         if GRASP_SPEED:
             kw["speed"] = GRASP_SPEED
         if GRASP_CONT and last_cmd is not None:
@@ -373,8 +438,42 @@ def segment(
             kw["start"] = j + GRASP_CONT * (last_cmd - j)
         if GRASP_IKREF:
             kw["ik_from_ref"] = True
+    extra: dict = {}
+    if VIA:
+        j0, R0 = m.jaw_centre(side)
+        v = c.get("via")
+        via = dict(p=np.zeros((0, 3)), R=np.zeros((0, 3, 3)), speed=None, gen=np.zeros(len(VG.GEN_KEYS), np.float32),
+                   tries=0, tol=0.0)  # fmt: skip
+        route, start_cm = -1, -1.0
+        if isinstance(v, str):  # "random"
+            sd = 1.0 if side == "right" else -1.0
+            sh = body_pos(m, f"{side}_shoulder_pitch_link")
+            via = VG.random_path(rng, j0, target_w, R0, rot_w, p, Rh, sd, sh, c["pelvis_z"])
+        elif v is not None:  # a path of REACH_VIA_REPLAY, from its heading frame onto this one
+            via = dict(via, p=VG.from_h(v["p"], p, Rh), R=np.array([Rh @ r for r in v["R"]]).reshape(-1, 3, 3),
+                       speed=v["speed"])  # fmt: skip
+            route = c["route"]
+            start_cm = 100 * float(np.linalg.norm(VG.to_h(j0, p, Rh)[0] - v["start"]))
+        if len(via["p"]):
+            kw.update(via=list(via["p"]), via_rot=list(via["R"]))
+        if via["speed"] is not None and v is not None:
+            kw["speed"] = via["speed"]
+        n = len(via["p"])
+        vp, vr = np.zeros((VG.VIA_MAX, 3), np.float32), np.zeros((VG.VIA_MAX, 6), np.float32)
+        if n:
+            vp[:n] = VG.to_h(via["p"], p, Rh)
+            vr[:n] = [np.r_[(Rh.T @ r)[:, 0], (Rh.T @ r)[:, 1]] for r in via["R"]]
+        extra = dict(via_p=vp, via_r6=vr, n_via=n, via_speed=float(kw.get("speed") or m.cfg.reach_speed),
+                     via_gen=via["gen"], via_tries=int(via["tries"]), via_tol=float(via["tol"]), via_route=route,
+                     via_start_cm=start_cm, hand_q=hand_q(m, side))  # fmt: skip
     out = m.reach(side, target_w, rot_w, pelvis_z=c["pelvis_z"], servo=False, **kw)
     goal = rec.plan[0][-1]
+    if VIA:
+        poses, durations = rec.plan
+        extra.update(
+            RQ=np.array([q.joints for q in poses], np.float32), RP=np.array([np.r_[q.pos, q.quat] for q in poses], np.float32),
+            RT=np.r_[0.0, np.cumsum(durations)].astype(np.float32), n_ref=len(poses),
+        )  # fmt: skip
     swing = 100 * blend_swing(m, side, rec.plan[0][0], rec.plan[0][1]) if GRASP_ENTRY else -1.0
     reach_s = float(m.t - rec.t_cmd)
     if m.fell_at is None:
@@ -393,6 +492,7 @@ def segment(
         ik_err_cm=float(info.get("ik_err_cm", -1.0)), reach_s=reach_s,
         ref_q=goal.joints.astype(np.float32), ref_pel=np.r_[goal.pos, goal.quat].astype(np.float32),
         ref_s=float(sum(rec.plan[1])), wrist_dev=c["wrist_dev"].astype(np.float32), swing_cm=swing, cmd_w=target_w,
+        **extra,
     )  # fmt: skip
 
 
@@ -542,7 +642,19 @@ def _reset(env, rec, i: int, seed: int, segs: list) -> list:
     m = env.m
     walked = bool(rng.random() < (APPROACH_DIVERSE if APPROACH else SIDESTEP_WALK if SIDESTEP else 0.35))
     cmds = [None] * CHAIN
-    if GRASP:
+    if VIA_REPLAY:  # the first pass from the reset's stand, later passes after the room's short walk
+        r = i % len(ROUTES)
+        cmds, walked = [dict(replay_command(ROUTES[r]), route=r)], False
+        if i >= len(ROUTES):
+            d, y0 = float(rng.uniform(0.45, 0.90)), float(rng.uniform(-0.10, 0.10))
+            m.reset((-d, y0), float(math.radians(rng.uniform(-8, 8))))
+            m.hold(1.0)
+            open_walk(m, d, float(rng.uniform(-0.06, 0.06)), 0.0)
+            walked = True
+        if m.fell_at is not None:
+            return segs
+        m.hold(1.0)
+    elif GRASP:
         walked = False  # the walk below is this flag's own
         cmds = grasp_commands(rng)
         if GRASP_ROOM:  # as room_grasp.episode: a short open walk, the heading off by what it was off at the start
@@ -561,7 +673,7 @@ def _reset(env, rec, i: int, seed: int, segs: list) -> list:
             return segs
         m.hold(0.5)
         walked = True
-    if walked and not GRASP:
+    if walked and not GRASP and not VIA_REPLAY:
         ang, d = rng.uniform(-math.pi, math.pi), rng.uniform(0.3, 1.2)
         m.walk_to(np.array([d * math.cos(ang), d * math.sin(ang)]), yaw=float(rng.uniform(-math.pi, math.pi)))
         if m.fell_at is not None:
@@ -606,6 +718,13 @@ def save(segs: list[dict], path: Path) -> None:
         pack[k] = np.stack([s[k] for s in segs])
     if GRASP_ENTRY:
         pack["swing_cm"] = np.array([s["swing_cm"] for s in segs], np.float32)
+    if "via_p" in segs[0]:  # REACH_VIA, REACH_VIA_REPLAY
+        for k in ("n_via", "via_speed", "via_tries", "via_tol", "via_route", "via_start_cm", "n_ref"):
+            pack[k] = np.array([s[k] for s in segs])
+        for k in ("via_p", "via_r6", "via_gen", "hand_q"):
+            pack[k] = np.stack([s[k] for s in segs])
+        for k in ("RQ", "RP", "RT"):
+            pack[k] = np.concatenate([s[k] for s in segs])
     if "walk" in segs[0]:  # REACH_APPROACH
         for k in ("ref_s_post", "k_reach", "walk_ok"):
             pack[k] = np.array([s[k] for s in segs])
@@ -617,6 +736,8 @@ def save(segs: list[dict], path: Path) -> None:
 
 def run(procs: int, resets: int, seed: int, gpus: str) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
+    if VIA_REPLAY:
+        json.dump(dict(spec=VIA_REPLAY, names=[r["name"] for r in ROUTES]), open(OUT / "routes.json", "w"))
     cards = gpus.split(",")
     jobs = []
     for w in range(procs):
