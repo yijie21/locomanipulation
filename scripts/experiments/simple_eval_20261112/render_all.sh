@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # render_all.sh <npz dir> <out dir> [look]: every simple_bench.py --film state of <npz dir> drawn in SIMPLE's Isaac scene
-# (isaac_film_vast.py), one process per task: env.close() ends the Kit app, so a second gym.make in the same process
+# (isaac_film.py), one process per task: env.close() ends the Kit app, so a second gym.make in the same process
 # never runs. Two lanes at a time on one GPU (GPU, default 1). Logs: <out dir>/logs/render_<task>.log, one line per
 # finished task in <out dir>/logs/done.txt.  MAIN: main's checkout, the owner of third_party/SIMPLE.
 set -uo pipefail
@@ -21,7 +21,7 @@ cd $M/third_party/SIMPLE || exit 1
 one() {
     local task=$1
     MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=$GPU OMNI_KIT_ACCEPT_EULA=YES CUDA_VISIBLE_DEVICES=$GPU HF_HUB_OFFLINE=1 TMPDIR=/workspace/tmp \
-        timeout 7200 .venv/bin/python "$E/isaac_film_vast.py" "$O/x" "$OUT" "$NPZ"/"${task}"_L0_*.npz \
+        timeout 7200 .venv/bin/python "$E/isaac_film.py" "$O/x" "$OUT" "$NPZ"/"${task}"_L0_*.npz \
         --look="$LOOK" --old-task "$OLD" > "$OUT/logs/render_${task}.log" 2>&1
     echo "rc=$? $task $(date +%T)" >> "$OUT/logs/done.txt"
 }

@@ -1,6 +1,6 @@
 """One comparison video per filmed episode: the methods' world-camera clips in a grid (2026-11-19).
 
-    python -I grid.py <npz dir> <clips dir (isaac_film_vast.py's out)> <out dir> [--only A,B] [--suffix _world]
+    python -I grid.py <npz dir> <clips dir (isaac_film.py's out)> <out dir> [--only A,B] [--suffix _world]
         [--methods direct,inverse,model,model_pose] [--cols 2] [--cell 480,270] [--font 0] [--bar 46]
 
 The report's clips are two methods side by side: --methods direct,model --cols 2 --cell 800,450 --font 24 --bar 54

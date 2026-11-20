@@ -9,10 +9,13 @@ moved down by the replica's lift on SIMPLE's AMO tasks, whose table top is at z 
 sync_states), then two cameras read: SIMPLE's head camera, and a still world camera on the episode (CAM: the target
 seen from the robot's right front, in the robot's heading at the start).
 
-Run in SIMPLE's venv from its root:
+Run in SIMPLE's venv from its root, the films of one task per process (render_all.sh runs every task):
     cd third_party/SIMPLE && MUJOCO_GL=egl OMNI_KIT_ACCEPT_EULA=YES CUDA_VISIBLE_DEVICES=1 \
         .venv/bin/python <this file> <episodes root (outputs/simple_eval_20261112/x)> <out dir> FILM.npz ...
 -> <out>/<film stem>_world.mp4 and _head.mp4 (H.264, 25 fps). --probe: the model's names and one frame per camera, no video.
+--old-task FILE: XMoveBendPickTeleop, which SIMPLE dropped in eef474f, registered from its task file of eef474f^
+(`git -C third_party/SIMPLE show eef474f^:src/simple/tasks/g1_wholebody_xmove_bend_pick_teleop.py`). --no-head: the world
+camera only. (vastgpu's isaac_film_vast.py of 2026-11-19, merged here 2026-11-20.)
 """
 
 import argparse
@@ -30,10 +33,16 @@ ap = argparse.ArgumentParser()
 ap.add_argument("xdir")
 ap.add_argument("out")
 ap.add_argument("films", nargs="+")
-ap.add_argument("--cam", default="-55,28,1.6", help="the world camera: azimuth deg (0 ahead, - right), elevation deg, m")
-ap.add_argument("--look", default="-0.12,0,-0.03", help="m, the camera's aim from the target, heading frame at the start")
+ap.add_argument(
+    "--cam", default="-55,28,1.6", help="the world camera: azimuth deg (0 ahead, - right), elevation deg, m"
+)
+ap.add_argument(
+    "--look", default="-0.12,0,-0.03", help="m, the camera's aim from the target, heading frame at the start"
+)
 ap.add_argument("--size", default="960,540")
 ap.add_argument("--probe", action="store_true")
+ap.add_argument("--old-task", default="", help="XMoveBendPickTeleop's task file from SIMPLE eef474f^ (dropped since)")
+ap.add_argument("--no-head", action="store_true")
 a = ap.parse_args()
 W, H = map(int, a.size.split(","))
 os.makedirs(a.out, exist_ok=True)
@@ -44,6 +53,18 @@ import simple.envs  # noqa: E402, F401
 from simple.cli.eval_decoupled_wbc import _make_sonic_config  # noqa: E402
 
 FREE = 0  # mjtJoint.mjJNT_FREE
+
+if a.old_task and "simple/G1WholebodyXMoveBendPickTeleop-v0" not in gym.registry:
+    # SIMPLE dropped this task in eef474f (2026-08-30); the episodes are from the version before. The task file of
+    # eef474f^ registers itself in TaskRegistry on import, and the env id is registered as SIMPLE 7b64c57^ had it.
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("simple.tasks.g1_wholebody_xmove_bend_pick_teleop", a.old_task)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    gym.register(id="simple/G1WholebodyXMoveBendPickTeleop-v0", entry_point="simple.envs.sonic_loco_manip:SonicLocoManipEnv",
+                 kwargs={"task": "g1_wholebody_xmove_bend_pick_teleop"})  # fmt: skip
 
 
 def load(f):
@@ -88,12 +109,13 @@ groups = defaultdict(list)  # one scene per episode
 for f in films:
     m = f["meta"]
     groups[(m["task"], str(m["level"]), int(m["index"]))].append(f)
+tasks = sorted({k[0] for k in groups})
+# env.close() ends the Kit app and the process with it (rc 0), so a second task in the same process would never be drawn
+assert len(tasks) == 1, f"one task per process (render_all.sh runs one each), got {tasks}"
 
 env = env_task = None
 for (task, level, index), fs in groups.items():
     if env_task != task:
-        if env is not None:
-            env.close()
         (name,) = os.listdir(f"{a.xdir}/{task}")
         env = gym.make(f"simple/{name}", sim_mode="mujoco_isaac", render_hz=50, headless=True,
                        sonic_config=_make_sonic_config())  # fmt: skip
@@ -115,11 +137,28 @@ for (task, level, index), fs in groups.items():
     # the replica's objects: "<label>_joint" on the body named after the label; SIMPLE's: its object free joints, by body
     obj_bodies = {mm.body(mm.jnt_bodyid[j]).name: j for j in free[1:]}
     if a.probe:
-        print("SIMPLE joints", mm.njnt, "nq", mm.nq, "free:", [(names[j], mm.body(mm.jnt_bodyid[j]).name) for j in free])
-        print("ours free:", [f0["jnt"][j] for j in ours_free], "objects", f0["meta"]["objects"], "lift", f0["meta"]["lift"])
+        print(
+            "SIMPLE joints", mm.njnt, "nq", mm.nq, "free:", [(names[j], mm.body(mm.jnt_bodyid[j]).name) for j in free]
+        )
+        print(
+            "ours free:",
+            [f0["jnt"][j] for j in ours_free],
+            "objects",
+            f0["meta"]["objects"],
+            "lift",
+            f0["meta"]["lift"],
+        )
         print("SIMPLE hinge names not in ours:", sorted(set(names) - set(f0["jnt"]) - {names[j] for j in free})[:20])
-        print("ours hinge names not in SIMPLE:", sorted(set(f0["jnt"]) - set(names) - {f0["jnt"][j] for j in ours_free})[:20])
-        print("isaac cameras", list(getattr(u.isaac, "cameras", {}).keys()), "mj_objects", list(u.mujoco.mj_objects.keys()))
+        print(
+            "ours hinge names not in SIMPLE:",
+            sorted(set(f0["jnt"]) - set(names) - {f0["jnt"][j] for j in ours_free})[:20],
+        )
+        print(
+            "isaac cameras",
+            list(getattr(u.isaac, "cameras", {}).keys()),
+            "mj_objects",
+            list(u.mujoco.mj_objects.keys()),
+        )
     pairs = []  # (our qpos address, SIMPLE's, width)
     for j, n in enumerate(f0["jnt"]):
         if f0["typ"][j] == FREE:
@@ -146,10 +185,10 @@ for (task, level, index), fs in groups.items():
 
     # the still world camera: on the target's place at the start, in the robot's heading then
     q0 = f0["qpos"][0]
-    yaw = yaw_of_wxyz(q0[int(f0["adr"][ours_root]) + 3:int(f0["adr"][ours_root]) + 7])
+    yaw = yaw_of_wxyz(q0[int(f0["adr"][ours_root]) + 3 : int(f0["adr"][ours_root]) + 7])
     Rz = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
     jt = f0["jnt"].index(f"{f0['meta']['target']}_joint")
-    p_t = q0[int(f0["adr"][jt]):int(f0["adr"][jt]) + 3] - np.r_[0, 0, lift]
+    p_t = q0[int(f0["adr"][jt]) : int(f0["adr"][jt]) + 3] - np.r_[0, 0, lift]
     aim = p_t + Rz @ np.array([float(v) for v in a.look.split(",")])
     az, el, dist = (float(v) for v in a.cam.split(","))
     az, el = np.radians(az), np.radians(el)
@@ -166,11 +205,11 @@ for (task, level, index), fs in groups.items():
         g.GetVerticalApertureAttr().Set(20.955 * H / W)
         g.GetClippingRangeAttr().Set((0.05, 30.0))
     cam.set_world_pose(position=pos, orientation=look_at_wxyz(pos, aim), camera_axes="usd")
-    heads = [k for k in getattr(u.isaac, "cameras", {}) if "head" in k and "right" not in k]
+    heads = [] if a.no_head else [k for k in getattr(u.isaac, "cameras", {}) if "head" in k and "right" not in k]
 
     def draw(q):
         for src, dst, w in pairs:
-            dd.qpos[dst:dst + w] = q[src:src + w]
+            dd.qpos[dst : dst + w] = q[src : src + w]
         for i in zfix:
             dd.qpos[i] -= lift
         dd.qvel[:] = 0

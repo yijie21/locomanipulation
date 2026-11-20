@@ -138,7 +138,7 @@ BendPick 的抓法变了：MuJoCo 画面下多是从侧面低位抓，手掌比�
 | `look_stats.py`、`grasp_types.py` | 上面两张表的数 |
 | `diag_depth.py`、`diag_tabletop.py`、`try_rules.py`、`try_sam.py` | 桌面抓取的诊断和规则比较 |
 | `percept_film.py` | 感知过程的视频 |
-| `isaac_film_vast.py`、`render_all.sh`、`grid.py` | 对比视频 |
+| `isaac_film.py`（11-20 并入 `isaac_film_vast.py` 的两处改动，后者已删）、`render_all.sh`、`grid.py` | 对比视频 |
 
 数据不进 git。数据包在 vastgpu 的 `/workspace/tmp/simple_film_20261119/vastgpu_records_20261120.tar`，1.5 GB，1001 个文件加一份清单，要经 Mac 中转。
 
