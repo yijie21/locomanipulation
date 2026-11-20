@@ -4,7 +4,8 @@ What the robot has: the task's instruction, the head camera's colour and depth i
 (tilt and turn rate) and its own model. From these:
 
   the target       SAM 3 on the colour image with the object the instruction names; an instruction that names none
-                   ("grasp the object on the tabletop") takes the largest thing standing on the table
+                   ("grasp the object on the tabletop") takes the largest thing standing on the table by the depth
+                   (--unnamed depth), or SAM 3's largest "object" within reach (--unnamed sam, the default with --eyes)
   its grasp        GraspGen-X (Dex3) on the target's points, in the robot's frame at the start (grasps_graspgen.py)
   the table        the level of the points around the target's foot, and where that level begins ahead of the robot
   the basket       SAM 3 with BOWL (how an upstream VLM would name what the container looks like); for the task whose
@@ -18,6 +19,9 @@ frame, so a goal is handed over as its offset from the pelvis), and the success 
 `row`, after the comment "record").
 
     look   BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src python blind.py look <task>    -> <out>/cloud_blind/<name>.npz
+           --eyes <socket of eyes_server.py> --depth <socket of depth_server.py>: the same look through SIMPLE's Isaac
+           scene (the replica's state drawn there, depth from the head stereo pair)          -> <out>/cloud_eyes/<name>.npz
+           LOOK_DUMP=<folder>: every look's images, depths, mask and points, one file per episode (percept_film.py)
     grasps (GraspGen-X venv) python grasps_graspgen.py <out>/cloud_blind --assets-dir ...
     run    BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src python blind.py run <task> --out rows.json
 """
@@ -42,6 +46,8 @@ from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E40
 from locomani.backends.scalebfm.motor import Motor, MotorConfig  # noqa: E402
 
 OFFICIAL: dict = {}  # --official: SIMPLE's own environment is the physics and the eyes (official.py)
+UNNAMED = "depth"  # --unnamed: how an instruction that names no object finds its target
+EYES: dict = {}  # --eyes: the replica is the physics, SIMPLE's Isaac render of its state the eyes (eyes_server.py)
 
 SIDE = PL.SIDE
 CLOUD = "cloud_blind"
@@ -67,6 +73,9 @@ def target_mask(instruction: str, rgb, pts, ok, ahead, after: float):
     if name:
         m, score, _ = SEE.find(rgb, [name])
         return m, score
+    # "sam": from the colour image (2026-11-19); "depth": the largest thing standing on the table, by the depth alone
+    if UNNAMED == "sam":
+        return SEE.largest_seen(rgb, pts, ok, ahead, after, OWN)
     return SEE.largest_thing(pts, ok, ahead, after), 1.0
 
 
@@ -76,10 +85,33 @@ def basket_from(seen: np.ndarray, ahead):
     return 0.5 * (lo + hi)[:2], float(hi[2]), float(np.percentile(seen[:, :2] @ ahead, 1))
 
 
+class EyesSim(R.Sim):
+    """The replica, seen through SIMPLE's Isaac scene: `eyes` gives the head camera's colour image as Isaac Sim draws the
+    replica's state (eyes_server.py) and the depth worked out from its stereo pair (depth_server.py)."""
+
+    def bind(self, link, depth_link, ep, info) -> None:
+        self.link, self.depth_link, m = link, depth_link, self.m
+        ours = dict(jnt=[m.joint(j).name for j in range(m.njnt)], adr=m.jnt_qposadr.copy(), typ=m.jnt_type.copy(),
+                    objects={k: o["body"] for k, o in info["objects"].items()}, lift=info["lift"])  # fmt: skip
+        link.send(("scene", ep["task"], ep["level"], ep["index"], ours))
+        print("eyes", link.recv(), flush=True)
+
+    def eyes(self):
+        self.link.send(("eyes", self.d.qpos.copy()))
+        e = self.link.recv()
+        self.depth_link.send((e["left"], e["right"]))
+        depth, sg, lb = self.depth_link.recv()
+        self.last_eyes = dict(e, depth=lb, sg=sg, lb=lb)
+        return e["left"], lb  # as official.OffSim.eyes
+
+
 def setup(pol, ep):
     info = EP.build(ep)
     cfg = ScaleBfmBackendConfig(scene_dir=info["dir"], object_name="")
-    if not OFFICIAL:
+    if EYES:
+        sim = EyesSim(pol.meta, backend=cfg)
+        sim.bind(EYES["link"], EYES["depth"], ep, info)
+    elif not OFFICIAL:
         sim = R.Sim(pol.meta, backend=cfg)
     else:
         sim = OffSim(pol.meta, cfg, OFFICIAL["link"], OFFICIAL["depth"], film=bool(OFFICIAL["film"]))
@@ -132,8 +164,12 @@ def look(a, pol) -> None:
         ctrue, dtrue, true = SEE.head_points(sim, b)  # record: how much of the target the mask covers
         if hasattr(sim, "last_eyes") and s["mask"] is not None:  # record: the stereo depth against the model's
             ps_, Rs_ = bel._pelvis_sim()
-            if __import__("os").environ.get("LOOK_DUMP"):
-                np.savez_compressed(__import__("os").environ["LOOK_DUMP"], dtrue=dtrue, true=true, mask=s["mask"], pts=s["pts"], ok=s["ok"],
+            dump_ = __import__("os").environ.get("LOOK_DUMP")
+            if dump_:  # a folder: one file per episode
+                dump_ = f"{dump_}/{name}.npz" if __import__("os").path.isdir(dump_) else dump_
+                np.savez_compressed(dump_, dtrue=dtrue, true=true, mask=s["mask"], pts=s["pts"], ok=s["ok"],
+                                    instruction=ep["instruction"], named=str(named(ep["instruction"])), score=s["score"],
+                                    cloud=s["cloud"], top=s["top"], pb=s["pb"], yaw=s["yaw"],
                                     cam_p=sim.d.cam_xpos[sim.m.camera(EP.HEAD_CAM).id], cam_R=sim.d.cam_xmat[sim.m.camera(EP.HEAD_CAM).id].reshape(3, 3),
                                     fovy=sim.m.cam_fovy[sim.m.camera(EP.HEAD_CAM).id], **sim.last_eyes)  # fmt: skip
             rp_, rR_ = bel.kin(sim.d.qpos[sim.qadr])
@@ -395,6 +431,7 @@ def run(a, pol) -> None:
 
 
 def main() -> None:
+    global CLOUD, UNNAMED
     ap = argparse.ArgumentParser()
     ap.add_argument("stage", choices=("look", "run"))
     ap.add_argument("task")
@@ -412,17 +449,34 @@ def main() -> None:
     ap.add_argument(
         "--official", help="socket of official_server.py: SIMPLE's environment is the physics and the camera"
     )
+    ap.add_argument(
+        "--eyes", help="socket of eyes_server.py: the replica is the physics, SIMPLE's Isaac scene the camera"
+    )
     ap.add_argument("--depth", help="socket of depth_server.py")
+    ap.add_argument(
+        "--unnamed",
+        choices=("depth", "sam"),
+        help="the target of an instruction that names no object: the largest thing standing on the table by the depth (as on 2026-11-12), or SAM 3's largest \"object\" within reach. Default: sam with --eyes (the user's choice on 2026-11-20: the depth rule found 12 of TabletopGrasp's 30 targets in SIMPLE's images, this one 27), depth otherwise",
+    )
+    ap.add_argument(
+        "--cloud",
+        help="the folder under the outputs for the looks and grasps, instead of cloud_blind / cloud_isaac / cloud_eyes",
+    )
     ap.add_argument("--film", help="a folder for the head camera's video of each episode (Isaac Sim)")
     a = ap.parse_args()
     if a.official:
         from multiprocessing.connection import Client
 
-        global CLOUD
         CLOUD = "cloud_isaac"
         OFFICIAL.update(
             link=Client(a.official, family="AF_UNIX"), depth=Client(a.depth, family="AF_UNIX"), film=a.film, task=a.task
         )
+    if a.eyes:
+        from multiprocessing.connection import Client
+
+        CLOUD = "cloud_eyes"
+        EYES.update(link=Client(a.eyes, family="AF_UNIX"), depth=Client(a.depth, family="AF_UNIX"))
+    CLOUD, UNNAMED = a.cloud or CLOUD, a.unnamed or ("sam" if a.eyes else "depth")
     R.OFF[:] = P.PALM
     pol = R.Policy("cuda", ScaleBfmBackendConfig())
     (look if a.stage == "look" else run)(a, pol)

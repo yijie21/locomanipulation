@@ -138,6 +138,34 @@ def near_edge(pts, ok, top: float, ahead, lateral: float, after: float, half: fl
     return float(np.percentile(u[sel], 0.5)) if sel.sum() >= 50 else None
 
 
+GENERIC = ("object",)  # what an instruction that names no object is taken to mean, as a phrase for the segmenter
+REACH = 1.0  # m ahead of the pelvis: where the standing robot's "the object" can be
+
+
+def largest_seen(rgb, pts, ok, ahead, after: float, own: float = 0.2):
+    """For an instruction that names no object, from the colour image: SAM 3's instances of GENERIC, of an object's size
+    (150 pixels to 8 % of the image) and between `after` and REACH ahead of the pelvis; the largest of them, as
+    (mask, score), or (None, 0). The depth only places an instance to within the reach, so the centimetres that stereo
+    matching is off by on a plain or glossy table top (2026-11-19: largest_thing took bumps of the table's depth for
+    the object in 18 of 30 Isaac looks of TabletopGraspMP) do not decide what the target is."""
+    global _sam
+    from locomani.tasks.scene.services import Client, unpack_mask
+
+    _sam = _sam or Client(SAM3)
+    found = _sam.call(dict(image=rgb, prompts=list(GENERIC)))["results"]
+    u = pts[..., :2] @ ahead[:2]
+    best = (None, 0.0, 0)
+    for p in GENERIC:
+        for score, packed in found.get(p, []):
+            m = unpack_mask(packed).astype(bool)
+            n = int(m.sum())
+            if score < 0.3 or not 150 <= n <= 0.08 * m.size or (m & ok).sum() < 100:
+                continue
+            if after < float(np.median(u[m & ok])) < after - own + REACH and n > best[2]:
+                best = (m, float(score), n)
+    return best[0], best[1]
+
+
 def largest_thing(pts, ok, ahead, after: float):
     """The mask of the largest thing standing on the surface that fills most of the view beyond `after` along `ahead`
     (for an instruction that names no object), or None."""

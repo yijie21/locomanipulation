@@ -290,6 +290,36 @@ BFM_ROOT=true MUJOCO_GL=egl PYTHONPATH=src $PY $E/place.py HandoverTeleop --odo
 
 得到什么：不加 `--odo` 时 25 / 30 和 23 / 30，加了是 9 / 30 和 18 / 30。转身加走 2 米后里程计和真实骨盆位置差 20 cm 左右。每局约 40 秒和 31 秒。
 
+**不读任何仿真真值：`blind.py`，以及用 SIMPLE 的 Isaac 画面看一眼。**
+
+```bash
+W=$PWD; E=$W/scripts/experiments/simple_eval_20261112; D=$W/outputs/simple_eval_20261112
+TAG=full bash $E/look_all.sh XMovePickTeleop XMoveBendPickTeleop BendPickMP TabletopGraspMP
+(cd $M/third_party/SIMPLE && .venv/bin/python -I $E/look_stats.py $D $D/look_logs \
+    && .venv/bin/python -I $E/grasp_types.py $D cloud_blind cloud_eyes)
+```
+
+做什么：`blind.py` 是不读真值的那条流程，目标、抓取和桌面都从头部相机来，骨盆和手掌靠里程计和关节读数，用法写在文件开头。`look_all.sh` 只做每局开局的那一眼：机器人在复刻场景里站 1 秒，`eyes_server.py` 把这一刻的状态画进 SIMPLE 自己的 Isaac 场景，读头部左右两张图，`depth_server.py` 用双目匹配加 LingBot-Depth 得深度，SAM 3 找目标，GraspGen-X 出抓取。XMoveBendPick 这个任务 SIMPLE 已经删掉，脚本第一次跑时会从 SIMPLE 的 git 历史里取回它的任务文件。要先有开在 127.0.0.1:18832 的 SAM 3 服务，和 `blind.py look` 不加 `--eyes` 得到的 `cloud_blind/` 作对照。脚本默认用 1 号卡，`GPU=0` 可以改，其余环境变量写在脚本开头。
+
+得到什么：`cloud_eyes/` 下每局一个点云和一个抓取文件，`look_dump_eyes/` 下是每局这一眼的中间结果，日志在 `look_logs/`。最后两条打印每个任务的深度误差、抓取的变化和抓法。四个任务找对目标 30、30、30、27 局，目标上的深度误差中位数 0.3 到 0.7 cm，机器空闲时每个任务约 5 分钟。桌面抓取的指令不说物体名，带 `--eyes` 时默认让 SAM 3 找 “object” 再取够得着的最大一个；`LOOK_ARGS="--unnamed depth"` 换回只看深度的旧规则，旧规则 30 局只找对 12 局。
+
+**把这一眼画成视频，和两种方法的对比视频。**
+
+```bash
+cd $M/third_party/SIMPLE
+MUJOCO_GL=egl .venv/bin/python -I $E/percept_film.py $D/look_dump_eyes $D/cloud_eyes $D/percept \
+    "XMoveBendPickTeleop_L0_e0=走过去弯腰抓　第 0 局" "TabletopGraspMP_L0_e0=桌面抓取　第 0 局" --unnamed sam
+bash $E/render_all.sh $D/film_20261119/npz $D/film/clips
+.venv/bin/python -I $E/grid.py $D/film_20261119/npz $D/film/clips $D/film/grid \
+    --methods direct,model --cols 2 --cell 800,450 --font 24 --bar 54
+```
+
+做什么：`percept_film.py` 按看一眼、找目标、量距离、变成三维点、出抓取、定抓取点六步，把机器人当时用的数据画出来。`render_all.sh` 把评测录下的状态逐帧画进 SIMPLE 的 Isaac 场景，四个任务分两路跑；`film_20261119/npz` 是 4090 上评测时录下的六局，在数据包里。`grid.py` 把同一局的几种方法拼成并排的一段，每格标方法名和 45 秒内有没有抓起来。
+
+得到什么：`percept/percept_<局名>.mp4`，每局 33 秒、1280×720，加一张同名的封面图；`film/clips/` 下每局每种方法一段世界视角和一段头部视角；`film/grid/clip_A.mp4` 到 `clip_F.mp4`。这些是报告用的原片，每段 2 到 9 MB，没有按 500 KB 的预览规则压缩。
+
+这两天的数字、用户的决定和交给 4090 的清单见 [11-19 到 11-20 的记录](handoff/simple-isaac-eyes-20261120.md)。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

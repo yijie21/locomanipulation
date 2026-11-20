@@ -30,6 +30,7 @@ Unitree G1 人形机器人的移动操作仿真。这个分支的主线是**自�
 | [自我模型抓取 runbook](docs/selfwm.md) | 准备材料、跑一组评测、看结果和看过程的命令 |
 | [自我模型抓取详解](docs/selfwm_design.md) | 误差怎么分两类、系统组成、一局怎么跑、伺服怎么不读真值、评测方法、结果、试过没采用的、已知限制 |
 | [开发记录](docs/handoff/selfwm-20261029.md) | 10-29 起按天记的实验、数字和复现命令 |
+| [SIMPLE 换 Isaac 画面的记录](docs/handoff/simple-isaac-eyes-20261120.md) | 11-19 到 11-20：对比视频、感知改用 SIMPLE 的 Isaac 画面、哪些数没重跑、交给 4090 的清单 |
 
 ## 其他文档
 
