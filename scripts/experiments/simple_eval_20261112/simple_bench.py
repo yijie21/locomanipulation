@@ -39,6 +39,9 @@ camera's image, the target's points from depth, GraspGen-X's grasps on them, gra
 pick.graspgen_grasp chooses it, the table's edge as blind.py saw it (its rows' "edge"); no second look: after the walk
 the robot takes its pelvis from leg odometry (leg_odo.TickFeed, as room_grasp's feedback arm), and a goal goes to the
 Motor kept where it lies from that believed pelvis (place.Belief.to_sim), heights as seen. Every method gets the same.
+--cloud picks the look: cloud_blind is the replica's MuJoCo images (the 11-19 tables), cloud_eyes_final SIMPLE's Isaac
+images (blind.py look --eyes, 2026-11-20; docs/handoff/simple-isaac-eyes-20261120.md). An episode without a grasp there
+fails ("no grasp"); the table's edge stays the MuJoCo look's (blind_f1) with either.
 
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
@@ -231,12 +234,13 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         edge = min(t["pos"][0] - 0.5 * t["size"][0] for t in info["tables"].values())  # the tables lie square to x
     else:
         name = f"{task}_L{ep['level']}_e{ep['index']}"
-        cloud = EP.OUT / "cloud_blind"
+        cloud = EP.OUT / a.cloud
+        row["cloud"] = a.cloud
         found = None
-        if (cloud / f"grasp_{name}.npz").exists():
+        if (cloud / f"grasp_{name}.npz").exists():  # no grasp (or no look) for the episode: it fails, nothing stands in
             T_wo = np.eye(4)
             T_wo[:3, 3] = np.load(cloud / f"{name}.npz")["p_o"]  # the frame the grasps were worked out in
-            found = P.graspgen_grasp(name, T_wo, yaw0, cloud="cloud_blind")
+            found = P.graspgen_grasp(name, T_wo, yaw0, cloud=a.cloud)
         if found is None:
             return dict(row, why="no grasp", stages=[], palm_cm=None, palm_deg=None, success_end=False, t_success=None,
                         success_official=False, success_45=False, fell=None, knocked=None, touched=None)  # fmt: skip
@@ -422,6 +426,13 @@ def main() -> None:
     ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
     ap.add_argument("--column", choices=("truth", "perception"), default="truth")
+    ap.add_argument(
+        "--cloud",
+        default="cloud_blind",
+        help="the perception column's look and grasps, under outputs/simple_eval_20261112: cloud_blind (the replica's "
+        "MuJoCo images, 2026-11-19), cloud_eyes_final (SIMPLE's Isaac images, 2026-11-20). The table's edge is "
+        "blind_f1's either way",
+    )
     ap.add_argument(
         "--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)"
     )
