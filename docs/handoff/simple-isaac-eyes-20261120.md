@@ -169,3 +169,85 @@ BendPick 的抓法变了：MuJoCo 画面下多是从侧面低位抓，手掌比�
 - 同机的 esc session 会同时起三个 Isaac 服务，负载到过 100 以上，而容器只有 15 个核。那时 Isaac 启动要 5 分钟，一次 30 局的看一眼会超时。可以设 `NICE=10 LOOK_TIMEOUT=5400`。
 - 它的脚本叫 `depth_server_esc.py`、`official_server_esc.py`。查找或结束自己的进程要按完整路径匹配，不要按 `depth_server` 这样的短名。
 - SAM 3 服务在 127.0.0.1:18832，是别的 session 起的，只调用不要动。
+
+## 4090 的回复（11-20）
+
+按上面"要 4090 做的"逐项做完。实验条目是 `simple_bench_eyes_20261120`，预测和判据在启动前写好。
+
+### 代码
+
+- `a4816f1` 和之后的 37 个提交接在 `6518077e` 后面。两边没有改过同一个文件，没有冲突。
+- `isaac_film_vast.py` 的 `--old-task`、`--no-head` 并进 `isaac_film.py`，前者删掉。`render_all.sh`、`grid.py` 和上面的文件表改成指向 `isaac_film.py`。`isaac_film.py` 现在会检查一个进程只画一个任务：`env.close()` 会结束 Kit，第二个任务原来会被静默跳过。
+- `simple_bench.py --cloud`：感知栏用哪一眼。默认 `cloud_blind`，和 11-19 相同；`cloud_eyes_final` 是 Isaac 画面那一眼。每局记录里多一个 `cloud` 字段。没有抓取的局记 `why=no grasp`，算失败。
+- 4090 那批提交里有 11 个文件从没过格式检查，单独一个提交做了 ruff 0.16.1 格式化，只改排版。
+
+### 数据
+
+- 数据包经 Mac 传到 4090，两头的 sha256 都是 `a024b8ad…`。
+- 在仓库根目录 `tar xkf` 解开。37 个文件 4090 上已有，没有覆盖；清单里 1001 个文件 `md5sum -c` 全部通过，所以这 37 个和 vastgpu 那份也相同。
+- `cloud_eyes_final/`：119 局有抓取，只缺 `TabletopGraspMP_L1_e2`。每个文件和它的来源（`cloud_eyes/`、`cloud_eyes_sam/`）逐字节相同。抓取文件的格式和 `cloud_blind/` 相同。
+
+### 重跑
+
+- 代码 `68c9caf`，2026-11-20 03:06 UTC 在 4090 上跑。direct 用 CPU，model 用 1 号卡，和 11-19 相同。只换了抓取。
+- 启动前的冒烟测试：不传 `--cloud` 跑感知栏 BendPick 第 1 局 direct，结果和 11-19 那一行逐项相同。
+- 桌子前沿仍然用 `blind_f1_<task>.json`，也就是 MuJoCo 画面那一眼的结果，因为 vastgpu 没有重跑 `blind.py run`。这一项没有换成 Isaac 画面。
+
+结果：45 秒内抓起的局数 / 30，括号里是进入抓取点时手掌偏差的中位数，箭头左边是 11-19 的数。
+
+| 任务 | direct | model |
+|---|---|---|
+| XMovePick | 28 → 23（2.79 → 2.86 cm） | 30 → 23（0.81 → 0.78 cm） |
+| XMoveBendPick | 27 → 25（3.44 → 3.30 cm） | 30 → 30（0.72 → 0.79 cm） |
+| BendPick | 10 → 30（6.20 → 2.29 cm） | 30 → 30（2.63 → 0.72 cm） |
+| TabletopGrasp | 18 → 2（4.76 → 27.73 cm） | 14 → 3（16.23 → 27.55 cm） |
+
+- 官方时限内：BendPick 两种方法都是 0，其余和 45 秒内相同。
+- 同一批局配对比较（model − direct），进入偏差中位数的差：
+  - XMovePick −2.02 cm（95 % −2.11 到 −1.96）
+  - XMoveBendPick −2.36 cm（−2.68 到 −2.17）
+  - BendPick −1.58 cm（−1.74 到 −1.46）
+  - TabletopGrasp +0.37 cm（+0.00 到 +0.83）
+- **XMovePick**：失败的 7 局就是抓取点移动超过 5 cm 的 7 局（第 15、18、19、24、26、27、29 局），两种方法都在闭合前碰倒了物体。Isaac 画面下 XMovePick 有 7 局从上往下抓，可能就是这 7 局，没有逐局核对。
+- **BendPick**：direct 多出来的 20 局，全在抓法改变的那 23 局里（3 → 23）。
+- **TabletopGrasp**：
+  - 18 / 19 局在预抓取点就差 20 cm 以上，IK 残差不超过 2.5 cm，是控制器跟不上命令的手腕姿态。11-19 这一类是 12 / 15 局。
+  - 9 / 6 局在闭合前碰倒了罐子；`L1_e2` 没有抓取；`L1_e7`、`L2_e4` 照常跑，都失败。
+  - 掉的主要是抓取位置几乎没变的那 22 局（13 → 2、9 → 2），所以原因不在抓取位置。
+- 抓取移动量用两次 direct 记录里的 `obj_from_grasp` 之差算，里面含不到 1 cm 的里程计误差。
+
+### 拷回 vastgpu 的
+
+- `/workspace/code/locomanipulation-selfwm/outputs/simple_eval_20261112/rows_4090_20261120/`：
+  - 这次的 240 局；
+  - 11-19 两栏 direct 和 model 的全部逐局结果，包括用户问的感知栏 TabletopGrasp 和真值栏 BendPick；
+  - 录像那六局的逐局结果；
+  - 出表脚本和原始输出。
+- 目录里有 `README.md` 和 `MD5SUMS`，已在 vastgpu 上核对。包本身在 `/workspace/tmp/simple_film_20261119/rows_4090_20261120.tar`。
+
+### 4090 的 Isaac 渲染环境
+
+装在 `/wuji-vefps-D/wuji-il/yijie/tools/simple_isaac/`，用 `install.sh` 可以重装。用录下的状态试渲染 XMovePick 第 4 局，世界相机和头部相机都出图正常。装的过程中补了这些：
+- curobo：要用 CUDA 12.8 的 nvcc 编译。SIMPLE 一 import 就需要它。
+- 四个系统库 `libGLU`、`libSM`、`libICE`、`libXt`：没有它们时 Kit 会卡在 `_wait_for_viewport`，日志末尾不报错。
+- `unzip`：下数据时要用。
+
+### inverse 是怎么来的
+
+- **谁、什么时候**：11-19 06:29 UTC 用户说"把所有需要跑的实验都列出来"。06:31 我在清单里加了第 0.5 项"训练对照模型：用同一份数据直接学'目标 → 命令'"，理由是审稿人会问"是不是只是学了个修正量"。06:32 用户回复"现在就开始"，批准的是整份清单，没有单独提这一项。它是我加的。
+- **代码**：`scripts/experiments/reachwm_20261030/inverse_model.py`，提交 `65cff43c`（11-19 15:34 +0800），之后 `69af5962` 让恒定特征不做缩放。
+- **网络**：3 个多层感知机的集成，每个 3 层隐藏层、宽 512、SiLU 激活。Adam，学习率 1e-3，余弦退火，30000 步，batch 1024。每个成员保留验证集上最好的那一刻。
+- **输入**（219 维）：
+  - 一段伸手开始时的 206 维身体状态（不含参考规划的特征，那些是命令的函数）；
+  - 想要的手掌终点；
+  - 手腕命令的 rot6；
+  - 哪只手；
+  - 是否站立、骨盆高度；
+  - 是否是慢速进入段。
+- **输出**：命令相对想要终点的偏移（目标 − 实际到达），3 维，起步时的朝向坐标系。用时只算一次，不迭代。
+- **数据**：和自身模型完全同一份，事后重标注：每一段记录下来的伸手都说明了"从这个状态发这个命令，手到了 pos_f"，于是把 pos_f 当成想要的终点，把发的命令当成答案。
+  - `inverse_wrist.pt` 用的是六份数据：`data_ref_odo`、`data_approach_odo_reach`、`data_approach0_odo_reach`、`data_graspr_odo`、`data_approach_wrist_odo_reach`、`data_graspr_wrist_odo`。
+  - 划分用 `data.splits`，和自身模型相同：按桶号 0–7 训练、8 验证、9 测试，四个外推带和边缘集不进训练；摔倒的段去掉。
+  - 共 106969 段，训练 57881、验证 7113。
+- **训练**：11-19 08:47 在 4090 上训练。验证集上命令误差中位 1.355 cm（p90 6.269 cm），偏移本身的中位 4.810 cm。日志在 `loco_outputs/simple_selfmodel_20261119/inverse_wrist.log`。
+  - 第一版 `inverse.pt` 只用四份数据。那四份里没有掌心倾斜的手腕命令，评测时给出 −311 m 的偏移、3 局全摔，作废。
