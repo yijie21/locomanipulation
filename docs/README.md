@@ -53,7 +53,7 @@
 - [SONIC → ScaleBFM 替换评测计划](handoff/controller-compare-20261013.md)：用户逐轮定的 35 个决定与开跑前冻结的判据；范围是仿真采集、仿真评测和真机；L1 原语层（bottle B1–B8、warehouse W0–W8、复杂动作 C1–C7、mode 扫描与切换、真机扰动 a–h、估计位姿）是关口，过了才移植专家跑 L2 配对（每场景 ≥ 40 局）；最后是部署程序和真机冒烟
 - [单臂主线接 CuRobo 出路线的计划](handoff/single-arm-curobo-route-plan-20261009.md)：去掉原地抬手、CuRobo 避障直达预抓，每一条怎么验证没 bug、有效、不变坏（2026-10-09）；10-10 实现为 `reach.simple.arm_route: curobo`，默认关，关节空间目标两批 71/80 对基线 69/80。
 - [自我模型抓取的开发记录](handoff/selfwm-20261029.md)：分支 `selfwm`，冻结的 ScaleBFM 外加走路模型、抓取选择和连续伺服；10-29 起按天的实验、数字和复现命令，入口是 [runbook](selfwm.md) 和[详解](selfwm_design.md)。
-- [SIMPLE 抓取对比换 Isaac 画面的记录](handoff/simple-isaac-eyes-20261120.md)：分支 `selfwm`，2026-11-19 到 11-20 在 vastgpu 上做的对比视频、用 SIMPLE 的 Isaac 画面重做开局那一眼、桌面抓取找目标的规则，以及交给 4090 的重跑清单。
+- [SIMPLE 抓取对比换 Isaac 画面的记录](handoff/simple-isaac-eyes-20261120.md)：分支 `selfwm`，2026-11-19 到 11-20 在 vastgpu 上做的对比视频、用 SIMPLE 的 Isaac 画面重做开局那一眼、桌面抓取找目标的规则，以及交给 4090 的重跑清单。接着的 [11-20 交接](handoff/selfmodel-avoid-20261120.md)：桌面抓取卡桌沿、点云加 cuRobo 避障和归因、grasp_kit、"几何管障碍、自身模型管身体"和多路点自身模型的补采方案（实验笔记原样在 [notebook-20261120/](handoff/notebook-20261120/)）。
 - [归档索引](archive/INDEX.md)：冻结的原始报告和被取代的入口文档，包括 2026-09-14 的[维护路线图](archive/roadmap_maintenance_20260914.md)。
 - [第一次迁移](handoff/agent-maintenance-plan.md)、[维护交付](handoff/maintenance-completion.md)、[规范审计与探针](handoff/agent-guideline-completion-20260914.md)。
 
