@@ -14,9 +14,8 @@ import os
 import sys
 
 import numpy as np
-import yaml
-
 import sim2real.sim_env.integrated_sim2sim as I
+import yaml
 
 _DYNAMICS: dict = {}
 
@@ -36,7 +35,10 @@ def load_sim_model(robot_cfg, **kw):
     kw.setdefault("with_dex3_hands", True)
     kw.setdefault("joint_dynamics", {k: v for k, v in _DYNAMICS.items() if k != "_path"})
     m = _orig_load(robot_cfg, **kw)
-    print(f"[lml_run_integrated] sim model nq {m.nq} nu {m.nu} (Dex3 hands, {_DYNAMICS['_path']} joint dynamics)", flush=True)
+    print(
+        f"[lml_run_integrated] sim model nq {m.nq} nu {m.nu} (Dex3 hands, {_DYNAMICS['_path']} joint dynamics)",
+        flush=True,
+    )
     scale = os.environ.get("LML_HAND_MASS_SCALE")
     if scale is not None:  # diagnostic: the Dex3 bodies (everything below the wrist_yaw_links) made (almost) massless
         hand_mass_scale(m, float(scale))

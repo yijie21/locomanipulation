@@ -40,7 +40,9 @@ from types import SimpleNamespace
 
 import numpy as np
 
-G1B = Path(os.environ.get("LML_G1_BACKEND", "/wuji-vefps-D/wuji-il/yijie/code/locomanilab_20261117/external/g1_backend"))
+G1B = Path(
+    os.environ.get("LML_G1_BACKEND", "/wuji-vefps-D/wuji-il/yijie/code/locomanilab_20261117/external/g1_backend")
+)
 FK_XML = G1B / "assets" / "g1_unified" / "robot_fk.xml"
 SCALEBFM_ORDER = (  # the order of S's joints in the self model's data (ScaleBFM metadata; = HEFT/ScaleBFM yaml order)
     "left_hip_pitch_joint", "right_hip_pitch_joint", "waist_yaw_joint", "left_hip_roll_joint", "right_hip_roll_joint",
@@ -255,7 +257,10 @@ def gen(out: Path, resets: int, seed: int, id0: int, shards: int, shard: int) ->
                     num_motions=sum(1 for k in plans if k.startswith("r")))  # fmt: skip
     (d / "manifest.json").write_text(json.dumps(manifest, indent=1))
     (d / "plans.json").write_text(json.dumps(plans))
-    print(f"gen shard {shard}: {manifest['num_motions']} motions, {len(ids) - manifest['num_motions']} skipped, {time.time() - t0:.0f} s", flush=True)
+    print(
+        f"gen shard {shard}: {manifest['num_motions']} motions, {len(ids) - manifest['num_motions']} skipped, {time.time() - t0:.0f} s",
+        flush=True,
+    )
 
 
 # -- driving LocoManiLab's controllers ------------------------------------------------------------------------------
@@ -265,9 +270,8 @@ class Driver:
         # shards then ran ~6 runnable threads each (load 650 on 128 cores) and a policy step took 72 ms instead of ~5
         os.environ.setdefault("SIM2REAL_ORT_NUM_THREADS", "1")
         sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import mujoco as mj
-
         import lml_run_integrated  # patches load_sim_model and the root joint name before construction
+        import mujoco as mj
         import sim2real.sim_env.integrated_sim2sim as I
         from sim2real.rl_policy.utils.motion import MotionDataset
 
@@ -276,7 +280,9 @@ class Driver:
                                        headless=True, initial_pause_s=0.5, run_once=True)  # fmt: skip
         self.runner = r = I.IntegratedSim2Sim(args)
         sp = r.state_processor
-        self.full = MotionDataset.create_from_path(str(motion_dir), robot_cfg=r.robot_cfg, mjcf_path=sp.motion_config.get("mjcf_path"))
+        self.full = MotionDataset.create_from_path(
+            str(motion_dir), robot_cfg=r.robot_cfg, mjcf_path=sp.motion_config.get("mjcf_path")
+        )
         self.m, self.d = m, d = r.sim.mj_model, r.sim.mj_data
         jid = lambda n: mj.mj_name2id(m, mj.mjtObj.mjOBJ_JOINT, n)  # noqa: E731
         self.qadr = np.array([m.jnt_qposadr[jid(n)] for n in SCALEBFM_ORDER])
@@ -363,7 +369,15 @@ def segments(rows: dict, fell, frames: np.ndarray, plan: dict, pl: Planner) -> l
             rf = frames[min(f, len(frames) - 1)]
             ref_hand = pl.fk_world(rf[:3], rf[3:7], rf[7:])[side][0]
             S.append(np.r_[x["q"], x["dq"], Rp.T @ np.array([0.0, 0.0, -1.0]), x["w"], p[2]].astype(np.float32))
-            Wr.append(np.r_[p, yaw_of(Rp), hands["right"][0], hands["left"][0], x["torso"][0] + x["torso"][1] @ np.array([0, 0, 0.35])].astype(np.float32))
+            Wr.append(
+                np.r_[
+                    p,
+                    yaw_of(Rp),
+                    hands["right"][0],
+                    hands["left"][0],
+                    x["torso"][0] + x["torso"][1] @ np.array([0, 0, 0.35]),
+                ].astype(np.float32)
+            )
             Rj = hands[side][1]
             Jr.append(np.r_[Rj[:, 0], Rj[:, 1]].astype(np.float32))
             Cr.append(np.r_[Rp.T @ (ref_hand - p), -1.0 if f < f_cmd else (f - f_cmd) / FPS].astype(np.float32))
@@ -442,7 +456,9 @@ def drive(out: Path, shard: int, policy_config: str, tag: str, limit: int | None
             rows, info = dr.run_reset(idx, frames)
             # their dataset stores motions in float16 (any4hdmi storage_dtype): 1e-3 rad of rounding; another reset's
             # motion differs by tenths of a radian
-            assert info["length_ok"] and info["motion_check"] < 5e-3, f"{name}: the runner plays another motion ({info})"
+            assert info["length_ok"] and info["motion_check"] < 5e-3, (
+                f"{name}: the runner plays another motion ({info})"
+            )
             s = segments(rows, info["fell"], frames, plans[name], pl)
             segs += s
             log.append(dict(name=name, n_segs=len(s), **info))
@@ -470,7 +486,9 @@ def drive(out: Path, shard: int, policy_config: str, tag: str, limit: int | None
 # reference_forcing) but track its heading against the robot's, so the plan is shifted in x/y onto the current
 # reference root and keeps the measured heading (as Motor.reach builds its poses on the measured yaw): the
 # reference-to-robot heading offset is not a hidden input of the self model.
-LOST_M = 0.5  # a reach whose pelvis displacement departs this far from the reference's ends the reset (protocol 1 kept them)
+LOST_M = (
+    0.5  # a reach whose pelvis displacement departs this far from the reference's ends the reset (protocol 1 kept them)
+)
 # No tilt criterion: in protocol 1's data 11 % (ScaleBFM) of the segments that did not fall had the pelvis tilted
 # > 45 deg at some row (deep crouches, IK pelvis pitch up to 0.70 rad) with ordinary errors (median 12.8 cm vs 10.6).
 MARGIN_S = 0.5  # extra hold after each spliced reach so the motion never runs out before the next splice
@@ -495,7 +513,9 @@ class MotionBuilder:
 
         t = self.t
         qv = compute_motion_qvel(self.fk.model, frames, float(FPS))
-        out = self.fk.forward_kinematics(torch.as_tensor(frames, dtype=torch.float32), torch.as_tensor(qv, dtype=torch.float32))
+        out = self.fk.forward_kinematics(
+            torch.as_tensor(frames, dtype=torch.float32), torch.as_tensor(qv, dtype=torch.float32)
+        )
         n = len(frames)
         st = {"motion_id": np.zeros(n, np.int64), "step": np.arange(n, dtype=np.int64)}
         for k, v in out.items():
@@ -640,7 +660,15 @@ def segments2(rows: dict, fell, lost, frames: np.ndarray, reaches: list[dict], r
             rf = frames[min(f, len(frames) - 1)]
             ref_hand = pl.fk_world(rf[:3], rf[3:7], rf[7:])[side][0] - (d_this if f > f_cmd else d_prev)
             S.append(np.r_[x["q"], x["dq"], Rp.T @ np.array([0.0, 0.0, -1.0]), x["w"], p[2]].astype(np.float32))
-            Wr.append(np.r_[p, yaw_of(Rp), hands["right"][0], hands["left"][0], x["torso"][0] + x["torso"][1] @ np.array([0, 0, 0.35])].astype(np.float32))
+            Wr.append(
+                np.r_[
+                    p,
+                    yaw_of(Rp),
+                    hands["right"][0],
+                    hands["left"][0],
+                    x["torso"][0] + x["torso"][1] @ np.array([0, 0, 0.35]),
+                ].astype(np.float32)
+            )
             Rj = hands[side][1]
             Jr.append(np.r_[Rj[:, 0], Rj[:, 1]].astype(np.float32))
             Cr.append(np.r_[Rp.T @ (ref_hand - p), -1.0 if f < f_cmd else (f - f_cmd) / FPS].astype(np.float32))
@@ -687,7 +715,9 @@ def drive2(out: Path, shard: int, policy_config: str, tag: str, resets: int, see
 
         (init / "motions").mkdir(parents=True, exist_ok=True)
         pl0 = Planner()
-        np.savez_compressed(init / "motions" / "stance.npz", qpos=hold(pl0.start_pose(), START_HOLD_S + MARGIN_S + PRE_S))
+        np.savez_compressed(
+            init / "motions" / "stance.npz", qpos=hold(pl0.start_pose(), START_HOLD_S + MARGIN_S + PRE_S)
+        )
         (init / "manifest.json").write_text(json.dumps(dict(format_version=2, dataset_name="lml_stance", mjcf=str(FK_XML),
             motions_subdir="motions", timestep=DT, qpos_dim=36, num_motions=1,
             qpos_names=["root_tx", "root_ty", "root_tz", "root_qw", "root_qx", "root_qy", "root_qz", *MUJOCO_JOINT_NAMES])))  # fmt: skip
@@ -705,7 +735,10 @@ def drive2(out: Path, shard: int, policy_config: str, tag: str, resets: int, see
             segs += s
             log.append(dict(reset=id0 + i, n_segs=len(s), **info))
             nres, nseg = nres + 1, nseg + len(s)
-            nfall, nlost = nfall + (info["fell"] is not None and info["lost"] is None), nlost + (info["lost"] is not None)
+            nfall, nlost = (
+                nfall + (info["fell"] is not None and info["lost"] is None),
+                nlost + (info["lost"] is not None),
+            )
             if nres % 10 == 0:
                 print(f"drive2 {tag} shard {shard}: {before + nres}/{len(ids)} resets, {nseg} segments, falls {nfall}, "
                       f"lost {nlost}, {time.time() - t0:.0f} s (planning {dr.plan_s:.0f} s)", flush=True)  # fmt: skip

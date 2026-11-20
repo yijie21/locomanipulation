@@ -81,7 +81,9 @@ class Boundary(unittest.TestCase):
         m.hand_override, m.servo_on, m.servo_target, m.servo = {}, {"right": True}, {}, {}
         m.cfg, m.amo = MotorConfig(), SimpleNamespace(hand_lead_s=0.0)
         ref_jaw = np.array([0.5, -0.2, 0.9])
-        m.kp = lambda pos, quat, joints: {"right_wrist_yaw_link": (ref_jaw - np.array([0.1515, 0.0, 0.0]), np.array([1.0, 0, 0, 0]))}
+        m.kp = lambda pos, quat, joints: {
+            "right_wrist_yaw_link": (ref_jaw - np.array([0.1515, 0.0, 0.0]), np.array([1.0, 0, 0, 0]))
+        }
         ref = SimpleNamespace(pos=None, quat=None, joints=np.zeros(29), velocity=np.zeros(29))
         m.jaw_centre = lambda side: (ref_jaw.copy(), np.eye(3))  # the sim: the jaw is exactly where it should be
         lead_sim = m._jaw_target("right", ref)[0] - ref_jaw

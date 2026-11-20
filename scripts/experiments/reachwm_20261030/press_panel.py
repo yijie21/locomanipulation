@@ -78,7 +78,11 @@ WALL_Z = (1.10, 0.90, 0.70, 0.50)
 WALL_Y = (0.30, 0.15, 0.0, -0.15, -0.30)
 BTN_R = float(os.environ.get("PRESS_BTN_R", "0.035"))  # round 1: 7 cm arcade buttons, 15 cm apart
 NOTES = ("C4", "D4", "E4", "F4", "G4", "A4", "B4", "C5")
-KEY_W, KEY_H, KEY_Z = 0.088, 0.15, 0.95  # big floor-piano style keys (11-16 smoke: 7 cm keys, 0.5 cm gaps, 9 neighbours hit)
+KEY_W, KEY_H, KEY_Z = (
+    0.088,
+    0.15,
+    0.95,
+)  # big floor-piano style keys (11-16 smoke: 7 cm keys, 0.5 cm gaps, 9 neighbours hit)
 KEY_PITCH = 0.10  # key centre spacing: 1.2 cm gaps, the 8 keys span y +-0.39 m
 TWINKLE = "C4 C4 G4 G4 A4 A4 G4 F4 F4 E4 E4 D4 D4 C4"
 METHODS = ("direct", "lookup", "servo", "servo_odo", "selfmodel", "selfmodel_servo_odo")
@@ -101,10 +105,14 @@ def panel_xml(layout: str) -> str:
     T = targets(layout)
     if layout == "wall":
         board = '<geom name="panel_board" type="box" pos="0.02 0 0.80" size="0.02 0.50 0.50" rgba="0.17 0.19 0.22 1"/>'
-        cap = lambda t: f'<geom name="{t["name"]}_g" type="cylinder" size="{BTN_R} {CAP_OUT / 2}" pos="{-CAP_OUT / 2} 0 0" quat="0.7071068 0 0.7071068 0" rgba="{IDLE[0]} {IDLE[1]} {IDLE[2]} 1" mass="0.02"/>'  # noqa: E731,E501
+        cap = lambda t: (
+            f'<geom name="{t["name"]}_g" type="cylinder" size="{BTN_R} {CAP_OUT / 2}" pos="{-CAP_OUT / 2} 0 0" quat="0.7071068 0 0.7071068 0" rgba="{IDLE[0]} {IDLE[1]} {IDLE[2]} 1" mass="0.02"/>'
+        )  # noqa: E731,E501
     else:
         board = '<geom name="panel_board" type="box" pos="0.02 0 0.95" size="0.02 0.44 0.13" rgba="0.12 0.12 0.13 1"/>'
-        cap = lambda t: f'<geom name="{t["name"]}_g" type="box" size="{CAP_OUT / 2} {KEY_W / 2} {KEY_H / 2}" pos="{-CAP_OUT / 2} 0 0" rgba="{KEY_IDLE[0]} {KEY_IDLE[1]} {KEY_IDLE[2]} 1" mass="0.03"/>'  # noqa: E731,E501
+        cap = lambda t: (
+            f'<geom name="{t["name"]}_g" type="box" size="{CAP_OUT / 2} {KEY_W / 2} {KEY_H / 2}" pos="{-CAP_OUT / 2} 0 0" rgba="{KEY_IDLE[0]} {KEY_IDLE[1]} {KEY_IDLE[2]} 1" mass="0.03"/>'
+        )  # noqa: E731,E501
     out = [f'    <body name="panel" pos="{PX:.4f} 0 0">', "      " + board]
     for t in T:
         out.append(f'      <body name="{t["name"]}" pos="0 {t["y"]:.4f} {t["z"]:.4f}">')
@@ -127,7 +135,9 @@ def write_scenes() -> None:
         # the board is welded to the world, so MuJoCo's parent filter does not keep a cap off it (the 11-16 smoke run:
         # every cap held at its rest face); exclude each cap-board pair explicitly
         excl = "\n".join(f'    <exclude body1="panel" body2="{t["name"]}"/>' for t in targets(layout))
-        xml = xml0.replace("</worldbody>", panel_xml(layout) + "\n  </worldbody>\n  <contact>\n" + excl + "\n  </contact>")
+        xml = xml0.replace(
+            "</worldbody>", panel_xml(layout) + "\n  </worldbody>\n  <contact>\n" + excl + "\n  </contact>"
+        )
         (d / "scene_locomani.xml").write_text(xml)
         (d / "scene_meta.json").write_text((WALK_SCENE / "scene_meta.json").read_text())
         m = mujoco.MjModel.from_xml_path(str(d / "scene_locomani.xml"))
@@ -162,7 +172,9 @@ class Tape:
         import mujoco
 
         sim, m = env.sim, env.m
-        self.adr = np.array([sim.m.jnt_qposadr[mujoco.mj_name2id(sim.m, mujoco.mjtObj.mjOBJ_JOINT, n + "_j")] for n in names])
+        self.adr = np.array(
+            [sim.m.jnt_qposadr[mujoco.mj_name2id(sim.m, mujoco.mjtObj.mjOBJ_JOINT, n + "_j")] for n in names]
+        )
         self.sim, self.names, self.on, self.k = sim, names, False, 0
         self.q, self.lit, self.phase, self.lit_now, self.phase_now = [], [], [], -1, ""
         self.peak = np.zeros(len(names))
@@ -220,11 +232,18 @@ def write_lookup() -> None:
 def lookup(T: dict, sd: float, pz: float, g: np.ndarray) -> tuple[np.ndarray, int]:
     """Median landing offset of the training reaches like this one: same hand, stand (or a pelvis within 5 cm), wrist
     level (pitch and turn under 20 deg), target within 5 cm in height and 10 cm across; the box doubles until 20 match."""
-    base = (T["side"] == int(np.sign(sd))) & (np.abs(T["pitch"]) < np.radians(20)) & (np.abs(T["dyaw"]) < np.radians(20))
+    base = (
+        (T["side"] == int(np.sign(sd))) & (np.abs(T["pitch"]) < np.radians(20)) & (np.abs(T["dyaw"]) < np.radians(20))
+    )
     base &= (T["pz"] < 0) if pz < 0 else (np.abs(T["pz"] - pz) < 0.05)
     t = T["target"]
     for k in (1.0, 2.0, 4.0, 8.0):
-        m = base & (np.abs(t[:, 2] - g[2]) < 0.05 * k) & (np.abs(t[:, 0] - g[0]) < 0.10 * k) & (np.abs(t[:, 1] - g[1]) < 0.10 * k)
+        m = (
+            base
+            & (np.abs(t[:, 2] - g[2]) < 0.05 * k)
+            & (np.abs(t[:, 0] - g[0]) < 0.10 * k)
+            & (np.abs(t[:, 1] - g[1]) < 0.10 * k)
+        )
         if m.sum() >= 20:
             break
     return np.median(T["off"][m], axis=0).astype(np.float64), int(m.sum())
@@ -294,7 +313,9 @@ def episode(env, rec, tape: Tape, models: dict, layout: str, seq_names: list[str
         g = np.r_[(Rh1.T @ np.r_[jaw_w[:2] - p1[:2], 0.0])[:2], jaw_w[2]]  # the sighting, heading frame
         pz = AE.pelvis_for(g[2])
         tb = g.copy()
-        pr = dict(i=j, target=name, side=side, pz=pz, goal_h=g.tolist(), k0=len(tape.q), stance_off_cm=(100 * off).tolist())
+        pr = dict(
+            i=j, target=name, side=side, pz=pz, goal_h=g.tolist(), k0=len(tape.q), stance_off_cm=(100 * off).tolist()
+        )
         tic = time.time()
         if method == "lookup":
             off, n_nb = lookup(models["lookup"], sd, pz, g)
@@ -446,7 +467,10 @@ def video(tag: str, speed: float) -> None:
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
     # from the robot's right, ahead of its torso, so both hands on the panel are in view (11-17: the first camera sat
     # behind the robot and its body hid the keyboard)
-    look, dist, az, el = {"wall": ((0.80, 0.0, 0.80), 2.4, 60.0, -14.0), "piano": ((0.85, 0.0, 0.92), 2.0, 62.0, -20.0)}[layout]
+    look, dist, az, el = {
+        "wall": ((0.80, 0.0, 0.80), 2.4, 60.0, -14.0),
+        "piano": ((0.85, 0.0, 0.92), 2.0, 62.0, -20.0),
+    }[layout]
     cam.lookat[:] = look
     cam.distance, cam.azimuth, cam.elevation = dist, az, el
     font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
@@ -454,9 +478,14 @@ def video(tag: str, speed: float) -> None:
     small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 13)
     ctrl = tag.rsplit("_", 2)[0]
     # the servo measures the jaw with the simulator's wrist pose (Motor.jaw_centre): an oracle, labelled as one
-    title = {"direct": "Controller alone", "servo": "Servo on sim ground truth (oracle)", "selfmodel": "Self-model (ours)",
-             "servo_odo": "Servo on joints + leg odometry", "lookup": "Offset lookup (no model)",
-             "selfmodel_servo_odo": "Self-model + odometry servo"}
+    title = {
+        "direct": "Controller alone",
+        "servo": "Servo on sim ground truth (oracle)",
+        "selfmodel": "Self-model (ours)",
+        "servo_odo": "Servo on joints + leg odometry",
+        "lookup": "Offset lookup (no model)",
+        "selfmodel_servo_odo": "Self-model + odometry servo",
+    }
     sr, outs = 44100, []
     for meth in METHODS:
         if not (d / f"{meth}.npz").exists():

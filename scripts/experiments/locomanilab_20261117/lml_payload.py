@@ -24,9 +24,8 @@ import json
 import math
 from pathlib import Path
 
-import numpy as np
-
 import lml_sense as S
+import numpy as np
 
 PAYLOADS = (0.0, 0.5, 1.0, 2.0)
 SENSORS = ("ideal", "ideal_c30", "n2", "o6", "b2")
@@ -93,15 +92,31 @@ def stats(out: Path) -> None:
         for p in PAYLOADS:
             g = lambda k, x: best[(k, x, p, "gain")]  # noqa: E731
             print(f"   payload {p:g} kg")
-            print(f"     selfmodel vs fb[ideal k{g('fb', 'ideal')}]      : {verdict(sm[p], best[('fb', 'ideal', p)], 'selfmodel', 'fb')}")
-            print(f"     selfmodel vs fb[ideal_c30 k{g('fb', 'ideal_c30')}]  : {verdict(sm[p], best[('fb', 'ideal_c30', p)], 'selfmodel', 'fb')}")
-            print(f"     smfb[ideal_c30 k{g('smfb', 'ideal_c30')}] vs fb[ideal_c30 k{g('fb', 'ideal_c30')}] : {verdict(best[('smfb', 'ideal_c30', p)], best[('fb', 'ideal_c30', p)], 'smfb', 'fb')}")
-            print(f"     smfb[ideal k{g('smfb', 'ideal')}] vs fb[ideal k{g('fb', 'ideal')}] : {verdict(best[('smfb', 'ideal', p)], best[('fb', 'ideal', p)], 'smfb', 'fb')}")
-            print(f"     smfb[ideal k{g('smfb', 'ideal')}] vs selfmodel     : {verdict(best[('smfb', 'ideal', p)], sm[p], 'smfb', 'selfmodel')}")
+            print(
+                f"     selfmodel vs fb[ideal k{g('fb', 'ideal')}]      : {verdict(sm[p], best[('fb', 'ideal', p)], 'selfmodel', 'fb')}"
+            )
+            print(
+                f"     selfmodel vs fb[ideal_c30 k{g('fb', 'ideal_c30')}]  : {verdict(sm[p], best[('fb', 'ideal_c30', p)], 'selfmodel', 'fb')}"
+            )
+            print(
+                f"     smfb[ideal_c30 k{g('smfb', 'ideal_c30')}] vs fb[ideal_c30 k{g('fb', 'ideal_c30')}] : {verdict(best[('smfb', 'ideal_c30', p)], best[('fb', 'ideal_c30', p)], 'smfb', 'fb')}"
+            )
+            print(
+                f"     smfb[ideal k{g('smfb', 'ideal')}] vs fb[ideal k{g('fb', 'ideal')}] : {verdict(best[('smfb', 'ideal', p)], best[('fb', 'ideal', p)], 'smfb', 'fb')}"
+            )
+            print(
+                f"     smfb[ideal k{g('smfb', 'ideal')}] vs selfmodel     : {verdict(best[('smfb', 'ideal', p)], sm[p], 'smfb', 'selfmodel')}"
+            )
             for sen in SENSORS[2:]:
-                print(f"     [{sen}] smfb k{g('smfb', sen)} vs fb k{g('fb', sen)}     : {verdict(best[('smfb', sen, p)], best[('fb', sen, p)], 'smfb', 'fb')}")
-                print(f"     [{sen}] smfb k{g('smfb', sen)} vs selfmodel   : {verdict(best[('smfb', sen, p)], sm[p], 'smfb', 'selfmodel')}")
-                print(f"     [{sen}] selfmodel vs fb k{g('fb', sen)}  : {verdict(sm[p], best[('fb', sen, p)], 'selfmodel', 'fb')}")
+                print(
+                    f"     [{sen}] smfb k{g('smfb', sen)} vs fb k{g('fb', sen)}     : {verdict(best[('smfb', sen, p)], best[('fb', sen, p)], 'smfb', 'fb')}"
+                )
+                print(
+                    f"     [{sen}] smfb k{g('smfb', sen)} vs selfmodel   : {verdict(best[('smfb', sen, p)], sm[p], 'smfb', 'selfmodel')}"
+                )
+                print(
+                    f"     [{sen}] selfmodel vs fb k{g('fb', sen)}  : {verdict(sm[p], best[('fb', sen, p)], 'selfmodel', 'fb')}"
+                )
         print("  -- growth with payload (median at +1 s): " + " | ".join(
             f"{n} " + " / ".join(f"{np.median(v[p]):.2f}" for p in PAYLOADS)
             for n, v in (("alone", {p: E[f'alone@p{p:g}'][PRIMARY] for p in PAYLOADS}), ("selfmodel", sm),

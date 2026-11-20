@@ -55,8 +55,9 @@ class HostDriver:
         import mujoco
         import robocasa  # noqa: F401 -- registers the envs
         import robosuite
-        from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
         from robocasa.g1_host.bridge import load_sim2real_controller_config
+
+        from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
 
         cfg = load_sim2real_controller_config(backend=backend, pico_source="mock", inference_backend="onnx-cpu")
         self.env = robosuite.make(env_name=env_name, robots="G1FloatingBody", controller_configs=cfg, has_renderer=False,
@@ -134,7 +135,11 @@ class HostDriver:
         """The buffer's episode transform (our frame -> world): yaw offset, source and destination root xy."""
         b = self.buf
         q = np.asarray(b._segment_yaw_offset_quat, float)
-        return 2 * math.atan2(q[3], q[0]), np.asarray(b._segment_src_root_pos_no_z, float)[:2], np.asarray(b._segment_dst_root_pos_no_z, float)[:2]
+        return (
+            2 * math.atan2(q[3], q[0]),
+            np.asarray(b._segment_src_root_pos_no_z, float)[:2],
+            np.asarray(b._segment_dst_root_pos_no_z, float)[:2],
+        )
 
     def to_frame(self, fw: np.ndarray) -> np.ndarray:
         """A world qpos frame (root xyz, wxyz, joints) -> the frame to push (T^-1: xy and yaw; z and joints unchanged)."""
@@ -248,7 +253,10 @@ def drive(out: Path, shard: int, tag: str, resets: int, seed: int, id0: int, sha
             segs += s
             log.append(dict(reset=id0 + i, n_segs=len(s), **info))
             nres, nseg = nres + 1, nseg + len(s)
-            nfall, nlost = nfall + (info["fell"] is not None and info["lost"] is None), nlost + (info["lost"] is not None)
+            nfall, nlost = (
+                nfall + (info["fell"] is not None and info["lost"] is None),
+                nlost + (info["lost"] is not None),
+            )
             if nres % 10 == 0:
                 print(f"host {tag} shard {shard}: {before + nres}/{len(ids)} resets, {nseg} segments, falls {nfall}, "
                       f"lost {nlost}, {time.time() - t0:.0f} s (planning {dr.plan_s:.0f} s)", flush=True)  # fmt: skip

@@ -97,15 +97,19 @@ def stats(out: Path) -> None:
             print(f"  {c:14s} +1 s {m(PRIMARY):6.2f} | label time {m(0):6.2f} +2 s {m(4):6.2f} | <=1 cm {np.mean(E[c][PRIMARY] <= 1):.2f} "
                   f"<=2 cm {np.mean(E[c][PRIMARY] <= 2):.2f} | fell {sum(r['fell'] is not None for r in rs)} lost {sum(r['lost'] is not None for r in rs)}{ex}")  # fmt: skip
         sm = E["selfmodel"][PRIMARY]
-        print(f"  -- self model (s0) vs feedback at +1 s; better gain per level = lower median (oracle, favours feedback);"
-              f" diff = feedback - self model (cm, > 0: self model better)")
+        print(
+            "  -- self model (s0) vs feedback at +1 s; better gain per level = lower median (oracle, favours feedback);"
+            " diff = feedback - self model (cm, > 0: self model better)"
+        )
         for lv in LEVELS:
             best = min(GAINS, key=lambda k: np.median(E[f"fb_k{k}_{lv}"][PRIMARY]))
             parts = []
             for k in GAINS:
                 fb = E[f"fb_k{k}_{lv}"][PRIMARY]
                 nb, n, dmed, p = paired(sm, fb)
-                parts.append(f"k{k}{'*' if k == best else ' '} {np.median(fb):5.2f}: sm better {nb:3d}/{n:3d} diff {dmed:+5.2f} p {p:.1e}")
+                parts.append(
+                    f"k{k}{'*' if k == best else ' '} {np.median(fb):5.2f}: sm better {nb:3d}/{n:3d} diff {dmed:+5.2f} p {p:.1e}"
+                )
             fb = E[f"fb_k{best}_{lv}"][PRIMARY]
             nb, n, dmed, p = paired(sm, fb)
             verdict = "SELF MODEL" if (p < ALPHA and dmed > 0) else ("FEEDBACK" if (p < ALPHA and dmed < 0) else "tie")
@@ -120,7 +124,9 @@ def stats(out: Path) -> None:
             first = next((lv for lv, w in zip(lvs, won) if w), None)
             print(f"    {fam:9s} {first or 'none'} ({' '.join(f'{lv}:{int(w)}' for lv, w in zip(lvs, won))})")
         nb, n, dmed, p = paired(sm, E["selfmodel_s1"][PRIMARY])
-        print(f"  -- s0 vs s1 at +1 s: s0 better {nb}/{n}, diff {dmed:+.2f}, p {p:.1e}; alone {np.median(E['alone'][PRIMARY]):.2f}")
+        print(
+            f"  -- s0 vs s1 at +1 s: s0 better {nb}/{n}, diff {dmed:+.2f}, p {p:.1e}; alone {np.median(E['alone'][PRIMARY]):.2f}"
+        )
 
 
 if __name__ == "__main__":

@@ -340,7 +340,9 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             target = np.r_[st_["p"][:2] + (st_["Rh"] @ np.r_[t_h[:2], 0.0])[:2], t_h[2]]
             s["shift_cm"] = round(100 * float(np.linalg.norm(target - goal_w)), 3)
         servo = method == "servo"
-        out = m.reach(side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw)
+        out = m.reach(
+            side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw
+        )
         s["ik_cm"] = out.info.get(
             "ik_err_cm"
         )  # the whole-body IK's own miss of the command (the reference's, not the body's)
@@ -420,7 +422,9 @@ def main() -> None:
     ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
     ap.add_argument("--column", choices=("truth", "perception"), default="truth")
-    ap.add_argument("--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)")
+    ap.add_argument(
+        "--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)"
+    )
     ap.add_argument("--film", help="a folder for each episode's whole MuJoCo state at 25 Hz (isaac_film.py renders it)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()

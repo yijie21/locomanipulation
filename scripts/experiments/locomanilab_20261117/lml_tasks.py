@@ -74,7 +74,9 @@ TASKS = {  # benchmark/tasks.yaml: scene, step budget, genuine_min_steps
 }
 FREE = "FreeSpace"  # the host's empty scene, random standing first reaches (not a benchmark task)
 TASKS[FREE] = dict(scene=None, max_steps=0, genuine=0)
-FREE_SEED = 93_000_000  # FreeSpace episode i draws its command from default_rng(FREE_SEED + i); data used 41_000_000 + i
+FREE_SEED = (
+    93_000_000  # FreeSpace episode i draws its command from default_rng(FREE_SEED + i); data used 41_000_000 + i
+)
 METHODS = ("alone", "lookup", "feedback", "selfmodel", "selfmodel_s1")
 ITERS = 6  # pose_invert.ITERS_POSE
 LAMBDA = 1.0  # invert_eval.LAMBDA: predicted spread's weight
@@ -177,13 +179,22 @@ class TaskDriver(H.HostDriver):
             for f in _private_scene_cache.written:
                 if os.path.exists(f):
                     os.remove(f)
-            self.base0 = (np.array(self.env.robot_base_pos, float).copy(), np.array(self.env.robot_base_ori, float).copy())
+            self.base0 = (
+                np.array(self.env.robot_base_pos, float).copy(),
+                np.array(self.env.robot_base_ori, float).copy(),
+            )
         import mujoco
 
         m = self.m
         self.notes = ""
-        self.feet = [mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link") for s in ("left", "right")]
-        self.wrist_fk = {s: mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_wrist_yaw_link") for s in ("left", "right")}
+        self.feet = [
+            mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_ankle_roll_link")
+            for s in ("left", "right")
+        ]
+        self.wrist_fk = {
+            s: mujoco.mj_name2id(self.pl.ik.model, mujoco.mjtObj.mjOBJ_BODY, f"{s}_wrist_yaw_link")
+            for s in ("left", "right")
+        }
         assert m is not None
         # nominal inertial parameters of the two wrist_yaw_links (host model), for set_payload
         self._mass0 = {b: (float(m.body_mass[b]), m.body_ipos[b].copy(), m.body_inertia[b].copy(), m.body_iquat[b].copy())
@@ -260,7 +271,10 @@ class TaskDriver(H.HostDriver):
         out = []
         for w in g.waypoints:
             gp = np.asarray(w.grasp_point, float)
-            ad = np.asarray(w.approach_dir if w.approach_dir is not None else AD.approach_from_root(gp, self.d.xpos[self.pelvis]), float)
+            ad = np.asarray(
+                w.approach_dir if w.approach_dir is not None else AD.approach_from_root(gp, self.d.xpos[self.pelvis]),
+                float,
+            )
             out.append(dict(goal=gp, ad=ad / np.linalg.norm(ad), side="left" if w.eef == "LeftHand" else "right", label=w.label,
                             needs_root=bool(w.needs_root)))  # fmt: skip
         self.notes = g.notes
@@ -284,7 +298,14 @@ class TaskDriver(H.HostDriver):
         gp = np.r_[p[:2] + (L.rot_z(yaw) @ np.r_[t[:2], 0.0])[:2], t[2]]
         a = yaw + dyaw
         ad = np.array([math.cos(pitch) * math.cos(a), math.cos(pitch) * math.sin(a), -math.sin(pitch)])
-        return dict(goal=gp, ad=ad, side=side, label="free", needs_root=False, cmd0=dict(target=t.tolist(), dyaw=dyaw, pitch=pitch))
+        return dict(
+            goal=gp,
+            ad=ad,
+            side=side,
+            label="free",
+            needs_root=False,
+            cmd0=dict(target=t.tolist(), dyaw=dyaw, pitch=pitch),
+        )
 
     def hand_contact(self, side: str) -> str | None:
         """The scene body the `side` hand or wrist touches now, or None."""
@@ -489,7 +510,12 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
             if float(np.linalg.norm(dev)) > L.LOST_M:
                 lost, why = f, "lost"
                 break
-        if servo is not None and f <= servo["f_stop"] and (f - servo["f_cmd"]) % SERVO_EVERY == 0 and f > servo["f_cmd"]:
+        if (
+            servo is not None
+            and f <= servo["f_stop"]
+            and (f - servo["f_cmd"]) % SERVO_EVERY == 0
+            and f > servo["f_cmd"]
+        ):
             frames = servo_step(dr, servo, rows, frames, f)
         if k < len(wps) and f == next_cmd:
             wp = wps[k]
@@ -530,7 +556,9 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 info["pred_exec_h"] = best["pos"].tolist()
             else:
                 x0_live = None
-                if P is not None and not base_method(method)[0].startswith("fb_"):  # the self model's prediction of exactly this
+                if P is not None and not base_method(method)[0].startswith(
+                    "fb_"
+                ):  # the self model's prediction of exactly this
                     # command, planned from this state (not for fb_*: the servo changes what is executed, review 11-18)
                     try:
                         (blend, last, rec), Dx = P.features(dr, rows, f, frames, c, k, reset_id)
@@ -558,7 +586,9 @@ def episode(dr: TaskDriver, ep: int, method: str, T: dict | None, P: Predictor |
                 f_stop = end_frame if spec["to_end"] else rec["f_end"] + post
                 servo = servo_start(dr, x, wp, c, rec, last, f, f_stop, frames, spec, ep)
                 if spec["mode"] == "residual":  # trims the self model's placement once its hand has settled
-                    servo.update(f_start=rec["f_end"] + post, goal_ref=np.asarray(rec["target_w"]) + np.asarray(rec["delta"]))
+                    servo.update(
+                        f_start=rec["f_end"] + post, goal_ref=np.asarray(rec["target_w"]) + np.asarray(rec["delta"])
+                    )
                 info["servo"] = servo["leads"]  # filled as the servo runs
                 info["servo_stat"] = servo["stat"]
             k += 1
@@ -671,7 +701,9 @@ def servo_step(dr: TaskDriver, sv: dict, rows: dict, frames: np.ndarray, f: int)
         e = (sv["goal_w"] - sv["p_cmd"]) - hand_c
     else:
         rf = sv["frames0"][min(max(g - sp["ref_lag"], 0), len(sv["frames0"]) - 1)]
-        ref_hand_w = dr.pl.fk_world(rf[:3], rf[3:7], rf[7:])[sv["side"]][0] - sv["delta"]  # reference coords -> measured
+        ref_hand_w = (
+            dr.pl.fk_world(rf[:3], rf[3:7], rf[7:])[sv["side"]][0] - sv["delta"]
+        )  # reference coords -> measured
         e = (ref_hand_w - sv["p_cmd"]) - hand_c
     sv["lead"] = np.clip(sv["lead"] + sp["ki"] * SERVO_EVERY * L.DT * e, -sp["cap"], sp["cap"])
     sv["n"] += 1
@@ -680,7 +712,9 @@ def servo_step(dr: TaskDriver, sv: dict, rows: dict, frames: np.ndarray, f: int)
     sv["leads"].append((f, (100 * e).round(2).tolist(), (100 * sv["lead"]).round(2).tolist()))
     try:
         poses, _, ik_err, _ = dr.pl.reach(sv["last"], sv["side"], sv["goal_ref"] + sv["lead"], sv["rot_w"], None)
-        sv["stat"]["ik_err_cm"] = round(100 * float(ik_err), 2)  # the last re-solve's own miss: the asked hand unreachable
+        sv["stat"]["ik_err_cm"] = round(
+            100 * float(ik_err), 2
+        )  # the last re-solve's own miss: the asked hand unreachable
     except (np.linalg.LinAlgError, ValueError):
         return frames
     new = poses[-1]
@@ -730,8 +764,14 @@ def run(out: Path, task: str, methods: list[str], eps: list[int], worker: int, s
             dr = TaskDriver(task, seed=worker)
             continue
         r.pop("_rows"), r.pop("_frames")
-        r.update(wall_s=round(time.time() - t0, 1), first_only=first_only, extra_s=extra_s, servo_spec=fb_spec(method),
-                 payload_kg=base_method(method)[1], payload_side=dr.payload[1])
+        r.update(
+            wall_s=round(time.time() - t0, 1),
+            first_only=first_only,
+            extra_s=extra_s,
+            servo_spec=fb_spec(method),
+            payload_kg=base_method(method)[1],
+            payload_side=dr.payload[1],
+        )
         tmp = od / f".ep{e:03d}.json"
         tmp.write_text(json.dumps(r, default=_json))
         os.replace(tmp, od / f"ep{e:03d}.json")
@@ -761,10 +801,12 @@ def summary(out: Path) -> None:
             if not g:
                 continue
             touch = [r["waypoints"][0] for r in g if r["waypoints"]]
-            print(f"{task:28s} {method:12s} n {len(g):3d} | success {sum(r['success'] for r in g):3d} "
-                  f"in budget {sum(r['success_in_budget'] for r in g):3d} | final frac median {np.median([r['frac_final'] for r in g]):.2f} "
-                  f"| touch err median {np.median([w['err_cm'] for w in touch]):.1f} perp {np.median([w['perp_cm'] for w in touch]):.1f} "
-                  f"along {np.median([w['along_cm'] for w in touch]):+.1f} cm | fell {sum(r['fell'] is not None for r in g)} lost {sum(r['lost'] is not None for r in g)}")
+            print(
+                f"{task:28s} {method:12s} n {len(g):3d} | success {sum(r['success'] for r in g):3d} "
+                f"in budget {sum(r['success_in_budget'] for r in g):3d} | final frac median {np.median([r['frac_final'] for r in g]):.2f} "
+                f"| touch err median {np.median([w['err_cm'] for w in touch]):.1f} perp {np.median([w['perp_cm'] for w in touch]):.1f} "
+                f"along {np.median([w['along_cm'] for w in touch]):+.1f} cm | fell {sum(r['fell'] is not None for r in g)} lost {sum(r['lost'] is not None for r in g)}"
+            )
 
 
 if __name__ == "__main__":

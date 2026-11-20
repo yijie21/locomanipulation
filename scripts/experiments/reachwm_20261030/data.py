@@ -83,7 +83,11 @@ def start_joints_like_plan(q0: np.ndarray) -> np.ndarray:
 def check_qfix(model) -> None:
     """A pickled reach model (wrist_invert.export) was trained with one form of the joint feature; refuse the other."""
     trained = bool(getattr(model, "qfix", False))
-    assert trained == QFIX, f"model trained with REACHWM_QFIX={int(trained)}, this process runs REACHWM_QFIX={int(QFIX)}"
+    assert trained == QFIX, (
+        f"model trained with REACHWM_QFIX={int(trained)}, this process runs REACHWM_QFIX={int(QFIX)}"
+    )
+
+
 FRACS = (0.1, 0.3, 1.0)
 SEG_KEYS = ("n_steps", "k0", "side", "dyaw", "pitch", "pelvis_z", "walked", "chain", "fell", "ok", "jaw_err_cm",
             "att_err_deg", "ik_err_cm", "reach_s", "reset", "target", "rot6", "start")  # fmt: skip
