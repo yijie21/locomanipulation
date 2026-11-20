@@ -283,10 +283,10 @@ tail -n 4 $R/a/sealed.log $R/b/sealed.log      # 末尾打印出 summary（最�
 MuJoCo 视频（等封存集跑完）：
 
 ```bash
-V=$(python3 -c "import json;print(json.load(open('$R/a/$H/gso_single_grasp/sealed/summary.json'))['final'])")
-$PY scripts/rsi/report/evolution_media.py --sandbox $R/a --family gso_single_grasp --out outputs/scene_rsi_20261016/gso_single_grasp_media --only task --versions final --rounds $R/a/$H/gso_single_grasp/sealed/$V
-V=$(python3 -c "import json;print(json.load(open('$R/b/$H/gso_bimanual_lift/sealed/summary.json'))['final'])")
-$PY scripts/rsi/report/evolution_media.py --sandbox $R/b --family gso_bimanual_lift --out outputs/scene_rsi_20261016/gso_bimanual_lift_media --only task --versions final --rounds $R/b/$H/gso_bimanual_lift/sealed/$V
+VA=$(python3 -c "import json;print(json.load(open('$R/a/$H/gso_single_grasp/sealed/summary.json'))['final'])")
+VB=$(python3 -c "import json;print(json.load(open('$R/b/$H/gso_bimanual_lift/sealed/summary.json'))['final'])")
+$PY scripts/rsi/report/evolution_media.py --sandbox $R/a --family gso_single_grasp --out outputs/scene_rsi_20261016/gso_single_grasp_media --only task --versions final --rounds $R/a/$H/gso_single_grasp/sealed/$VA
+$PY scripts/rsi/report/evolution_media.py --sandbox $R/b --family gso_bimanual_lift --out outputs/scene_rsi_20261016/gso_bimanual_lift_media --only task --versions final --rounds $R/b/$H/gso_bimanual_lift/sealed/$VB
 ```
 
 做什么：每个任务一段视频，用最终版本在封存集上的局（`--rounds`；不加就用验收池的局）：有成功局取最短的一局，否则取最短的失败局，回放时摆回轨迹里的每个物体。每段开头 6 秒是黑底字幕卡（物体名和封存集成功数）。
@@ -320,6 +320,21 @@ done
 
 这些剪过的片和 `--out` 里的原片都不是压缩预览。要发给别人、给播放链接或打包下载，先用 `src/locomani/pipeline/video_preview.py` 压成每个不超过 500,000 字节的预览，做法见[视频导出](rendering.md#video-export)。
 
+场景图（PAST）页面，每局一页 HTML，给人看（`VA`、`VB` 同上面 MuJoCo 视频那一段）：
+
+```bash
+bash scripts/rsi/report/past_view_all.sh $R/a/$H/gso_single_grasp/sealed/$VA --scene outputs/scene_discovery/logistics_room_gso_single --out outputs/scene_rsi_20261016/past_view/gso_single_grasp_sealed_final
+bash scripts/rsi/report/past_view_all.sh $R/b/$H/gso_bimanual_lift/sealed/$VB --scene outputs/scene_discovery/logistics_room_gso_bimanual --out outputs/scene_rsi_20261016/past_view/gso_bimanual_lift_sealed_final
+xdg-open outputs/scene_rsi_20261016/past_view/gso_single_grasp_sealed_final/index.html
+```
+
+做什么：
+- 把目录里每一局的场景图记录（`.past.jsonl`）画成一页自包含的 HTML，再写一个索引页，每局一行（成败、失败类型、步数）。每一步左边是俯视图，右边是按类分组的关系清单和期待，下面是这一步开始和结束的两帧 MuJoCo 画面；页面的读法见 [rsi.md](rsi.md) 第 5.4 节。
+- `--scene` 必须给：不给就用默认的公寓场景 `adt_apartment_mars`。默认出英文页、带帧；`--lang zh` 出中文页，`--no-frames` 不画帧（不用 GPU，快很多）。
+- 别的目录也能这样画，例如诊断池的 `diag/incumbent_<哈希>/`。验收池的 `gate/<版本>/candidate/` 和 Prober 的 `loop/iter_NN/probe/<假设>/` 没有 `.npz`，只能加 `--no-frames`。
+- 单看一局，或者一局失败、一局成功按步骤对齐对比，用 `scripts/rsi/report/past_view_en.py`（rsi.md 第 5.4 节），同样要给 `--scene`。
+
+得到什么：`--out` 下每局一个 `<局名>.en.html` 和 `index.html`，浏览器直接打开；索引页标题行的成功数和 `summary.json` 里最终版本的一致。2026-11-19 两条同时跑：单手 100 局 3.2 分钟、70 MB，双手 40 局 1.3 分钟、36 MB；带帧每页 0.3–1.5 MB，不带帧每页几十 KB。
 ## 8. Unreal 关卡与预览图
 
 ```bash
