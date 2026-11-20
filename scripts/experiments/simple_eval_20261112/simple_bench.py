@@ -220,7 +220,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
-               clear=a.clear, column=a.column)  # fmt: skip
+               clear=a.clear, column=a.column, avoid=a.avoid or None)  # fmt: skip
     p0, Rp0 = env.pelvis()
     yaw0 = E.yaw_of(Rp0)
     R0 = E.rot_z(yaw0)
@@ -303,7 +303,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     def moved() -> float:  # cm, the target since the second look
         return round(100 * float(np.linalg.norm(sim.d.xpos[b] - o_look)), 2)
 
-    def reach(stage: str, goal_w: np.ndarray, rot_w: np.ndarray, chain: int, invert: bool, entry: bool = False):
+    def reach(stage: str, goal_w: np.ndarray, rot_w: np.ndarray, chain: int, invert: bool, entry: bool = False, via=None):
         look["phase"] = stage
         rec.start(side)
         m.hold(GR.PRE_S)
@@ -344,6 +344,10 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             target = np.r_[st_["p"][:2] + (st_["Rh"] @ np.r_[t_h[:2], 0.0])[:2], t_h[2]]
             s["shift_cm"] = round(100 * float(np.linalg.norm(target - goal_w)), 3)
         servo = method == "servo"
+        if via is not None:  # a planned path's jaw points and wrist rotations up to the last leg (--avoid)
+            kw = dict(kw, via=list(via["p"]), via_rot=list(via["R"]))
+            if "speed" in via:  # the legs' speed (curobo_attrib_20261120: a straight line timed as a planned path)
+                kw["speed"] = float(via["speed"])
         out = m.reach(
             side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw
         )
@@ -365,7 +369,15 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     ok = m.fell_at is None
     if a.clear:
         ok = ok and reach("clear", cw, Tg[:3, :3], 0, False)
-    ok = ok and reach("pregrasp", pw, Tg[:3, :3], 1 if a.clear else 0, True)
+    via = None
+    if a.avoid:  # curobo_avoid_20261120: a path planned around the look's obstacles from this reach's start (plan2.py, via2.py)
+        f = Path(a.avoid) / f"via_{task}_L{ep['level']}_e{ep['index']}.npz"
+        if f.exists():
+            via = dict(np.load(f))
+            row["avoid"] = dict(n_via=len(via["p"]), goal_cm=round(100 * float(np.linalg.norm(via["goal"] - pw)), 2))
+        else:
+            row["avoid"] = dict(n_via=0, why="no plan")
+    ok = ok and reach("pregrasp", pw, Tg[:3, :3], 1 if a.clear else 0, True, via=via)
     ok = ok and reach("entry", gw, Tg[:3, :3], 1, True, entry=True)
     if ok:
         look["phase"] = "close"
@@ -409,6 +421,8 @@ def main() -> None:
     ap.add_argument("task", choices=PICK_TASKS)
     ap.add_argument("--method", choices=("direct", "lookup", "model", "model_pose", "inverse", "servo"), required=True)
     ap.add_argument("--clear", action="store_true", help="a waypoint outside the table's edge before the pregrasp")
+    ap.add_argument("--avoid", default="", help="dir of via_<task>_L<l>_e<i>.npz: the pregrasp reach goes through a planned "
+                    "path's points (curobo_avoid_20261120); an episode without one reaches straight")  # fmt: skip
     ap.add_argument("--episodes", default="0-29", help="indices into the task's 30 episodes, 'a-b' or 'i,j,k'")
     ap.add_argument("--side", default="right")
     ap.add_argument("--stand", type=float, default=0.30, help="m, the grasp ahead of the pelvis at the stance")

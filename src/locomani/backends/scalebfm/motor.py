@@ -681,6 +681,7 @@ class Motor:
         rot=None,
         *,
         via=(),
+        via_rot=None,
         speed: float | None = None,
         rotation_weight: float | None = None,
         servo: bool = True,
@@ -695,6 +696,9 @@ class Motor:
         is in the world (IK weight 0.3). The servo integrates the jaw-centre
         error from the start and settles up to reach_settle_s at the end.
 
+        `via_rot` (one side only): the wrist rotation at each via point (3x3 world), turned to along that point's leg, the
+        last leg turning to `rot`; a planned path's attitudes (curobo_avoid_20261120). None: the attitude turns over the
+        first leg, then holds.
         `start` / `start_rot` (one side only): the path starts at this point / attitude instead of the measured ones.
         ik_from_ref: the whole-body IK is built on the current reference pose and seeded there, not on the measured joints
         with its waist-forward seed. The reference is what the first leg blends from, so the plan stays in its posture
@@ -721,6 +725,9 @@ class Motor:
             )
             legs = [{side: np.asarray(v, float)} for v in via]
         points = [{s: cur[s][0] for s in sides}] + legs + [goal_p]
+        if via_rot is not None:  # the attitude at each leg's end
+            assert side != "both" and len(via_rot) == len(via), "reach: via_rot is one rotation per via point, one side"
+            ends = [{side: np.asarray(r, float)} for r in via_rot] + [goal_R]
         yaw = self.yaw()
         weights = tuple(1.0 if s in sides else 0.3 for s in SIDES)
         poses, durations, errs = [self.ref(self.t)], [], []
@@ -734,8 +741,12 @@ class Motor:
                 for s in SIDES:
                     if s in sides:
                         tp.append(a[s] + u * (b[s] - a[s]))
-                        frac = u if leg == 0 else 1.0  # the attitude turns over the first leg, then holds
-                        tr.append(cur[s][1] @ expmap(frac * rotvec(cur[s][1].T @ goal_R[s])))
+                        if via_rot is not None:
+                            Ra = cur[s][1] if leg == 0 else ends[leg - 1][s]
+                            tr.append(Ra @ expmap(u * rotvec(Ra.T @ ends[leg][s])))
+                        else:
+                            frac = u if leg == 0 else 1.0  # the attitude turns over the first leg, then holds
+                            tr.append(cur[s][1] @ expmap(frac * rotvec(cur[s][1].T @ goal_R[s])))
                     else:
                         tp.append(cur[s][0])
                         tr.append(cur[s][1])
