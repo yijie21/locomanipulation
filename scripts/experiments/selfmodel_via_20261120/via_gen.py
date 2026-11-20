@@ -10,7 +10,8 @@ random_path draws (docs/handoff/notebook-20261120/selfmodel_via_20261120.md):
   bends     0 / 1 / 2 / 3 with probability 0.15 / 0.35 / 0.30 / 0.20 (0: the straight reach of the older datasets)
   a bend    at 15-85 % of the straight line, phi uniform over the circle, 3-35 cm off the line
   lead-in   10 % of the paths: first 2-10 cm back (against the heading) or 2-15 cm up, half each
-  wrist     from the start attitude to the goal's along the path; at each bend a further turn of 0-60 deg about a random axis
+  wrist     from the start attitude to the goal's along the path; at each bend a further turn of 0-90 deg about a random axis
+            (0-60 in the trial of 2026-11-20; widened after its coverage check: the real paths turn the wrist 89-209 deg)
   speed     half 0.15 m/s (Motor's default), half uniform 0.08-0.25 m/s
 The knots (start, lead-in, bends, goal) are joined by a centripetal Catmull-Rom curve sampled every cm, then simplified by
 Douglas-Peucker to within 1 cm (curobo_avoid_20261120/via2.py does the same to a planned path); more than 16 via points:
@@ -29,7 +30,7 @@ from pathlib import Path
 import numpy as np
 
 BENDS_P = (0.15, 0.35, 0.30, 0.20)
-BEND_U, BEND_M, TURN_DEG = (0.15, 0.85), (0.03, 0.35), 60.0
+BEND_U, BEND_M, TURN_DEG = (0.15, 0.85), (0.03, 0.35), 90.0
 LEAD_P, LEAD_BACK_M, LEAD_UP_M = 0.10, (0.02, 0.10), (0.02, 0.15)
 SPEED, SPEED_BOX = 0.15, (0.08, 0.25)
 TOL, VIA_MAX, TRIES, DS = 0.01, 16, 30, 0.01

@@ -220,7 +220,10 @@ def room_commands(rng) -> list[dict]:
     sd = 1.0 if side == "right" else -1.0
     z = float(rng.uniform(0.10, 1.12))
     back = 0.22 if z < 0.25 else 0.42 if z < 0.50 else 0.30
-    grasp = np.array([back + float(rng.uniform(0.12, 0.30)), -sd * float(rng.uniform(0.06, 0.30)), z])
+    # REACH_VIA, after the trial's coverage check (2026-11-20): a standing-height goal as near as 25 cm ahead of the pelvis,
+    # where SIMPLE's TabletopGrasp reaches from its stand at the table (its pre-grasps: 27-38 cm ahead, 0.91-1.00 m up)
+    near = 0.05 if VIA and z >= 0.60 else 0.12
+    grasp = np.array([back + float(rng.uniform(near, 0.30)), -sd * float(rng.uniform(0.06, 0.30)), z])
     lo, hi = (0.0, 35.0) if z >= 0.80 else (0.0, 65.0) if z >= 0.55 else (0.0, 70.0) if z >= 0.30 else (40.0, 70.0)
     pitch = math.radians(float(rng.uniform(lo, hi)))
     dyaw = math.radians(
