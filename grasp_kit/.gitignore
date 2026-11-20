@@ -1,0 +1,6 @@
+# built or downloaded by setup/*.sh, written by run.sh; the examples are packed from outputs/ (dev/make_examples.py)
+envs/
+third_party/
+weights/
+out/
+examples/
