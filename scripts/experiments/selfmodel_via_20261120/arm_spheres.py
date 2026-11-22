@@ -116,8 +116,8 @@ def spheres(side, pos, quat, joints, qadr, fingers):
     return X, d.xpos[w] + d.xmat[w].reshape(3, 3) @ OFF
 
 
-z = np.load(D / "all.npz")
-assert "RQ" in z.files, f"{D}/all.npz has no reference plan: not a REACH_VIA dataset"
+z = dict(np.load(D / "all.npz"))  # every array read once: an NpzFile decompresses the whole array again at each z[...]
+assert "RQ" in z, f"{D}/all.npz has no reference plan: not a REACH_VIA dataset"
 S, W, n = z["S"], z["W"], z["n_steps"].astype(int)
 so, ro = np.r_[0, np.cumsum(n)[:-1]], np.r_[0, np.cumsum(z["n_ref"])[:-1]].astype(int)
 X, XR = np.zeros((len(S), len(links), 3), np.float32), np.zeros((len(z["RQ"]), len(links), 3), np.float32)

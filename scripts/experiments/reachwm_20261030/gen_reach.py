@@ -158,6 +158,12 @@ GRASP_ENTRY = GRASP and bool(GRASP_SPEED or GRASP_CONT or GRASP_IKREF)
 VIA_REPLAY = os.environ.get("REACH_VIA_REPLAY", "")
 VIA = os.environ.get("REACH_VIA", "0") == "1" or bool(VIA_REPLAY)
 VIA_SIDE = os.environ.get("REACH_VIA_SIDE", "")
+# REACH_VIA_STAND=<share>, REACH_VIA_LONG=<share> (2026-11-21, the second round; both 0 by default, which records as before):
+# that share of the resets does not walk -- the reach starts from the reset's own stand, as a replay's first pass does --
+# and that share of the paths is drawn long (via_gen.random_path's long: 1-3 bends, 15-40 cm off the line). The first
+# round's 12000 resets all walked first, and its model gained least on long paths with many via points. Saved: via_long.
+VIA_STAND = float(os.environ.get("REACH_VIA_STAND", "0"))
+VIA_LONG = float(os.environ.get("REACH_VIA_LONG", "0"))
 ROUTES = VG.load_routes(VIA_REPLAY) if VIA_REPLAY else []
 assert not VIA or (GRASP and GRASP_ROOM), "REACH_VIA / REACH_VIA_REPLAY run with REACH_GRASP=1 REACH_GRASP_ROOM=1"
 assert not VIA_REPLAY or ROUTES, f"REACH_VIA_REPLAY: no via_*.npz with its prep_*.npz under {VIA_REPLAY}"
@@ -447,11 +453,12 @@ def segment(
         v = c.get("via")
         via = dict(p=np.zeros((0, 3)), R=np.zeros((0, 3, 3)), speed=None, gen=np.zeros(len(VG.GEN_KEYS), np.float32),
                    tries=0, tol=0.0)  # fmt: skip
-        route, start_cm = -1, -1.0
+        route, start_cm, long = -1, -1.0, False
         if isinstance(v, str):  # "random"
             sd = 1.0 if side == "right" else -1.0
             sh = body_pos(m, f"{side}_shoulder_pitch_link")
-            via = VG.random_path(rng, j0, target_w, R0, rot_w, p, Rh, sd, sh, c["pelvis_z"])
+            long = VIA_LONG > 0 and bool(rng.random() < VIA_LONG)
+            via = VG.random_path(rng, j0, target_w, R0, rot_w, p, Rh, sd, sh, c["pelvis_z"], long)
         elif v is not None:  # a path of REACH_VIA_REPLAY, from its heading frame onto this one
             via = dict(via, p=VG.from_h(v["p"], p, Rh), R=np.array([Rh @ r for r in v["R"]]).reshape(-1, 3, 3),
                        speed=v["speed"])  # fmt: skip
@@ -468,7 +475,7 @@ def segment(
             vr[:n] = [np.r_[(Rh.T @ r)[:, 0], (Rh.T @ r)[:, 1]] for r in via["R"]]
         extra = dict(via_p=vp, via_r6=vr, n_via=n, via_speed=float(kw.get("speed") or m.cfg.reach_speed),
                      via_gen=via["gen"], via_tries=int(via["tries"]), via_tol=float(via["tol"]), via_route=route,
-                     via_start_cm=start_cm, hand_q=hand_q(m, side))  # fmt: skip
+                     via_start_cm=start_cm, via_long=int(long), hand_q=hand_q(m, side))  # fmt: skip
     out = m.reach(side, target_w, rot_w, pelvis_z=c["pelvis_z"], servo=False, **kw)
     goal = rec.plan[0][-1]
     if VIA:
@@ -660,7 +667,10 @@ def _reset(env, rec, i: int, seed: int, segs: list) -> list:
     elif GRASP:
         walked = False  # the walk below is this flag's own
         cmds = grasp_commands(rng)
-        if GRASP_ROOM:  # as room_grasp.episode: a short open walk, the heading off by what it was off at the start
+        stand = VIA and VIA_STAND > 0 and bool(rng.random() < VIA_STAND)
+        if stand:  # REACH_VIA_STAND: no walk, the reset's own stand
+            m.hold(1.0)
+        elif GRASP_ROOM:  # as room_grasp.episode: a short open walk, the heading off by what it was off at the start
             d, y0 = float(rng.uniform(0.45, 0.90)), float(rng.uniform(-0.10, 0.10))
             m.reset((-d, y0), float(math.radians(rng.uniform(-8, 8))))
             m.hold(1.0)
@@ -675,7 +685,7 @@ def _reset(env, rec, i: int, seed: int, segs: list) -> list:
         if m.fell_at is not None:
             return segs
         m.hold(0.5)
-        walked = True
+        walked = not stand
     if walked and not GRASP and not VIA_REPLAY:
         ang, d = rng.uniform(-math.pi, math.pi), rng.uniform(0.3, 1.2)
         m.walk_to(np.array([d * math.cos(ang), d * math.sin(ang)]), yaw=float(rng.uniform(-math.pi, math.pi)))
@@ -722,7 +732,7 @@ def save(segs: list[dict], path: Path) -> None:
     if GRASP_ENTRY:
         pack["swing_cm"] = np.array([s["swing_cm"] for s in segs], np.float32)
     if "via_p" in segs[0]:  # REACH_VIA, REACH_VIA_REPLAY
-        for k in ("n_via", "via_speed", "via_tries", "via_tol", "via_route", "via_start_cm", "n_ref"):
+        for k in ("n_via", "via_speed", "via_tries", "via_tol", "via_route", "via_start_cm", "via_long", "n_ref"):
             pack[k] = np.array([s[k] for s in segs])
         for k in ("via_p", "via_r6", "via_gen", "hand_q"):
             pack[k] = np.stack([s[k] for s in segs])

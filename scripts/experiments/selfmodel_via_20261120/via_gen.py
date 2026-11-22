@@ -19,6 +19,9 @@ the tolerance grows by half until they fit. A path is drawn again (30 tries, the
 5 cm above the floor, into the trunk (16 cm around the pelvis axis above 0.25 m; not within the first 6 cm, where the
 hand already is), into the legs of a crouch, more than 25 cm across the midline, out of the box the commands are drawn from,
 or more than 10 cm further from the shoulder than the farther of its two ends.
+
+long=True (gen_reach.py's REACH_VIA_LONG, the second round of 2026-11-21): 1 / 2 / 3 bends with probability 0.3 / 0.4 /
+0.3, each 15-40 cm off the line -- long paths with many via points, the kind the first round's model gained least on.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from pathlib import Path
 import numpy as np
 
 BENDS_P = (0.15, 0.35, 0.30, 0.20)
+LONG_BENDS_P, LONG_M = (0.0, 0.3, 0.4, 0.3), (0.15, 0.40)  # the long-path draw (second round, 2026-11-21)
 BEND_U, BEND_M, TURN_DEG = (0.15, 0.85), (0.03, 0.35), 90.0
 LEAD_P, LEAD_BACK_M, LEAD_UP_M = 0.10, (0.02, 0.10), (0.02, 0.15)
 SPEED, SPEED_BOX = 0.15, (0.08, 0.25)
@@ -171,10 +175,12 @@ def blocked(Xh, s, sd: float, shoulder_h, legs_z: float | None) -> int:
     return 0
 
 
-def random_path(rng, a, b, Ra, Rb, p, Rh, sd: float, shoulder, pelvis_z: float | None = None) -> dict:
+def random_path(
+    rng, a, b, Ra, Rb, p, Rh, sd: float, shoulder, pelvis_z: float | None = None, long: bool = False
+) -> dict:
     """One random path from the hand's start a (attitude Ra) to the goal b (Rb), world. p, Rh: the pelvis position and
     heading rotation at the command; sd 1 for the right hand, -1 for the left; shoulder: the acting shoulder (world);
-    pelvis_z: the commanded pelvis height of a crouch. -> p (k, 3) and R (k, 3, 3), the via points and the wrist rotations
+    pelvis_z: the commanded pelvis height of a crouch; long: the long-path draw (LONG_BENDS_P, LONG_M). -> p (k, 3) and R (k, 3, 3), the via points and the wrist rotations
     there (world, the ends not included); speed (m/s); gen (GEN_KEYS, angles in deg); tries; why (REASONS counts of the
     paths drawn and dropped); tol; length (m, the curve's)."""
     a, b, Ra, Rb, p, Rh = (np.asarray(v, float) for v in (a, b, Ra, Rb, p, Rh))
@@ -185,11 +191,12 @@ def random_path(rng, a, b, Ra, Rb, p, Rh, sd: float, shoulder, pelvis_z: float |
     why = np.zeros(len(REASONS), int)
     for tries in range(1, TRIES + 2):
         straight = tries > TRIES or L < 0.05
-        nb = 0 if straight else int(rng.choice(4, p=BENDS_P))
+        nb = 0 if straight else int(rng.choice(4, p=LONG_BENDS_P if long else BENDS_P))
         lead = 0 if straight or rng.random() >= LEAD_P else 1 if rng.random() < 0.5 else 2
         lead_m = float(rng.uniform(*(LEAD_BACK_M if lead == 1 else LEAD_UP_M))) if lead else 0.0
         u = np.sort(rng.uniform(*BEND_U, nb))
-        phi, mag, turn = rng.uniform(0, 2 * math.pi, nb), rng.uniform(*BEND_M, nb), rng.uniform(0, TURN_DEG, nb)
+        phi, mag = rng.uniform(0, 2 * math.pi, nb), rng.uniform(*(LONG_M if long else BEND_M), nb)
+        turn = rng.uniform(0, TURN_DEG, nb)
         axes = rng.normal(size=(nb, 3))
         speed = SPEED if rng.random() < 0.5 else float(rng.uniform(*SPEED_BOX))
         K, bend = [a], [False]

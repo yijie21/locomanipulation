@@ -28,7 +28,7 @@ from pathlib import Path
 import numpy as np
 
 D = Path(sys.argv[1])
-z, names = np.load(D / "all.npz"), json.load(open(D / "routes.json"))["names"]
+z, names = dict(np.load(D / "all.npz")), json.load(open(D / "routes.json"))["names"]
 S, W, C = z["S"], z["W"], z["C"]
 n, k0s = z["n_steps"].astype(int), z["k0"].astype(int)
 so = np.r_[0, np.cumsum(n)[:-1]]

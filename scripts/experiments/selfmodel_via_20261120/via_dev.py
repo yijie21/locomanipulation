@@ -25,7 +25,10 @@ from pathlib import Path
 import numpy as np
 
 D = Path(sys.argv[1])
-z, A = np.load(D / "all.npz"), np.load(D / "arm.npz")
+z, A = (
+    dict(np.load(D / "all.npz")),
+    dict(np.load(D / "arm.npz")),
+)  # every array read once: an NpzFile decompresses the whole array again at each z[...]
 S, W, C = z["S"], z["W"], z["C"]
 n, k0s = z["n_steps"].astype(int), z["k0"].astype(int)
 so, ro = np.r_[0, np.cumsum(n)[:-1]], np.r_[0, np.cumsum(z["n_ref"])[:-1]].astype(int)

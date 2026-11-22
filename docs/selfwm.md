@@ -343,7 +343,28 @@ python3 -I $V/via_profile.py $I/data_via_replay
 
 做什么：第一条在空地上放 SIMPLE 的那台机器人，建一次就行。`REACH_VIA=1` 让每次开场的第一段伸手沿一条随机路线走到预抓取点：路线有 0 到 3 个弯，压成最多 16 个路点，和速度、沿途的手腕朝向一起作为一条命令发下去，然后照旧慢速进入。`REACH_VIA_REPLAY` 把 cuRobo 在评测里规划出的真实路线搬到空地上重放，140 次是 35 条各 4 遍：第 1 遍原地出发，后 3 遍先走一小段。`arm_spheres.py` 用记录的关节把执行手臂的 24 个碰撞球逐帧算出来，实际轨迹和参考规划各一份。`via_dev.py` 算手和整条手臂离参考路线最远多少、往哪个方向偏，回放还会算同一条路线各遍之间方向是否一致。`via_cover.py` 检查随机路线的形状有没有把真实路线包住。`via_profile.py` 把回放时手的偏差沿路线分成 20 段，比较同一条路线各遍的整条偏差曲线；`via_dev.py` 打印的方向稳定度只比偏差最大的那一刻，在这些路线上不可靠，以 `via_profile.py` 为准。
 
-得到什么：每个数据目录下 `all.npz` 是原始记录，`arm.npz` 是碰撞球，`via_dev.npz` 是每条路线的偏差。`via_dev.py` 打印按站姿、弯数、速度分组的中位数；回放那份逐条打印方向稳定度，1 是每遍都往同一边偏，0 附近是没有规律。`via_cover.py` 逐条打印真实路线离最近的随机路线有多远，全部不超过 1 才算盖住。数字怎么判、什么结果该停，写在[方案](handoff/notebook-20261120/selfmodel_via_20261120.md)里，第一次正式启动后不再改。真实路线目前只在 4090 上，回放和覆盖检查要先把它们拷到跑的那台机器。
+得到什么：每个数据目录下 `all.npz` 是原始记录，`arm.npz` 是碰撞球，`via_dev.npz` 是每条路线的偏差。`via_dev.py` 打印按站姿、弯数、速度分组的中位数；回放那份逐条打印方向稳定度，1 是每遍都往同一边偏，0 附近是没有规律。`via_cover.py` 逐条打印真实路线比百分之多少的随机路线更孤立，不超过 95 % 就算盖住；试跑前定的中位数规则的结果也一起打印，只作记录。数字怎么判、什么结果该停，写在[方案](handoff/notebook-20261120/selfmodel_via_20261120.md)里，第一次正式启动后不再改。真实路线目前只在 4090 上，回放和覆盖检查要先把它们拷到跑的那台机器。
+
+**预测整条手臂实际扫过哪里（多路点自身模型的训练和评测，2026-11-21）。**
+
+```bash
+V=scripts/experiments/selfmodel_via_20261120; F=$I/fresh_routes
+env $X REACH_VIA=1 REACH_VIA_STAND=0.3 REACH_VIA_LONG=0.5 REACH_ID0=3100000 REACH_OUT=$I/data_via2 \
+    $PY $R/gen_reach.py run --procs 4 --resets 10000 --seed 39000000 --gpus 1
+third_party/SIMPLE/.venv/bin/python -I $V/fresh_routes.py $PWD/third_party/SIMPLE $F/stand_start.json $F 150 20261121
+env $X REACH_VIA_REPLAY=$F/via:$F/prep REACH_ID0=3200000 REACH_OUT=$I/data_via_fresh \
+    $PY $R/gen_reach.py run --procs 2 --resets 252 --seed 41000000 --gpus 1
+for d in data_via data_via2 data_via_fresh; do
+    REACH_OUT=$I/$d $PY $R/gen_reach.py merge && $PY -I $V/arm_spheres.py $I/$d $SC && $PY $V/via_model.py build $I/$d
+done
+$PY $V/via_point.py train $I/via_point $I/data_via $I/data_via2
+$PY $V/via_point.py dev $I/via_point
+$PY $V/via_point.py eval $I/via_point $I/data_via_fresh $I/data_via_replay
+```
+
+做什么：`data_via` 是上一段命令把开场数换成 12000 采的那份。第一条补采 10000 次，其中三成不走路、从站立直接出发，一半的路线是又长又多弯的那种。`fresh_routes.py` 在 SIMPLE 的环境里用 cuRobo 规划一批新的真实路线：越过桌沿、越过桌上的盒子、伸到板子下面三种场景，起点是 `stand_start.json` 里录下的站姿；规划不出来的场景照实记下，不重抽。第三条把这些路线在空地上各回放 4 遍。`via_model.py` 的 build 把每条路线整理成一行：参考规划扫过的路线、实际扫过的路线和两者之差。`via_point.py` 的 train 训练逐点预测的模型，一个网络管路线上的每一个点；`dev` 只读验证集，打印停止线那一类路线上的结果；`eval` 读测试集和真实路线，模型定下来之后只跑一次。
+
+得到什么：`eval` 对每个测试集打印三种预测的扫过区域误差，分别是照参考走、所有路线减同一条平均偏差、逐点模型，以及降幅和它的区间、各自要留的半径。2026-11-21 的结果：随机路线留出 11.02 cm 降到 3.50 cm；新规划的 63 条真实路线里，21 条长绕行路线降 61 %。`via_model.py` 的 train 和 eval 是第一轮把整条路线一次交给网络的模型，在真实路线上没有好处，留着作对照。假设、判据、原始输出和复核原文都在[方案](handoff/notebook-20261120/selfmodel_via_20261120.md)里。
 
 ## 8. 常见错误
 
