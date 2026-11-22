@@ -17,10 +17,14 @@ touched. Only the hand's points can be commanded: the elbow and the shoulder are
 info (heading frame of the command, m): ref0 (Q, 24, 3) the wanted sweep, off0 (Q + 1, 24, 3) the offsets predicted for
 the original command, ref / off the same for the command sent, shift (17, 3) what each via point (16 padded) and the goal
 (last row) were moved by, goal0 the original goal.
+
+REACH_VIA_COMP_MODE=const moves every path by the training paths' mean offset instead (one round): the constant
+correction, an opponent in the narrow-gap test.
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -68,7 +72,12 @@ class Comp:
     def __init__(self, model: Path, scene: Path):
         import torch
 
-        self.M = torch.load(Path(model) / "via_point.pt", map_location="cpu", weights_only=False)["point"]
+        full = torch.load(Path(model) / "via_point.pt", map_location="cpu", weights_only=False)
+        self.M = full["point"]
+        # REACH_VIA_COMP_MODE=const (the narrow-gap test's opponent): every path is moved by the same mean offset, the
+        # training paths' per hand -- a correction that does not look at the path; the model is still run, for the record
+        self.mode = os.environ.get("REACH_VIA_COMP_MODE", "point")
+        self.const = dict(right=np.asarray(full["const_right"], float), left=np.asarray(full["const_left"], float))
         self.fk = ArmFK(scene)
         link = self.fk.links
         self.key = np.array([link.index(x) for x in VM.KEY_LINKS])
@@ -115,8 +124,8 @@ class Comp:
         want = [at(ref0[:, self.palm], u) for u in u0[:-1]] + [ref0[-1, self.palm]]  # the wanted palm at each point
         shift = np.zeros((len(via0) + 1, 3))  # heading frame
         ref, off, u = ref0, off0, u0
-        for _ in range(ITERS):
-            pred = np.concatenate([ref, ref[-1:]]) + off
+        for _ in range(1 if self.mode == "const" else ITERS):
+            pred = np.concatenate([ref, ref[-1:]]) + (off if self.mode == "point" else self.const[side])
             now = [at(pred[:Q, self.palm], x) for x in u[:-1]] + [pred[Q, self.palm]]
             shift -= np.array(now) - np.array(want)
             n = np.linalg.norm(shift, axis=1, keepdims=True)

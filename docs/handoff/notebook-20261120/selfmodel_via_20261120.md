@@ -513,6 +513,205 @@ first pass (from the stand): 63 routes, 63 pairs
   the model's own error (arm) on the run it predicted: direct 0.76 cm, compensated 0.76 cm
 ```
 
+## 第四步：窄缝测试（2026-11-22 写的设计，等用户确认；还没有跑任何东西）
+
+前三步的结论：模型能预测整条手臂实际扫过哪里；按预测挪路点能修正手，修正不了肩、肘、腕。窄缝测试要回答的是：这些能力合起来，能让机器人安全穿过多窄的缝，比别的做法窄多少。
+
+分两步做。第一步用已有的空地回放数据，预测每种做法能过多窄的缝；第二步在有真障碍物的仿真场景里验证这个预测。原方案里就写了"转折点由空地数据事先预测"，第一步就是这个预测。
+
+### 第一步：用空地数据预测能过多窄的缝
+
+**缝的定义。**缝的半宽记作 c。规划器想让每个球走的路线两侧 c 以外就是障碍。一次伸手里，只要"要穿过缝的那部分"有任何一个球离开想要的路线超过 c，就算碰到。
+
+- 要穿过缝的部分：手指、手掌、腕，共 17 个球。腕算进去是因为手穿过去的时候前臂末端也在缝里，而第三步表明腕修正不了，这样定义对我们更不利，但更诚实。
+- 整条手臂 24 个球的版本一并报告。
+
+**五种做法。**每种都在下命令之前决定走还是不走，走的话发什么命令：
+
+| 做法 | 走的条件 | 发的命令 |
+|---|---|---|
+| 小固定余量 | c ≥ 3 cm | 原命令 |
+| 标定过的固定余量 | c ≥ 一个固定值，取随机路线校准集上直接发命令时误差的 95 % 分位 | 原命令 |
+| 学出来的标量半径 | c ≥ 这次伸手预测的半径（同样输入的小模型，校准到 95 %） | 原命令 |
+| 常数修正 | c ≥ 它自己的固定余量，同样取校准集上的 95 % 分位 | 路点按每只手一条平均偏差反向挪 |
+| 我们的 | 模型预测的扫过路线离想要的路线不超过 c 减去这次伸手的剩余半径 | 路点按逐点模型的预测反向挪 |
+
+**计分。**c 从 2 cm 到 15 cm 每 1 cm 扫一遍。每次伸手三种结局：走了没碰到是成功，走了碰到是碰撞，没走是放弃。
+
+- 主指标"能安全通过的最窄的缝"：成功不少于 90 %、碰撞不超过 5 % 的最小 c。
+- 同时画成功率和碰撞率随 c 变化的曲线。
+
+**数据。**21 条长绕行路线各 4 遍，84 次伸手一组。
+
+- 已有：直接发命令（`data_via_fresh`）和按逐点模型挪路点（`data_via_comp`）两组。
+- 要补跑：常数修正那一组回放，约 4 分钟。
+- 要补训：只看这 17 个球的半径模型，用现有的训练表，不需要新数据。
+- 所有半径和余量都只在随机路线的校准集上定，真实路线不参与。
+
+**预测。**写这些数的时候我已经知道：长绕行路线上手掌的误差中位数，直接发是 4.83 cm，挪路点后是 2.99 cm；整条手臂是 8.10 和 6.08 cm。腕的数还没看过。
+
+- 能安全通过的最窄的缝：小固定余量 8–11 cm（它从不放弃，要等到 95 % 的伸手本来就不碰才算安全）；标定过的固定余量 11–15 cm；标量半径 8–12 cm；常数修正和固定余量差不多；我们的 5–8 cm。
+- 我们的做法比最好的对手窄 15–40 %。区间放得宽，是因为腕修正不了，它可能把我们的数拖到和对手接近。
+- 在 c 小于 5 cm 时，小固定余量的碰撞率超过 50 %，我们的不超过 10 %，因为预测到会碰就放弃了。
+
+**判据。**
+
+- 我们能安全通过的最窄的缝不超过最好对手的 0.8 倍：成立，做第二步。
+- 超过 0.95 倍：在"腕也要过缝"的定义下没有优势。这时单看手指和手掌 15 个球的版本，如果那里不超过 0.8 倍，结论限定为"手过缝有优势、前臂没有"，向用户报告；否则这条线的窄缝主张不成立。
+- 两者之间：报告给用户决定。
+- 任何一种做法在 c ≥ 12 cm 时成功率仍到不了 90 %，说明计分或校准有问题，先查再下结论。
+
+### 第二步：有真障碍物的场景（草案，判据在跑之前补全）
+
+- **场景**：桌沿上方加一道横杆，手要从桌面和横杆之间穿过去够后面的目标，缝宽就是两者之间的高度，从宽到窄扫。沿用已经跑通的规划和回放流程，障碍物作为固定的几何体加进仿真，记录手臂和它们的接触。
+- **每种做法各自重新规划**：固定余量和标量半径把障碍加厚后再规划，缝太窄时规划器会找不到路线；我们的做法用小余量规划，再检查和挪路点。
+- **要先核对的**：锁腰只动右臂时这类场景规划得出来的比例。第二轮里越过桌沿只有 9 / 50。比例太低就换场景。
+- **第一步的预测在这里检验**：每种做法成功率掉下来的缝宽，应当和第一步给出的数一致。
+
+### 这个设计没有覆盖的
+
+- 肩和肘。它们不进缝，但在真实场景里可能碰到别的东西。第一步里整条手臂的版本会反映这一点，第二步的场景里它们在空处。
+- 蹲下的伸手。真实路线全是站立的，蹲下时偏差大约是站立的两倍，是演示想用的情况，但现在没有蹲下的真实路线。
+- 物体被碰到之后的后果。这里只算碰没碰到。
+
+### 第四步第一部分的结果（2026-11-22）
+
+常数修正那一组回放：2026-11-22 05:01–05:05 UTC，63 条新路线各 4 遍，种子 41000000，数据在 `outputs/reachwm_20261030/data_via_const`，没有跳过的开场，没有摔倒。它和直接发命令那一组的成对比较（`via_comp_eval.py`，前 10 行）：
+
+```text
+pairs 252 (direct 252, compensated 252 paths; falls: direct 0, compensated 0 of 252)
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 21 routes, 84 pairs
+  palm, error against the wanted sweep: direct 4.83 cm, compensated 5.57 cm; drop -0.15 (-0.26 to -0.06); improved in 0.10 of the pairs
+  arm,  error against the wanted sweep: direct 8.10 cm, compensated 8.88 cm; drop -0.10 (-0.16 to -0.00); improved in 0.08 of the pairs
+  palm's settled end against the wanted end: direct 3.01 cm, compensated 4.08 cm; drop -0.35 (-0.47 to -0.31)
+  points moved: median 0.97 cm, largest 2.56 cm; the goal 1.42 cm
+  the model's own error (arm) on the run it predicted: direct 3.14 cm, compensated 3.01 cm
+```
+
+计分（`via_gap.py`，输出在 `outputs/reachwm_20261030/via_gap_20261122`；训练半径模型的逐行日志略去，在 `gap.log` 里）：
+
+```text
+spheres: through 17, hand 15, arm 24
+random paths: fit on 14964, early stopping on 1028, 95 % levels on 1077
+through: fixed margin 19.39 cm (direct), 19.01 cm (after the mean offset), 12.44 cm (after the point model); radius scales 1.49 / 1.82
+hand: fixed margin 19.39 cm (direct), 19.01 cm (after the mean offset), 12.44 cm (after the point model); radius scales 1.52 / 1.86
+arm: fixed margin 19.85 cm (direct), 19.28 cm (after the mean offset), 12.46 cm (after the point model); radius scales 1.43 / 1.88
+replays: 252 triples of 252; wanted sweep differs between the runs by at most 0.00 mm
+
+detour routes, spheres 'through': 21 routes, 84 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 8.06 / 11.51 / 12.35; const 8.88 / 11.92 / 13.11; ours 5.73 / 8.70 / 9.26
+  half-width cm          2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small   success    0.00  0.00  0.00  0.10  0.15  0.26  0.49  0.62  0.77  0.86  0.93  0.96  0.98  0.99
+          collide    0.00  0.00  1.00  0.90  0.85  0.74  0.51  0.38  0.23  0.14  0.07  0.04  0.02  0.01
+  fixed   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius  success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.01  0.06  0.14  0.18  0.27  0.39  0.50
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  ours    success    0.00  0.00  0.00  0.00  0.06  0.20  0.43  0.69  0.79  0.88  0.93  0.94  0.94  0.95
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.01  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small    12.50  (11.00 to 14.50)
+    fixed      nan  (nan to nan)
+    radius     nan  (nan to nan)
+    const      nan  (nan to nan)
+    ours     11.25  (9.50 to 15.00)
+  ours / best other way (small): 0.90 (0.79 to 1.18)
+  at a half-width of 5 cm, success / collision / abstention: small 0.10 / 0.90 / 0.00; fixed 0.00 / 0.00 / 1.00; radius 0.00 / 0.00 / 1.00; const 0.00 / 0.00 / 1.00; ours 0.00 / 0.00 / 1.00
+
+detour routes, spheres 'hand': 21 routes, 84 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 8.06 / 11.51 / 12.35; const 8.88 / 11.92 / 13.11; ours 5.61 / 8.37 / 9.26
+  half-width cm          2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small   success    0.00  0.00  0.02  0.10  0.15  0.26  0.49  0.62  0.77  0.86  0.93  0.96  0.98  0.99
+          collide    0.00  0.00  0.98  0.90  0.85  0.74  0.51  0.38  0.23  0.14  0.07  0.04  0.02  0.01
+  fixed   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius  success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.04  0.07  0.13  0.18  0.24  0.36
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  ours    success    0.00  0.00  0.00  0.00  0.06  0.24  0.49  0.74  0.85  0.89  0.93  0.94  0.94  0.95
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.01  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small    12.50  (11.00 to 14.50)
+    fixed      nan  (nan to nan)
+    radius     nan  (nan to nan)
+    const      nan  (nan to nan)
+    ours     11.25  (9.25 to 14.75)
+  ours / best other way (small): 0.90 (0.78 to 1.16)
+  at a half-width of 5 cm, success / collision / abstention: small 0.10 / 0.90 / 0.00; fixed 0.00 / 0.00 / 1.00; radius 0.00 / 0.00 / 1.00; const 0.00 / 0.00 / 1.00; ours 0.00 / 0.00 / 1.00
+
+detour routes, spheres 'arm': 21 routes, 84 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 8.10 / 11.60 / 12.64; const 8.88 / 12.53 / 13.59; ours 6.08 / 9.35 / 11.54
+  half-width cm          2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small   success    0.00  0.00  0.00  0.05  0.12  0.25  0.48  0.62  0.77  0.85  0.92  0.95  0.96  0.98
+          collide    0.00  0.00  1.00  0.95  0.88  0.75  0.52  0.38  0.23  0.15  0.08  0.05  0.04  0.02
+  fixed   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius  success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.06  0.13  0.15  0.32  0.48  0.67  0.75
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  ours    success    0.00  0.00  0.00  0.00  0.04  0.13  0.23  0.38  0.55  0.65  0.77  0.83  0.85  0.88
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small    12.75  (11.00 to 14.50)
+    fixed      nan  (nan to nan)
+    radius     nan  (14.50 to 15.00)
+    const      nan  (nan to nan)
+    ours       nan  (11.75 to 15.00)
+  ours / best other way (small): nan (0.98 to 1.31)
+  at a half-width of 5 cm, success / collision / abstention: small 0.05 / 0.95 / 0.00; fixed 0.00 / 0.00 / 1.00; radius 0.00 / 0.00 / 1.00; const 0.00 / 0.00 / 1.00; ours 0.00 / 0.00 / 1.00
+
+near-straight routes (under a board), spheres 'through': 42 routes, 168 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 2.79 / 4.34 / 5.17; const 3.53 / 5.59 / 6.40; ours 2.51 / 3.23 / 3.58
+  half-width cm          2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small   success    0.00  0.00  0.85  0.93  0.98  0.99  0.99  0.99  0.99  0.99  0.99  0.99  0.99  0.99
+          collide    0.00  0.00  0.15  0.07  0.02  0.01  0.01  0.01  0.01  0.01  0.01  0.01  0.01  0.01
+  fixed   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius  success    0.00  0.00  0.15  0.44  0.74  0.91  0.97  0.99  0.99  0.99  0.99  0.99  0.99  0.99
+          collide    0.00  0.00  0.00  0.01  0.01  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  ours    success    0.00  0.08  0.70  0.95  0.99  0.99  0.99  0.99  0.99  0.99  0.99  0.99  0.99  0.99
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small     5.25  (4.25 to 5.75)
+    fixed      nan  (nan to nan)
+    radius    7.00  (6.50 to 7.75)
+    const      nan  (nan to nan)
+    ours      4.75  (4.50 to 5.25)
+  ours / best other way (small): 0.90 (0.86 to 1.06)
+  at a half-width of 5 cm, success / collision / abstention: small 0.93 / 0.07 / 0.00; fixed 0.00 / 0.00 / 1.00; radius 0.44 / 0.01 / 0.55; const 0.00 / 0.00 / 1.00; ours 0.95 / 0.00 / 0.05
+
+all routes, spheres 'through': 63 routes, 252 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 3.54 / 9.54 / 10.94; const 4.31 / 10.09 / 11.45; ours 2.87 / 6.33 / 8.28
+  half-width cm          2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small   success    0.00  0.00  0.57  0.65  0.71  0.75  0.83  0.87  0.92  0.95  0.97  0.98  0.99  0.99
+          collide    0.00  0.00  0.43  0.35  0.29  0.25  0.17  0.13  0.08  0.05  0.03  0.02  0.01  0.01
+  fixed   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius  success    0.00  0.00  0.10  0.29  0.49  0.61  0.65  0.67  0.68  0.71  0.72  0.75  0.79  0.83
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const   success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  ours    success    0.00  0.06  0.46  0.63  0.68  0.73  0.81  0.89  0.92  0.96  0.97  0.98  0.98  0.98
+          collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small    11.25  (9.50 to 12.75)
+    fixed      nan  (nan to nan)
+    radius     nan  (14.00 to 14.75)
+    const      nan  (nan to nan)
+    ours      9.25  (8.25 to 10.75)
+  ours / best other way (small): 0.82 (0.77 to 0.93)
+  at a half-width of 5 cm, success / collision / abstention: small 0.65 / 0.35 / 0.00; fixed 0.00 / 0.00 / 1.00; radius 0.29 / 0.00 / 0.70; const 0.00 / 0.00 / 1.00; ours 0.63 / 0.00 / 0.37
+```
+
 ## 预测修订
 
 - 2026-11-20，试跑之后：**事先定的"方向稳定度"算错了对象，改用整条偏差曲线。**
@@ -867,6 +1066,23 @@ real paths replayed (never trained or calibrated on): 140 paths
 - 有 2 条路线补偿后变差（`FreshBox_L0_e115`、`FreshEdge_L0_e66`），最差的一对手臂从 11.2 cm 变成 14.2 cm，原因没查。8 cm 的上限只在 84 对里碰到 1 次。
 - 没做的：只挪终点、不挪路点的对照，所以途中的改善里有多少是终点带动的，分不开。
 
+### 第四步第一部分之后（2026-11-22）
+
+| 项目 | 预测或判据 | 实测（21 条长绕行路线，手指、手掌、腕） | 结论 |
+|---|---|---|---|
+| 我们能安全通过的最窄的缝 | 预测 5–8 cm | 11.25 cm（9.5–15.0） | 没猜中 |
+| 小固定余量 | 预测 8–11 cm | 12.5 cm（11.0–14.5） | 没猜中 |
+| 标定过的固定余量、标量半径、常数修正 | 预测 8–15 cm | 15 cm 以内都达不到 | 没猜中 |
+| 我们的 / 最好的对手 | ≤ 0.8 成立；> 0.95 没有优势 | 0.90（0.79–1.18）；只用站立路线校准时 0.96 | 中间档：报告用户决定 |
+| c < 5 cm 时的碰撞率 | 小固定余量 > 50 %，我们的 ≤ 10 % | 90 % 对 0（我们全部放弃） | 符合 |
+
+- **"能穿过明显更窄的缝"这个说法，现在的证据不支持。**比值 0.90，区间跨过 1；换一种同样合理的校准方式就是 0.96。成功率上我们和小固定余量几乎一样，差值的区间含 0。
+- **证据支持的是另一件事：几乎不碰撞。**缝的半宽 8–11 cm 时，小固定余量有 14–51 % 的伸手会碰到，我们的不超过 1 %，成功率相当。复核试了"原命令加我们的放行规则"，仍有 5–15 % 碰撞，所以安全来自挪过的命令和放行规则两者合起来，不是只靠放弃。
+- **谨慎的几种做法几乎总是放弃。**固定余量标出来是 19 cm（只用站立路线是 15 cm），标量半径在 85 % 以上的伸手里放弃。给它们开卷选最好的参数，也只能和小固定余量打平。
+- **预测错在哪**：我按手掌 3 个球的误差估的，而要过缝的还有手指。手指的误差大是因为手的朝向：朝向误差中位数 16.5°，挪路点之后还是 16.3°，因为补偿只挪了位置。手掌到指尖 10.3 cm，转 16° 指尖就偏 2.9 cm，正好是补偿后指尖比手掌多出来的那一截。
+- **由此得出下一步**：把手腕朝向也按预测反向转回去。训练数据里手腕命令本来就带随机的大角度转动，模型见过；以前也量到控制器只跟上手腕转动的一半左右，是系统性的。
+- 整条手臂 24 个球的版本里我们比小固定余量差：肩和肘修正不了，放行规则又会因为它们而放弃。
+
 ## 独立复核
 
 ### 试跑的复核
@@ -1081,3 +1297,70 @@ TABLE (detour, 84 pairs, cm medians; drop with route-bootstrap 95% interval; sha
 - Predictions: palm 30-55% (0.38) and arm 10-35% (0.25) both fall inside the predicted ranges.
 
 One discrepancy: for FreshUnder, comp_eval.out says the palm improved in 0.73 of pairs. My strict count gives 0.58 (0.96 non-strict), so many pairs tie. I did not find the cause, and the medians still match. It does not affect the detour result.
+
+### 第四步第一部分的复核（2026-11-22）
+
+新开的 agent，给了计分的输出、三组回放、模型和训练表、原样脚本、第四步事先写的设计和判据。它的代码在 `/workspace/tmp/review_via_gap_20261122/`。它说没法核对回放的路线是否不在随机训练表里：两者是分开采的数据集，开场编号不重叠。原文：
+
+All numbers below are computed by me, in /workspace/tmp/review_via_gap_20261122/ (rev.py, rev2.py, rev.out). I re-implemented the sweep error and the go rules. I reused the repo's table loading and model prediction (VP/VM) and the saved radius.pt. Nothing under /workspace/code/ was edited.
+
+**Table (detour routes, 84 reaches, "through" set)**
+| | small | ours | small + ours' go rule | fixed | radius | const |
+|---|---|---|---|---|---|---|
+| error med/90/95 (cm) | 8.06/11.51/12.35 | 5.73/8.70/9.26 | 8.06/11.51/12.35 (original command, same as small) | n/a | n/a | 8.88/11.92/13.11 |
+| narrowest safe gap | 12.5 | 11.25 | 12.5 | none ≤15 | none ≤15 | none ≤15 |
+| success / collide at c=8 | .49/.51 | .43/.01 | .33/.11 | 0/0 | 0/0 | 0/0 |
+| success / collide at c=10 | .77/.23 | .79/.00 | .68/.11 | 0/0 | .06/0 | 0/0 |
+| success / collide at c=11 | .86/.14 | .88/.00 | .83/.05 | 0/0 | .14/0 | 0/0 |
+| ours' abstention at c=6, 8, 10, 12 | none | .94, .56, .21, .07 | same | | | |
+
+**1. Reproduction (verified).** All three error rows, every curve (small, fixed, radius, const, ours) and the narrowest gaps match gap.log to two decimals. Detour: 12.5 and 11.25. All routes: 11.25 and 9.25. I did not redo the bootstrap intervals.
+
+**2. Opponents (verified).**
+- Standing-only calibration gives these new values.
+  - The direct fixed margin goes from 19.39 to 15.30 cm.
+  - The const margin goes from 19.01 to 15.49 cm.
+  - The radius scale goes from 1.49 to 1.56.
+- Fixed and const still never go on the 2–15 cm grid, because 15.3 and 15.5 are above it. They would pass at about 15.5 cm.
+- Radius is slightly worse: success 0.06, 0.10 and 0.15 at c=10, 11 and 12, with no collisions. It abstains on 85 % or more.
+- Oracle fixed margin on the detour routes: 12.5 cm at best, identical to small. A fixed margin cannot beat a never-abstaining way.
+- Oracle const margin: about 13.25 cm.
+- Oracle radius scale (set on the test routes): 0.75 gives 12.25 cm, 0.5 gives 12.5 and 1.0 gives 13.5. It beats small by 0.25 cm only with an oracle scale.
+- No opponent beats small or ours under fair calibration.
+
+**3. Is "ours" favoured?**
+- Verified in code: the go rule is predicted-sweep (from comp_ref and comp_off) + residual radius ≤ c. It uses no recorded outcome.
+- The residual-radius nets and their scale come only from the random tables (data_via and data_via2).
+- I could not check whether the replay routes were absent from those random training tables.
+- Calibrating the residual scale on standing paths only makes "ours" worse, not better. The scale goes from 1.82 to 2.06. The detour narrowest gap becomes 12.0 cm, a ratio of 0.96 to small. All routes become 10.0 cm, a ratio of 0.89. So the all-crouch calibration is not what makes "ours" look good.
+- "small + ours' go rule" stays at 12.5 cm with 5 to 15 % collisions at c=8 to 12. So the shifted command contributes the safety. The abstention alone does not.
+- Success, ours minus small: +0.07 at c=9, +0.01 at c=10, +0.02 at c=11. The route-bootstrap 95 % intervals are −0.06 to +0.19, −0.12 to +0.16 and −0.04 to +0.10. These intervals include 0.
+
+**4. Hand error (verified).**
+- Median "through" error by link, original → shifted:
+  - wrist: 2.9–3.1 → 2.8–3.6 (no gain, as in step 3).
+  - palm: 4.3–4.8 → 2.4–3.0.
+  - thumb: 3.3–3.5 → 2.3–2.9.
+  - index_0: 5.0–5.9 → 2.9–3.5.
+  - middle_0: 5.5–6.3 → 3.4–3.9.
+  - the outermost link spheres (middle_1, index_1): 6.6–7.9 → 4.1–5.6.
+- The largest sphere error is middle_1 in 68 of 84 original reaches and in 56 of 84 shifted ones. The wrist is largest in 3 and 12 respectively. This is a time-matched comparison at the plan's 24 moments plus the settled end, so it is stricter than the sweep error.
+- Palm position error at the settled end: 3.01 → 0.77 cm median, 4.65 → 1.56 at the 90 % level.
+- Hand attitude error at the settled end, from palm and fingertip vectors: 16.5° → 16.3° median, 24.6° → 21.9° at the 90 % level. Along the path: 9.3° → 9.5° median.
+- Palm-to-fingertip length is 10.3 cm. A 16° swing moves the fingertip about 2.9 cm relative to the palm. That equals the fingertip-minus-palm gap that remains after the shift (5.5 vs 2.4–3.0).
+- So the remaining error is mainly attitude, which the shift does not touch. This is an inference from geometry, supported by the numbers above.
+
+**5. Is the headline metric the right summary?**
+- It hides that success is nearly the same for small and ours. Collisions are what differ: small collides on 14 % at c=11 and 23 % at c=10, ours on 0 %.
+- The 0.90 ratio comes from a 5 % collision threshold crossed on a grid of 84 reaches (21 routes). The ratio interval 0.79–1.18 includes 1.
+- Ours' success plateaus at 0.94–0.95 above 13 cm because it abstains on 5 % of reaches. Small reaches 0.99 at 15 cm.
+- Under an unweighted "success only" reading, ours is no better than small.
+- The curves do not show real obstacles, crouching, consequences of contact, or whole-arm gaps. On the 24-sphere set, ours does not reach 90 % within 15 cm.
+- The curves do show that, among the ways tested, only ours is nearly collision-free: 0.01 at c=8 and 0.00 above. That is the clear advantage.
+
+**6. Plan criteria.**
+- Literal reading: the ratio is 0.90 against the best opponent (small). That falls in the 0.8–0.95 band, "report to the user to decide". It is not at or below 0.8 and not above 0.95.
+- The "never 90 % at c≥12" clause is triggered for fixed, const and radius.
+- Cause: the 95 % calibration margins are 19.4 and 19.0 cm, and the radius scale of 1.49 inflates the predicted tube. The margins are dominated by crouching paths (cal 95 % level: crouch 20.7, standing 15.3).
+- Standing-only calibration still leaves fixed and const above the grid. This is a calibration design effect of a 95 % level plus the 15 cm grid cap. It is not a scoring bug (my recomputation matches). The plan's predictions of 11–15 for fixed and 8–12 for radius did not hold.
+- Both the "ours ≤ 0.8× best opponent" and the "wrist makes ours no better than the opponents" readings are not supported. The detour ratio is 0.90 (all routes 0.82, interval 0.77–0.93).

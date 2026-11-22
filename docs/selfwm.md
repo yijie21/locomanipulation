@@ -380,6 +380,20 @@ $PY $V/via_comp_eval.py $I/via_point $I/data_via_fresh $I/data_via_comp
 
 得到什么：先打印三项核对，分别是运行时算出的想要的路线、运行时的预测、事先替补偿命令做的规划，和离线算的是否一致，三项都应当是 0.00 mm。然后按路线类型打印手掌和整条手臂两组的误差中位数、降幅和区间、手最后停的位置、每个点挪了多少。2026-11-22 的结果：21 条长绕行路线上手掌 4.83 cm 降到 2.99 cm，终点 3.01 cm 降到 0.77 cm；肩、肘、腕没有改善，因为命令里只有手的路点。
 
+**每种做法能安全穿过多窄的缝（用空地回放来算，2026-11-22）。**
+
+```bash
+env $X REACH_VIA_REPLAY=$F/via:$F/prep REACH_VIA_COMP=$I/via_point REACH_VIA_COMP_MODE=const REACH_ID0=3400000 \
+    REACH_OUT=$I/data_via_const $PY $R/gen_reach.py run --procs 2 --resets 252 --seed 41000000 --gpus 1
+REACH_OUT=$I/data_via_const $PY $R/gen_reach.py merge
+$PY -I $V/arm_spheres.py $I/data_via_const $SC && $PY $V/via_model.py build $I/data_via_const
+$PY $V/via_gap.py $I/via_gap $I/via_point $I/data_via_fresh $I/data_via_const $I/data_via_comp
+```
+
+做什么：第一条是对手"常数修正"的回放，每条路线的路点都按训练集的平均偏差挪同样多，不看具体路线。`via_gap.py` 把缝定义成：规划器想让每个球走的路线两侧 c 以外就是障碍，手指、手掌、腕任何一个球偏出去超过 c 就算碰到。它比较五种做法：小固定余量、标定过的固定余量、学出来的标量半径、常数修正、按逐点模型挪路点并在预测会碰时放弃。所有余量和半径都只用随机路线定，真实路线不参与。
+
+得到什么：每种做法在缝的半宽 2 到 15 cm 下的成功率和碰撞率，以及"能安全通过的最窄的缝"，即成功不少于 90 %、碰撞不超过 5 % 的最小半宽，带区间。2026-11-22 的结果：21 条长绕行路线上，小固定余量 12.5 cm，按模型挪路点 11.25 cm，区间重叠；后者在 8 到 11 cm 几乎不碰撞，前者碰 14 % 到 51 %；另外三种做法 15 cm 以内成功率到不了 90 %。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。
