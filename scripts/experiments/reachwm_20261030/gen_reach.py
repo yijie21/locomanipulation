@@ -164,6 +164,23 @@ VIA_SIDE = os.environ.get("REACH_VIA_SIDE", "")
 # round's 12000 resets all walked first, and its model gained least on long paths with many via points. Saved: via_long.
 VIA_STAND = float(os.environ.get("REACH_VIA_STAND", "0"))
 VIA_LONG = float(os.environ.get("REACH_VIA_LONG", "0"))
+# REACH_VIA_COMP=<model dir> (2026-11-22, with REACH_VIA_REPLAY): before a replayed path is sent, its via points and goal
+# are moved against the offset via_point.py's model predicts for the palm (via_comp.py: plan without moving, predict, move,
+# twice). Saved: comp_ref0 the sweep the original command's plan makes (what is wanted), comp_off0 / comp_off the offsets
+# predicted for the original command and for the one sent, comp_ref the sent command's own reference sweep, comp_shift how
+# far each via point and the goal were moved, comp_goal0 the original goal; target and via_p are the command as sent.
+VIA_COMP = os.environ.get("REACH_VIA_COMP", "")
+_COMP: list = []
+
+
+def comp_model():
+    if not _COMP:
+        import via_comp as VC
+
+        _COMP.append(VC.Comp(Path(VIA_COMP), Path(os.environ["REACH_SCENE_DIR"])))
+    return _COMP[0]
+
+
 ROUTES = VG.load_routes(VIA_REPLAY) if VIA_REPLAY else []
 assert not VIA or (GRASP and GRASP_ROOM), "REACH_VIA / REACH_VIA_REPLAY run with REACH_GRASP=1 REACH_GRASP_ROOM=1"
 assert not VIA_REPLAY or ROUTES, f"REACH_VIA_REPLAY: no via_*.npz with its prep_*.npz under {VIA_REPLAY}"
@@ -448,6 +465,7 @@ def segment(
         if GRASP_IKREF:
             kw["ik_from_ref"] = True
     extra: dict = {}
+    comp = None
     if VIA:
         j0, R0 = m.jaw_centre(side)
         v = c.get("via")
@@ -464,6 +482,22 @@ def segment(
                        speed=v["speed"])  # fmt: skip
             route = c["route"]
             start_cm = 100 * float(np.linalg.norm(VG.to_h(j0, p, Rh)[0] - v["start"]))
+            if VIA_COMP:
+                cp, target_w, comp = comp_model().compensate(
+                    m,
+                    rec,
+                    side,
+                    target_w,
+                    rot_w,
+                    c["pelvis_z"],
+                    via["p"],
+                    via["R"],
+                    via["speed"],
+                    p,
+                    Rh,
+                    hand_q(m, side),
+                )
+                via = dict(via, p=cp)
         if len(via["p"]):
             kw.update(via=list(via["p"]), via_rot=list(via["R"]))
         if via["speed"] is not None and v is not None:
@@ -484,6 +518,10 @@ def segment(
             RQ=np.array([q.joints for q in poses], np.float32), RP=np.array([np.r_[q.pos, q.quat] for q in poses], np.float32),
             RT=np.r_[0.0, np.cumsum(durations)].astype(np.float32), n_ref=len(poses),
         )  # fmt: skip
+    target_h = c["target"]
+    if comp is not None:
+        target_h = VG.to_h(target_w, p, Rh)[0]
+        extra.update({f"comp_{k}": v for k, v in comp.items()})
     swing = 100 * blend_swing(m, side, rec.plan[0][0], rec.plan[0][1]) if GRASP_ENTRY else -1.0
     reach_s = float(m.t - rec.t_cmd)
     if m.fell_at is None:
@@ -495,7 +533,7 @@ def segment(
     rot_h = Rh.T @ rot_w
     return dict(
         S=np.array(rec.S), W=np.array(rec.W), J=np.array(rec.J), C=np.array(rec.C), k0=k0,
-        side=1 if side == "right" else -1, target=c["target"].astype(np.float32), dyaw=c["dyaw"], pitch=c["pitch"],
+        side=1 if side == "right" else -1, target=target_h.astype(np.float32), dyaw=c["dyaw"], pitch=c["pitch"],
         rot6=np.r_[rot_h[:, 0], rot_h[:, 1]].astype(np.float32), pelvis_z=-1.0 if c["pelvis_z"] is None else c["pelvis_z"],
         start=np.r_[p, yaw].astype(np.float32), walked=walked, chain=min(chain, 1) if GRASP_ROOM else chain, homed=HOME, fell=m.fell_at is not None,
         ok=bool(out.ok), jaw_err_cm=float(info.get("jaw_err_cm", -1.0)), att_err_deg=float(info.get("attitude_err_deg", -1.0)),
@@ -738,6 +776,9 @@ def save(segs: list[dict], path: Path) -> None:
             pack[k] = np.stack([s[k] for s in segs])
         for k in ("RQ", "RP", "RT"):
             pack[k] = np.concatenate([s[k] for s in segs])
+    if "comp_ref0" in segs[0]:  # REACH_VIA_COMP
+        for k in ("comp_ref0", "comp_off0", "comp_ref", "comp_off", "comp_shift", "comp_goal0"):
+            pack[k] = np.stack([s[k] for s in segs])
     if "walk" in segs[0]:  # REACH_APPROACH
         for k in ("ref_s_post", "k_reach", "walk_ok"):
             pack[k] = np.array([s[k] for s in segs])

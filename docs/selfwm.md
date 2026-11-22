@@ -366,6 +366,20 @@ $PY $V/via_point.py eval $I/via_point $I/data_via_fresh $I/data_via_replay
 
 得到什么：`eval` 对每个测试集打印三种预测的扫过区域误差，分别是照参考走、所有路线减同一条平均偏差、逐点模型，以及降幅和它的区间、各自要留的半径。2026-11-21 的结果：随机路线留出 11.02 cm 降到 3.50 cm；新规划的 63 条真实路线里，21 条长绕行路线降 61 %。`via_model.py` 的 train 和 eval 是第一轮把整条路线一次交给网络的模型，在真实路线上没有好处，留着作对照。假设、判据、原始输出和复核原文都在[方案](handoff/notebook-20261120/selfmodel_via_20261120.md)里。
 
+**把预测用回去：按预测反向挪路点（2026-11-22）。**
+
+```bash
+env $X REACH_VIA_REPLAY=$F/via:$F/prep REACH_VIA_COMP=$I/via_point REACH_ID0=3300000 REACH_OUT=$I/data_via_comp \
+    $PY $R/gen_reach.py run --procs 2 --resets 252 --seed 41000000 --gpus 1
+REACH_OUT=$I/data_via_comp $PY $R/gen_reach.py merge
+$PY -I $V/arm_spheres.py $I/data_via_comp $SC && $PY $V/via_model.py build $I/data_via_comp
+$PY $V/via_comp_eval.py $I/via_point $I/data_via_fresh $I/data_via_comp
+```
+
+做什么：`REACH_VIA_COMP` 指向训练好的逐点模型。每条回放的路线在下命令之前，先让控制器只规划不执行，用模型预测手掌实际会走到哪，再把每个路点和终点反向挪这么多，重复两次，每个点最多挪 8 cm（`via_comp.py`）。随机种子和上一段直接发命令的那次回放相同，所以两份数据里同一次回放的起始状态逐位相同。`via_comp_eval.py` 把两份数据配成对，比较实际扫过的路线离原命令想要的路线有多远。
+
+得到什么：先打印三项核对，分别是运行时算出的想要的路线、运行时的预测、事先替补偿命令做的规划，和离线算的是否一致，三项都应当是 0.00 mm。然后按路线类型打印手掌和整条手臂两组的误差中位数、降幅和区间、手最后停的位置、每个点挪了多少。2026-11-22 的结果：21 条长绕行路线上手掌 4.83 cm 降到 2.99 cm，终点 3.01 cm 降到 0.77 cm；肩、肘、腕没有改善，因为命令里只有手的路点。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

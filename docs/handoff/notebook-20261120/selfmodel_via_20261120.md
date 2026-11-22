@@ -431,6 +431,88 @@ first pass (no walk)               routes 35 replays  35 | reference  7.11 const
 later passes (walked)              routes 35 replays 105 | reference  6.33 constant  7.06 direction  2.27 cm | drop 0.64 (0.64 to 0.67) | direction better on 1.00 | palm path 1.00 m
 ```
 
+## 第三步：把预测用回去（2026-11-22，用户："提交推送，然后把预测加回去"；本节在这一步的任何运行之前写下）
+
+第二轮证明了模型预测得准。还没证明的是：按预测把路点反向挪过去之后，手臂是不是真的走到想要的地方。偏差会随命令变，所以挪完要重新预测，可能要迭代。
+
+### 做法
+
+- **想要的路线**：原命令的参考规划扫过的路线，也就是规划器以为手臂会走的地方。
+- **补偿**：下命令之前，对候选命令先让控制器只规划不执行，得到它的参考路线，再用逐点模型预测实际会扫过哪里。在每个路点经过的时刻和终点，比较预测的手掌位置和想要的手掌位置，把这个路点（或终点）反向挪这么多。重复 2 次，每个点最多挪 8 cm。手腕朝向不动。
+- **只能挪手**：命令里只有手的路点，肘和肩由控制器的全身逆解决定，所以直接受控的只有手掌那几个球。
+- **对比**：新规划的 63 条真实路线，每条 4 遍，随机种子和第二轮直接发命令那次相同，所以每一次回放的起始状态逐位相同，是成对比较。主要看其中 21 条长绕行路线，共 84 对。
+- **指标**：实际扫过的路线到想要的路线的扫过区域误差，手掌 3 个球和整条手臂 24 个球各算一个。
+
+### 核对
+
+补偿那一组里，在线算出的"原命令的参考路线"要和第二轮离线表里同一次回放的参考路线一致；在线对原命令的预测要和离线的预测一致。这两条不满足就说明在线的特征和训练时不一样，结果不算数。
+
+### 基线（已知，来自第二轮直接发命令的数据）
+
+21 条长绕行路线上，直接发命令时：手掌 4.83 cm，整条手臂 8.10 cm。模型对手掌路线的预测残差中位数 0.68 cm。
+
+### 预测
+
+- 手掌：降 30–55 %。理由：模型把手掌偏差从 2.28 cm 预测到只剩 0.68 cm，但挪路点会改变运动本身，迭代两次未必收敛到底。
+- 整条手臂：降 10–35 %。理由：肘和肩不受路点直接控制。
+- 模型对补偿后命令的预测残差不超过直接发命令时的 2 倍：挪动最多 8 cm，命令仍在训练分布之内。
+
+### 判据
+
+- 手掌降幅 ≥ 20 %，按路线自助抽样的 95 % 区间不含 0：挪路点这个用法成立。
+- 在此基础上整条手臂的降幅区间也不含 0：进入窄缝测试的设计；整条手臂的区间含 0：只能主张"手的路线可以修正"，窄缝测试只对手成立，向用户报告。
+- 手掌降幅 < 20 % 或区间含 0：照预测挪路点不管用，向用户报告，不进窄缝测试。
+- 补偿那一组摔倒或规划逆解失败明显多于直接组（多出 5 次以上）：按失败处理并报告。
+
+### 第三步的结果（2026-11-22）
+
+补偿回放：2026-11-22 02:50–02:53 UTC，vastgpu，2 个进程，63 条新路线各 4 遍，种子 41000000（和直接发命令的 `data_via_fresh` 相同），数据在 `outputs/reachwm_20261030/data_via_comp`，没有跳过的开场，两组都没有摔倒。当时的代码没提交，原样存在 `data_via_comp/asrun/`（commit d39eedfd88edfc778415dbedbb0f4d662c855077 + uncommitte…）。正式运行之前在其中 8 次回放上试过一次流程，那 8 对的结果我看到过。
+
+成对比较（`via_comp_eval.py`）：
+
+```text
+pairs 252 (direct 252, compensated 252 paths; falls: direct 0, compensated 0 of 252)
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 21 routes, 84 pairs
+  palm, error against the wanted sweep: direct 4.83 cm, compensated 2.99 cm; drop 0.38 (0.30 to 0.48); improved in 0.95 of the pairs
+  arm,  error against the wanted sweep: direct 8.10 cm, compensated 6.08 cm; drop 0.25 (0.16 to 0.33); improved in 0.88 of the pairs
+  palm's settled end against the wanted end: direct 3.01 cm, compensated 0.77 cm; drop 0.74 (0.69 to 0.78)
+  points moved: median 2.34 cm, largest 8.00 cm; the goal 2.53 cm
+  the model's own error (arm) on the run it predicted: direct 3.14 cm, compensated 3.20 cm
+FreshBox: 12 routes, 48 pairs
+  palm, error against the wanted sweep: direct 4.85 cm, compensated 2.78 cm; drop 0.43 (0.32 to 0.51); improved in 0.92 of the pairs
+  arm,  error against the wanted sweep: direct 8.23 cm, compensated 5.88 cm; drop 0.29 (0.20 to 0.37); improved in 0.88 of the pairs
+  palm's settled end against the wanted end: direct 3.36 cm, compensated 0.82 cm; drop 0.76 (0.67 to 0.80)
+  points moved: median 2.48 cm, largest 7.89 cm; the goal 2.89 cm
+  the model's own error (arm) on the run it predicted: direct 3.79 cm, compensated 3.45 cm
+FreshEdge: 9 routes, 36 pairs
+  palm, error against the wanted sweep: direct 4.71 cm, compensated 3.25 cm; drop 0.31 (0.23 to 0.52); improved in 1.00 of the pairs
+  arm,  error against the wanted sweep: direct 7.63 cm, compensated 6.72 cm; drop 0.12 (-0.07 to 0.48); improved in 0.89 of the pairs
+  palm's settled end against the wanted end: direct 2.67 cm, compensated 0.74 cm; drop 0.72 (0.65 to 0.78)
+  points moved: median 2.15 cm, largest 8.00 cm; the goal 2.39 cm
+  the model's own error (arm) on the run it predicted: direct 2.57 cm, compensated 2.81 cm
+FreshUnder: 42 routes, 168 pairs
+  palm, error against the wanted sweep: direct 2.26 cm, compensated 1.91 cm; drop 0.16 (0.10 to 0.25); improved in 0.73 of the pairs
+  arm,  error against the wanted sweep: direct 3.40 cm, compensated 3.34 cm; drop 0.02 (-0.06 to 0.09); improved in 0.45 of the pairs
+  palm's settled end against the wanted end: direct 1.71 cm, compensated 0.37 cm; drop 0.78 (0.75 to 0.81)
+  points moved: median 1.27 cm, largest 8.00 cm; the goal 1.48 cm
+  the model's own error (arm) on the run it predicted: direct 0.75 cm, compensated 0.74 cm
+all: 63 routes, 252 pairs
+  palm, error against the wanted sweep: direct 2.81 cm, compensated 2.14 cm; drop 0.24 (0.15 to 0.30); improved in 0.81 of the pairs
+  arm,  error against the wanted sweep: direct 4.55 cm, compensated 4.05 cm; drop 0.11 (0.02 to 0.21); improved in 0.59 of the pairs
+  palm's settled end against the wanted end: direct 2.15 cm, compensated 0.45 cm; drop 0.79 (0.77 to 0.81)
+  points moved: median 1.69 cm, largest 8.00 cm; the goal 1.74 cm
+  the model's own error (arm) on the run it predicted: direct 0.90 cm, compensated 0.88 cm
+first pass (from the stand): 63 routes, 63 pairs
+  palm, error against the wanted sweep: direct 1.75 cm, compensated 1.56 cm; drop 0.11 (0.04 to 0.45); improved in 0.87 of the pairs
+  arm,  error against the wanted sweep: direct 4.60 cm, compensated 4.19 cm; drop 0.09 (-0.11 to 0.19); improved in 0.40 of the pairs
+  palm's settled end against the wanted end: direct 1.89 cm, compensated 0.40 cm; drop 0.79 (0.72 to 0.83)
+  points moved: median 1.67 cm, largest 8.00 cm; the goal 1.56 cm
+  the model's own error (arm) on the run it predicted: direct 0.76 cm, compensated 0.76 cm
+```
+
 ## 预测修订
 
 - 2026-11-20，试跑之后：**事先定的"方向稳定度"算错了对象，改用整条偏差曲线。**
@@ -770,6 +852,21 @@ real paths replayed (never trained or calibrated on): 140 paths
 - **没验证的**：把预测用回去，也就是按预测反向挪路点之后，手臂是不是真的走到想要的地方。偏差会随命令变，可能要迭代。这是窄缝测试之前该先做的一步。另外没验证换随机种子后新路线上的结果变不变，以及不给状态输入的模型。
 - 第一轮被看过多次的那 35 条路线上，降幅从 0 变成 65 %。它们只作参考：改模型结构的决定用到了对它们的分析。
 
+### 第三步之后（2026-11-22）
+
+| 项目 | 预测或判据 | 实测（21 条长绕行路线，84 对） | 结论 |
+|---|---|---|---|
+| 手掌到想要路线的误差 | 降 30–55 %；判据 ≥ 20 % 且区间不含 0 | 4.83 → 2.99 cm，降 38 %（30–48 %） | 满足 |
+| 整条手臂 | 降 10–35 %；判据区间不含 0 | 8.10 → 6.08 cm，降 25 %（16–33 %） | 字面满足，见下 |
+| 模型对补偿后命令的预测残差 | 不超过直接发时的 2 倍 | 3.20 对 3.14 cm | 满足 |
+| 摔倒或规划失败 | 不比直接组多 5 次以上 | 两组都是 0 | 满足 |
+
+- **按预测挪路点，手确实走到了更接近想要的地方。**两组的起始状态逐位相同，只差命令；动作的时长、路程和录像长度都一样；好处不只在终点，规划时长的前 80 % 里手掌也降了 39 %。
+- **"整条手臂降 25 %"全部来自手掌和手指那几个球。**肩、上臂、肘、腕的球没有任何改善（0 到 −12 %，区间跨 0）。能挪的只有手的路点，肘和肩由控制器的全身逆解决定，挪手并不会把它们带到想要的位置。所以判据字面满足，但不能说"整条手臂被修正了"。
+- **这决定了窄缝测试该怎么用这个模型**：手的路线可以预测并修正；肘和肩只能预测。对肘和肩，模型的用处是下命令前检查预测的扫过区域会不会碰到障碍，碰到就换一条路线或者放弃，而不是去挪它们。
+- 有 2 条路线补偿后变差（`FreshBox_L0_e115`、`FreshEdge_L0_e66`），最差的一对手臂从 11.2 cm 变成 14.2 cm，原因没查。8 cm 的上限只在 84 对里碰到 1 次。
+- 没做的：只挪终点、不挪路点的对照，所以途中的改善里有多少是终点带动的，分不开。
+
 ## 独立复核
 
 ### 试跑的复核
@@ -944,3 +1041,43 @@ All scripts and pickles are in /workspace/tmp/review_via_point_20261121/ (common
 - Predictions: all were far beaten. Fresh predicted 20-35%, got 80%. Ordinary hold-out predicted 40-50%, got 68%. The 1 m standing set predicted 25-40%, got 61%. These are pre-registered predictions, not criteria. That large a miss in the favourable direction fits a conservative prior; I found no sign of an artifact behind it.
 
 Not checked: a retrained model without state inputs, seed variance on the fresh routes, and whether closed-loop use of the predictions (the narrow-slot test) holds up.
+
+### 第三步的复核（2026-11-22）
+
+新开的 agent，给了两组数据、模型、原样脚本、第三步事先写的设计和判据、以及对比的数字。它的代码在 `/workspace/tmp/review_via_comp_20261122/`。原文：
+
+Result: the headline numbers reproduce, the pairing is valid, and I found no flaw that inflates the result. The two places I rely on the scripts' own numbers are the 2x model-residual criterion and the plan-beforehand-vs-executed check. My code is /workspace/tmp/review_via_comp_20261122/rev.py and an.py (own polyline-distance function; same wanted sweep comp_ref0 for both arms).
+
+TABLE (detour, 84 pairs, cm medians; drop with route-bootstrap 95% interval; share of pairs improved)
+- palm vs wanted sweep: 4.83 -> 2.99, drop 0.38 [0.31,0.48], 0.95
+- arm (24 spheres): 8.10 -> 6.08, drop 0.25 [0.16,0.33], 0.88
+- palm settled end vs wanted end: 3.01 -> 0.77, drop 0.74 [0.69,0.78], 0.99
+- palm, plan-duration ticks only: 4.73 -> 2.96, drop 0.38 [0.30,0.48]
+- arm, plan-duration ticks only: 7.94 -> 5.95, drop 0.25 [0.16,0.34]
+- palm, ticks before 80% of plan: 4.22 -> 2.55, drop 0.39 [0.26,0.46]
+- arm, ticks before 80% of plan: 7.07 -> 4.80, drop 0.32 [0.20,0.42]
+- palm, ticks after plan end: 3.89 -> 1.48, drop 0.62
+- arm, ticks after plan end: 6.93 -> 5.58, drop 0.19 [0.07,0.35]
+- Per link group drop: shoulder/upper arm 0.00 [-0.20,0.12]; elbow -0.02 [-0.20,0.17]; wrist -0.12 [-0.39,0.14]; palm 0.38; fingers 0.30 [0.25,0.40]
+- FreshUnder (168 pairs): palm 2.26 -> 1.91 (drop 0.16), arm 3.40 -> 3.34 (drop 0.02), as reported.
+
+1. Recomputation (verified by computation): medians match to 0.01 cm and intervals to within 0.01. Using the full-resolution reference polyline instead of the 24 samples gives the same result (palm 4.80 -> 2.91, arm 8.10 -> 6.01). Rms over ticks gives palm drop 0.57 and arm drop 0.30, so the result does not depend on the max-over-ticks definition.
+
+2. Pairing (verified): all 252 pairs have identical reset ids and k0. S at ticks k0, k0-1 and k0-2 is bit-identical in all 252, as are the whole pre-command S history, W at k0 (including the jaw), J, start, pelvis_z, hand_q, rot6 and side. The only differing static fields are the commanded target and via_p (at most 8 cm, as intended). Wanted is the same object in both arms: comp_ref0 equals the direct run's reference (0.00 mm per comp_eval.out; I did not recompute that check).
+
+3. Fairness (verified): detour median ticks are 76 direct vs 77 comp, plan duration 5.13 s vs 5.12 s, reach time 6.56 s vs 6.58 s, palm path length 0.865 m vs 0.854 m. Restricting both arms to the common tick window leaves the numbers unchanged. The metric is one-sided, so a path that stopped early could score well. I checked the reverse direction (wanted palm point to nearest recorded point): worst case is 4.3 cm direct vs 3.1 cm comp, so the compensated arm does not stop early.
+
+4. Where the gain comes from: the end point is not the whole story. The settled end has the largest relative gain (0.74), but error before 80% of the plan still drops 0.39 for the palm and 0.32 for the arm, so the path itself moves. Inference only: some of that path gain may come from the goal shift pulling the last leg. I cannot separate it without a goal-only run.
+
+5. Worst pairs and cap (verified, except the cap count taken from comp_shift): the 8 cm cap was hit in 1 of 84 detour pairs (2 of 252 overall), so no capped-vs-uncapped comparison is possible. 12 detour pairs moved a point by 6 cm or more; the median largest shift per pair is 4.3 cm. Gain by largest shift: 2-4 cm (n=34) palm 3.90 -> 2.11, arm 7.09 -> 4.67; 4 cm or more (n=50) palm 5.41 -> 3.46, arm 9.25 -> 6.40. Palm worse in 4 of 84 detour pairs: FreshBox_L0_e115 (3 passes; worst 5.55 -> 6.88, largest shift 4.7 cm) and FreshBox_L0_e64 (4.29 -> 4.72). Arm worse in 10 of 84: FreshBox_L0_e115 (11.2 -> 14.2, 12.0 -> 14.7), FreshEdge_L0_e66 (5.7 -> 7.8), FreshBox_L0_e64. Routes e115 and e66 are worse on the route median for the arm; only e115 is worse for the palm. Nothing is catastrophic, and none of these pairs hit the cap.
+
+6. Arm result (verified): the arm gain is entirely palm and fingers, which are the commanded hand's spheres. Shoulder, elbow and wrist show no gain (point estimates 0 to -0.12, intervals span 0). The "arm drop 0.25" is a maximum over spheres carried by palm and fingers, not evidence that the elbow or shoulder follow the hand.
+
+7. Criteria, literal:
+- Palm drop at least 20% with interval excluding 0: met (0.38, lower bound 0.31).
+- Arm interval excludes 0: met literally (0.16 to 0.33), so the narrow-gap test design proceeds; the link-group split above shows the gain is palm and fingers only.
+- Falls or planning failures not more than 5 above direct: met (0 vs 0).
+- Model residual at most 2x direct: met per comp_eval.out (3.20 vs 3.14); I did not recompute it.
+- Predictions: palm 30-55% (0.38) and arm 10-35% (0.25) both fall inside the predicted ranges.
+
+One discrepancy: for FreshUnder, comp_eval.out says the palm improved in 0.73 of pairs. My strict count gives 0.58 (0.96 non-strict), so many pairs tie. I did not find the cause, and the medians still match. It does not affect the detour result.
