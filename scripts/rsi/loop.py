@@ -191,7 +191,7 @@ LOOP = HIDDEN = STATE = GATE_DIR = Path()
 # 4 states, model time 15.6 vs 24.7 min, wall 33 vs 57, the same mechanisms found, coverage and probe gains not lower;
 # `--effort reviewer=xhigh` restores it); the Engineers stay xhigh (32.8).
 EFFORT: dict = dict(reviewer="high", manager="xhigh", engineer="xhigh", composer="xhigh")
-STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
+STOP_AFTER = None  # run --stop-after review | probe: a replay of the Reviewer alone, or with the Prober (TODO 32.6)
 SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
 CANDIDATES = 3  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step); 3 by
 # default since TODO 32.15 (user 2026-10-22: "设置成默认的吧"), --candidates 1 is the one-Engineer loop, no Composer
@@ -1633,6 +1633,8 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     if leaks:
         void_iteration(n, "reviewer", leaks)
         return None
+    if STOP_AFTER == "review":  # a knowledge ablation (user 2026-11-23): the hypotheses are the result
+        return "replay: stopped after the Reviewer (--stop-after review)"
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
@@ -3093,7 +3095,11 @@ def main(argv=None) -> int:
                             ("--diag-target-fails", "diag_target_fails", "... until this many fail (default 15)"),
                             ("--diag-draw-max", "diag_draw_max", "fresh starts a redraw may draw and run (default 90)")):  # fmt: skip
         r.add_argument(flag, dest=key, type=int, default=None, help=text)
-    r.add_argument("--stop-after", choices=("probe",), help="replays: end the iteration after the Prober (TODO 32.6)")
+    r.add_argument(
+        "--stop-after",
+        choices=("review", "probe"),
+        help="replays: end the iteration after the Reviewer or after the Prober (TODO 32.6)",
+    )
     r.add_argument("--alternating", action="store_true", help="scripts/rsi/alternate.py's runs: the stop rate is the "
                    "only stop; no gate-call cap, wall clock, run-iteration cap or Manager stop (user 2026-11-18)")  # fmt: skip
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
