@@ -192,6 +192,131 @@ def comp_model():
 ROUTES = VG.load_routes(VIA_REPLAY) if VIA_REPLAY else []
 assert not VIA or (GRASP and GRASP_ROOM), "REACH_VIA / REACH_VIA_REPLAY run with REACH_GRASP=1 REACH_GRASP_ROOM=1"
 assert not VIA_REPLAY or ROUTES, f"REACH_VIA_REPLAY: no via_*.npz with its prep_*.npz under {VIA_REPLAY}"
+# REACH_VIA_SLOTS=<slots.json> (2026-11-23, selfmodel_via_20261120 fourth step part two; with REACH_VIA_REPLAY; off by
+# default, which runs as before): {"names": [...], "walk": [...]}, N slots. Reset i runs the path named names[i % N] -- a null
+# name or one not loaded: the reset is skipped, nothing simulated -- in pass i // N (the first from the reset's stand, later
+# ones after the room's short walk, as above), and its walk is drawn from seed + (i // N) * W + walk[i % N] (W the largest walk
+# key + 1) instead of seed + i. Slots that share a walk key (one base scene's levels and margins) start every pass from the
+# same state, so a rule that picks one of them at the command is scored from runs of all of them.
+SLOTS = json.load(open(os.environ["REACH_VIA_SLOTS"])) if os.environ.get("REACH_VIA_SLOTS") else None
+if SLOTS is not None:
+    assert VIA_REPLAY and len(SLOTS["names"]) == len(SLOTS["walk"]), (
+        "REACH_VIA_SLOTS: with REACH_VIA_REPLAY, names and walk"
+    )
+    ROUTE_IX = {r["name"]: k for k, r in enumerate(ROUTES)}
+    WALK_W = max(SLOTS["walk"]) + 1
+# REACH_GAP_OBST=1 (2026-11-23, part two; with REACH_VIA_REPLAY and a scene whose scene_locomani.xml carries the mocap bodies
+# gap_board and gap_bar, outputs/scene/simple_g1_gap; off by default): the replayed path's real obstacles (its prep's boxes)
+# stand in the simulation from the command to the segment's end, placed by the robot's heading frame at the command as the
+# path is, and are parked 50 m away otherwise. Every simulator step (mjcb_control, called after collision detection) records
+# the robot's contacts with them. Saved, three entries each for the wrist + palm + fingers (wrist pitch and yaw bodies, the
+# palm geom is on the latter, hand_*), the right arm (shoulder to hand), any robot body: gap_touch a penetration (distance
+# < 0), gap_t the first one's time from the command (s, -1 none), gap_pen the deepest (m), gap_force the largest normal force
+# (N); gap_t0 a contact in the first step after placement. A scene with the two bodies but this off keeps them parked.
+GAP_OBST = os.environ.get("REACH_GAP_OBST", "0") == "1"
+_GAP: list = []
+
+
+class GapObstacles:
+    """The gap scene's two mocap boxes: parking, placing, and the contact record of one segment."""
+
+    PARK = np.array([50.0, 0.0, 0.5])
+
+    def __init__(self, env: E.Env):
+        import mujoco
+
+        self.mj, sm = mujoco, env.sim.m
+        self.sim, self.d = env.sim, env.sim.d
+        body = lambda n: mujoco.mj_name2id(sm, mujoco.mjtObj.mjOBJ_BODY, n)  # noqa: E731
+        self.bodies = [body("gap_board"), body("gap_bar")]
+        assert min(self.bodies) >= 0, "REACH_GAP_OBST: the scene has no gap_board / gap_bar body"
+        self.mocap = [int(sm.body_mocapid[b]) for b in self.bodies]
+        assert min(self.mocap) >= 0, "gap_board / gap_bar are not mocap bodies"
+        self.geoms = np.where(np.isin(sm.geom_bodyid, self.bodies))[0]
+        self.half = [sm.geom_size[sm.geom_bodyid == b][0].copy() for b in self.bodies]
+        names = [mujoco.mj_id2name(sm, mujoco.mjtObj.mjOBJ_BODY, b) or "" for b in range(sm.nbody)]
+        pelvis = body("pelvis")
+        robot = np.array([sm.body_rootid[b] == sm.body_rootid[pelvis] and b > 0 for b in range(sm.nbody)])
+        thr = np.array(
+            [n in ("right_wrist_pitch_link", "right_wrist_yaw_link") or n.startswith("right_hand_") for n in names]
+        )
+        arm = np.array([n.startswith(("right_shoulder", "right_elbow", "right_wrist", "right_hand")) for n in names])
+        self.part = np.stack([thr, arm, robot], 1)  # (nbody, 3)
+        self.ngeom, self.on, self.t0 = sm.ngeom, False, 0.0
+        self.park()
+
+    def park(self) -> None:
+        for k, i in enumerate(self.mocap):
+            self.d.mocap_pos[i] = self.PARK + np.array([0.0, 3.0 * k, 0.0])
+            self.d.mocap_quat[i] = [1.0, 0.0, 0.0, 0.0]
+        self.on = False
+        self.mj.set_mjcb_control(None)
+
+    def place(self, boxes_h: np.ndarray, boxes_R: np.ndarray, p, Rh) -> None:
+        """boxes_h (2, 6): [centre, half] in the path's heading frame, axes boxes_R (path heading frame); p, Rh: now."""
+        assert len(boxes_h) == 2, "the gap scene holds a board and a bar"
+        for k, (b, i) in enumerate(zip(boxes_h, self.mocap)):
+            assert np.allclose(b[3:], self.half[k], atol=1e-6), (
+                f"box {k} half sizes {b[3:]} != the scene's {self.half[k]}"
+            )
+            self.d.mocap_pos[i] = VG.from_h(b[:3], p, Rh)[0]
+            self.d.mocap_quat[i] = _quat_wxyz(Rh @ boxes_R)
+        self.touch = np.zeros(3, bool)
+        self.t = np.full(3, -1.0)
+        self.pen, self.force = np.zeros(3), np.zeros(3)
+        self.t0, self.first, self.on = float(self.d.time), True, True
+        self.at_place = False
+        self.mj.set_mjcb_control(self.cb)
+
+    def cb(self, m, d) -> None:
+        if not self.on or m.ngeom != self.ngeom:
+            return
+        first, self.first = self.first, False
+        n = d.ncon
+        if n == 0:
+            return
+        g = np.asarray(d.contact.geom[:n])
+        dist = np.asarray(d.contact.dist[:n])
+        o1, o2 = np.isin(g[:, 0], self.geoms), np.isin(g[:, 1], self.geoms)
+        hit = np.where((o1 != o2) & (dist < 0))[0]
+        if not len(hit):
+            return
+        if first:
+            self.at_place = True
+        f6 = np.zeros(6)
+        for k in hit:
+            other = g[k, 1] if o1[k] else g[k, 0]
+            part = self.part[m.geom_bodyid[other]]
+            self.mj.mj_contactForce(m, d, int(k), f6)
+            new = part & ~self.touch
+            self.t[new] = float(d.time - self.t0)
+            self.touch |= part
+            self.pen[part] = np.maximum(self.pen[part], -dist[k])
+            self.force[part] = np.maximum(self.force[part], abs(f6[0]))
+
+    def record(self) -> dict:
+        out = dict(gap_touch=self.touch.copy(), gap_t=self.t.astype(np.float32), gap_pen=self.pen.astype(np.float32),
+                   gap_force=self.force.astype(np.float32), gap_t0=bool(self.at_place))  # fmt: skip
+        self.park()
+        return out
+
+
+def _quat_wxyz(R) -> np.ndarray:
+    w = np.sqrt(max(0.0, 1 + R[0, 0] + R[1, 1] + R[2, 2])) / 2
+    x = np.sqrt(max(0.0, 1 + R[0, 0] - R[1, 1] - R[2, 2])) / 2
+    y = np.sqrt(max(0.0, 1 - R[0, 0] + R[1, 1] - R[2, 2])) / 2
+    z = np.sqrt(max(0.0, 1 - R[0, 0] - R[1, 1] + R[2, 2])) / 2
+    x, y, z = np.copysign(x, R[2, 1] - R[1, 2]), np.copysign(y, R[0, 2] - R[2, 0]), np.copysign(z, R[1, 0] - R[0, 1])
+    q = np.array([w, x, y, z])
+    return q / np.linalg.norm(q)
+
+
+def gap_obstacles(env: E.Env) -> "GapObstacles":
+    if not _GAP:
+        _GAP.append(GapObstacles(env))
+    return _GAP[0]
+
+
 ENTRY_CHAIN = 2 if GRASP_ROOM and not VIA else 1  # which of a reset's reaches is the grasp's entry
 FINGERS = ("thumb_0", "thumb_1", "thumb_2", "middle_0", "middle_1", "index_0", "index_1")
 ID0 = int(os.environ.get("REACH_ID0", "0"))  # added to the reset ids, so a second dataset keeps its own split buckets
@@ -544,6 +669,9 @@ def segment(
         extra = dict(via_p=vp, via_r6=vr, n_via=n, via_speed=float(kw.get("speed") or m.cfg.reach_speed),
                      via_gen=via["gen"], via_tries=int(via["tries"]), via_tol=float(via["tol"]), via_route=route,
                      via_start_cm=start_cm, via_long=int(long), via_goal_turn=goal_turn, hand_q=hand_q(m, side))  # fmt: skip
+    gap = GAP_OBST and VIA and isinstance(c.get("via"), dict)
+    if gap:  # REACH_GAP_OBST: the path's real obstacles, placed as the path is
+        gap_obstacles(env).place(c["via"]["boxes"], c["via"]["boxes_R"], p, Rh)
     out = m.reach(side, target_w, rot_w, pelvis_z=c["pelvis_z"], servo=False, **kw)
     goal = rec.plan[0][-1]
     if VIA:
@@ -560,6 +688,8 @@ def segment(
     reach_s = float(m.t - rec.t_cmd)
     if m.fell_at is None:
         m.hold(POST_S)
+    if gap:
+        extra.update(gap_obstacles(env).record())
     if STUDENT:
         use_weights(m, "frozen")
     rec.on = False
@@ -721,15 +851,24 @@ def worker(wid: int, ids: list[int], seed: int) -> None:
 def _reset(env, rec, i: int, seed: int, segs: list) -> list:
     """One reset of `worker`: its segments appended to `segs` (returned). It writes nothing to disk, so a reset that
     raises leaves no trace once `worker` drops what it appended."""
-    rng = np.random.default_rng(seed + i)
+    if SLOTS is not None:  # REACH_VIA_SLOTS: the slot's path, its walk drawn by its walk key and pass
+        n_slot = len(SLOTS["names"])
+        name = SLOTS["names"][i % n_slot]
+        if name is None or name not in ROUTE_IX:
+            return segs
+        rng = np.random.default_rng(seed + (i // n_slot) * WALK_W + int(SLOTS["walk"][i % n_slot]))
+    else:
+        rng = np.random.default_rng(seed + i)
+    if GAP_OBST:
+        gap_obstacles(env).park()
     env.reset(None)
     m = env.m
     walked = bool(rng.random() < (APPROACH_DIVERSE if APPROACH else SIDESTEP_WALK if SIDESTEP else 0.35))
     cmds = [None] * CHAIN
     if VIA_REPLAY:  # the first pass from the reset's stand, later passes after the room's short walk
-        r = i % len(ROUTES)
+        r, later = (ROUTE_IX[name], i >= n_slot) if SLOTS is not None else (i % len(ROUTES), i >= len(ROUTES))
         cmds, walked = [dict(replay_command(ROUTES[r]), route=r)], False
-        if i >= len(ROUTES):
+        if later:
             d, y0 = float(rng.uniform(0.45, 0.90)), float(rng.uniform(-0.10, 0.10))
             m.reset((-d, y0), float(math.radians(rng.uniform(-8, 8))))
             m.hold(1.0)
@@ -836,6 +975,10 @@ def save(segs: list[dict], path: Path) -> None:
         ):
             pack[k] = np.stack([s.get(k, np.zeros_like(proto[k])) for s in segs])
         pack["comp_refused"] = np.array([s.get("comp_refused", -1) for s in segs])
+    if "gap_touch" in segs[0]:  # REACH_GAP_OBST
+        for k in ("gap_touch", "gap_t", "gap_pen", "gap_force"):
+            pack[k] = np.stack([s[k] for s in segs])
+        pack["gap_t0"] = np.array([s["gap_t0"] for s in segs])
     if "walk" in segs[0]:  # REACH_APPROACH
         for k in ("ref_s_post", "k_reach", "walk_ok"):
             pack[k] = np.array([s[k] for s in segs])
