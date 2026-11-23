@@ -268,11 +268,17 @@ def report(name: str, dirs: list[Path], T: dict, M: dict, rows: np.ndarray, log)
     return res
 
 
+def model_dirs(M: dict, model_dir: Path) -> list[Path]:
+    """The model's training datasets. The file stores the paths they had on the machine that trained it; one that is not
+    there is looked for by its name beside the model's own directory (a copy of the outputs on another machine)."""
+    return [d if d.exists() else Path(model_dir).resolve().parent / d.name for d in (Path(x) for x in M["dirs"])]
+
+
 def opened(out: Path, name: str):
     import torch
 
     M = torch.load(out / "via_point.pt", map_location="cpu", weights_only=False)
-    dirs = [Path(d) for d in M["dirs"]]
+    dirs = model_dirs(M, out)
     logf = open(out / name, "w")
 
     def log(s):

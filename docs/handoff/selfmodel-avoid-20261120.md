@@ -212,6 +212,45 @@ $SP -I scripts/experiments/selfmodel_via_20261120/via_stats.py $C/via_tabletop $
   - vastgpu 只用 GPU 1；它的 SAM 3 服务、深度服务和 `/tmp/.tmp*` 都不是我们的。
   - a800 的 tmux `data_scaling_spin17` 不要碰。
 
+### 3.2 从 vastgpu 换到 4090 接着做（2026-11-23）
+
+提交并推送之后，代码、测试和文档都在 `origin/selfwm` 上。数据、模型和路线不在 git 里，要另外拷。下面是换机器要做的全部事情。
+
+**要拷的东西，分两档**（都在 vastgpu 的 `outputs/reachwm_20261030` 下，清单和校验和在同一个目录里）：
+
+| 档 | 清单文件 | 大小 | 够做什么 |
+|---|---|---|---|
+| 小 | `TRANSFER_20261123_minimal.txt`（2837 个文件） | 455 MB | 场景、三组路线、五个模型、开发集和测试集上的全部回放、窄缝计分、复核报告、AMO 的探测数据和脚本。够做 TODO 38.6.0.1.11（新的出发规则 + 新测试路线）和 38.8.2.2.3（AMO 排查） |
+| 大 | `TRANSFER_20261123_training.txt`（176 个文件） | 4.8 GB | 三份随机路线数据、两轮补偿器回放、SONIC 的数据。重新训练、再做一轮回放、`via_point.py` 的 dev 和 eval、`via_gap.py` 重新标定余量时才需要 |
+
+清单里已经去掉了采集时的分块文件（`w0_000.npz` 这类），它们的内容都在各目录的 `all.npz` 里。
+
+```bash
+# 在 4090 上执行，从 vastgpu 拉。vastgpu 的地址和端口每次开机会变，问用户要
+VH=root@<vastgpu 的地址>; VP=<端口>; VI=/workspace/code/locomanipulation-selfwm/outputs/reachwm_20261030
+O=/wuji-vefps-D/wuji-il/yijie/loco_outputs/simple_selfmodel_20261119
+rsync -a -e "ssh -p $VP" $VH:$VI/TRANSFER_20261123_minimal.txt $VH:$VI/TRANSFER_20261123_training.txt $VH:$VI/TRANSFER_20261123.md5 $O/
+rsync -a -e "ssh -p $VP" --files-from=$O/TRANSFER_20261123_minimal.txt $VH:$VI/ $O/
+rsync -a -e "ssh -p $VP" --files-from=$O/TRANSFER_20261123_training.txt $VH:$VI/ $O/    # 大的那一档，需要时再拉
+cd $O && md5sum -c --quiet TRANSFER_20261123.md5                                            # 没拉大档时，大档的文件会报缺失
+```
+
+**模型文件里存的是 vastgpu 上的数据路径。** 从 2026-11-23 的提交起，脚本找不到原路径时，会到模型目录的旁边按名字找同名的数据目录（`via_point.py` 的 `model_dirs`）。所以只要数据和模型拷到同一个父目录下，就不用改任何东西。
+
+**开工前先核对四件事**（任何一件对不上，就不要把两台机器的结果放在一起比）：
+
+1. 仓库：`git checkout` 掉 4090 上那两个没提交的文件（它们和 `d8993b35` 里的相同），再 `git pull` 到最新。
+2. 场景文件是不是同一份：vastgpu 上 `scene/simple_g1_sonic/scene_locomani.xml` 的 md5 是 `de84dc29830857a0db188b6c3d4d0ae7`。4090 采集用的是 `$R/outputs/scene/simple_g1_sonic`，对不上就用拷过来的那一份（`REACH_SCENE_DIR` 指过去）。
+3. 手臂碰撞球的来源：`arm_fk.py` 默认去 vastgpu 的路径找 SIMPLE，4090 上要先 `export SIMPLE_ROOT=/wuji-vefps-D/wuji-il/yijie/tools/simple_isaac/SIMPLE`。两个文件的 md5 应当是：`data/robots/g1/g1_29dof_with_dex3.urdf` 为 `d12b3789c9b3e1033a4a392347fa359f`，`data/robots/g1/curobo/spheres/g1_29dof.yml` 为 `5cccde290369d195d25949536b545370`。
+4. 仿真是不是一样：在 4090 上把 63 条测试路线直接回放一遍（命令见 `docs/selfwm.md` 第 7 节"预测整条手臂实际扫过哪里"那一段的回放命令），再用 `via_point.py` 的 eval 评一下。vastgpu 上的数是：照参考走 4.55 cm，模型 `via_point_20261121` 预测后 0.90 cm；21 条绕行路线 8.10 和 3.14 cm。差得明显就说明两边的仿真不一样（vastgpu 上是 mujoco 3.11.0、torch 2.14.1、numpy 1.26.4、onnxruntime 1.23.2 且只有 CPU 版）。
+
+**两条要记住的规矩：**
+
+- 成对比较的两遍回放必须在同一台机器上跑。在 4090 上做新的比较，直接发命令那一遍也要在 4090 上重跑，不能拿 vastgpu 的那一遍来配对。
+- 4090 的 onnxruntime 如果有 GPU 版，SONIC 可以不加 `REACH_SONIC_NETS=allcpu`，会比 vastgpu 的每次开场 16 秒快很多；但网络在 GPU 上算和在 CPU 上算数值有细微差别，同一组比较里不要混用。
+
+**带不过去的：** vastgpu 上 Claude 的记忆笔记不在 git 里。这条线需要的事实都已经写进 STATE、TODO 第 38 节和方案条目，接手时读这三处就够。
+
 ## 4. 下一步
 
 按 [TODO](../../TODO.md) 第 38 节的顺序来。

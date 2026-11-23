@@ -1,7 +1,8 @@
 """selfmodel_via_20261120, fourth step, part one: from open-floor replays, how narrow a gap can each way of acting pass
 safely?
 
-    $PY via_gap.py <out dir> <model dir> <direct replay dir> <const replay dir> <comp replay dir>
+    $PY via_gap.py <out dir> <model dir> <direct replay dir> <const replay dir> <comp replay dir> \
+        [--base <baseline model dir>] [--cal <compensated replay dir on other routes>] [--seen <route indices, a,b,...>]
 
 A gap of half-width c: obstacles stand c away, on every side, from the path the planner wants each sphere to take (the
 original command's reference sweep). A reach TOUCHES when any sphere of the part that has to pass leaves its wanted path by
@@ -18,8 +19,15 @@ Five ways of acting. Each decides before the command whether to go, and what to 
             every via point moved by the training paths' mean offset (REACH_VIA_COMP_MODE=const)
   ours      go when the sweep predicted for the command to be sent stays within c minus this reach's residual radius of the
             wanted one; the via points moved against the point model's prediction (REACH_VIA_COMP)
-Margins, radius models and their scales come from the model's own random training paths only (train: fit; one half of the
-validation bucket: early stopping; the other half: the 95 % levels). No replayed real path sets any of them.
+Margins, radius models and their scales come from the model's own training paths only (train: fit; one half of the
+validation bucket: early stopping; the other half: the 95 % levels). No replayed route that is scored sets any of them.
+--base: the margins and radius models of small / fixed / radius / const come from this model's training paths instead (a
+model trained on random paths alone), so those four ways are scored as before when <model dir> has also seen replays.
+--cal: the scale of ours' residual radius is set on this run instead -- a compensated replay, by <model dir>, of routes that
+are neither trained on nor scored (the development routes): the 95 % level of what its reaches left of the sweep predicted
+for the command sent, over the radius model's prediction. A model that trained on replays has other passes of its training
+routes in its own calibration half, which would understate the residual on new routes.
+--seen: routes of the scored set that were looked at during development; the detour table is printed once more without them.
 
 Scored on the replays (the same routes from the same states in all three runs): a reach is a success when it goes and does
 not touch, a collision when it goes and touches, an abstention when it does not go. The headline is the narrowest gap passed
@@ -70,10 +78,12 @@ def per_sphere(D: Path, T: dict, rows, want, off) -> np.ndarray:
     return out
 
 
+ARGS = sys.argv[6:]
+BASE = Path(ARGS[ARGS.index("--base") + 1]) if "--base" in ARGS else None
+CALRUN = Path(ARGS[ARGS.index("--cal") + 1]) if "--cal" in ARGS else None
+SEEN = [int(x) for x in ARGS[ARGS.index("--seen") + 1].split(",")] if "--seen" in ARGS else []
 M = torch.load(MD / "via_point.pt", map_location="cpu", weights_only=False)
-dirs = [Path(d) for d in M["dirs"]]
-T = VP.load(dirs)
-link = [str(x) for x in np.load(dirs[0] / "arm.npz")["link"]]
+link = [str(x) for x in np.load(VP.model_dirs(M, MD)[0] / "arm.npz")["link"]]
 SETS = dict(
     through=np.array([x == "wrist_pitch_link" or x.startswith("hand_") for x in link]),
     hand=np.array([x.startswith("hand_") for x in link]),
@@ -81,50 +91,67 @@ SETS = dict(
 )
 log("spheres: " + ", ".join(f"{k} {int(v.sum())}" for k, v in SETS.items()))
 
-# ---- margins and radius models, from the random paths only
-free = ~T["sector"]
-tr = np.where(free & (T["bucket"] < 8))[0]
-va, ca = (
-    np.where(free & (T["bucket"] == 8) & (T["cal"] == 0))[0],
-    np.where(free & (T["bucket"] == 8) & (T["cal"] == 1))[0],
-)
-off_tr = VP.offsets(M, T, tr, oob=True)
-has = ~np.isnan(off_tr["direction"]).any((1, 2, 3))
-rows = np.r_[tr[has], va, ca]
-off_all = {
-    p: np.concatenate([off_tr[p][has], VP.offsets(M, T, np.r_[va, ca])[p]])
-    for p in ("reference", "constant", "direction")
-}
-E = {}
-for p in ("reference", "constant", "direction"):
-    e = np.full((len(T["seg"]), 24), np.nan)
-    for k, D in enumerate(dirs):
-        m = T["src"][rows] == k
-        e[rows[m]] = per_sphere(D, T, rows[m], T["ref"][rows[m]], off_all[p][m])
-    E[p] = e
-log(f"random paths: fit on {int(has.sum())}, early stopping on {len(va)}, 95 % levels on {len(ca)}")
-CAL = {}
-for name, mask in SETS.items():
-    c = dict()
-    for p in ("reference", "constant", "direction"):
-        e = E[p][:, mask].max(1)
-        c[f"fixed_{p}"] = float(np.quantile(e[ca], LEVEL))
-        if p != "constant":
-            nets = VM.fit(
-                T["x"],
-                np.log(np.maximum(e, 1e-4))[:, None],
-                tr[has],
-                va,
-                3,
-                256,
-                10000,
-                "cuda",
-                f"radius[{name}, {p}]",
-                log,
-            )
-            c[f"nets_{p}"] = nets
-            c[f"scale_{p}"] = float(np.quantile(e[ca] / np.exp(VM.predict(nets, T["x"][ca])[:, 0]), LEVEL))
-    CAL[name] = c
+
+def calibrate(Mx: dict, which: tuple, tag: str, where: Path) -> dict:
+    """set -> the fixed margins, radius models and scales of the offsets `which` (reference, constant, direction), from
+    the training paths of the model Mx."""
+    dirs = VP.model_dirs(Mx, where)
+    T = VP.load(dirs)
+    free = ~T["sector"]
+    tr = np.where(free & (T["bucket"] < 8))[0]
+    va, ca = (
+        np.where(free & (T["bucket"] == 8) & (T["cal"] == 0))[0],
+        np.where(free & (T["bucket"] == 8) & (T["cal"] == 1))[0],
+    )
+    off_tr = VP.offsets(Mx, T, tr, oob=True)
+    has = ~np.isnan(off_tr["direction"]).any((1, 2, 3))
+    rows = np.r_[tr[has], va, ca]
+    off_all = {p: np.concatenate([off_tr[p][has], VP.offsets(Mx, T, np.r_[va, ca])[p]]) for p in which}
+    E = {}
+    for p in which:
+        e = np.full((len(T["seg"]), 24), np.nan)
+        for k, D in enumerate(dirs):
+            m = T["src"][rows] == k
+            e[rows[m]] = per_sphere(D, T, rows[m], T["ref"][rows[m]], off_all[p][m])
+        E[p] = e
+    log(
+        f"{tag}: {len(dirs)} datasets, fit on {int(has.sum())} paths, early stopping on {len(va)}, 95 % levels on {len(ca)}"
+    )
+    out = {}
+    for name, mask in SETS.items():
+        c = dict()
+        for p in which:
+            e = E[p][:, mask].max(1)
+            c[f"fixed_{p}"] = float(np.quantile(e[ca], LEVEL))
+            if p != "constant":
+                nets = VM.fit(T["x"], np.log(np.maximum(e, 1e-4))[:, None], tr[has], va, 3, 256, 10000, "cuda",
+                              f"radius[{name}, {p}]", log)  # fmt: skip
+                c[f"nets_{p}"] = nets
+                c[f"scale_{p}"] = float(np.quantile(e[ca] / np.exp(VM.predict(nets, T["x"][ca])[:, 0]), LEVEL))
+        out[name] = c
+    return out
+
+
+# ---- margins and radius models, from training paths only
+if BASE is None:
+    CAL = calibrate(M, ("reference", "constant", "direction"), "margins", MD)
+else:
+    Mb = torch.load(BASE / "via_point.pt", map_location="cpu", weights_only=False)
+    CAL = calibrate(Mb, ("reference", "constant"), f"margins of small / fixed / radius / const ({BASE.name})", BASE)
+    for name, c in calibrate(M, ("direction",), f"ours' residual radius ({MD.name})", MD).items():
+        CAL[name].update(c)
+if CALRUN is not None:  # ours' scale from a compensated replay of routes neither trained on nor scored
+    Tx, zx = VP.load([CALRUN]), dict(np.load(CALRUN / "all.npz"))
+    rx = np.arange(len(Tx["seg"]))
+    res_x = per_sphere(CALRUN, Tx, rx, zx["comp_ref"][Tx["seg"]].astype(float), zx["comp_off"][Tx["seg"]].astype(float))
+    for name, mask in SETS.items():
+        c = CAL[name]
+        r = np.exp(VM.predict(c["nets_direction"], Tx["x"])[:, 0])
+        new = float(np.quantile(res_x[:, mask].max(1) / r, LEVEL))
+        log(f"{name}: ours' residual scale {c['scale_direction']:.2f} on the training side -> {new:.2f} on {len(rx)} reaches of "
+            f"{CALRUN.name} (their residual: median {100 * np.median(res_x[:, mask].max(1)):.2f} cm, 95 % {100 * np.quantile(res_x[:, mask].max(1), LEVEL):.2f} cm)")  # fmt: skip
+        c["scale_direction"] = new
+for name, c in CAL.items():
     log(f"{name}: fixed margin {100 * c['fixed_reference']:.2f} cm (direct), {100 * c['fixed_constant']:.2f} cm (after the mean offset), "
         f"{100 * c['fixed_direction']:.2f} cm (after the point model); radius scales {c['scale_reference']:.2f} / {c['scale_direction']:.2f}")  # fmt: skip
 torch.save(CAL, OUT / "radius.pt")
@@ -132,7 +159,7 @@ torch.save(CAL, OUT / "radius.pt")
 # ---- the three replays, paired by reset
 Td, Tk, Tc = VP.load([DD]), VP.load([DK]), VP.load([DC])
 names = json.load(open(DD / "routes.json"))["names"]
-key = lambda t: t["reset"] - t["reset"].min()  # noqa: E731
+key = lambda t: t["reset"] % 100000  # noqa: E731  (REACH_ID0 is a multiple of 100000: the reset's index in its run)
 common = np.intersect1d(np.intersect1d(key(Td), key(Tk)), key(Tc))
 ix = [np.array([np.where(key(t) == k)[0][0] for k in common]) for t in (Td, Tk, Tc)]
 i_d, i_k, i_c = ix
@@ -212,6 +239,13 @@ res: dict = {}
 detour = kind != "FreshUnder"
 for name in SETS:
     table(name, "detour routes", detour, res)
+if SEEN:
+    table(
+        "through",
+        f"detour routes without the {len(SEEN)} looked at during development",
+        detour & ~np.isin(route, SEEN),
+        res,
+    )
 table("through", "near-straight routes (under a board)", ~detour, res)
 table("through", "all routes", np.ones(len(kind), bool), res)
 json.dump(res, open(OUT / "gap.json", "w"), indent=1)

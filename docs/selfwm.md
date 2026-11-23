@@ -394,6 +394,57 @@ $PY $V/via_gap.py $I/via_gap $I/via_point $I/data_via_fresh $I/data_via_const $I
 
 得到什么：每种做法在缝的半宽 2 到 15 cm 下的成功率和碰撞率，以及"能安全通过的最窄的缝"，即成功不少于 90 %、碰撞不超过 5 % 的最小半宽，带区间。2026-11-22 的结果：21 条长绕行路线上，小固定余量 12.5 cm，按模型挪路点 11.25 cm，区间重叠；后者在 8 到 11 cm 几乎不碰撞，前者碰 14 % 到 51 %；另外三种做法 15 cm 以内成功率到不了 90 %。
 
+**手腕朝向也补偿，以及把补偿器自己的回放放进训练（2026-11-23）。**
+
+```bash
+SIMPLE=$PWD/third_party/SIMPLE
+for s in "train_routes 1500 20261123" "dev_routes 300 20261122"; do set -- $s; mkdir -p $I/$1
+    cp $F/stand_start.json $I/$1/ && CUDA_VISIBLE_DEVICES=1 third_party/SIMPLE/.venv/bin/python -I $V/fresh_routes.py $SIMPLE $I/$1/stand_start.json $I/$1 $2 $3; done
+T=$I/train_routes/subset; D=$I/dev_routes/detour     # 自己挑出来的路线子集，各有 via/ 和 prep/
+M0=$I/via_point_20261122; M1=$I/via_point_onpol1; M2=$I/via_point_onpol2
+replay() {  # replay <输出目录> <路线目录> <开场数> <种子> <REACH_ID0> [补偿用的模型 位置还是朝向]
+    env $X REACH_VIA_REPLAY=$2/via:$2/prep REACH_ID0=$5 REACH_OUT=$1 ${6:+REACH_VIA_COMP=$6 REACH_VIA_COMP_MODE=$7} \
+        $PY $R/gen_reach.py run --procs 2 --resets $3 --seed $4 --gpus 1
+    REACH_OUT=$1 $PY $R/gen_reach.py merge && $PY -I $V/arm_spheres.py $1 $SC && $PY $V/via_model.py build $1; }
+replay $I/onpol_r1_direct $T 1360 49000000 3900000
+replay $I/onpol_r1_point  $T 1360 49000000 4000000 $M0 point
+replay $I/onpol_r1_pose   $T 1360 49000000 4100000 $M0 pose
+$PY $V/via_point.py train $M1 $I/data_via $I/data_via2 $I/data_via3 $I/onpol_r1_direct $I/onpol_r1_point $I/onpol_r1_pose
+replay $I/onpol_r2_pose   $T 1360 49000000 4200000 $M1 pose
+$PY $V/via_point.py train $M2 $I/data_via $I/data_via2 $I/data_via3 $I/onpol_r1_direct $I/onpol_r1_point $I/onpol_r1_pose $I/onpol_r2_pose
+replay $I/dev_direct $D 164 47000000 3800000; replay $I/dev_point $D 164 47000000 3800000 $M0 point
+replay $I/dev_pose   $D 164 47000000 3800000 $M2 pose
+$PY $V/via_comp_eval.py $M2 $I/dev_direct $I/dev_pose && $PY $V/via_comp_eval.py $M0 $I/dev_direct $I/dev_point
+python3 -I $V/via_vs.py $I/dev_point $I/dev_pose; $PY $V/via_parts.py $M2 $I/dev_direct $I/dev_pose; $PY $V/via_turn.py $I/dev_direct $I/dev_pose
+replay $I/data_via_pose $F 252 41000000 3500000 $M2 pose && $PY $V/via_comp_eval.py $M2 $I/data_via_fresh $I/data_via_pose
+$PY $V/via_gap.py $I/via_gap_pose $M2 $I/data_via_fresh $I/data_via_const $I/data_via_pose \
+    --base $I/via_point --cal $I/dev_pose --seen 0,1,2,3,12,13,14,15
+```
+
+做什么：`REACH_VIA_COMP_MODE=pose` 在挪路点之外，把每个路点和终点的手腕命令按预测的朝向偏差反向转回去，每轮只走剩余修正的一半，共 6 轮，最多转 40°。只见过随机路线的模型预测不了这样转过的命令，所以要另外规划一批训练用的路线，把补偿器在上面的回放（直接发命令、只挪位置、位置加朝向）加进训练，再用新模型重跑一轮。三组路线各有分工：训练路线训练模型，开发路线定停在第几轮、定窄缝计分里我们这一方的余量，测试路线只计分。`via_vs.py` 把两组补偿回放逐对比较，`via_parts.py` 按肩、肘、腕、掌、指看模型错在哪，`via_turn.py` 看手的朝向对转过的命令实际响应了多少。`via_gap.py` 的 `--base` 让四个对手的余量仍然取自只见过随机路线的模型，`--cal` 让我们这一方的余量在开发路线的补偿回放上标定，`--seen` 把开发时看过的测试路线去掉再算一遍。随机路线上想让目标朝向也随机转开，用 `REACH_VIA_GOAL_TURN=0.7:45`；采集时某次开场被悄悄跳过、想看报错，加 `REACH_RAISE=1`。
+
+得到什么：2026-11-23 的结果，41 条开发路线上腕、掌、指离想要的路线 7.91 cm，只挪位置 5.56 cm，两轮之后 3.79 cm。21 条测试绕行路线上 8.06 → 3.40 cm，终点朝向 19.3° → 7.1°，0 摔倒；整条手臂 24 个球没有改善（8.10 → 7.33 cm，区间含 0）。窄缝计分里我们 12.75 cm，小固定余量 12.50 cm，没有优势：我们的碰撞率处处为 0，但出发规则太保守。补偿回放里的 `jaw_err_cm`、`att_err_deg`、`ok` 是相对实际发出的命令算的，不要当任务成功率读。
+
+**换一个控制器做同样的事（SONIC，2026-11-23）。**
+
+```bash
+XS="$X REACH_CONTROLLER=sonic REACH_SONIC_NETS=allcpu"; MS=$I/via_point_sonic
+env $XS REACH_VIA=1 REACH_VIA_STAND=0.3 REACH_VIA_LONG=0.5 REACH_ID0=5000000 REACH_OUT=$I/data_via_sonic \
+    $PY $R/gen_reach.py run --procs 4 --resets 12000 --seed 51000000 --gpus 1
+REACH_OUT=$I/data_via_sonic $PY $R/gen_reach.py merge && $PY -I $V/arm_spheres.py $I/data_via_sonic $SC
+$PY $V/via_model.py build $I/data_via_sonic && $PY $V/via_point.py train $MS $I/data_via_sonic && $PY $V/via_point.py dev $MS
+env $XS REACH_VIA_REPLAY=$F/via:$F/prep REACH_ID0=5200000 REACH_OUT=$I/data_via_fresh_sonic \
+    $PY $R/gen_reach.py run --procs 2 --resets 252 --seed 41000000 --gpus 1
+env $XS REACH_VIA_REPLAY=$F/via:$F/prep REACH_VIA_COMP=$MS REACH_ID0=5300000 REACH_OUT=$I/data_via_comp_sonic \
+    $PY $R/gen_reach.py run --procs 2 --resets 252 --seed 41000000 --gpus 1
+# 两组回放各自 merge、arm_spheres.py、via_model.py 的 build，同上
+$PY $V/via_point.py eval $MS $I/data_via_fresh_sonic && $PY $V/via_comp_eval.py $MS $I/data_via_fresh_sonic $I/data_via_comp_sonic
+```
+
+做什么：采集、训练、评测、挪路点补偿都和 ScaleBFM 的相同，只多了 `REACH_CONTROLLER=sonic`。vastgpu 上的 onnxruntime 没有 GPU 版，所以 `REACH_SONIC_NETS=allcpu`，每次开场约 16 秒，12000 次用 4 个进程约 14 小时。`via_point.py` 的 dev 先打印验证集上的停止线，过了才看测试路线。
+
+得到什么：2026-11-23 的结果，停止线降 49 %（线是 25 %）；留出的随机路线 14.75 → 7.63 cm；21 条测试绕行路线 8.55 → 4.08 cm；补偿后手掌 6.40 → 3.09 cm，整条手臂 8.55 → 5.17 cm，0 摔倒。AMO 在这个场景上伸手时会走开，还不能采，见 TODO 38.8.2。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

@@ -36,3 +36,17 @@ def test_a_predicted_sweep_that_matches_the_recording_has_no_error():
     P = np.concatenate([ref, ref[-1:]]) + off
     assert VM.sweep_err(P[3:20], P).max() < 1e-12
     assert VM.sweep_err(P[3:20], np.concatenate([ref, ref[-1:]])).max() > 0.02
+
+
+def test_a_model_finds_its_datasets_beside_itself_when_their_stored_paths_are_gone(tmp_path):
+    """A model file names its training datasets by the paths of the machine that trained it; on a copy of the outputs they
+    are found by name next to the model's directory, and a path that still exists is used as it is."""
+    import via_point as VP
+
+    here = tmp_path / "outputs"
+    (here / "model").mkdir(parents=True)
+    (here / "data_a").mkdir()
+    kept = tmp_path / "elsewhere" / "data_b"
+    kept.mkdir(parents=True)
+    M = dict(dirs=["/no/such/machine/outputs/data_a", str(kept)])
+    assert VP.model_dirs(M, here / "model") == [here / "data_a", kept]

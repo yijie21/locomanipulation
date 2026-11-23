@@ -164,11 +164,19 @@ VIA_SIDE = os.environ.get("REACH_VIA_SIDE", "")
 # round's 12000 resets all walked first, and its model gained least on long paths with many via points. Saved: via_long.
 VIA_STAND = float(os.environ.get("REACH_VIA_STAND", "0"))
 VIA_LONG = float(os.environ.get("REACH_VIA_LONG", "0"))
+# REACH_VIA_GOAL_TURN=<share>:<deg> (2026-11-22; off by default, which draws and records as before): in that share of the
+# random paths the goal's wrist attitude is turned off the grasp's by up to <deg> about a random axis before the path is
+# drawn. The grasp attitudes alone are a narrow family, and a compensated command turns the goal's wrist off it
+# (via_comp.py, mode pose): the model had not seen such goals and mispredicted the settled hand. Saved: via_goal_turn (deg).
+VIA_GOAL_TURN = tuple(float(v) for v in os.environ.get("REACH_VIA_GOAL_TURN", "0:0").split(":"))
 # REACH_VIA_COMP=<model dir> (2026-11-22, with REACH_VIA_REPLAY): before a replayed path is sent, its via points and goal
 # are moved against the offset via_point.py's model predicts for the palm (via_comp.py: plan without moving, predict, move,
 # twice). Saved: comp_ref0 the sweep the original command's plan makes (what is wanted), comp_off0 / comp_off the offsets
 # predicted for the original command and for the one sent, comp_ref the sent command's own reference sweep, comp_shift how
-# far each via point and the goal were moved, comp_goal0 the original goal; target and via_p are the command as sent.
+# far each via point and the goal were moved, comp_turn how far each one's wrist command was turned (rotation vectors;
+# zeros unless REACH_VIA_COMP_MODE=pose), comp_goal0 the original goal; target, rot6, via_p and via_r6 are the command as sent.
+# jaw_err_cm, att_err_deg and ok of a compensated reach are therefore against the command as SENT, not against the goal that
+# was wanted (comp_goal0): they say nothing about the task; via_comp_eval.py measures against the wanted sweep.
 VIA_COMP = os.environ.get("REACH_VIA_COMP", "")
 _COMP: list = []
 
@@ -471,19 +479,18 @@ def segment(
         v = c.get("via")
         via = dict(p=np.zeros((0, 3)), R=np.zeros((0, 3, 3)), speed=None, gen=np.zeros(len(VG.GEN_KEYS), np.float32),
                    tries=0, tol=0.0)  # fmt: skip
-        route, start_cm, long = -1, -1.0, False
+        route, start_cm, long, goal_turn = -1, -1.0, False, 0.0
         if isinstance(v, str):  # "random"
             sd = 1.0 if side == "right" else -1.0
             sh = body_pos(m, f"{side}_shoulder_pitch_link")
             long = VIA_LONG > 0 and bool(rng.random() < VIA_LONG)
+            if VIA_GOAL_TURN[0] > 0 and rng.random() < VIA_GOAL_TURN[0]:
+                axis = rng.normal(size=3)
+                goal_turn = float(rng.uniform(0.0, VIA_GOAL_TURN[1]))
+                rot_w = VG.expm(np.radians(goal_turn) * axis / np.linalg.norm(axis)) @ rot_w
             via = VG.random_path(rng, j0, target_w, R0, rot_w, p, Rh, sd, sh, c["pelvis_z"], long)
-        elif v is not None:  # a path of REACH_VIA_REPLAY, from its heading frame onto this one
-            via = dict(via, p=VG.from_h(v["p"], p, Rh), R=np.array([Rh @ r for r in v["R"]]).reshape(-1, 3, 3),
-                       speed=v["speed"])  # fmt: skip
-            route = c["route"]
-            start_cm = 100 * float(np.linalg.norm(VG.to_h(j0, p, Rh)[0] - v["start"]))
-            if VIA_COMP:
-                cp, target_w, comp = comp_model().compensate(
+            if VIA_COMP:  # a random path compensated too: the development runs of via_comp.py's settings
+                cp, cR, target_w, rot_w, comp = comp_model().compensate(
                     m,
                     rec,
                     side,
@@ -497,7 +504,28 @@ def segment(
                     Rh,
                     hand_q(m, side),
                 )
-                via = dict(via, p=cp)
+                via = dict(via, p=cp, R=cR)
+        elif v is not None:  # a path of REACH_VIA_REPLAY, from its heading frame onto this one
+            via = dict(via, p=VG.from_h(v["p"], p, Rh), R=np.array([Rh @ r for r in v["R"]]).reshape(-1, 3, 3),
+                       speed=v["speed"])  # fmt: skip
+            route = c["route"]
+            start_cm = 100 * float(np.linalg.norm(VG.to_h(j0, p, Rh)[0] - v["start"]))
+            if VIA_COMP:
+                cp, cR, target_w, rot_w, comp = comp_model().compensate(
+                    m,
+                    rec,
+                    side,
+                    target_w,
+                    rot_w,
+                    c["pelvis_z"],
+                    via["p"],
+                    via["R"],
+                    via["speed"],
+                    p,
+                    Rh,
+                    hand_q(m, side),
+                )
+                via = dict(via, p=cp, R=cR)
         if len(via["p"]):
             kw.update(via=list(via["p"]), via_rot=list(via["R"]))
         if via["speed"] is not None and v is not None:
@@ -509,7 +537,7 @@ def segment(
             vr[:n] = [np.r_[(Rh.T @ r)[:, 0], (Rh.T @ r)[:, 1]] for r in via["R"]]
         extra = dict(via_p=vp, via_r6=vr, n_via=n, via_speed=float(kw.get("speed") or m.cfg.reach_speed),
                      via_gen=via["gen"], via_tries=int(via["tries"]), via_tol=float(via["tol"]), via_route=route,
-                     via_start_cm=start_cm, via_long=int(long), hand_q=hand_q(m, side))  # fmt: skip
+                     via_start_cm=start_cm, via_long=int(long), via_goal_turn=goal_turn, hand_q=hand_q(m, side))  # fmt: skip
     out = m.reach(side, target_w, rot_w, pelvis_z=c["pelvis_z"], servo=False, **kw)
     goal = rec.plan[0][-1]
     if VIA:
@@ -667,6 +695,8 @@ def worker(wid: int, ids: list[int], seed: int) -> None:
         try:
             segs = _reset(env, rec, i, seed, segs)
         except (np.linalg.LinAlgError, ValueError) as e:
+            if os.environ.get("REACH_RAISE") == "1":  # debugging: show where a skipped reset failed
+                raise
             del segs[n_before:]
             rec.on = False
             skipped.append(ID0 + i)
@@ -770,15 +800,27 @@ def save(segs: list[dict], path: Path) -> None:
     if GRASP_ENTRY:
         pack["swing_cm"] = np.array([s["swing_cm"] for s in segs], np.float32)
     if "via_p" in segs[0]:  # REACH_VIA, REACH_VIA_REPLAY
-        for k in ("n_via", "via_speed", "via_tries", "via_tol", "via_route", "via_start_cm", "via_long", "n_ref"):
+        for k in (
+            "n_via",
+            "via_speed",
+            "via_tries",
+            "via_tol",
+            "via_route",
+            "via_start_cm",
+            "via_long",
+            "via_goal_turn",
+            "n_ref",
+        ):
             pack[k] = np.array([s[k] for s in segs])
         for k in ("via_p", "via_r6", "via_gen", "hand_q"):
             pack[k] = np.stack([s[k] for s in segs])
         for k in ("RQ", "RP", "RT"):
             pack[k] = np.concatenate([s[k] for s in segs])
-    if "comp_ref0" in segs[0]:  # REACH_VIA_COMP
-        for k in ("comp_ref0", "comp_off0", "comp_ref", "comp_off", "comp_shift", "comp_goal0"):
-            pack[k] = np.stack([s[k] for s in segs])
+    if any("comp_ref0" in s for s in segs):  # REACH_VIA_COMP; a segment that was not compensated (an entry) holds zeros
+        proto = next(s for s in segs if "comp_ref0" in s)
+        for k in ("comp_ref0", "comp_off0", "comp_ref", "comp_off", "comp_shift", "comp_turn", "comp_goal0"):
+            pack[k] = np.stack([s.get(k, np.zeros_like(proto[k])) for s in segs])
+        pack["comp_refused"] = np.array([s.get("comp_refused", -1) for s in segs])
     if "walk" in segs[0]:  # REACH_APPROACH
         for k in ("ref_s_post", "k_reach", "walk_ok"):
             pack[k] = np.array([s[k] for s in segs])

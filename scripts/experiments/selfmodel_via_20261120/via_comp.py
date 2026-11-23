@@ -20,6 +20,23 @@ the original command, ref / off the same for the command sent, shift (17, 3) wha
 
 REACH_VIA_COMP_MODE=const moves every path by the training paths' mean offset instead (one round): the constant
 correction, an opponent in the narrow-gap test.
+
+REACH_VIA_COMP_MODE=pose also turns the wrist commands. The palm and the fingers are one rigid body during a reach (15
+spheres). At each via point's moment and at the settled end, the rotation that takes the wanted hand onto the predicted hand
+(least squares over the 15 spheres) is undone on that point's wrist command, and the position is moved as before -- but a
+share (gain, 0.5) of the remaining correction a round, over 6 rounds, and at most 40 deg of turn a point. The first version
+took the whole correction each round (4 rounds, up to 60 deg): on 8 trial replays its commands ended where the model had
+seen nothing like them, its own error rose from 2.5 to 5.5 cm and the settled end got worse.
+The model has to know the commands this sends. One trained on random paths alone does not, on a planner's routes, once a
+wrist command is turned 20 deg or more (its error on the run 2.8 -> 6.9 cm, 41 development routes, 2026-11-22); one that
+also saw compensated runs on other planner routes does (7.2 -> 2.5 cm on routes held out). So this mode is for a model
+trained that way.
+An optional trust rule (off by default: REACH_VIA_COMP_TRUST=inf, REACH_VIA_COMP_TRUST_ABS=inf): a point's new correction
+is kept only while the ensemble's disagreement about the hand at that point stays within `trust` times what it was for the
+original command and below `trust_abs` (m); a refused point keeps its last accepted correction and its gain is halved. At
+1.5 and 0.012 it refused corrections on 91 % of 200 random paths and cost the palm more than it saved; the ensemble's
+disagreement (1.0 cm) also understates the error where the model is wrong (3 cm).
+info then also has turn (17, 3), each point's wrist correction as a rotation vector in the heading frame.
 """
 
 from __future__ import annotations
@@ -32,11 +49,18 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+import via_gen as VG  # noqa: E402
 import via_model as VM  # noqa: E402
 import via_point as VP  # noqa: E402
 from arm_fk import ArmFK  # noqa: E402
 
 Q, ITERS, CAP = VM.Q, 2, 0.08
+# REACH_VIA_COMP_MODE=pose: rounds, the share of the remaining correction taken a round, the most a wrist command is turned
+# (deg), and the trust rule's two numbers (see the docstring). Overridable for development runs.
+POSE = dict(iters=int(os.environ.get("REACH_VIA_COMP_ITERS", "6")), gain=float(os.environ.get("REACH_VIA_COMP_GAIN", "0.5")),
+            cap_turn=float(os.environ.get("REACH_VIA_COMP_CAP_TURN", "40")), trust=float(os.environ.get("REACH_VIA_COMP_TRUST", "inf")),
+            trust_abs=float(os.environ.get("REACH_VIA_COMP_TRUST_ABS", "inf")),
+            goal_turn=os.environ.get("REACH_VIA_COMP_GOAL_TURN", "1") == "1")  # fmt: skip
 
 
 class _Stop(Exception):
@@ -61,6 +85,13 @@ def plan(m, side: str, target_w, rot_w, pelvis_z, kw: dict):
     return got["plan"]
 
 
+def kabsch(A, B) -> np.ndarray:
+    """The rotation R that takes the points A (n, 3) onto B about their centroids, least squares: R (A - mean) ~ B - mean."""
+    U, _, Vt = np.linalg.svd((A - A.mean(0)).T @ (B - B.mean(0)))
+    d = np.sign(np.linalg.det(Vt.T @ U.T))
+    return Vt.T @ np.diag([1.0, 1.0, d]) @ U.T
+
+
 def at(P, u: float) -> np.ndarray:
     """A path sampled at Q equal steps of its duration, at the fraction u of it."""
     x = float(np.clip(u, 0, 1)) * (len(P) - 1)
@@ -83,10 +114,28 @@ class Comp:
         self.key = np.array([link.index(x) for x in VM.KEY_LINKS])
         self.palm = link.index("hand_palm_link")
         self.hand2 = np.array([self.palm + 1, link.index("hand_index_1_link")])
+        self.hand = np.array([i for i, x in enumerate(link) if x.startswith("hand_")])
+        self.nets: dict = {}
+
+    def members(self, T: dict) -> np.ndarray:
+        """Each member's predicted offsets for the one row of T: (members, Q + 1, 24, 3). Their mean is via_point.predict's."""
+        import torch
+
+        P = self.M
+        X = torch.as_tensor((VP.features(T, np.array([0])) - P["mu_x"]) / P["sd_x"])
+        out = []
+        for mem in P["members"]:
+            f = self.nets.setdefault(id(mem), VP.net(P["din"], P["width"], P["depth"], P["dropout"]))
+            f.load_state_dict(mem["state"])
+            f.eval()
+            with torch.no_grad():
+                out.append((P["mu_y"] + P["sd_y"] * f(X).numpy()).reshape(Q + 1, 24, 3))
+        return np.array(out)
 
     def sweep(self, m, st: dict, side: str, goal_w, rot_w, pelvis_z, via_p, via_R, speed):
         """The reference sweep (Q, 24, 3), the predicted offsets (Q + 1, 24, 3) and each via point's and the goal's moment
-        (fractions of the plan's duration) for one candidate command; heading frame."""
+        (fractions of the plan's duration) for one candidate command, and the ensemble's disagreement about the hand at
+        the Q + 1 points; heading frame."""
         kw: dict = dict(via=list(via_p), via_rot=list(via_R)) if len(via_p) else {}
         if speed is not None:
             kw["speed"] = speed
@@ -104,12 +153,18 @@ class Comp:
         pz = -1.0 if pelvis_z is None else float(pelvis_z)
         x[373:379] = len(via_p) / VM.VIA_MAX, speed or m.cfg.reach_speed, float(pz > 0), max(pz, 0.0), st["sd"], RT[-1]
         T = dict(x=x[None], ref=ref[None], key=self.key, hand2=self.hand2)
-        off = VP.predict(self.M, T, np.array([0]))[0]
+        off = VP.predict(self.M, T, np.array([0]))[
+            0
+        ]  # the ensemble's mean, exactly as the offline evaluation computes it
+        spread = np.zeros(Q + 1)
+        if self.mode == "pose":
+            ys = self.members(T)
+            spread = np.linalg.norm(ys - ys.mean(0), axis=-1).mean(0)[:, self.hand].mean(1)  # (Q + 1,), m
         # Motor.reach: a leg lasts max(reach_min_s, its length / speed)
         pts = np.vstack([st["jaw_w"], *via_p, goal_w]) if len(via_p) else np.vstack([st["jaw_w"], goal_w])
         leg = np.linalg.norm(np.diff(pts, axis=0), axis=1)
         t = np.cumsum(np.maximum(m.cfg.reach_min_s, leg / (speed or m.cfg.reach_speed)))
-        return ref, off, t / t[-1]
+        return ref, off, t / t[-1], spread
 
     def compensate(self, m, rec, side: str, goal_w, rot_w, pelvis_z, via_p, via_R, speed, p, Rh, fingers):
         sd = 1.0 if side == "right" else -1.0
@@ -120,20 +175,63 @@ class Comp:
         st = dict(S3=np.r_[rec.S[-1], rec.S[-2], rec.S[-3]], jaw=head(jaw_rec[None])[0], R0=R0, Rh=Rh, head=head, sd=sd,
                   fingers=fingers, jaw_w=m.jaw_centre(side)[0])  # fmt: skip
         via0, goal0 = np.asarray(via_p, float).reshape(-1, 3), np.asarray(goal_w, float)
-        ref0, off0, u0 = self.sweep(m, st, side, goal0, rot_w, pelvis_z, via0, via_R, speed)
-        want = [at(ref0[:, self.palm], u) for u in u0[:-1]] + [ref0[-1, self.palm]]  # the wanted palm at each point
-        shift = np.zeros((len(via0) + 1, 3))  # heading frame
-        ref, off, u = ref0, off0, u0
-        for _ in range(1 if self.mode == "const" else ITERS):
-            pred = np.concatenate([ref, ref[-1:]]) + (off if self.mode == "point" else self.const[side])
-            now = [at(pred[:Q, self.palm], x) for x in u[:-1]] + [pred[Q, self.palm]]
-            shift -= np.array(now) - np.array(want)
-            n = np.linalg.norm(shift, axis=1, keepdims=True)
-            shift *= np.minimum(1.0, CAP / np.maximum(n, 1e-9))
+        viaR0, rot0 = [np.asarray(r, float) for r in via_R], np.asarray(rot_w, float)
+        pose = self.mode == "pose"
+        gain = np.full(len(via0) + 1, POSE["gain"] if pose else 1.0)
+        cap_turn = np.radians(POSE["cap_turn"])
+
+        def command(shift, turn):
             sw = shift @ Rh.T  # heading frame -> world (rows)
-            via, goal = via0 + sw[:-1], goal0 + sw[-1]
-            ref, off, u = self.sweep(m, st, side, goal, rot_w, pelvis_z, via, via_R, speed)
+            return (via0 + sw[:-1], goal0 + sw[-1], [Rh @ turn[k] @ Rh.T @ viaR0[k] for k in range(len(viaR0))],
+                    Rh @ turn[-1] @ Rh.T @ rot0)  # fmt: skip
+
+        def run(shift, turn):
+            via, goal, viaR, rot = command(shift, turn)
+            ref, off, u, sp = self.sweep(m, st, side, goal, rot, pelvis_z, via, viaR, speed)
+            return ref, off, u, np.array([at(sp[:Q], x) for x in u[:-1]] + [sp[Q]])
+
+        shift = np.zeros((len(via0) + 1, 3))  # heading frame
+        turn = [np.eye(3) for _ in range(len(via0) + 1)]  # each point's wrist correction, heading frame
+        ref0, off0, u0, sp0 = run(shift, turn)
+        want = [at(ref0[:, self.palm], u) for u in u0[:-1]] + [ref0[-1, self.palm]]  # the wanted palm at each point
+        want_hand = [at(ref0[:, self.hand], u) for u in u0[:-1]] + [
+            ref0[-1, self.hand]
+        ]  # and the wanted hand's 15 spheres
+        allowed = np.full(len(sp0), np.inf)
+        if np.isfinite(POSE["trust"]) or np.isfinite(POSE["trust_abs"]):
+            allowed = np.maximum(np.minimum(POSE["trust"] * np.maximum(sp0, 1e-9), POSE["trust_abs"]), sp0)
+        ref, off, u = ref0, off0, u0
+        refused = 0
+        for _ in range(dict(const=1, pose=POSE["iters"]).get(self.mode, ITERS)):
+            pred = np.concatenate([ref, ref[-1:]]) + (self.const[side] if self.mode == "const" else off)
+            now = [at(pred[:Q, self.palm], x) for x in u[:-1]] + [pred[Q, self.palm]]
+            new_shift = shift - gain[:, None] * (np.array(now) - np.array(want))
+            n = np.linalg.norm(new_shift, axis=1, keepdims=True)
+            new_shift *= np.minimum(1.0, CAP / np.maximum(n, 1e-9))
+            new_turn = list(turn)
+            if pose:
+                now_hand = [at(pred[:Q, self.hand], x) for x in u[:-1]] + [pred[Q, self.hand]]
+                for k in range(len(turn) if POSE["goal_turn"] else len(turn) - 1):
+                    step = VG.expm(gain[k] * VG.logm(kabsch(want_hand[k], now_hand[k]).T))
+                    v = VG.logm(step @ turn[k])
+                    new_turn[k] = VG.expm(v * min(1.0, cap_turn / max(float(np.linalg.norm(v)), 1e-9)))
+            ref_n, off_n, u_n, sp_n = run(new_shift, new_turn)
+            ok = sp_n <= allowed if pose else np.ones(len(gain), bool)
+            if ok.all():
+                shift, turn, ref, off, u = new_shift, new_turn, ref_n, off_n, u_n
+                continue
+            refused += int((~ok).sum())
+            gain[~ok] *= 0.5
+            shift = np.where(ok[:, None], new_shift, shift)
+            turn = [new_turn[k] if ok[k] else turn[k] for k in range(len(turn))]
+            ref, off, u, _ = run(shift, turn)
+        via, goal, viaR, rot = command(shift, turn)
         out = np.zeros((VM.VIA_MAX + 1, 3), np.float32)
         out[: len(via0)], out[-1] = shift[:-1], shift[-1]
-        return via, goal, dict(ref0=ref0, off0=off0.astype(np.float32), ref=ref, off=off.astype(np.float32), shift=out,
-                               goal0=head(goal0[None])[0].astype(np.float32))  # fmt: skip
+        tv = np.zeros((VM.VIA_MAX + 1, 3), np.float32)
+        if len(via0):
+            tv[: len(via0)] = [VG.logm(r) for r in turn[:-1]]
+        tv[-1] = VG.logm(turn[-1])
+        info = dict(ref0=ref0, off0=off0.astype(np.float32), ref=ref, off=off.astype(np.float32), shift=out, turn=tv,
+                    goal0=head(goal0[None])[0].astype(np.float32), refused=refused)  # fmt: skip
+        return via, np.array(viaR).reshape(-1, 3, 3), goal, rot, info

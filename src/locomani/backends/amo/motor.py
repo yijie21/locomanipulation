@@ -125,7 +125,7 @@ class AmoMotor(Motor):
         self.servo_on = {s: False for s in SIDES}
         y = float(yaw)
         for _ in range(int(self.amo.settle_s / A.DT)):  # AMO stands up from its default pose; not on the round's clock
-            sim.grip_target[:] = JAW_OPEN
+            sim.set_jaw(self.jaw)  # open; Dex1 or Dex3, as the scene's hands (runtime.Sim.set_jaw)
             self._step(self.pol(self._mj_state(), A.Command(yaw=y), ARM_READY))
         self.nominal = self.joints()[:15].copy()
         self._stand()
@@ -273,7 +273,7 @@ class AmoMotor(Motor):
         self.last_fut = {
             WRIST[s]: ((p - Rw @ R.OFF)[None], R.quat_wxyz(Rw)[None]) for s, (p, Rw) in self.cmd_jaw.items()
         }
-        sim.grip_target[:] = np.repeat(self.jaw, 2)
+        sim.set_jaw(self.jaw)
         if sim.fallen():
             self.fell_at = self.t if self.fell_at is None else self.fell_at
             return False

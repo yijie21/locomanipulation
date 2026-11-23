@@ -106,3 +106,18 @@ def test_a_planned_path_is_read_in_its_own_heading_frame(tmp_path):
     assert np.allclose(r["R"][0], turn, atol=2e-3) and np.allclose(r["goal_R"], turn, atol=2e-3)
     f = VG.shape(np.vstack([r["start"], r["p"], r["goal"]]), [r["start_R"], *r["R"], r["goal_R"]])
     assert f[0] == 2 and f[2] > 1.0 and len(f) == len(VG.FEATURES)
+
+
+def test_kabsch_gives_the_rotation_that_takes_one_point_set_onto_the_other():
+    """via_comp.py undoes this rotation on a wrist command: it must be the one from the first set to the second, about
+    the sets' own centroids, whatever the shift between them."""
+    import via_comp as VC
+
+    rng = np.random.default_rng(3)
+    A = rng.normal(size=(15, 3)) * 0.05
+    R = VG.expm(np.array([0.3, -0.2, 0.5]))
+    B = A @ R.T + np.array([0.4, -0.1, 0.2])  # turned, then moved
+    got = VC.kabsch(A, B)
+    assert np.allclose(got, R, atol=1e-9)
+    assert np.allclose(VC.kabsch(B, A), R.T, atol=1e-9)
+    assert np.isclose(np.linalg.det(VC.kabsch(A, A * [1, 1, -1])), 1.0)  # a mirrored set still gives a rotation
