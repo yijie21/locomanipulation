@@ -276,6 +276,9 @@ def load_routes(spec: str) -> list[dict]:
                     goal_R=Rh.T @ pr["goal_R"],
                     speed=float(v["speed"]) if "speed" in v.files else None,
                     pelvis_z=float(o[2]),
+                    # part two's real obstacles (gap_routes.py): [centre, half] in this heading frame, their axes in it
+                    boxes=np.c_[to_h(pr["boxes"][:, :3], o, Rh), pr["boxes"][:, 3:]] if "boxes" in pr.files else None,
+                    boxes_R=Rh.T,
                 )  # fmt: skip
             )
     return routes
