@@ -266,8 +266,8 @@ loop.named_objects：skills/ 里引用记录器 → 草稿作废（规则 38）
 跑完的账本 → 聚出机制，以及每个机制救回 / 弄坏的局（按现任版本和局标签）
           → join 诊断局的 PAST 图列和 start.* 特征 → 证据表（列按区分度排序）
           → Consolidator（LLM）只写 condition / signature / repair，程序校验列名和物体名
-          → 程序按 evidence.by_object 定 scope：多个物体净正是 shared，只有一个物体净正是 local，
-            local 用物体特征区间收窄条件（narrowed_by）
+          → 程序按 evidence.by_object 定 generality：多个物体净非负是 multi_object，只有一个物体是 single_object，
+            有物体净负先用正例物体的特征区间收窄条件（narrowed_by），排除不掉就是 contested
           → 下一轮在现任诊断局上求值条件，整库加命中标注写进 KNOWLEDGE.md 给 Reviewer
 ```
 
@@ -278,8 +278,8 @@ loop.named_objects：skills/ 里引用记录器 → 草稿作废（规则 38）
 | | 现在实际起作用的 | 设计中的显式知识库 |
 |---|---|---|
 | 知识的形式 | 技能代码里按特征写的分支和常数 | 条件、失败签名、修法组成的 JSON 条目 |
-| 共享还是局部怎么定 | 不显式定，由验收门的总净收益隐式筛 | 程序按净正的物体数定 scope |
-| 局部知识放哪 | `recipes/` 加 `match()`（规则允许，主库现在没有） | `local` 条目加 `narrowed_by` |
+| 跨物体还是单物体怎么定 | 不显式定，由验收门的总净收益隐式筛 | 程序按净正的物体数定 generality |
+| 单物体知识放哪 | `recipes/` 加 `match()`（规则允许，主库现在没有） | `single_object` / `contested` 条目加 `narrowed_by` |
 | 新任务怎么复用 | 写回主仓库 `skills/` 后，新任务族直接继承代码 | 条件在新任务的诊断局上命中才给角色看 |
 
 1. **局部知识容易被验收门淘汰**：每物体 4 个验收局，只救一个物体的改动很难净赢 3。橙子和木勺 8 轮都没做成，部分原因可能在这里；这和 SSLA "保留局部适配"的目标有张力。

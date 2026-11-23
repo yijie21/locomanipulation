@@ -11,7 +11,7 @@
 | 第一版的数据 | **`ga-past-b` 离线建**（`grasp_atomic_past`，10 个 pick 任务，8 轮，2,660 条 PAST 记录），不跑新的 RSI | 唯一带 PAST 的运行；先回答"能不能抽出有用的条目" |
 | 建库方式 | **程序 join 证据，LLM 只写条件和修法**，分层和检索由程序求值完成 | 条件可求值才能自动分层、收窄、按命中检索；人写的文本经验库 10-19 配对重放没有效果，纯文本不再试 |
 
-两层不是两个库：同一个库里的条目按 `scope` 分 `shared` 和 `local`，差别在条件的宽窄和证据来自几个物体。提升（promotion）就是条件放宽后重新求值仍满足共享的判据。
+两层不是两个库：同一个库里的条目按 `generality` 分 `multi_object`、`single_object` 和 `contested`，差别在条件的宽窄和证据来自几个物体（2026-11-23 以前这个字段叫 `scope`，值是 `shared` / `local`；因为和跨任务族的 shared knowledge 撞名改掉，下文已按新名字写）。提升（promotion）就是条件放宽后重新求值仍满足 `multi_object` 的判据。
 
 ## 1. 和现有部件的关系
 
@@ -35,8 +35,8 @@
  "id": "grasp_atomic_past/hand_hooked_under_slab",
  "version": 1,
  "status": "candidate",
- "scope": "local",
- "scope_why": "net positive on one object (DisplayWolf 3/3); Plant4_1 lost a start when the condition spanned every slab",
+ "generality": "contested",
+ "generality_why": "net negative on Plant4_1; positive on DisplayWolf (3/3); Plant4_1 lost a start when the condition spanned every slab",
  "source": {
   "family": "grasp_atomic_past", "sandbox": "ga-past-b", "iters": [2, 3, 4, 5],
   "mechanism_ids": ["H3_stance_free_edges_and_deep_reach", "H9_hang_filter_own_support"],
@@ -88,7 +88,7 @@
 | `signature` | LLM 从证据表选 | `first_bad.*` 和 `failure_class` 取翻转局里占多数的值；`reads_as` 是给人和 Reviewer 看的一句话 |
 | `repair` | LLM 从 `mechanism` / `compose.notes` / `gate` 提炼 | `works` 一句话；`does_not` 每条带账本里的数字；不许出现物体名 |
 | `evidence` | 程序算 | 按物体的触发 / 救回 / 弄坏计数；只用诊断池的局（第 6 节） |
-| `scope` / `scope_why` | 程序定，LLM 不碰 | 第 4.1 节的规则 |
+| `generality` / `generality_why` | 程序定，LLM 不碰 | 第 4.1 节的规则 |
 | `status` | 程序 | `candidate` → `tested`（经过一次配对重放）→ `retired`（后来的证据净负） |
 
 ## 3. 建库：`scripts/rsi/knowledge.py build <沙盒> <任务族> [--iters 0-3] [--out scripts/rsi/knowledge]`
@@ -136,7 +136,7 @@
 LLM 写完立即：
 
 1. **语法**：列名在证据表里、算子在 `OPS` 里、数值类型匹配；不过就带错误重写一次，再不过丢弃并记 `build.log`。
-2. **名字**：`loop.named_objects` 同一套词表扫 `repair` / `signature.reads_as` / `scope_why`；命中作废重写一次。
+2. **名字**：`loop.named_objects` 同一套词表扫 `repair` / `signature.reads_as` / `generality_why`；命中作废重写一次。
 3. **求值**：在**全部可见记录**（该沙盒 `records.scan()` 的行，诊断池所有版本的局）上跑 `condition`，得到触发集；再和机制的翻转局集合交叉，得到 `evidence.by_object`。
 4. **最低证据**：触发的翻转局 ≥ 2，且触发集里翻转局的占比高于非触发集（Fisher p ≤ 0.10，门槛松于 `records.judge` 的 0.05，因为这里是写库不是判假设）；不满足就记"条件不分离"重写一次，再不过丢弃。
 
@@ -144,17 +144,17 @@ LLM 写完立即：
 
 - `scripts/rsi/knowledge/<family>/<slug>.json`：条目；
 - `scripts/rsi/knowledge/<family>/BUILD.md`：这次建库的日志（哪些机制进了、哪些丢了、为什么、费用）；
-- `scripts/rsi/knowledge/INDEX.md`：所有条目一行一条（id、scope、条件的一句话、来源物体数、状态），给人看；角色不读 INDEX，只读命中（第 5 节）。
+- `scripts/rsi/knowledge/INDEX.md`：所有条目一行一条（id、generality、条件的一句话、来源物体数、状态），给人看；角色不读 INDEX，只读命中（第 5 节）。
 
 ## 4. 分层
 
 ### 4.1 规则（程序，按 `evidence.by_object`）
 
-| 情况 | `scope` |
+| 情况 | `generality` |
 |---|---|
-| 触发 ≥ 2 个物体；每个物体 fixed − broken ≥ 0；至少一个 > 0 | `shared` |
-| 只触发 1 个物体，净正 | `local` |
-| 有物体净负 | 先尝试收窄（4.2）；收窄后满足第一行 → `shared`（条件带 `narrowed_by`）；否则 `local`，负物体进 `counterexamples` |
+| 触发 ≥ 2 个物体；每个物体 fixed − broken ≥ 0；至少一个 > 0 | `multi_object` |
+| 只触发 1 个物体，净正 | `single_object` |
+| 有物体净负 | 先尝试收窄（4.2）；收窄后满足第一行 → `multi_object`（条件带 `narrowed_by`）；否则 `contested`，负物体进 `counterexamples` |
 | 触发的翻转局 < 2，或触发集和翻转集不分离 | 丢弃 |
 
 "物体"是任务的目标物体（pick 族一个任务一个物体）。到 place / into 族时，键改成 (目标物体, 目标台面或容器) 对，规则不变。
@@ -167,7 +167,7 @@ LLM 写完立即：
 
 ### 4.3 提升与退役（跨任务族建库时）
 
-`knowledge.py build` 对第二个任务族（将来 `gso_all` 或 ADT 的 place 族）跑时，加 `--promote`：把库里所有 `local` 条目在新任务族的可见记录上重新求值，若合并后满足 4.1 第一行，`scope` 升为 `shared`，`version` 加 1，旧版本留在 `history`。反过来，`shared` 条目在新任务族上有物体净负，降回 `local` 并记反例。每次变动都在 `INDEX.md` 和 `BUILD.md` 留一行。
+`knowledge.py build` 对第二个任务族（将来 `gso_all` 或 ADT 的 place 族）跑时，加 `--promote`：把库里所有 `single_object` 和 `contested` 条目在新任务族的可见记录上重新求值，若合并后满足 4.1 第一行，`generality` 升为 `multi_object`，`version` 加 1，旧版本留在 `history`。反过来，`multi_object` 条目在新任务族上有物体净负，降为 `contested` 并记反例。每次变动都在 `INDEX.md` 和 `BUILD.md` 留一行。
 
 ## 5. 检索
 
@@ -178,8 +178,8 @@ LLM 写完立即：
 
 ### 5.2 命中的判定
 
-- `shared` 条目：现任诊断局里**至少 1 局**满足 `condition` 就算命中；
-- `local` 条目：满足 `condition`（含 `narrowed_by`）的局至少 1 局；因为 `narrowed_by` 已经把物体特征限住了，不另加判断；
+- `multi_object` 条目：现任诊断局里**至少 1 局**满足 `condition` 就算命中；
+- `single_object` / `contested` 条目：满足 `condition`（含 `narrowed_by`）的局至少 1 局；因为 `narrowed_by` 已经把物体特征限住了，不另加判断；
 - 命中的局里**失败局**才算有用：全是成功局的命中列为"条件命中但现任已做成"，放在 HITS 末尾一行，不展开。
 
 ### 5.3 角色看到什么
@@ -187,7 +187,7 @@ LLM 写完立即：
 `HITS.md`，每条命中一节，按命中的失败局数排序：
 
 ```
-## hand_hooked_under_slab  (shared, v2, from grasp_atomic_past + r1_held_single; tested)
+## hand_hooked_under_slab  (multi_object, v2, from grasp_atomic_past + r1_held_single; tested)
 Hits this incumbent's diagnostic rounds: pick_DisplayWolf_s410029 (failed), pick_DisplayWolf_s410009 (failed), pick_Plant4_1_s410028 (ok)
 Condition: support top 0.71–0.89 m, grasp above 0.69 m, the stance footprint intrudes into the object's own support
 Reads as: the pre-reach stalls 20+ cm off while the wrist presses the slab's front-underside edge (first_bad reach/at)
@@ -218,7 +218,7 @@ Counterexamples: pick_Plant4_1_s410018 -- the all-slab variant re-planned a succ
 
 - 条件是否只用了开局可知的列加少数运行时列；区间是不是翻转局的真实范围；
 - 触发集是不是落在对的物体上（挂手条目触发 DisplayWolf，不触发桌面物体）；
-- `scope` 的判定和人的直觉是否一致（经验库 `grasp_atomic` 那条 lesson 里"只算物体自己的板、别的板会误伤盆栽"应该被自动产出为一次收窄）；
+- `generality` 的判定和人的直觉是否一致（经验库 `grasp_atomic` 那条 lesson 里"只算物体自己的板、别的板会误伤盆栽"应该被自动产出为一次收窄）；
 - 丢弃了多少机制、为什么。
 
 预期产出 8–12 条条目；若少于 5 条，说明证据表或条件语法太窄，先修这个再往下。
@@ -246,7 +246,7 @@ Counterexamples: pick_Plant4_1_s410018 -- the all-slab variant re-planned a succ
 
 ### 7.3 第三步（第二版）：跨任务族
 
-`gso_all_s<seed>` 第一次内环（TODO 40.8）跑完后，`knowledge.py build <gso 沙盒> gso_all_s0 --promote`，看 ADT 的 `local` 条目有没有在物流间的物体上触发并升级，和 `shared` 条目有没有被降级。再用 `gso_all_s1` 带 / 不带库各跑一次内环做真正的跨任务对照。这是另一个决定点，不在本页范围。
+`gso_all_s<seed>` 第一次内环（TODO 40.8）跑完后，`knowledge.py build <gso 沙盒> gso_all_s0 --promote`，看 ADT 的 `single_object` / `contested` 条目有没有在物流间的物体上触发并升级，和 `multi_object` 条目有没有被降级。再用 `gso_all_s1` 带 / 不带库各跑一次内环做真正的跨任务对照。这是另一个决定点，不在本页范围。
 
 ## 8. 文件与改动清单
 
@@ -279,5 +279,5 @@ Counterexamples: pick_Plant4_1_s410018 -- the all-slab variant re-planned a succ
 - **条件描述的是"修之前"的局面**，但有些机制的翻转证据来自建在别的改动之上的草稿（如第 3 轮的三合一候选）。`compose` 行的归因文字能分一部分，分不开的机制 `repair.works` 里要注明 confounded，和经验库的 verdict 一致。
 - **`<kind>.*` 列依赖技能的步骤种类**：按原语种类键控已经让它跨技能版本稳定（TODO 39.6），但一个技能把走和伸手合成一步时列会错位；第一版接受。
 - **角色读了会不会反而收窄搜索**：10-19 人写经验库和现有经验库都没看到效果，也没看到坏处；7.2 的重放同时看假设数和机制多样性（`library_monitor.py` 的 `mechanisms` 列）。
-- **提升需要第二个任务族**：第一版所有 `shared` 都是"跨物体"意义上的，跨任务要等 7.3。
+- **提升需要第二个任务族**：第一版所有 `multi_object` 都是"跨物体"意义上的，跨任务要等 7.3。
 - **要不要让 Prober 用 `repair.does_not` 直接跳过已知无效的参数探针**：这是"驱动程序读"的第一步，留到第二版讨论。

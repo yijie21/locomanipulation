@@ -1,5 +1,7 @@
 # 两层知识库（shared / local）实现计划
 
+> 2026-11-23：条目的 `scope`（`shared` / `local`）改名为 `generality`（`multi_object` / `single_object` / `contested`），函数 `scope_of` 改为 `generality_of`，旧库由 `knowledge.modern_entry` 读回。下面的代码清单是实现时的原文，按旧名字写；以 `scripts/rsi/knowledge.py` 为准。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 从一次场景 RSI 运行的账本和 PAST 场景图记录自动抽出"条件 → 失败签名 → 修法"的知识条目，按证据分成 `shared` / `local`，建沙盒和每轮 Reviewer 之前按条件命中检索给角色，并用配对重放验证。

@@ -333,11 +333,11 @@ class Driver(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             run = fake_run(Path(d))
             KN.save_entries(run / "knowledge", [dict(id="fa/new", tag="single", source=dict(family="fa"),
-                                                     scope="shared", status="candidate", condition={},
+                                                     generality="multi_object", status="candidate", condition={},
                                                      evidence=dict(by_object={}), signature={})])  # fmt: skip
             out = Path(d) / "lib"
             KN.save_entries(out, [dict(id="fa/old", source=dict(family="fa")), dict(id="zz/keep", source=dict(family="zz"),
-                                                                                   scope="s", status="c", condition={},
+                                                                                   generality="g", status="c", condition={},
                                                                                    evidence=dict(by_object={}), signature={})])  # fmt: skip
             AL.publish(run, out)
             ids = sorted(e["id"] for e in KN.entries(out))

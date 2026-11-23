@@ -269,9 +269,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 39. The knowledge library (plan docs/handoff/shared-knowledge-plan-20261111.md; version 25). `scripts/rsi/knowledge.py
     build` turns a finished family's ledger and scene-graph records into entries: a condition over record-library
     columns, the failure signature it goes with, what repaired it and what did not, and the per-object evidence;
-    the driver scopes each entry `shared` (held and helped on two or more objects) or `local` (one object, or
-    narrowed to the positive objects' start.* ranges) and never by an object's name (rule 30's check runs on the
-    entry's text). The entries live in one file, scripts/rsi/knowledge/knowledge.jsonl, each tagged by the kind of
+    the driver gives each entry a `generality` -- `multi_object` (held and helped on two or more objects, hurt
+    none), `single_object` (one object in evidence) or `contested` (some object lost rounds, after narrowing to the
+    positive objects' start.* ranges failed to exclude it; user 2026-11-23) -- and never by an object's name (rule
+    30's check runs on the entry's text). Generality is about objects within the learning family; the `tag` below
+    says which kind of task it came from. The entries live in one file, scripts/rsi/knowledge/knowledge.jsonl, each tagged by the kind of
     task it was learned on (`single` one-hand pick, `bimanual` two-hand pick; version 26, user 2026-11-18). Before
     each Reviewer the driver writes scripts/rsi/knowledge/KNOWLEDGE.md: the whole library, every entry marked with
     the incumbent's diagnostic rounds its condition holds on (a mark, not a filter), and an alternating run's code

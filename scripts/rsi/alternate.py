@@ -276,7 +276,7 @@ def advance_base(run: Path, theirs: Path, conflicts: list[str]) -> None:
 
 
 def install_knowledge(run: Path, sb: Path) -> bool:
-    """The shared library (knowledge.jsonl, sync.jsonl, usage.jsonl, INDEX.md; not the build logs, whose scope notes name objects)
+    """The shared library (knowledge.jsonl, sync.jsonl, usage.jsonl, INDEX.md; not the build logs, whose generality notes name objects)
     copied into the sandbox's scripts/rsi/knowledge and committed there; KNOWLEDGE.md is the loop's own (gitignored).
     True when it changed."""
     src, dst = run / "knowledge", sb / "scripts" / "rsi" / "knowledge"

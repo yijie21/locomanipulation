@@ -203,7 +203,7 @@ cd $S1 && $PY scripts/rsi/sealed.py gso_single_grasp; cd -
 ```
 
 做什么：
-- `build` 从账本和场景图记录（`.past.jsonl`）里抽出机制，每个机制用一次模型调用写条件、失败特征和修法，再按每件物体上的证据分成 `shared` 或 `local`。条目写进主仓库 `scripts/rsi/` 下 `knowledge/knowledge.jsonl`，替换这个任务族以前的条目，别的任务族的条目保留；`tag` 按任务的物体自动判成 `single`。
+- `build` 从账本和场景图记录（`.past.jsonl`）里抽出机制，每个机制用一次模型调用写条件、失败特征和修法，再按每件物体上的证据定 `generality`：`multi_object`（多个物体上成立、没弄坏任何物体）、`single_object`（只有一个物体的证据）或 `contested`（有物体净负）。条目写进主仓库 `scripts/rsi/` 下 `knowledge/knowledge.jsonl`，替换这个任务族以前的条目，别的任务族的条目保留；`tag` 按任务的物体自动判成 `single`。
 - 同一个机制的证据没变时，重建直接沿用上次的结果，不再调用模型。约每个机制 1 USD，共 10–15 分钟。建库日志在 `knowledge/build/gso_single_grasp.md`。
 - 第二条把条目提交，以后的沙盒才能导出它们。
 - 第三条在封存集（单手 100 局）上跑种子和最终现任。后台跑法、每一轮的版本和视频见第 7.4 节。

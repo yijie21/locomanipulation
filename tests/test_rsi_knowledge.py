@@ -1,5 +1,5 @@
 """Two-layer knowledge library (docs/handoff/shared-knowledge-plan-20261111.md): start.* columns, mechanism
-clustering, evidence tables, condition evaluation and scope, the Consolidator's checks, HITS rendering."""
+clustering, evidence tables, condition evaluation and generality, the Consolidator's checks, HITS rendering."""
 
 from __future__ import annotations
 
@@ -387,29 +387,40 @@ class Conditions(unittest.TestCase):
         self.assertLessEqual(s["p"], 1.0)
 
 
-class Scope(unittest.TestCase):
+class Generality(unittest.TestCase):
     def test_object_of(self):
         self.assertEqual(KN.object_of("pick_Wolf_1"), "Wolf_1")
         self.assertEqual(KN.object_of("place_Mug_2_on_Table__0"), "Mug_2_on_Table__0")
 
-    def test_shared_when_two_objects_net_non_negative(self):
+    def test_multi_object_when_two_objects_net_non_negative(self):
         bo = {"Wolf_1": dict(triggered=3, fixed=3, broken=0), "Vase_2": dict(triggered=2, fixed=0, broken=0)}
-        self.assertEqual(KN.scope_of(bo)[0], "shared")
+        self.assertEqual(KN.generality_of(bo)[0], "multi_object")
 
-    def test_local_when_one_object(self):
-        self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=2, broken=0)})[0], "local")
+    def test_single_object_when_one_object(self):
+        self.assertEqual(KN.generality_of({"Wolf_1": dict(triggered=3, fixed=2, broken=0)})[0], "single_object")
 
     def test_drop_when_too_few_flips(self):
-        self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=1, broken=0)})[0], "drop")
+        self.assertEqual(KN.generality_of({"Wolf_1": dict(triggered=3, fixed=1, broken=0)})[0], "drop")
 
     def test_drop_when_every_object_is_net_negative(self):
-        self.assertEqual(KN.scope_of({"Wolf_1": dict(triggered=3, fixed=0, broken=2)})[0], "drop")
+        self.assertEqual(KN.generality_of({"Wolf_1": dict(triggered=3, fixed=0, broken=2)})[0], "drop")
 
-    def test_negative_object_makes_it_local_with_why(self):
+    def test_negative_object_makes_it_contested_with_why(self):
         bo = {"Wolf_1": dict(triggered=3, fixed=3, broken=0), "Plant4_1": dict(triggered=2, fixed=0, broken=1)}
-        scope, why = KN.scope_of(bo)
-        self.assertEqual(scope, "local")
+        generality, why = KN.generality_of(bo)
+        self.assertEqual(generality, "contested")
         self.assertIn("Plant4_1", why)
+
+    def test_modern_entry_reads_the_old_scope_field(self):
+        old = dict(id="f/a", scope="shared", scope_why="net non-negative on 2 objects, positive on Wolf_1")
+        self.assertEqual(KN.modern_entry(old)["generality"], "multi_object")
+        self.assertNotIn("scope", KN.modern_entry(old))
+        self.assertEqual(KN.modern_entry(dict(id="f/b", scope="local", scope_why="positive on one object (Wolf_1)"))["generality"],
+                         "single_object")  # fmt: skip
+        self.assertEqual(KN.modern_entry(dict(id="f/c", scope="local", scope_why="net negative on Plant4_1; positive on Wolf_1"))["generality"],
+                         "contested")  # fmt: skip
+        new = dict(id="f/d", generality="contested", generality_why="x")
+        self.assertIs(KN.modern_entry(new), new)
 
     def test_by_object_from_triggered_rows(self):
         t = KN.evidence_table(MECH, ROWS)
@@ -423,7 +434,7 @@ class Scope(unittest.TestCase):
         self.assertTrue(c.get("narrowed_by"))
         bo = KN.by_object(KN.trigger(c, t), MECH["flips"])
         self.assertNotIn("Plant4_1", bo)
-        self.assertEqual(KN.scope_of(bo)[0], "local")  # one positive object remains
+        self.assertEqual(KN.generality_of(bo)[0], "single_object")  # one positive object remains
 
     def test_narrow_returns_the_condition_unchanged_when_nothing_separates(self):
         rows = [dict(r, **{"start.support_top_m": 0.84}) for r in ROWS]
@@ -450,11 +461,11 @@ class Consolidate(unittest.TestCase):
         self.assertIn("Wolf", names)
         self.assertIn("Mug", names)
 
-    def test_validate_accepts_a_separating_condition_and_scopes_it(self):
+    def test_validate_accepts_a_separating_condition_and_gives_it_a_generality(self):
         t = KN.evidence_table(MECH, ROWS)
         entry, problems = KN.validate(SO, t, MECH["flips"], NAMES)
         self.assertEqual(problems, [])
-        self.assertIn(entry["scope"], ("shared", "local"))
+        self.assertIn(entry["generality"], KN.GENERALITIES)
         self.assertIn("Wolf_1", entry["evidence"]["by_object"])
         self.assertIn("separation", entry["evidence"])
 
@@ -630,7 +641,7 @@ class Consolidate(unittest.TestCase):
             self.assertIn("same evidence", (out / "build" / "fam.md").read_text())
 
 
-ENTRY = dict(id="fam/H1_hang", version=1, status="candidate", scope="shared", scope_why="positive on Wolf_1",
+ENTRY = dict(id="fam/H1_hang", version=1, status="candidate", generality="multi_object", generality_why="positive on Wolf_1",
              condition=COND, signature=dict(reads_as="the pre-reach stalls at the slab"),
              repair=dict(works="filter stances", does_not=["raise D_MIN (broke 4)"], where="stance choice"),
              evidence=dict(by_object={"Wolf_1": dict(triggered=2, fixed=2, broken=0)}, separation={}, diag_rounds=[], counterexamples=[]))  # fmt: skip
@@ -664,7 +675,7 @@ class Hits(unittest.TestCase):
         self.assertIn("from fam iterations [0, 1]", md)
         self.assertLess(md.index("(tag single)"), md.index("(tag bimanual)"))
         self.assertNotIn("by_object", md)
-        self.assertNotIn("positive on Wolf_1", md)  # scope_why names objects: never shown
+        self.assertNotIn("positive on Wolf_1", md)  # generality_why names objects: never shown
 
     def test_the_role_file_does_not_claim_verification(self):
         md = KN.render_library([ENTRY], KN.hits([ENTRY], ROWS[:5]))
@@ -1131,7 +1142,7 @@ class Lifecycle(unittest.TestCase):
         ents = [never, good, bad, done]
         md = KN.render_library(ents, KN.hits(ents, ROWS[:5]), None, usage)
         self.assertLess(md.index("### fam/good"), md.index("### fam/never"))  # tested before candidate
-        self.assertIn("### fam/good  (shared, v1, tested;", md)
+        self.assertIn("### fam/good  (multi_object, v1, tested;", md)
         self.assertIn("Cited 1 time(s): helped 1, no effect 0, unclear 0", md)
         self.assertIn("Not cited yet", md)
         self.assertNotIn("### fam/bad", md)  # one line, after the full entries
@@ -1148,7 +1159,7 @@ class Lifecycle(unittest.TestCase):
             KN.save_entries(out, [dict(ENTRY, id="x/a", tag="single", source=dict(family="x"))])
             self.assertEqual(KN.main(["usage", str(root), "fam", "--out", str(out)]), 0)
             self.assertEqual(len(KN.jl(out / KN.USAGE)), 7)
-            self.assertIn("| x/a | single | shared | tested | 2 (1 / 1 / 0) |", (out / "INDEX.md").read_text())
+            self.assertIn("| x/a | single | multi_object | tested | 2 (1 / 1 / 0) |", (out / "INDEX.md").read_text())
 
 
 class Report(unittest.TestCase):

@@ -1,6 +1,8 @@
 """The two-layer knowledge library (docs/handoff/shared-knowledge-plan-20261111.md): entries of the form condition ->
-failure signature -> repair, built from a loop's ledger and PAST scene-graph records, scoped `shared` or `local` by
-their per-object evidence. Skills may not read it (rules.md 39).
+failure signature -> repair, built from a loop's ledger and PAST scene-graph records, each with a `generality` from
+its per-object evidence (generality_of): `multi_object` held and helped on two or more objects and hurt none,
+`single_object` only one object in evidence, `contested` some object lost rounds (user 2026-11-23; before that
+`scope` shared / local, read back by modern_entry). Skills may not read it (rules.md 39).
 
 One shared file (user 2026-11-18): every entry is a line of `<library>/knowledge.jsonl`, tagged by the kind of task its
 family learned it on (`tag`: `single` one-hand pick, `bimanual` two-hand pick, `mixed` otherwise; tag_of) with its
@@ -320,8 +322,14 @@ def by_object(triggered: list[dict], flips: dict[str, str]) -> dict[str, dict]:
     return out
 
 
-def scope_of(bo: dict[str, dict]) -> tuple[str, str]:
-    """Plan section 4.1: shared, local or drop, with the reason."""
+GENERALITIES = ("multi_object", "single_object", "contested")  # generality_of; "drop" keeps no entry
+
+
+def generality_of(bo: dict[str, dict]) -> tuple[str, str]:
+    """Plan section 4.1: how far the per-object evidence reaches, with the reason. `multi_object`: two or more
+    objects, none net negative, at least one net positive; `single_object`: one object in evidence, net positive;
+    `contested`: some object is net negative (after narrowing failed to exclude it); `drop`: too few flipped rounds
+    or no object net positive. Says nothing about other task families: that is the entry's `tag`."""
     flipped = sum(o["fixed"] + o["broken"] for o in bo.values())
     if flipped < MIN_FLIPS:
         return "drop", f"{flipped} triggered flipped round(s), fewer than {MIN_FLIPS}"
@@ -331,11 +339,11 @@ def scope_of(bo: dict[str, dict]) -> tuple[str, str]:
     if not positive:
         return "drop", "no object is net positive"
     if negative:
-        return "local", f"net negative on {', '.join(negative)}; positive on {', '.join(positive)}"
+        return "contested", f"net negative on {', '.join(negative)}; positive on {', '.join(positive)}"
     if len(bo) >= 2 and positive:
-        return "shared", f"net non-negative on {len(bo)} objects, positive on {', '.join(positive)}"
+        return "multi_object", f"net non-negative on {len(bo)} objects, positive on {', '.join(positive)}"
     if len(bo) == 1 and positive:
-        return "local", f"positive on one object ({positive[0]})"
+        return "single_object", f"positive on one object ({positive[0]})"
     return "drop", "no object is net positive"
 
 
@@ -494,7 +502,7 @@ def _texts(so: dict) -> list[str]:
 def validate(so: dict, table: list[dict], flips: dict[str, str], names: set[str]) -> tuple[dict | None, list[str]]:
     """Plan section 3.4: syntax against the table's columns, only the columns of section 3.2
     (records.CONDITION_COLUMNS), no object names, the condition separates (p <= SEPARATION_P) and triggers at least
-    MIN_FLIPS flipped rounds; then scope (4.1) after narrowing (4.2)."""
+    MIN_FLIPS flipped rounds; then generality (4.1) after narrowing (4.2)."""
     problems: list[str] = []
     if so.get("decline"):
         return None, [f"declined: {so['decline']}"]
@@ -527,14 +535,14 @@ def validate(so: dict, table: list[dict], flips: dict[str, str], names: set[str]
     if problems:
         return None, problems
     bo = by_object(trigger(cond, table), flips)
-    scope, why = scope_of(bo)
-    if scope == "drop":
+    generality, why = generality_of(bo)
+    if generality == "drop":
         return None, [f"dropped: {why}"]
     entry = dict(condition=cond, signature=so.get("signature") or {}, repair=so.get("repair") or {},
                  evidence=dict(by_object=bo, separation=sep,
                                diag_rounds=sorted(r["label"] for r in trigger(cond, table) if r["flip"] != "unchanged"),
                                counterexamples=sorted(r["label"] for r in table if r["flip"] == "broken")),
-                 scope=scope, scope_why=why)  # fmt: skip
+                 generality=generality, generality_why=why)  # fmt: skip
     return entry, []
 
 
@@ -565,7 +573,7 @@ def build(
     ctx_root: Path | None = None,
     tag: str | None = None,
 ) -> dict:
-    """Plan section 3: mechanisms -> evidence tables -> the Consolidator -> validation, scope -> entries tagged `tag`
+    """Plan section 3: mechanisms -> evidence tables -> the Consolidator -> validation, generality -> entries tagged `tag`
     (default tag_of) replacing the family's earlier ones in `out`/knowledge.jsonl, the build log build/<family>.md and
     INDEX.md. `ctx_root` holds the Consolidator's context directories."""
     loop = sandbox / VISIBLE / family / "loop"
@@ -599,9 +607,10 @@ def build(
         if key in cache:
             fresh_cache[key] = hit = cache[key]
             if hit.get("entry"):
+                hit["entry"] = modern_entry(hit["entry"])  # a cache written before the rename
                 new.append(hit["entry"])
                 kept += 1
-                log.append(f"- {m['key']}: {hit['entry']['scope']} (as at the last build: same evidence)")
+                log.append(f"- {m['key']}: {hit['entry']['generality']} (as at the last build: same evidence)")
             else:
                 log.append(f"- {m['key']}: dropped as at the last build (same evidence) -- {hit.get('why', '')}")
             continue
@@ -636,7 +645,7 @@ def build(
         fresh_cache[key] = dict(entry=entry)
         kept += 1
         log.append(
-            f"- {m['key']}: {entry['scope']} ({entry['scope_why']}); separation p {entry['evidence']['separation']['p']}"
+            f"- {m['key']}: {entry['generality']} ({entry['generality_why']}); separation p {entry['evidence']['separation']['p']}"
         )
     log.append(f"\n{kept} entries, model cost {cost:.2f} USD")
     # a rebuild replaces the family's entries (a dropped mechanism keeps none) and leaves every other family's
@@ -667,9 +676,27 @@ def source_family(e: dict) -> str:
     return (e.get("source") or {}).get("family") or str(e.get("id", "")).split("/", 1)[0]
 
 
+def modern_entry(e: dict) -> dict:
+    """An entry as the current code writes it: one written before 2026-11-23 has `scope` shared / local instead of
+    `generality`; shared was multi_object, local was single_object ("positive on one object") or contested."""
+    if "generality" in e or "scope" not in e:
+        return e
+    e = dict(e)
+    scope, why = e.pop("scope"), e.pop("scope_why", "")
+    if scope == "shared":
+        e["generality"] = "multi_object"
+    elif scope == "local":
+        e["generality"] = "single_object" if str(why).startswith("positive on one object") else "contested"
+    else:
+        e["generality"] = scope
+    e["generality_why"] = why
+    return e
+
+
 def entries(out: Path = OUT) -> list[dict]:
-    """Every entry of the library at `out` (its knowledge.jsonl), in file order; none when it has no file."""
-    return jl(Path(out) / LIBRARY)
+    """Every entry of the library at `out` (its knowledge.jsonl), in file order, as the current code writes them
+    (modern_entry); none when it has no file."""
+    return [modern_entry(e) for e in jl(Path(out) / LIBRARY)]
 
 
 def save_entries(out: Path, ents: list[dict]) -> None:
@@ -784,7 +811,7 @@ def index(out: Path = OUT) -> None:
     rows = ["# Knowledge library", "",
             f"One entry per mechanism, in {LIBRARY} (scripts/rsi/knowledge.py build). The roles read {ROLE_FILE}, the "
             "whole library marked with the incumbent's rounds, not this index.", "",
-            "| id | tag | scope | status | cited (helped / no effect / unclear) | condition | objects | reads as |",
+            "| id | tag | generality | status | cited (helped / no effect / unclear) | condition | objects | reads as |",
             "|---|---|---|---|---|---|---|---|"]  # fmt: skip
     stats = entry_stats(jl(Path(out) / USAGE))
     for e in entries(out):
@@ -792,7 +819,7 @@ def index(out: Path = OUT) -> None:
         st = stats.get(e["id"])
         cites = f"{st['uses']} ({st['helped']} / {st['failed']} / {st['unclear']})" if st else "0"
         rows.append(
-            f"| {e['id']} | {e.get('tag', '')} | {e['scope']} | {status_of(st)} | {cites} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
+            f"| {e['id']} | {e.get('tag', '')} | {e['generality']} | {status_of(st)} | {cites} | {cond} | {len(e['evidence']['by_object'])} | {e['signature'].get('reads_as', '')} |"
         )
     Path(out).mkdir(parents=True, exist_ok=True)
     (Path(out) / "INDEX.md").write_text("\n".join(rows) + "\n")
@@ -807,7 +834,7 @@ def hits(ents: list[dict], rows: list[dict]) -> list[dict]:
         if not trig:
             continue
         rounds = sorted((r["label"], bool(r["ok"])) for r in trig)
-        out.append(dict(id=e["id"], scope=e["scope"], version=e.get("version", 1), status=e.get("status", ""),
+        out.append(dict(id=e["id"], generality=e["generality"], version=e.get("version", 1), status=e.get("status", ""),
                         rounds=rounds, failed=sum(not ok for _, ok in rounds)))  # fmt: skip
     return sorted(out, key=lambda h: (h["failed"] == 0, -h["failed"], h["id"]))
 
@@ -830,9 +857,9 @@ def _uses_text(st: dict | None) -> str:
 
 def _entry_lines(e: dict, h: dict | None, status: str = "candidate", st: dict | None = None) -> list[str]:
     """One entry of KNOWLEDGE.md, in full. Object names from the evidence never reach it (no `by_object`, no
-    `scope_why`): only the reading family's own round labels."""
+    `generality_why`): only the reading family's own round labels."""
     src = e.get("source") or {}
-    head = f"### {e['id']}  ({e['scope']}, v{e.get('version', 1)}, {status}; from {source_family(e)}"
+    head = f"### {e['id']}  ({e['generality']}, v{e.get('version', 1)}, {status}; from {source_family(e)}"
     head += f" iterations {src['iters']})" if src.get("iters") else ")"
     if h is None:
         mark = "This incumbent: the condition holds on none of its diagnostic rounds"
