@@ -58,6 +58,12 @@ class AmoConfig:
     # below ~0.15: 0.15 -> 0.05 m/s, 2026-10-20)
     ki_height: float = 1.0  # 1/s base-height integral
     cap_height: float = 0.30  # m
+    height_max: float | None = None  # m: the base-height command is never above this. None: the reference pelvis height
+    # plus the integral, as before. AMO's own nominal command is 0.75 (runtime.HEIGHT0) and it stands 0.78-0.79 high
+    # under it; asked for the reference's 0.78-0.79 it is at the top of its range, and when the arms then move it walks
+    # off although the speed command is 0: on simple_g1_sonic 18 of 40 multi-waypoint reaches (pelvis 50-100 cm away),
+    # with the command capped at 0.74-0.76 3-4 of 40 (amo_envelope_20261123, 2026-11-23). The self-model collector sets
+    # 0.75 (selfwm_20261029/env.py); the scene tasks keep None.
     ki_pitch: float = 1.0  # 1/s torso-pitch integral: AMO delivers a 1.0 rad lean on flat floor but 35 of 60 deg
     # reaching into the display shelf (pick_thick_novel s000, 2026-10-20)
     cap_pitch: float = 0.30  # rad
@@ -72,6 +78,12 @@ class AmoConfig:
     # twisted branch (shoulder yaw -1.9) and AMO walked off under it (scene rounds 2026-10-20; ArmIK's own warning)
     hand_lead_s: float = 0.04  # s: `hand`'s velocity leads the arm target this far (the arm PD lags)
     settle_s: float = 1.0  # s standing after reset, before t = 0
+    step_in_s: float = (
+        0.0  # s of stepping in place after that, then settle_s of standing again, before the stand pose is
+    )
+    # taken. 0: as before. From the all-zero reset pose AMO stands with its feet where the reset put them; a reach begun
+    # from there walked off more often than one begun after a walk (with height_max 0.75: 24 of 60 against 17 of 130;
+    # 3 s of stepping in place first: 12 of 60; amo_envelope_20261123, 2026-11-23). The self-model collector sets 3.
 
 
 # AMO's own motor defaults: slower turns and a longer stop than ScaleBFM's (a turn in place drifted the pelvis 9-12 cm at
@@ -81,6 +93,18 @@ class AmoConfig:
 # Asked 60-78 deg into the display shelf AMO leans 36 deg (waist at its 0.52 rad limit, the rest as a squat;
 # pick_thick_novel, 2026-10-20); capping the planned pelvis pitch at 0.15 rad did not get the book either.
 AMO_MOTOR = MotorConfig(turn_rate=0.6, stop_timeout=5.0, waist_dofs="pitch")
+
+
+def height_command(ref_z: float, est_z: float, h_int: float, cfg: "AmoConfig", dt: float) -> tuple[float, float]:
+    """(base-height command, new integral) for a standing tick: the reference pelvis height plus an integral on the measured
+    height, capped at cfg.height_max. While the cap holds the command below what the integral asks for, the integral does
+    not grow further (it would only delay the descent when the reference later crouches)."""
+    step = cfg.ki_height * dt * (ref_z - est_z)
+    capped = cfg.height_max is not None and ref_z + h_int >= cfg.height_max
+    if not (capped and step > 0):
+        h_int = float(np.clip(h_int + step, -cfg.cap_height, cfg.cap_height))
+    cmd = ref_z + h_int
+    return (cmd if cfg.height_max is None else min(cmd, cfg.height_max)), h_int
 
 
 class AmoMotor(Motor):
@@ -124,9 +148,13 @@ class AmoMotor(Motor):
         self.servo, self.servo_target, self.hand_override = {}, {}, {}
         self.servo_on = {s: False for s in SIDES}
         y = float(yaw)
-        for _ in range(int(self.amo.settle_s / A.DT)):  # AMO stands up from its default pose; not on the round's clock
-            sim.set_jaw(self.jaw)  # open; Dex1 or Dex3, as the scene's hands (runtime.Sim.set_jaw)
-            self._step(self.pol(self._mj_state(), A.Command(yaw=y), ARM_READY))
+        phases = [(False, self.amo.settle_s)]  # AMO stands up from its default pose; not on the round's clock
+        if self.amo.step_in_s > 0:
+            phases += [(True, self.amo.step_in_s), (False, self.amo.settle_s)]
+        for stepping, seconds in phases:
+            for _ in range(int(seconds / A.DT)):
+                sim.set_jaw(self.jaw)  # open; Dex1 or Dex3, as the scene's hands (runtime.Sim.set_jaw)
+                self._step(self.pol(self._mj_state(), A.Command(yaw=y, turning=stepping), ARM_READY))
         self.nominal = self.joints()[:15].copy()
         self._stand()
         self.stand_pose = self.ref(0.0)
@@ -198,15 +226,18 @@ class AmoMotor(Motor):
         pitch = float(np.clip(pitch - off, *a.pitch_range))  # the command; it stands for the absolute lean pitch + off
         tyaw = float(np.clip(tyaw, -a.torso_yaw_max, a.torso_yaw_max))
         roll = float(np.clip(roll, -a.torso_roll_max, a.torso_roll_max))
+        height = (
+            float(ref.pos[2] + self.h_int)
+            if a.height_max is None
+            else min(float(ref.pos[2] + self.h_int), a.height_max)
+        )
         if self.mode != MODE_WALK:
-            self.h_int = float(
-                np.clip(self.h_int + a.ki_height * A.DT * (ref.pos[2] - est[2]), -a.cap_height, a.cap_height)
-            )
+            height, self.h_int = height_command(float(ref.pos[2]), float(est[2]), self.h_int, a, A.DT)
             meas = A.euler(R.quat_wxyz(R.rot_z(-yaw) @ R.mat(d.xquat[self.torso_id])))[1]
             self.p_int = float(
                 np.clip(self.p_int + a.ki_pitch * A.DT * (pitch + off - meas), -a.cap_pitch, a.cap_pitch)
             )
-        cmd = A.Command(vx=float(vx), vy=float(vy), yaw=yaw_ref, height=float(ref.pos[2] + self.h_int),
+        cmd = A.Command(vx=float(vx), vy=float(vy), yaw=yaw_ref, height=float(height),
                         torso_yaw=float(tyaw), torso_pitch=float(pitch + self.p_int), torso_roll=float(roll),
                         turning=self.stepping)  # fmt: skip
         if not self.stepping:

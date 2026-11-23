@@ -808,6 +808,67 @@ SONIC 的 4 次冒烟伸手：0 摔倒，手的终点误差 6.8–15.0 cm，比 
 - 被试跑看过的 8 条测试路线单独再算一遍（剩下 13 条）。
 - 报告里写明：补偿用的模型见过同三类场景的规划器路线，只做预测的那个结果用的模型没见过。
 
+## 第四步补充之三：换出发规则，在新测试路线上重做窄缝计分（2026-11-23，用户："1 做"）
+
+### 为什么
+
+第四步补充之二的测试里，腕、掌、指的误差降了 58 %，窄缝比值却是 1.02。原因在我们这一方的出发规则：它把"预测的误差"和"残差的 95 % 上界"相加，实际误差从来没有超过这个和，碰撞率处处为 0，成功率到 12.75 cm 才够 90 %。事后试的另一条规则在同一批路线上是 9.00 对 12.50 cm，但规则是看到结果之后选的，不算证据。这一步把它事先写下来，在没用过的路线上只跑一次。
+
+### 做法
+
+- **新的测试路线**：换种子（20261124）让 cuRobo 规划 450 个场景，场景生成器和以前相同。和训练路线（20261123）、开发路线（20261122）、原测试路线（20261121）都不共用场景。规划出来的路线全部用，各回放 4 遍。
+- **三组回放，同样的路线同样的起点**：直接发命令；常数修正（对手，用 `via_point_20261121`）；位置加朝向（我们，用第 2 轮模型 `via_point_onpol2_20261123`，设置不变）。
+- **我们这一方新的出发规则**：预测的误差 + m ≤ 缝的半宽就出发，否则放弃。预测的误差是"模型对实际发出的命令预测的扫过区域"离想要的路线多远。m 是一个固定数，取 41 条开发路线那一遍补偿回放（`onpol_dev_r2_pose`）上"实际误差 − 预测误差"的 95 % 分位，对腕 + 掌 + 指是 3.28 cm。`via_gap.py` 加选项 `--rule margin`，由脚本自己从开发路线那一遍算出 m，不手填。
+- **对手**：和以前相同的四个（小固定余量、标定过的固定余量、标量半径、常数修正，余量取自只见过随机路线的模型）。另外加一个更公平的对手：**在开发路线上标定的固定余量**，直接发命令，缝的半宽不小于开发路线上直接发命令误差的 95 % 分位才出发。它和我们一样事先判断、用同一批开发路线，不像小固定余量那样事后从测试集读数。
+- **计分不变**：成功不少于 90 %、碰撞不超过 5 % 的最窄半宽；比值 = 我们 ÷ 对手里最好的一个；主要看长绕行路线、腕 + 掌 + 指这一组球；区间按路线自助抽样。
+- 原来那条规则（两项相加）在新路线上的结果顺带打印，只作对照。
+- 模型、补偿设置、m、对手的余量都已经定死，新测试路线不用来定任何数。只跑一次。
+
+### 写预测之前已经知道的
+
+原测试集上的事后探索：新规则 9.00 cm，小固定余量 12.50 cm，比值 0.72（区间 0.64–1.20）；没被看过的 13 条路线上 8.25 对 11.25 cm，比值 0.73（0.68–0.80）。8 cm 的缝成功 83 %、碰撞 1 %。
+
+### 预测
+
+- 新路线上长绕行路线的误差和以前接近：直接发命令腕 + 掌 + 指中位数 7.5–8.5 cm，补偿后 3.2–4.0 cm。
+- 我们能过的最窄半宽 8–10 cm；小固定余量 11–13 cm；在开发路线上标定的固定余量 11.5–13.5 cm。
+- 比值 0.65–0.85。
+- 我们在自己最窄的那个半宽上碰撞率不超过 5 %（规则的余量是按 95 % 定的，这一条不满足就说明余量在新路线上不够）。
+
+### 判据
+
+- 比值 ≤ 0.8 且区间上端 < 1：成立，"能安全通过更窄的缝"。
+- 比值 > 0.95，或区间含 1 且比值 > 0.8：不成立。
+- 比值在 0.8 和 0.95 之间且区间上端 < 1：有优势但不大，照实报告数值。
+- 另外三条和以前相同：三项一致性检查 0.00 mm；摔倒不比直接发命令多 5 次以上；模型对补偿回放的预测误差不超过直接发命令那一遍的 2 倍。任何一条不满足，结果不算。
+- 整条手臂 24 个球那一组照样打印。那一组预计不成立（补偿朝向把肩带偏），不作为这一步的判据。
+
+### 第五步，AMO：先把它调到能用，再写预测（2026-11-23）
+
+**AMO 原来不能用的原因是我们发给它的命令，不是它够不着。**
+
+- 现象：在这个场景上，带路点的伸手有 47 % 会自己走开（200 次里 93 次，骨盆离开 20 cm 以上），这时发给它的速度命令是 0。
+- 走了的弯路：我先说是目标太远，用户据此选了"把目标拉近"。实测相反，越近越高的目标越容易走开，这个说法不成立。之后逐项排除了质量分布、躯干后仰命令、每拍手臂逆解、手点位置、髋力矩上限、求解器设置、脚的接触形状，每项 40 次开场，都没有用。
+- 线索：在 AMO 原来的机器人上各跑满 40 次，站着伸手走开 44–63 %，蹲着 4 %，和手点无关。
+- **原因一：站得比标称高。** 动作层把参考规划里的骨盆高度（站立时 0.78–0.79 m）当作 AMO 的高度命令，AMO 自己的标称命令是 0.75 m。封顶在 0.75 m 之后，同样 200 次开场走开的降到 40 次（20 %）。
+- **原因二：复位后的站姿。** 复位把关节全置零，AMO 从这个姿势站住就开始伸手，走开 24 / 60；走过一段再伸手是 17 / 130。复位后先原地踏 3 秒再取站姿，同样 200 次开场走开的降到 25 次（12 %）。
+- 两处修复都是动作层的可选设置（`AmoConfig.height_max`、`step_in_s`），默认关，场景任务不受影响；自身模型的采集里默认开（`REACH_AMO_HEIGHT_MAX=0.75`、`REACH_AMO_STEP_IN=3`）。探测数据：`amo_envelope_20261123`（修复前）、`amo_envelope_fixed_20261123`（只封顶）、`amo_envelope_fixed2_20261123`（两处都修）。
+- **和 SONIC 对照**：按"伸手结束时骨盆离规划位置超过 20 cm"来量，ScaleBFM 是 1.2 %，SONIC 12 %，AMO 修复后 16 %；手的终点误差中位数 SONIC 7.9 cm，AMO 8.0 cm。SONIC 的数据是原样用的，AMO 也原样用，只去掉摔倒的。
+
+**做法**：和 SONIC 相同的四步，脚本和设置不改，`REACH_CONTROLLER=amo`。采集 12000 次开场，种子 55000000。
+
+**AMO 和另外两个控制器不同的地方**：AMO 只管腿和腰。手臂由我们的关节 PD 跟踪，目标来自每拍一次的手臂逆解，逆解用的是量到的骨盆和腰。所以身体怎么动，手臂会自己追着补，手的误差主要来自腿部里程计的漂移、PD 的滞后和够不着。
+
+**预测**：
+
+- 站立路线手偏离参考路线的中位数 4–8 cm。
+- 验证集停止线（站立、手走过 1 米以上）降幅 25–55 %。
+- 留出的随机路线降幅 25–55 %；21 条测试绕行路线降幅 20–50 %。
+- 挪路点补偿后手掌误差降 15–45 %。
+- 走开的那一成多（骨盆移动几十厘米）模型大概预测不了，它们会把误差的高分位拉得很大；中位数的降幅受影响小。
+
+**判据**：和 SONIC 相同（停止线 25 %；测试路线上降幅 ≥ 20 % 且区间不含 0；补偿后手掌降幅 ≥ 20 % 且区间不含 0）。不成立就照实报告，不换设置重试。
+
 ## 预测修订
 
 - 2026-11-20，试跑之后：**事先定的"方向稳定度"算错了对象，改用整条偏差曲线。**
@@ -1508,6 +1569,101 @@ detour paths (over an edge, over a box): 21 routes, 84 pairs
 - SONIC 下整条手臂也跟着改善，ScaleBFM 下肩和肘没有。SONIC 的接口只收手腕和头的目标，手腕挪了，手臂跟着走；ScaleBFM 跟的是整条手臂的关键点。
 - 同一批路线在 SONIC 的站姿下起点差 4.9 cm，没有重新规划。
 
+### 第四步补充之三：新测试路线，新的出发规则，只跑了这一次（2026-11-23）
+
+新测试路线 `outputs/reachwm_20261030/test2_routes`（种子 20261124，450 个场景规划出 166 条：越过桌沿 24、越过箱子 21、伸到板下 121；和另外三组路线的目标一个都不重合）。三组回放各 664 段、0 摔倒、0 跳过：`test2_direct`、`test2_const`、`test2_pose`。成对比较：
+
+```
+pairs 664 (direct 664, compensated 664 paths without a fall; 0 pairs dropped: the two runs' wanted sweeps differ by over 1 mm)
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 45 routes, 180 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.39 cm, compensated 3.88 cm; drop 0.54 (0.48 to 0.61); 90 % level 12.27 and 9.28 cm
+  palm, error against the wanted sweep: direct 5.17 cm, compensated 2.55 cm; drop 0.51 (0.41 to 0.55); improved in 0.91 of the pairs
+  arm,  error against the wanted sweep: direct 8.54 cm, compensated 7.42 cm; drop 0.13 (0.07 to 0.20); improved in 0.64 of the pairs
+  palm's settled end against the wanted end: direct 3.52 cm, compensated 1.14 cm; drop 0.68 (0.59 to 0.75)
+  hand's attitude against the wanted one: settled end direct 21.3 deg, compensated 8.9 deg; along the path 12.4 and 3.9 deg
+  points moved: median 3.20 cm, largest 8.00 cm; the goal 4.19 cm; wrist commands turned: median 21.6 deg, largest 40.0 deg
+  palm, the error the model predicted: for the original command 5.00 cm, for the one sent 2.28 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.44 cm, compensated 1.88 cm
+```
+
+窄缝计分 `outputs/reachwm_20261030/via_gap_test2_20261123`（`--rule margin`；ours_sum 是原来那条规则，只作对照）：
+
+```
+through: actual minus predicted error on onpol_dev_r2_pose: median +0.34 cm, 95 % level +3.28 cm (the margin of --rule margin)
+hand: actual minus predicted error on onpol_dev_r2_pose: median +0.28 cm, 95 % level +3.54 cm (the margin of --rule margin)
+arm: actual minus predicted error on onpol_dev_r2_pose: median +0.52 cm, 95 % level +2.91 cm (the margin of --rule margin)
+through: direct command's error on dev_via_pose2_20261122/direct: 95 % level 12.56 cm (fixed_dev)
+hand: direct command's error on dev_via_pose2_20261122/direct: 95 % level 12.56 cm (fixed_dev)
+arm: direct command's error on dev_via_pose2_20261122/direct: 95 % level 12.63 cm (fixed_dev)
+replays: 664 triples of 664; wanted sweep differs between the runs by at most 0.00 mm
+
+detour routes, spheres 'through': 45 routes, 180 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 8.39 / 12.27 / 13.60; const 8.96 / 12.99 / 13.79; ours 3.88 / 9.28 / 13.84
+  half-width cm            2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small     success    0.00  0.00  0.02  0.08  0.14  0.24  0.45  0.63  0.76  0.84  0.88  0.93  0.95  0.97
+            collide    0.00  0.00  0.98  0.92  0.86  0.76  0.55  0.37  0.24  0.16  0.12  0.07  0.05  0.03
+  fixed     success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius    success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.03  0.06  0.09  0.11  0.17  0.26  0.38
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const     success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  fixed_dev success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.93  0.95  0.97
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.07  0.05  0.03
+  ours      success    0.00  0.00  0.00  0.11  0.46  0.59  0.70  0.79  0.83  0.87  0.89  0.89  0.91  0.96
+            collide    0.00  0.00  0.00  0.00  0.00  0.02  0.01  0.00  0.00  0.00  0.00  0.00  0.02  0.01
+  ours_sum  success    0.00  0.01  0.02  0.14  0.29  0.41  0.51  0.58  0.62  0.65  0.71  0.77  0.79  0.83
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.01  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small      13.75  (12.00 to 14.75)
+    fixed        nan  (nan to nan)
+    radius       nan  (nan to nan)
+    const        nan  (nan to nan)
+    fixed_dev  13.75  (12.75 to 14.75)
+    ours       13.25  (9.25 to 15.00)
+    ours_sum     nan  (12.64 to 15.00)
+  ours / best other way (small): 0.96 (0.73 to 1.10)
+  at a half-width of 5 cm, success / collision / abstention: small 0.08 / 0.92 / 0.00; fixed 0.00 / 0.00 / 1.00; radius 0.00 / 0.00 / 1.00; const 0.00 / 0.00 / 1.00; fixed_dev 0.00 / 0.00 / 1.00; ours 0.11 / 0.00 / 0.89; ours_sum 0.14 / 0.00 / 0.86
+
+
+near-straight routes (under a board), spheres 'through': 121 routes, 484 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 2.90 / 4.61 / 5.44; const 3.78 / 5.73 / 6.79; ours 2.23 / 2.89 / 3.01
+    small       5.50  (4.75 to 6.25)
+    fixed_dev  12.75  (12.75 to 12.75)
+    ours        6.25  (6.25 to 6.25)
+  ours / best other way (small): 1.14 (1.00 to 1.32)
+
+detour routes, spheres 'arm': 45 routes, 180 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 8.54 / 12.65 / 14.21; const 9.13 / 13.11 / 13.79; ours 7.42 / 14.65 / 16.21
+    small      14.25  (12.50 to 14.75)
+    fixed_dev  14.25  (12.75 to 14.75)
+    ours         nan  (11.75 to 15.00)
+  ours / best other way (small): nan (0.89 to 1.16)
+```
+
+**对照事先写的判据：**
+
+- 三项一致性检查 0.00 mm；摔倒 0 次；模型对补偿回放的预测误差 1.88 cm，是直接发命令那一遍（1.44 cm）的 1.31 倍。这三条都满足，结果算数。
+- 误差的预测对了：直接发命令 8.39 cm（预测 7.5–8.5），补偿后 3.88 cm（预测 3.2–4.0）。
+- **窄缝比值 0.96（区间 0.73–1.10），按判据不成立。** 我们 13.25 cm，小固定余量和在开发路线上标定的固定余量都是 13.75 cm。预测是 0.65–0.85，又错了。原测试集上事后得到的 0.72 没有重现。
+- 我们在自己最窄的半宽上碰撞率 1–2 %，不超过 5 %，余量在新路线上是够的。
+
+**为什么：有一成的路线补不动，而"90 % 成功"正好卡在这一成上。**
+
+- 180 次绕行伸手里有 20 次（11 %，9 条路线）补偿之后误差仍超过 9 cm。这 20 次里 95 % 的位置修正顶到了 8 cm 上限，100 % 的手腕转角顶到了 40° 上限；它们直接发命令时的误差中位数是 13.5 cm（其余 8.0 cm）。也就是控制器偏得太多，超出了补偿允许挪的范围。
+- 模型知道这些补不动：对它们预测的剩余手掌误差是 6.9 cm（其余 2.2 cm），所以规则让它们放弃，没有去撞。成功率因此在 11–13 cm 一直停在 87–89 %。
+- 原测试集上这样的伸手只有 6 %（84 次里 5 次），所以那里成功率能过 90 %。两批路线的差别就在难路线占 6 % 还是 11 %。
+
+**两批测试路线上都成立的（表里的逐行数字，不是事先写的判据）：**
+
+- 同样宽的缝，我们通过的比例高得多，而且几乎不碰撞。新路线上半宽 8 cm：我们成功 70 %、碰撞 1 %、放弃 29 %；小固定余量成功 45 %、碰撞 55 %；在开发路线上标定的固定余量到 13 cm 才开始出发。半宽 6 cm：我们 46 % 对 14 %。
+- 小固定余量的碰撞率要到 13–14 cm 才降到 5 % 以下；我们在每个半宽下都不超过 2 %。
+
+**结论：**"能安全通过的最窄的缝更窄"这个说法两次都没有通过事先写的判据，不能用。能用的说法是"同样宽的缝，通过率高、几乎不碰撞，补不动的时候自己知道放弃"。要让最窄的缝也变窄，得把那一成补不动的路线解决掉：放宽 8 cm 和 40° 这两个上限，并让模型在更大的修正下也见过数据。这没有做。
+
 ## 意外
 
 - 手的方向稳定度 0.16，远低于预测的 0.6–0.9，而肘是 0.85。原因见"预测修订"：统计量取的时刻在两处偏差之间跳。
@@ -1949,3 +2105,51 @@ All numbers below are computed by me, in /workspace/tmp/review_via_gap_20261122/
 4. 属实。补偿回放里 `jaw_err_cm`、`att_err_deg`、`ok` 是相对实际发出的命令算的，不是相对原来的目标，不能当任务成功率读。本条目里没有用这三个字段下结论；`gen_reach.py` 的注释里补了这一句。
 5. 属实，是这个误差的定义：只算偏到路线旁边多远，不算滞后；停得不够远由终点误差单独看。
 6. 属实。停在第 2 轮和 3.04 这个缩放都只靠 41 条开发路线。第 2 轮没有被证明比第 1 轮好，只是按规则用了最后一轮。
+
+### 第四步补充之三（新测试路线）的复核（2026-11-23）
+
+复核人只拿到数据、脚本、结果文件和方案里的判据。报告全文和代码已拷到 `outputs/reachwm_20261030/review_via_test2_20261123`。交回的摘要原文：
+
+> Review of the second test set (test2): the pre-registered criterion is NOT met. I found no leak. Full report: /workspace/tmp/review_via_test2_20261123/REPORT.md.
+>
+> 1. **Separate set: confirmed.**
+> - Scene dicts and via arrays share nothing with the train, dev or first test routes. Seeds differ (20261124 against 20261123, 20261122, 20261121).
+> - The model's training datasets are data_via, data_via2, data_via3 and the onpol_* replays of train_routes/subset. No test2 or dev replay is among them.
+> - Timeline: model 04:58, dev calibration run 05:03, via_gap.py 05:45, test2 scenes 05:48, test2_direct started 05:53. The asrun snapshots equal the current scripts.
+> - Caveat: the notebook section is uncommitted and its mtime is 06:31, after the results. So I cannot prove from timestamps that the pre-registration came first. The margin rule was chosen after seeing the first test set.
+>
+> 2. **Error against the wanted sweep: confirmed.** On the 180 detour reaches (45 routes), median / 90 % / 95 % in cm are direct 8.39 / 12.27 / 13.60 and compensated 3.88 / 9.28 / 13.84. These match comp_eval.out and gap.log. The 95 % tail is not better than direct.
+>
+> 3. **Narrow-gap rows: confirmed.**
+> - Margin m is 3.28 cm and fixed_dev is 12.56 cm.
+> - Narrowest half-width with success >= 0.90 and collisions <= 0.05: small 13.75, fixed_dev 13.75, ours 13.25 cm.
+> - Ratio is 0.96. My 95 % interval from resampling routes is 0.73 to 1.12; gap.log gives 0.73 to 1.10.
+> - The criterion needs <= 0.8, so it is not met. The prediction of 8-10 cm for ours failed.
+> - Ours passes with exactly 162/180 = 0.90 success and 0 collisions. With m = 3.0 cm the narrowest is 13.0 cm; with m = 3.6 cm it is 13.75 cm (ratio 1.0).
+>
+> 4. **Reaches far from the wanted sweep: confirmed, with a qualification.**
+> - 20 of 180 compensated detour reaches (11 %) have error above 9 cm, on 9 of 45 routes.
+> - 19 of those 20 have the largest shift at 8 cm, and all 20 have the largest turn at 40 deg. Among the other 160 reaches the shares are 34 % (shift) and 44 % (turn).
+> - Saturation is necessary but not sufficient. Of the 61 reaches saturated in both, only 19 (31 %) are far.
+> - `comp_pairs.npz` stores `reset` as the index (reset % 100000), so a join by row order gives wrong numbers. Align by `reset % 100000`.
+>
+> 5. **Success / collision rates at 6, 8 and 10 cm:**
+>    - small: 0.14/0.86, 0.45/0.55, 0.76/0.24.
+>    - fixed_dev: abstains throughout (0/0).
+>    - ours: 0.46/0.00, 0.70/0.006, 0.83/0.00.
+>
+> 6. **Problems, most serious first:**
+>    - The headline is a tie, so the claimed gain is not shown.
+>    - The result is knife-edge: one reach and the margin (m = 3.0 to 3.6 cm) move it.
+>    - The bootstrap ratio interval silently drops 18 % of resamples where the opponents pass nowhere up to 15 cm, and the grid is capped at 15 cm. The interval is conditional and truncated.
+>    - Ours misses 90 % through abstentions, not collisions. The roughly 11 % far reaches are not rescued by compensation.
+>    - The pre-registration is not verifiable by time.
+>    - The margin held on test2: its 95 % level is 3.31 cm against 3.28 cm, and 6 % of reaches exceeded it. I found no leak.
+
+我对它指出的问题的处理：
+
+- 打平、没有显出优势：属实，结论里就是"不成立"。
+- 结果卡在一次伸手上：属实。成功率刚好 162 / 180；余量取 3.0 cm 是 13.0 cm，取 3.6 cm 是 13.75 cm。这个指标在难路线占一成上下时本身就不稳。
+- 自助抽样的区间丢掉了对手在 15 cm 以内完全过不去的那 18 % 重抽样，网格也只到 15 cm：属实，区间是有条件的、被截断的，引用时要说明。没有改脚本重算，因为结论不靠这个区间的上端。
+- 顶到上限是"补不动"的必要条件，不是充分条件（两项都顶到上限的 61 次里只有 19 次补不动）：属实，上面"为什么"一段的说法应当按这个读。
+- 事先写判据的时间从文件上证明不了：属实。这一节是在跑之前写的，但没有单独提交，后来又在同一个文件里追加了结果，文件时间就晚于结果了。以后事先写的判据要在跑之前单独提交一次。

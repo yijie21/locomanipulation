@@ -73,7 +73,8 @@ class Env:
         import capability_probe as cap
 
         self.cap = cap
-        # REACH_CONTROLLER (2026-11-16): "scalebfm" (default) or "sonic" -- SONIC v1.1 in process (backends.sonic_onnx),
+        # REACH_CONTROLLER (2026-11-16): "scalebfm" (default), "sonic" -- SONIC v1.1 in process (backends.sonic_onnx) --
+        # or "amo" (backends.amo: AMO's legs and waist, our arm solver; 2026-11-23),
         # same scene, robot, joint order and Motor, so the self-model data of the two compare column for column
         self.controller = os.environ.get("REACH_CONTROLLER", "scalebfm")
         sonic = None
@@ -95,6 +96,18 @@ class Env:
             scene_dir=os.environ.get("REACH_SCENE_DIR") or None,
             dynamics=os.environ.get("REACH_SONIC_DYN", "scene"),
         )
+        if self.controller == "amo":
+            # REACH_AMO_HEIGHT_MAX (2026-11-23): the cap on AMO's base-height command, m (AmoConfig.height_max). Default
+            # 0.75, AMO's own nominal command: sent the reference pelvis height (0.78-0.79 standing) it walked off in
+            # about half of the multi-waypoint reaches; "none" restores that.
+            # REACH_AMO_STEP_IN: seconds AMO steps in place after a reset before the stand pose is taken
+            # (AmoConfig.step_in_s), default 3; 0 restores the reset as it was.
+            hmax = os.environ.get("REACH_AMO_HEIGHT_MAX", "0.75")
+            self.probe.m.amo = dataclasses.replace(
+                self.probe.m.amo,
+                height_max=None if hmax == "none" else float(hmax),
+                step_in_s=float(os.environ.get("REACH_AMO_STEP_IN", "3")),
+            )
         if self.controller == "sonic":  # REACH_SONIC_IFACE: SonicMotorConfig.interface (vr3pt, g1_splice, g1_full)
             self.probe.m.sonic = dataclasses.replace(
                 self.probe.m.sonic, interface=os.environ.get("REACH_SONIC_IFACE", self.probe.m.sonic.interface)

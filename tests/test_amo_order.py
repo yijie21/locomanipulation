@@ -96,3 +96,29 @@ class Boundary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HeightCommand(unittest.TestCase):
+    """The base-height command of a standing tick: reference + integral, capped."""
+
+    def test_without_a_cap_it_is_the_reference_plus_the_integral_as_before(self):
+        from locomani.backends.amo.motor import AmoConfig, height_command
+
+        cfg = AmoConfig()
+        cmd, h = height_command(0.60, 0.65, 0.02, cfg, 0.02)
+        self.assertAlmostEqual(h, 0.02 + cfg.ki_height * 0.02 * (0.60 - 0.65))
+        self.assertAlmostEqual(cmd, 0.60 + h)
+
+    def test_the_cap_holds_and_the_integral_does_not_wind_up_under_it(self):
+        from dataclasses import replace
+
+        from locomani.backends.amo.motor import AmoConfig, height_command
+
+        cfg, h = replace(AmoConfig(), height_max=0.75), 0.0
+        for _ in range(500):  # 10 s standing: asked for 0.79, the robot stays at 0.78
+            cmd, h = height_command(0.79, 0.78, h, cfg, 0.02)
+            self.assertLessEqual(cmd, 0.75)
+        self.assertEqual(h, 0.0)  # nothing accumulated, so a later crouch is not delayed
+        cmd, h = height_command(0.60, 0.70, h, cfg, 0.02)  # the reference crouches: the integral works again, downward
+        self.assertLess(h, 0.0)
+        self.assertAlmostEqual(cmd, 0.60 + h)

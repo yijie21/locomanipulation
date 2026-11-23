@@ -3,6 +3,7 @@ safely?
 
     $PY via_gap.py <out dir> <model dir> <direct replay dir> <const replay dir> <comp replay dir> \
         [--base <baseline model dir>] [--cal <compensated replay dir on other routes>] [--seen <route indices, a,b,...>]
+        [--rule margin] [--cal-direct <direct replay dir on the --cal routes>]
 
 A gap of half-width c: obstacles stand c away, on every side, from the path the planner wants each sphere to take (the
 original command's reference sweep). A reach TOUCHES when any sphere of the part that has to pass leaves its wanted path by
@@ -28,6 +29,13 @@ are neither trained on nor scored (the development routes): the 95 % level of wh
 for the command sent, over the radius model's prediction. A model that trained on replays has other passes of its training
 routes in its own calibration half, which would understate the residual on new routes.
 --seen: routes of the scored set that were looked at during development; the detour table is printed once more without them.
+--rule margin (with --cal): ours goes when the predicted error of the command sent, plus ONE margin, is within c. The margin
+is the 95 % level, on the --cal run, of the actual error minus the predicted one. The rule above adds two upper bounds (the
+predicted error and a bound on the residual) and never collided: it abstained until 12.75 cm on routes where 95 % of its
+reaches stayed within 9.6 cm (2026-11-23). The old rule is then scored too, as ours_sum, outside the ratio.
+--cal-direct: one more way, fixed_dev -- the original command, going when c >= the 95 % level of the direct command's
+error on the --cal routes: a fixed margin that, like ours, is set beforehand on planner routes, where `small` reads its
+narrowest gap off the scored routes afterwards.
 
 Scored on the replays (the same routes from the same states in all three runs): a reach is a success when it goes and does
 not touch, a collision when it goes and touches, an abstention when it does not go. The headline is the narrowest gap passed
@@ -54,7 +62,7 @@ OUT, MD, DD, DK, DC = (Path(x) for x in sys.argv[1:6])
 OUT.mkdir(parents=True, exist_ok=True)
 Q, LEVEL, SMALL = VM.Q, VM.LEVEL, 0.03
 GRID = np.arange(0.02, 0.1501, 0.0025)
-WAYS = ("small", "fixed", "radius", "const", "ours")
+WAYS = ["small", "fixed", "radius", "const", "ours"]  # --cal-direct and --rule margin add fixed_dev and ours_sum
 logf = open(OUT / "gap.log", "w")
 
 
@@ -82,6 +90,9 @@ ARGS = sys.argv[6:]
 BASE = Path(ARGS[ARGS.index("--base") + 1]) if "--base" in ARGS else None
 CALRUN = Path(ARGS[ARGS.index("--cal") + 1]) if "--cal" in ARGS else None
 SEEN = [int(x) for x in ARGS[ARGS.index("--seen") + 1].split(",")] if "--seen" in ARGS else []
+RULE = ARGS[ARGS.index("--rule") + 1] if "--rule" in ARGS else "sum"
+CALD = Path(ARGS[ARGS.index("--cal-direct") + 1]) if "--cal-direct" in ARGS else None
+assert RULE in ("sum", "margin") and (RULE == "sum" or CALRUN is not None), "--rule margin needs --cal"
 M = torch.load(MD / "via_point.pt", map_location="cpu", weights_only=False)
 link = [str(x) for x in np.load(VP.model_dirs(M, MD)[0] / "arm.npz")["link"]]
 SETS = dict(
@@ -151,6 +162,30 @@ if CALRUN is not None:  # ours' scale from a compensated replay of routes neithe
         log(f"{name}: ours' residual scale {c['scale_direction']:.2f} on the training side -> {new:.2f} on {len(rx)} reaches of "
             f"{CALRUN.name} (their residual: median {100 * np.median(res_x[:, mask].max(1)):.2f} cm, 95 % {100 * np.quantile(res_x[:, mask].max(1), LEVEL):.2f} cm)")  # fmt: skip
         c["scale_direction"] = new
+    # --rule margin: one margin on top of the predicted error, from the same run
+    full = lambda r: np.concatenate([r, r[:, -1:]], 1)  # noqa: E731
+    want_x = zx["comp_ref0"][Tx["seg"]].astype(float)
+    act_x = per_sphere(CALRUN, Tx, rx, want_x, None)
+    sent_x = full(zx["comp_ref"][Tx["seg"]].astype(float)) + zx["comp_off"][Tx["seg"]]
+    pred_x = np.array([VM.sweep_err(p, w) for p, w in zip(sent_x, full(want_x))])
+    for name, mask in SETS.items():
+        d = act_x[:, mask].max(1) - pred_x[:, mask].max(1)
+        CAL[name]["margin"] = float(np.quantile(d, LEVEL))
+        log(f"{name}: actual minus predicted error on {CALRUN.name}: median {100 * np.median(d):+.2f} cm, 95 % level "
+            f"{100 * CAL[name]['margin']:+.2f} cm (the margin of --rule margin)")  # fmt: skip
+if CALD is not None:  # a fixed margin for the original command, from the direct replay of the calibration routes
+    Ty = VP.load([CALD])
+    ry = np.arange(len(Ty["seg"]))
+    act_y = per_sphere(CALD, Ty, ry, Ty["ref"][ry].astype(float), None)
+    for name, mask in SETS.items():
+        CAL[name]["fixed_dev"] = float(np.quantile(act_y[:, mask].max(1), LEVEL))
+        log(
+            f"{name}: direct command's error on {CALD.parent.name}/{CALD.name}: 95 % level {100 * CAL[name]['fixed_dev']:.2f} cm (fixed_dev)"
+        )
+    WAYS.insert(WAYS.index("ours"), "fixed_dev")
+if RULE == "margin":
+    WAYS.append("ours_sum")
+OTHERS = [w for w in WAYS if not w.startswith("ours")]
 for name, c in CAL.items():
     log(f"{name}: fixed margin {100 * c['fixed_reference']:.2f} cm (direct), {100 * c['fixed_constant']:.2f} cm (after the mean offset), "
         f"{100 * c['fixed_direction']:.2f} cm (after the point model); radius scales {c['scale_reference']:.2f} / {c['scale_direction']:.2f}")  # fmt: skip
@@ -185,13 +220,20 @@ def outcomes(name: str, rows: np.ndarray) -> dict:
     r_ref = c["scale_reference"] * np.exp(VM.predict(c["nets_reference"], Td["x"][i_d[rows]])[:, 0])
     r_res = c["scale_direction"] * np.exp(VM.predict(c["nets_direction"], Tc["x"][i_c[rows]])[:, 0])
     g = GRID[None]
-    return dict(
+    p_set = pred[rows][:, mask].max(1)[:, None]
+    out = dict(
         small=(np.broadcast_to(g >= SMALL, (len(rows), len(GRID))), e["direct"][:, None] > g),
         fixed=(np.broadcast_to(g >= c["fixed_reference"], (len(rows), len(GRID))), e["direct"][:, None] > g),
         radius=(g >= r_ref[:, None], e["direct"][:, None] > g),
         const=(np.broadcast_to(g >= c["fixed_constant"], (len(rows), len(GRID))), e["const"][:, None] > g),
-        ours=(pred[rows][:, mask].max(1)[:, None] + r_res[:, None] <= g, e["ours"][:, None] > g),
+        ours=(p_set + r_res[:, None] <= g, e["ours"][:, None] > g),
     )
+    if RULE == "margin":
+        out["ours_sum"] = out["ours"]
+        out["ours"] = (p_set + c["margin"] <= g, e["ours"][:, None] > g)
+    if "fixed_dev" in WAYS:
+        out["fixed_dev"] = (np.broadcast_to(g >= c["fixed_dev"], (len(rows), len(GRID))), e["direct"][:, None] > g)
+    return out
 
 
 def narrowest(go, touch) -> float:
@@ -206,11 +248,11 @@ def table(name: str, tag: str, sel: np.ndarray, res: dict) -> None:
     e = {k: v[rows][:, SETS[name]].max(1) for k, v in ACT.items()}
     log("  error against the wanted sweep, median / 90 % / 95 % cm: " + "; ".join(
         f"{k} {100 * np.median(v):.2f} / {100 * np.percentile(v, 90):.2f} / {100 * np.percentile(v, 95):.2f}" for k, v in e.items()))  # fmt: skip
-    log("  half-width cm     " + "".join(f"{100 * c:6.0f}" for c in GRID[::4]))
+    log("  half-width cm       " + "".join(f"{100 * c:6.0f}" for c in GRID[::4]))
     for w in WAYS:
         go, touch = O[w]
-        log(f"  {w:7s} success  " + "".join(f"{x:6.2f}" for x in (go & ~touch).mean(0)[::4]))
-        log(f"  {'':7s} collide  " + "".join(f"{x:6.2f}" for x in (go & touch).mean(0)[::4]))
+        log(f"  {w:9s} success  " + "".join(f"{x:6.2f}" for x in (go & ~touch).mean(0)[::4]))
+        log(f"  {'':9s} collide  " + "".join(f"{x:6.2f}" for x in (go & touch).mean(0)[::4]))
     star = {w: narrowest(*O[w]) for w in WAYS}
     rng, groups = np.random.default_rng(0), [np.where(route[rows] == r)[0] for r in np.unique(route[rows])]
     bs = {w: [] for w in WAYS}
@@ -220,12 +262,12 @@ def table(name: str, tag: str, sel: np.ndarray, res: dict) -> None:
         s = {w: narrowest(O[w][0][j], O[w][1][j]) for w in WAYS}
         for w in WAYS:
             bs[w].append(s[w])
-        ratio.append(s["ours"] / np.nanmin([s[w] for w in WAYS if w != "ours"]))
-    best = min((w for w in WAYS if w != "ours"), key=lambda w: (np.isnan(star[w]), star[w]))
+        ratio.append(s["ours"] / np.nanmin([s[w] for w in OTHERS]))
+    best = min(OTHERS, key=lambda w: (np.isnan(star[w]), star[w]))
     log("  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:")
     for w in WAYS:
         lo, hi = np.nanpercentile(bs[w], [2.5, 97.5])
-        log(f"    {w:7s} {100 * star[w]:6.2f}  ({100 * lo:.2f} to {100 * hi:.2f})")
+        log(f"    {w:9s} {100 * star[w]:6.2f}  ({100 * lo:.2f} to {100 * hi:.2f})")
     lo, hi = np.nanpercentile(ratio, [2.5, 97.5])
     log(f"  ours / best other way ({best}): {star['ours'] / star[best]:.2f} ({lo:.2f} to {hi:.2f})")
     k5 = int(np.argmin(np.abs(GRID - 0.05)))
