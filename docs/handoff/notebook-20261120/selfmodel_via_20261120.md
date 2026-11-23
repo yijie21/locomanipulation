@@ -1840,6 +1840,504 @@ detour routes, spheres 'arm': 45 routes, 180 reaches
 
 **结论：**"能安全通过的最窄的缝更窄"这个说法两次都没有通过事先写的判据，不能用。能用的说法是"同样宽的缝，通过率高、几乎不碰撞，补不动的时候自己知道放弃"。要让最窄的缝也变窄，得把那一成补不动的路线解决掉：放宽 8 cm 和 40° 这两个上限，并让模型在更大的修正下也见过数据。这没有做。
 
+### 第四步补充之四：两轮回放和开发路线上的对照（2026-11-23）
+
+2026-11-23 07:45–09:43 UTC，vastgpu，2 个进程（同时 4 个进程在采 AMO），提交 `91f03b5a` 加未提交的代码改动（`gen_reach.py`、`via_comp.py`、`scalebfm/motor.py`，各运行目录的 `asrun/` 里有当时的副本）。链条脚本 `outputs/reachwm_20261030/onpol_chain_arm.sh`。训练路线上的两轮回放 `onpol_r3_arm`、`onpol_r4_arm`（种子 49000000），模型 `via_point_onpol3_20261123`、`via_point_onpol4_20261123`，开发路线上的四遍 `onpol_dev_r3_arm`、`onpol_dev_r4_arm`、`onpol_dev_r4_arm_narrow`、`onpol_dev_r4_pose`（种子 47000000）。
+
+各遍和直接发命令成对比较（`via_comp_eval.py`，每个运行目录的 `comp_eval.out`）：
+
+```
+09:43:50
+train done rc=0 08:34:54
+dev r3 done 08:40:06
+train done rc=0 09:26:11
+dev r4 done 09:43:00
+== onpol_r3_arm: finished 2026-11-23T08:22:33Z 1360 segments, 91469 steps, fell 0, walked 1020, ok 482
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 190 routes, 760 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.38 cm, compensated 3.56 cm; drop 0.57 (0.55 to 0.60); 90 % level 12.56 and 10.86 cm
+  palm, error against the wanted sweep: direct 5.15 cm, compensated 2.55 cm; drop 0.50 (0.46 to 0.54); improved in 0.87 of the pairs
+  arm,  error against the wanted sweep: direct 8.68 cm, compensated 7.09 cm; drop 0.18 (0.15 to 0.23); improved in 0.70 of the pairs
+  palm's settled end against the wanted end: direct 3.40 cm, compensated 1.29 cm; drop 0.62 (0.56 to 0.67)
+  hand's attitude against the wanted one: settled end direct 21.9 deg, compensated 8.9 deg; along the path 11.9 and 3.6 deg
+  points moved: median 2.96 cm, largest 12.00 cm; the goal 3.54 cm; wrist commands turned: median 19.4 deg, largest 60.0 deg
+  palm, the error the model predicted: for the original command 4.96 cm, for the one sent 2.22 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.12 cm, compensated 2.58 cm
+== onpol_r4_arm: finished 2026-11-23T09:14:48Z 1360 segments, 91555 steps, fell 0, walked 1020, ok 478
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 190 routes, 760 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.38 cm, compensated 3.49 cm; drop 0.58 (0.55 to 0.61); 90 % level 12.56 and 11.49 cm
+  palm, error against the wanted sweep: direct 5.15 cm, compensated 2.52 cm; drop 0.51 (0.48 to 0.54); improved in 0.86 of the pairs
+  arm,  error against the wanted sweep: direct 8.68 cm, compensated 7.14 cm; drop 0.18 (0.14 to 0.22); improved in 0.67 of the pairs
+  palm's settled end against the wanted end: direct 3.40 cm, compensated 1.22 cm; drop 0.64 (0.60 to 0.68)
+  hand's attitude against the wanted one: settled end direct 21.9 deg, compensated 8.4 deg; along the path 11.9 and 3.6 deg
+  points moved: median 2.93 cm, largest 12.00 cm; the goal 3.55 cm; wrist commands turned: median 19.4 deg, largest 60.0 deg
+  palm, the error the model predicted: for the original command 4.97 cm, for the one sent 2.28 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.11 cm, compensated 1.98 cm
+== onpol_dev_r3_arm: finished 2026-11-23T08:40:06Z 164 segments, 13542 steps, fell 0, walked 123, ok 20
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 41 routes, 164 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 7.91 cm, compensated 3.27 cm; drop 0.59 (0.47 to 0.64); 90 % level 11.83 and 10.41 cm
+  palm, error against the wanted sweep: direct 4.79 cm, compensated 2.65 cm; drop 0.45 (0.36 to 0.51); improved in 0.83 of the pairs
+  arm,  error against the wanted sweep: direct 8.36 cm, compensated 7.36 cm; drop 0.12 (0.04 to 0.19); improved in 0.63 of the pairs
+  palm's settled end against the wanted end: direct 3.39 cm, compensated 1.41 cm; drop 0.59 (0.44 to 0.67)
+  hand's attitude against the wanted one: settled end direct 20.0 deg, compensated 8.1 deg; along the path 12.3 and 3.6 deg
+  points moved: median 2.69 cm, largest 12.00 cm; the goal 3.14 cm; wrist commands turned: median 19.6 deg, largest 60.0 deg
+  palm, the error the model predicted: for the original command 4.41 cm, for the one sent 2.25 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.26 cm, compensated 2.09 cm
+== onpol_dev_r4_arm: finished 2026-11-23T09:32:34Z 164 segments, 13555 steps, fell 0, walked 123, ok 22
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 41 routes, 164 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 7.91 cm, compensated 3.41 cm; drop 0.57 (0.46 to 0.63); 90 % level 11.83 and 11.35 cm
+  palm, error against the wanted sweep: direct 4.79 cm, compensated 2.69 cm; drop 0.44 (0.33 to 0.50); improved in 0.82 of the pairs
+  arm,  error against the wanted sweep: direct 8.36 cm, compensated 7.44 cm; drop 0.11 (0.03 to 0.18); improved in 0.62 of the pairs
+  palm's settled end against the wanted end: direct 3.39 cm, compensated 1.50 cm; drop 0.56 (0.45 to 0.68)
+  hand's attitude against the wanted one: settled end direct 20.0 deg, compensated 8.1 deg; along the path 12.3 and 3.6 deg
+  points moved: median 2.68 cm, largest 12.00 cm; the goal 3.17 cm; wrist commands turned: median 20.0 deg, largest 60.0 deg
+  palm, the error the model predicted: for the original command 4.48 cm, for the one sent 2.31 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.23 cm, compensated 2.06 cm
+== onpol_dev_r4_arm_narrow: finished 2026-11-23T09:38:05Z 164 segments, 13518 steps, fell 0, walked 123, ok 22
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 41 routes, 164 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 7.91 cm, compensated 3.33 cm; drop 0.58 (0.50 to 0.64); 90 % level 11.83 and 7.49 cm
+  palm, error against the wanted sweep: direct 4.79 cm, compensated 2.55 cm; drop 0.47 (0.39 to 0.52); improved in 0.90 of the pairs
+  arm,  error against the wanted sweep: direct 8.36 cm, compensated 7.41 cm; drop 0.11 (0.03 to 0.18); improved in 0.65 of the pairs
+  palm's settled end against the wanted end: direct 3.39 cm, compensated 1.29 cm; drop 0.62 (0.53 to 0.70)
+  hand's attitude against the wanted one: settled end direct 20.0 deg, compensated 8.1 deg; along the path 12.3 and 3.6 deg
+  points moved: median 2.69 cm, largest 8.00 cm; the goal 3.17 cm; wrist commands turned: median 20.0 deg, largest 40.0 deg
+  palm, the error the model predicted: for the original command 4.48 cm, for the one sent 2.22 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.23 cm, compensated 2.04 cm
+== onpol_dev_r4_pose: finished 2026-11-23T09:42:55Z 164 segments, 13491 steps, fell 0, walked 123, ok 5
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 41 routes, 164 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 7.91 cm, compensated 3.70 cm; drop 0.53 (0.38 to 0.61); 90 % level 11.83 and 8.94 cm
+  palm, error against the wanted sweep: direct 4.79 cm, compensated 2.76 cm; drop 0.42 (0.35 to 0.49); improved in 0.91 of the pairs
+  arm,  error against the wanted sweep: direct 8.36 cm, compensated 7.72 cm; drop 0.08 (-0.02 to 0.15); improved in 0.62 of the pairs
+  palm's settled end against the wanted end: direct 3.39 cm, compensated 1.19 cm; drop 0.65 (0.53 to 0.72)
+  hand's attitude against the wanted one: settled end direct 20.0 deg, compensated 8.3 deg; along the path 12.3 and 3.7 deg
+  points moved: median 2.97 cm, largest 8.00 cm; the goal 3.88 cm; wrist commands turned: median 20.7 deg, largest 40.0 deg
+  palm, the error the model predicted: for the original command 4.48 cm, for the one sent 2.36 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.23 cm, compensated 1.87 cm
+```
+
+第 4 轮模型的三遍互相比（`via_vs.py`，当时的版本把基线那一列标成 position-only）。四段的基线依次是：`onpol_dev_r4_pose`、`onpol_dev_r4_pose`、`onpol_dev_r4_arm_narrow`、`onpol_dev_r3_arm`：
+
+```
+onpol_dev_r4_arm_narrow | 164 pairs, 41 routes
+  wrist + palm + fingers position-only  3.70 cm, this run  3.33 cm; drop of the median 0.10 (0.01 to 0.22); of the 90 % level  8.94 ->  7.49: 0.16 (-0.11 to 0.21); better on 0.54 of the pairs
+  palm                   position-only  2.76 cm, this run  2.55 cm; drop of the median 0.08 (-0.00 to 0.14); of the 90 % level  5.24 ->  5.22: 0.00 (-0.10 to 0.23); better on 0.45 of the pairs
+  arm (24 spheres)       position-only  7.72 cm, this run  7.41 cm; drop of the median 0.04 (0.01 to 0.10); of the 90 % level 13.19 -> 12.11: 0.08 (-0.06 to 0.12); better on 0.78 of the pairs
+  palm's settled end     position-only  1.19 cm, this run  1.29 cm; drop of the median -0.09 (-0.23 to 0.09); of the 90 % level  4.13 ->  3.72: 0.10 (-0.13 to 0.21); better on 0.47 of the pairs
+onpol_dev_r4_arm | 164 pairs, 41 routes
+  wrist + palm + fingers position-only  3.70 cm, this run  3.41 cm; drop of the median 0.08 (-0.02 to 0.19); of the 90 % level  8.94 -> 11.35: -0.27 (-1.31 to 0.12); better on 0.44 of the pairs
+  palm                   position-only  2.76 cm, this run  2.69 cm; drop of the median 0.03 (-0.10 to 0.10); of the 90 % level  5.24 ->  7.67: -0.46 (-1.30 to -0.05); better on 0.35 of the pairs
+  arm (24 spheres)       position-only  7.72 cm, this run  7.44 cm; drop of the median 0.04 (0.01 to 0.10); of the 90 % level 13.19 -> 15.00: -0.14 (-0.49 to 0.05); better on 0.68 of the pairs
+  palm's settled end     position-only  1.19 cm, this run  1.50 cm; drop of the median -0.26 (-0.43 to 0.00); of the 90 % level  4.13 ->  5.55: -0.34 (-1.01 to 0.04); better on 0.33 of the pairs
+onpol_dev_r4_arm | 164 pairs, 41 routes
+  wrist + palm + fingers position-only  3.33 cm, this run  3.41 cm; drop of the median -0.03 (-0.12 to 0.02); of the 90 % level  7.49 -> 11.35: -0.52 (-1.50 to -0.01); better on 0.13 of the pairs
+  palm                   position-only  2.55 cm, this run  2.69 cm; drop of the median -0.05 (-0.15 to 0.00); of the 90 % level  5.22 ->  7.67: -0.47 (-1.34 to -0.11); better on 0.05 of the pairs
+  arm (24 spheres)       position-only  7.41 cm, this run  7.44 cm; drop of the median -0.00 (-0.02 to 0.01); of the 90 % level 12.11 -> 15.00: -0.24 (-0.60 to -0.02); better on 0.15 of the pairs
+  palm's settled end     position-only  1.29 cm, this run  1.50 cm; drop of the median -0.16 (-0.31 to -0.01); of the 90 % level  3.72 ->  5.55: -0.49 (-1.16 to -0.03); better on 0.12 of the pairs
+onpol_dev_r4_arm | 164 pairs, 41 routes
+  wrist + palm + fingers position-only  3.27 cm, this run  3.41 cm; drop of the median -0.04 (-0.09 to 0.03); of the 90 % level 10.41 -> 11.35: -0.09 (-0.39 to 0.13); better on 0.33 of the pairs
+```
+
+仍偏 9 cm 以上的伸手，和按部位看（`via_parts.py`）：
+
+```
+onpol_dev_r2_pose          over 9 cm:  15/164 (0.091) | through median 3.79 90 % 8.74 95 % 10.32 | 24 spheres median 7.72 | model 2.23 (direct 1.24)
+onpol_dev_r3_arm           over 9 cm:  22/164 (0.134) | through median 3.27 90 % 10.41 95 % 16.49 | 24 spheres median 7.36 | model 2.09 (direct 1.26)
+onpol_dev_r4_pose          over 9 cm:  17/164 (0.104) | through median 3.70 90 % 8.94 95 % 10.25 | 24 spheres median 7.72 | model 1.87 (direct 1.23)
+onpol_dev_r4_arm_narrow    over 9 cm:  10/164 (0.061) | through median 3.33 90 % 7.49 95 % 9.55 | 24 spheres median 7.41 | model 2.04 (direct 1.23)
+onpol_dev_r4_arm           over 9 cm:  20/164 (0.122) | through median 3.41 90 % 11.35 95 % 17.40 | 24 spheres median 7.44 | model 2.06 (direct 1.23)
+dev_via_pose2_20261122/direct: 164 paths
+  shoulder  model  0.91  plan  0.00  actual  3.83
+  elbow     model  0.66  plan  0.00  actual  2.49
+  wrist     model  0.78  plan  0.00  actual  3.12
+  palm      model  0.86  plan  0.00  actual  4.79
+  fingers   model  1.11  plan  0.00  actual  7.91
+  all 24    model  1.23 (90 % 4.42)
+reachwm_20261030/onpol_dev_r4_arm: 164 paths
+  shoulder  model  1.50  plan  5.07  actual  7.37
+  elbow     model  1.23  plan  4.07  actual  3.81
+  wrist     model  1.34  plan  4.64  actual  2.61
+  palm      model  1.37  plan  7.98  actual  2.69
+  fingers   model  1.88  plan 12.59  actual  3.31
+  all 24    model  2.06 (90 % 8.56)
+reachwm_20261030/onpol_dev_r4_arm_narrow: 164 paths
+  shoulder  model  1.39  plan  4.92  actual  7.33
+  elbow     model  1.19  plan  4.01  actual  3.70
+  wrist     model  1.27  plan  4.51  actual  2.55
+  palm      model  1.34  plan  7.73  actual  2.55
+  fingers   model  1.84  plan 12.09  actual  3.26
+  all 24    model  2.04 (90 % 6.00)
+reachwm_20261030/onpol_dev_r4_pose: 164 paths
+  shoulder  model  1.47  plan  4.77  actual  7.52
+  elbow     model  1.05  plan  3.91  actual  3.85
+  wrist     model  1.09  plan  4.18  actual  2.73
+  palm      model  1.25  plan  7.44  actual  2.76
+  fingers   model  1.60  plan 12.00  actual  3.56
+  all 24    model  1.87 (90 % 5.82)
+```
+
+宽窄两种上限逐对比较（探索；两遍的 `comp_pairs.npz`）：宽上限比窄上限差 2 cm 以上的有 20 次，好 2 cm 以上的 1 次。这 20 次在窄上限下修正的最大值中位数是 8.0 cm 和 40°，宽上限下是 10.4 cm 和 60°；腕 + 掌 + 指的误差从 7.4 cm 变成 16.5 cm，模型对那一遍的预测误差从 4.7 cm 变成 10.0 cm。其余 144 次两遍的修正、误差、模型误差都相同（5.7 cm、31.2°、3.1 cm、1.8 cm）。
+
+把窄缝计分用在开发路线上（探索，余量取自同一遍；输出没有进仓库，脚本在只有绕行路线的目录上跑到"板下路线"那张表时因为没有数据而退出，前面的表已经打完）：
+
+```
+through: actual minus predicted error on onpol_dev_r4_arm_narrow: median +0.14 cm, 95 % level +3.81 cm (the margin of --rule margin)
+through: direct command's error on dev_via_pose2_20261122/direct: 95 % level 12.56 cm (fixed_dev)
+detour routes, spheres 'through': 41 routes, 164 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 7.91 / 11.83 / 12.56; const 5.56 / 9.87 / 11.59; ours 3.33 / 7.49 / 9.55
+  half-width cm            2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small     success    0.00  0.00  0.00  0.04  0.13  0.28  0.52  0.68  0.79  0.86  0.92  0.96  0.98  0.99
+            collide    0.00  0.00  1.00  0.96  0.87  0.72  0.48  0.32  0.21  0.14  0.08  0.04  0.02  0.01
+  fixed     success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius    success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.01  0.04  0.08  0.13  0.20  0.27  0.38
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const     success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  fixed_dev success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.96  0.98  0.99
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.04  0.02  0.01
+  ours      success    0.00  0.00  0.00  0.01  0.30  0.57  0.70  0.79  0.84  0.87  0.93  0.96  0.98  0.98
+            collide    0.00  0.00  0.00  0.00  0.01  0.02  0.00  0.00  0.00  0.01  0.01  0.01  0.00  0.01
+  ours_sum  success    0.00  0.00  0.03  0.19  0.37  0.48  0.57  0.62  0.68  0.72  0.75  0.77  0.79  0.81
+            collide    0.00  0.00  0.00  0.00  0.01  0.01  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small      12.75  (11.74 to 13.75)
+    fixed        nan  (nan to nan)
+    radius       nan  (nan to nan)
+    const        nan  (nan to nan)
+    fixed_dev  12.75  (12.75 to 13.75)
+    ours       11.50  (9.25 to 12.50)
+    ours_sum     nan  (11.87 to 15.00)
+  ours / best other way (small): 0.90 (0.75 to 1.00)
+```
+
+### 第四步补充之四：第三批测试路线，只跑了这一次（2026-11-23）
+
+2026-11-23 10:04–11:27 UTC，vastgpu，2 个进程（同时 4 个进程在采 AMO）。测试路线 `outputs/reachwm_20261030/test3_routes`（种子 20261125，450 个场景规划出 172 条：越过桌沿 21、越过箱子 28、伸到板下 123），09:47–09:51 规划，只用到 cuRobo。五组回放 `test3_direct`、`test3_const`、`test3_arm`、`test3_pose`、`test3_point`，各 688 次伸手，0 摔倒，0 跳过，种子 57000000。链条脚本 `test3_chain.sh`、`test3_chain2.sh`，各步的时刻在 `test3_chain.steps`。
+
+先后顺序：判据的提交 `ea13f62a` 在 09:56:36，第一组回放 10:04:04 开始。补充分析的提交 `9a8637f0` 在 10:33:09（钩子跑完 10:39），那时第三组回放在跑，没有读过任何测试路线上的评测；只挪位置那组 11:16:32 开始，放回箱子的检查 11:27 才第一次在测试路线上跑。
+
+`arm` 那一遍和直接发命令成对比较（`test3_arm/comp_eval.out`）：
+
+```
+pairs 688 (direct 688, compensated 688 paths without a fall; 0 pairs dropped: the two runs' wanted sweeps differ by over 1 mm)
+check, wanted sweep at run time against the direct run's reference: median 0.00 mm, largest 0.00 mm
+check, prediction at run time against the offline one: median 0.00 mm, largest 0.00 mm
+check, the compensated command's plan beforehand against the one it ran with: median 0.00 mm, largest 0.00 mm
+detour paths (over an edge, over a box): 49 routes, 196 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.66 cm, compensated 3.69 cm; drop 0.57 (0.42 to 0.65); 90 % level 12.42 and 12.02 cm
+  palm, error against the wanted sweep: direct 5.29 cm, compensated 2.50 cm; drop 0.53 (0.40 to 0.58); improved in 0.84 of the pairs
+  arm,  error against the wanted sweep: direct 9.05 cm, compensated 7.32 cm; drop 0.19 (0.08 to 0.28); improved in 0.57 of the pairs
+  palm's settled end against the wanted end: direct 3.52 cm, compensated 1.17 cm; drop 0.67 (0.60 to 0.74)
+  hand's attitude against the wanted one: settled end direct 22.1 deg, compensated 10.2 deg; along the path 11.8 and 3.8 deg
+  points moved: median 2.89 cm, largest 8.00 cm; the goal 3.49 cm; wrist commands turned: median 20.7 deg, largest 40.0 deg
+  palm, the error the model predicted: for the original command 4.79 cm, for the one sent 2.21 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.44 cm, compensated 2.28 cm
+```
+
+`pose`、常数修正、只挪位置三遍的同一段（各自目录的 `comp_eval.out`，三项一致性检查同样是 0.00 mm）：
+
+```
+detour paths (over an edge, over a box): 49 routes, 196 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.66 cm, compensated 3.94 cm; drop 0.54 (0.38 to 0.64); 90 % level 12.42 and 10.50 cm
+  palm, error against the wanted sweep: direct 5.29 cm, compensated 2.62 cm; drop 0.51 (0.30 to 0.57); improved in 0.86 of the pairs
+  arm,  error against the wanted sweep: direct 9.05 cm, compensated 7.55 cm; drop 0.17 (0.05 to 0.25); improved in 0.60 of the pairs
+  palm's settled end against the wanted end: direct 3.52 cm, compensated 1.04 cm; drop 0.70 (0.61 to 0.74)
+  hand's attitude against the wanted one: settled end direct 22.1 deg, compensated 10.4 deg; along the path 11.8 and 3.8 deg
+  points moved: median 3.07 cm, largest 8.00 cm; the goal 4.54 cm; wrist commands turned: median 21.3 deg, largest 40.0 deg
+  palm, the error the model predicted: for the original command 4.79 cm, for the one sent 2.30 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 1.44 cm, compensated 2.03 cm
+detour paths (over an edge, over a box): 49 routes, 196 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.66 cm, compensated 9.04 cm; drop -0.04 (-0.13 to -0.02); 90 % level 12.42 and 12.95 cm
+  palm, error against the wanted sweep: direct 5.29 cm, compensated 5.99 cm; drop -0.13 (-0.21 to -0.05); improved in 0.15 of the pairs
+  arm,  error against the wanted sweep: direct 9.05 cm, compensated 9.66 cm; drop -0.07 (-0.11 to -0.00); improved in 0.14 of the pairs
+  palm's settled end against the wanted end: direct 3.52 cm, compensated 4.66 cm; drop -0.32 (-0.46 to -0.28)
+  hand's attitude against the wanted one: settled end direct 22.1 deg, compensated 22.3 deg; along the path 11.8 and 12.5 deg
+  points moved: median 0.97 cm, largest 2.56 cm; the goal 1.42 cm; wrist commands turned: median 0.0 deg, largest 0.0 deg
+  palm, the error the model predicted: for the original command 4.78 cm, for the one sent 5.10 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 3.75 cm, compensated 3.73 cm
+detour paths (over an edge, over a box): 49 routes, 196 pairs
+  wrist + palm + fingers, error against the wanted sweep: direct 8.66 cm, compensated 6.13 cm; drop 0.29 (0.21 to 0.36); 90 % level 12.42 and 10.87 cm
+  palm, error against the wanted sweep: direct 5.29 cm, compensated 3.07 cm; drop 0.42 (0.32 to 0.48); improved in 0.95 of the pairs
+  arm,  error against the wanted sweep: direct 9.05 cm, compensated 7.31 cm; drop 0.19 (0.10 to 0.32); improved in 0.78 of the pairs
+  palm's settled end against the wanted end: direct 3.52 cm, compensated 0.90 cm; drop 0.74 (0.69 to 0.77)
+  hand's attitude against the wanted one: settled end direct 22.1 deg, compensated 21.1 deg; along the path 11.8 and 11.9 deg
+  points moved: median 2.45 cm, largest 8.00 cm; the goal 2.84 cm; wrist commands turned: median 0.0 deg, largest 0.0 deg
+  palm, the error the model predicted: for the original command 4.78 cm, for the one sent 1.88 cm (what the loop left)
+  the model's own error (arm) on the run it predicted: direct 3.75 cm, compensated 3.80 cm
+```
+
+`arm` 对 `pose`（`via_vs.py`，基线是 `pose`），按部位看（`via_parts.py --detour`）：
+
+```
+test3_arm | 196 pairs, 49 routes
+  wrist + palm + fingers baseline  3.94 cm, this run  3.69 cm; drop of the median 0.06 (-0.04 to 0.14); of the 90 % level 10.50 -> 12.02: -0.14 (-0.24 to 0.11); better on 0.54 of the pairs
+  palm                   baseline  2.62 cm, this run  2.50 cm; drop of the median 0.05 (-0.03 to 0.19); of the 90 % level  7.09 ->  8.25: -0.16 (-0.24 to 0.11); better on 0.46 of the pairs
+  arm (24 spheres)       baseline  7.55 cm, this run  7.32 cm; drop of the median 0.03 (0.01 to 0.08); of the 90 % level 13.77 -> 13.54: 0.02 (-0.12 to 0.13); better on 0.78 of the pairs
+  palm's settled end     baseline  1.04 cm, this run  1.17 cm; drop of the median -0.13 (-0.24 to 0.06); of the 90 % level  4.08 ->  3.57: 0.12 (-0.13 to 0.43); better on 0.54 of the pairs
+  wrist + palm + fingers still over 9 cm: baseline 29/196 (0.148), this run 28/196 (0.143); difference -0.005 (-0.046 to +0.031); routes with any: 10 and 10
+reachwm_20261030/test3_direct: 196 paths
+  shoulder  model  1.23  plan  0.00  actual  4.08
+  elbow     model  0.76  plan  0.00  actual  2.71
+  wrist     model  0.89  plan  0.00  actual  3.43
+  palm      model  0.91  plan  0.00  actual  5.29
+  fingers   model  1.17  plan  0.00  actual  8.66
+  all 24    model  1.44 (90 % 5.52)
+reachwm_20261030/test3_arm: 196 paths
+  shoulder  model  1.80  plan  5.35  actual  7.08
+  elbow     model  1.48  plan  4.38  actual  3.58
+  wrist     model  1.43  plan  4.95  actual  2.82
+  palm      model  1.52  plan  8.43  actual  2.50
+  fingers   model  1.91  plan 13.42  actual  3.62
+  all 24    model  2.28 (90 % 8.93)
+reachwm_20261030/test3_pose: 196 paths
+  shoulder  model  1.49  plan  5.31  actual  7.15
+  elbow     model  1.08  plan  4.30  actual  3.74
+  wrist     model  1.06  plan  4.82  actual  2.72
+  palm      model  1.31  plan  8.34  actual  2.62
+  fingers   model  1.75  plan 13.03  actual  3.93
+  all 24    model  2.03 (90 % 7.04)
+```
+
+窄缝计分（`via_gap_test3_20261123/gap.out`）：
+
+```
+through: actual minus predicted error on onpol_dev_r4_arm_narrow: median +0.14 cm, 95 % level +3.81 cm (the margin of --rule margin)
+through: direct command's error on dev_via_pose2_20261122/direct: 95 % level 12.56 cm (fixed_dev)
+detour routes, spheres 'through': 49 routes, 196 reaches
+  error against the wanted sweep, median / 90 % / 95 % cm: direct 8.66 / 12.42 / 13.61; const 9.04 / 12.95 / 13.92; ours 3.69 / 12.02 / 13.48
+  half-width cm            2     3     4     5     6     7     8     9    10    11    12    13    14    15
+  small     success    0.00  0.00  0.00  0.09  0.18  0.32  0.44  0.54  0.64  0.79  0.87  0.92  0.97  0.97
+            collide    0.00  0.00  1.00  0.91  0.82  0.68  0.56  0.46  0.36  0.21  0.13  0.08  0.03  0.03
+  fixed     success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  radius    success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.01  0.03  0.08  0.16  0.25  0.31  0.38
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  const     success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  fixed_dev success    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.92  0.97  0.97
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.08  0.03  0.03
+  ours      success    0.00  0.00  0.00  0.01  0.26  0.51  0.61  0.68  0.76  0.82  0.85  0.89  0.93  0.95
+            collide    0.00  0.00  0.00  0.00  0.00  0.01  0.01  0.01  0.01  0.01  0.02  0.02  0.01  0.00
+  ours_sum  success    0.00  0.01  0.02  0.20  0.36  0.46  0.52  0.55  0.57  0.60  0.63  0.65  0.69  0.70
+            collide    0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00  0.00
+  narrowest gap passed safely (success >= 0.90, collisions <= 0.05), half-width cm, with its 95 % interval:
+    small      13.75  (12.50 to 15.00)
+    fixed        nan  (nan to nan)
+    radius       nan  (nan to nan)
+    const        nan  (nan to nan)
+    fixed_dev  13.75  (12.75 to 15.00)
+    ours       13.25  (10.75 to 14.50)
+    ours_sum     nan  (nan to nan)
+  ours / best other way (small): 0.96 (0.83 to 1.05)
+```
+
+把箱子放回去（`test3_scene_check_20261123/scene.out`，基线是直接发命令）：
+
+```
+reachwm_20261030/test3_direct: 196 reaches on 49 detour routes
+  median clearance cm / share touching            wanted              plan             model            actual
+  shoulder                                13.34 / 0.000    13.34 / 0.000    12.20 / 0.005    12.27 / 0.015
+  elbow                                    9.84 / 0.000     9.84 / 0.000     8.48 / 0.015     8.58 / 0.020
+  wrist                                    5.92 / 0.000     5.92 / 0.000     5.78 / 0.005     5.75 / 0.026
+  palm                                     3.81 / 0.031     3.81 / 0.031     4.21 / 0.005     3.99 / 0.010
+  fingers                                  1.52 / 0.056     1.52 / 0.056     0.45 / 0.383     0.18 / 0.459
+  all 24                                   1.50 / 0.066     1.50 / 0.066     0.45 / 0.383     0.18 / 0.459
+  model's sweep within 0 cm of a box as the warning: 75 warned, 22 of 90 touches not warned, 7 warned without a touch
+  model's sweep within 1 cm of a box as the warning: 152 warned, 2 of 90 touches not warned, 64 warned without a touch
+  model's sweep within 2 cm of a box as the warning: 183 warned, 0 of 90 touches not warned, 93 warned without a touch
+  depth of the touches: median 0.78 cm, largest 4.11 cm; reaches touching with: shoulder 3, elbow 4, wrist 5, palm 2, fingers 90
+reachwm_20261030/test3_const: 196 reaches on 49 detour routes
+  median clearance cm / share touching            wanted              plan             model            actual
+  shoulder                                13.34 / 0.000    13.44 / 0.000    12.22 / 0.005    12.26 / 0.020
+  elbow                                    9.84 / 0.000     9.77 / 0.000     8.63 / 0.015     8.66 / 0.020
+  wrist                                    5.92 / 0.000     5.33 / 0.000     5.64 / 0.005     5.54 / 0.020
+  palm                                     3.81 / 0.031     3.07 / 0.031     3.59 / 0.010     3.30 / 0.026
+  fingers                                  1.52 / 0.056     1.32 / 0.056    -0.06 / 0.541    -0.22 / 0.612
+  all 24                                   1.50 / 0.066     1.32 / 0.066    -0.06 / 0.541    -0.23 / 0.617
+  model's sweep within 0 cm of a box as the warning: 106 warned, 23 of 121 touches not warned, 8 warned without a touch
+  model's sweep within 1 cm of a box as the warning: 171 warned, 3 of 121 touches not warned, 53 warned without a touch
+  model's sweep within 2 cm of a box as the warning: 187 warned, 0 of 121 touches not warned, 66 warned without a touch
+  depth of the touches: median 0.85 cm, largest 4.25 cm; reaches touching with: shoulder 4, elbow 4, wrist 4, palm 5, fingers 120
+  against test3_direct, 196 pairs on 49 routes: touching 90 (0.459) there, 121 (0.617) this run; difference +0.158 (+0.071 to +0.245); touching in both 81, only there 9, only this run 40
+reachwm_20261030/test3_point: 196 reaches on 49 detour routes
+  median clearance cm / share touching            wanted              plan             model            actual
+  shoulder                                13.34 / 0.000    14.17 / 0.000    13.72 / 0.005    13.78 / 0.015
+  elbow                                    9.84 / 0.000    10.16 / 0.000     9.02 / 0.000     9.03 / 0.010
+  wrist                                    5.92 / 0.000     5.85 / 0.020     4.94 / 0.015     4.59 / 0.005
+  palm                                     3.81 / 0.031     2.98 / 0.158     4.41 / 0.000     4.20 / 0.000
+  fingers                                  1.52 / 0.056     1.10 / 0.311     1.34 / 0.051     1.16 / 0.087
+  all 24                                   1.50 / 0.066     0.92 / 0.332     1.29 / 0.066     1.07 / 0.102
+  model's sweep within 0 cm of a box as the warning: 13 warned, 11 of 20 touches not warned, 4 warned without a touch
+  model's sweep within 1 cm of a box as the warning: 66 warned, 4 of 20 touches not warned, 50 warned without a touch
+  model's sweep within 2 cm of a box as the warning: 169 warned, 0 of 20 touches not warned, 149 warned without a touch
+  depth of the touches: median 0.91 cm, largest 2.71 cm; reaches touching with: shoulder 3, elbow 2, wrist 1, palm 0, fingers 17
+  against test3_direct, 196 pairs on 49 routes: touching 90 (0.459) there, 20 (0.102) this run; difference -0.357 (-0.474 to -0.250); touching in both 18, only there 72, only this run 2
+reachwm_20261030/test3_arm: 196 reaches on 49 detour routes
+  median clearance cm / share touching            wanted              plan             model            actual
+  shoulder                                13.34 / 0.000    14.46 / 0.000    12.19 / 0.071    11.90 / 0.071
+  elbow                                    9.84 / 0.000    10.15 / 0.000     8.89 / 0.061     8.95 / 0.056
+  wrist                                    5.92 / 0.000     5.63 / 0.031     5.55 / 0.005     5.46 / 0.000
+  palm                                     3.81 / 0.031     2.18 / 0.281     4.29 / 0.000     4.06 / 0.015
+  fingers                                  1.52 / 0.056    -0.46 / 0.561     1.11 / 0.102     0.88 / 0.224
+  all 24                                   1.50 / 0.066    -0.64 / 0.566     1.04 / 0.163     0.79 / 0.260
+  model's sweep within 0 cm of a box as the warning: 32 warned, 23 of 51 touches not warned, 4 warned without a touch
+  model's sweep within 1 cm of a box as the warning: 94 warned, 10 of 51 touches not warned, 53 warned without a touch
+  model's sweep within 2 cm of a box as the warning: 180 warned, 3 of 51 touches not warned, 132 warned without a touch
+  depth of the touches: median 0.96 cm, largest 4.69 cm; reaches touching with: shoulder 14, elbow 11, wrist 0, palm 3, fingers 44
+  against test3_direct, 196 pairs on 49 routes: touching 90 (0.459) there, 51 (0.260) this run; difference -0.199 (-0.327 to -0.071); touching in both 35, only there 55, only this run 16
+reachwm_20261030/test3_pose: 196 reaches on 49 detour routes
+  median clearance cm / share touching            wanted              plan             model            actual
+  shoulder                                13.34 / 0.000    13.80 / 0.000    11.58 / 0.087    11.54 / 0.082
+  elbow                                    9.84 / 0.000     9.99 / 0.000     8.59 / 0.066     8.47 / 0.071
+  wrist                                    5.92 / 0.000     5.61 / 0.031     5.83 / 0.010     5.47 / 0.000
+  palm                                     3.81 / 0.031     2.16 / 0.260     4.23 / 0.000     4.04 / 0.000
+  fingers                                  1.52 / 0.056    -0.29 / 0.556     1.03 / 0.112     0.72 / 0.240
+  all 24                                   1.50 / 0.066    -0.45 / 0.561     0.96 / 0.184     0.67 / 0.276
+  model's sweep within 0 cm of a box as the warning: 36 warned, 19 of 54 touches not warned, 1 warned without a touch
+  model's sweep within 1 cm of a box as the warning: 104 warned, 5 of 54 touches not warned, 55 warned without a touch
+  model's sweep within 2 cm of a box as the warning: 183 warned, 3 of 54 touches not warned, 132 warned without a touch
+  depth of the touches: median 1.35 cm, largest 4.75 cm; reaches touching with: shoulder 16, elbow 14, wrist 0, palm 0, fingers 47
+  against test3_direct, 196 pairs on 49 routes: touching 90 (0.459) there, 54 (0.276) this run; difference -0.184 (-0.301 to -0.066); touching in both 44, only there 46, only this run 10
+```
+
+`arm`、`pose` 对只挪位置（`scene_vs_point.out` 和 `vs_point.out`）：
+
+```
+  against test3_point, 196 pairs on 49 routes: touching 20 (0.102) there, 51 (0.260) this run; difference +0.158 (+0.077 to +0.240); touching in both 16, only there 4, only this run 35
+  against test3_point, 196 pairs on 49 routes: touching 20 (0.102) there, 54 (0.276) this run; difference +0.173 (+0.087 to +0.265); touching in both 16, only there 4, only this run 38
+test3_arm | 196 pairs, 49 routes
+  wrist + palm + fingers baseline  6.13 cm, this run  3.69 cm; drop of the median 0.40 (0.20 to 0.49); of the 90 % level 10.87 -> 12.02: -0.11 (-0.20 to 0.22); better on 0.77 of the pairs
+  palm                   baseline  3.07 cm, this run  2.50 cm; drop of the median 0.19 (0.01 to 0.28); of the 90 % level  6.54 ->  8.25: -0.26 (-0.39 to 0.08); better on 0.53 of the pairs
+  arm (24 spheres)       baseline  7.31 cm, this run  7.32 cm; drop of the median -0.00 (-0.22 to 0.11); of the 90 % level 11.89 -> 13.54: -0.14 (-0.24 to -0.04); better on 0.35 of the pairs
+  palm's settled end     baseline  0.90 cm, this run  1.17 cm; drop of the median -0.30 (-0.52 to 0.01); of the 90 % level  2.42 ->  3.57: -0.48 (-1.24 to -0.03); better on 0.42 of the pairs
+  wrist + palm + fingers still over 9 cm: baseline 36/196 (0.184), this run 28/196 (0.143); difference -0.041 (-0.102 to +0.010); routes with any: 12 and 10
+test3_pose | 196 pairs, 49 routes
+  wrist + palm + fingers baseline  6.13 cm, this run  3.94 cm; drop of the median 0.36 (0.13 to 0.49); of the 90 % level 10.87 -> 10.50: 0.03 (-0.10 to 0.18); better on 0.77 of the pairs
+  palm                   baseline  3.07 cm, this run  2.62 cm; drop of the median 0.15 (-0.11 to 0.26); of the 90 % level  6.54 ->  7.09: -0.08 (-0.31 to 0.08); better on 0.53 of the pairs
+  arm (24 spheres)       baseline  7.31 cm, this run  7.55 cm; drop of the median -0.03 (-0.27 to 0.06); of the 90 % level 11.89 -> 13.77: -0.16 (-0.36 to 0.01); better on 0.33 of the pairs
+  palm's settled end     baseline  0.90 cm, this run  1.04 cm; drop of the median -0.15 (-0.47 to 0.04); of the 90 % level  2.42 ->  4.08: -0.69 (-1.22 to -0.39); better on 0.39 of the pairs
+  wrist + palm + fingers still over 9 cm: baseline 36/196 (0.184), this run 29/196 (0.148); difference -0.036 (-0.107 to +0.026); routes with any: 12 and 10
+```
+
+**事先登记的判据逐条（提交 `ea13f62a`）：**
+
+| 判据 | 数字 | 结论 |
+|---|---|---|
+| `arm` 的腕 + 掌 + 指中位数低于 `pose`，区间不含 0 | 3.69 对 3.94 cm，低 6 %（−4 % 到 14 %） | 区间含 0：测试路线上分不出来。开发路线上的 10 % 没有复现 |
+| `arm` 相对直接发命令的降幅 ≥ 0.5，区间下端 ≥ 0.4 | 8.66 → 3.69 cm，0.57（0.42–0.65） | 成立 |
+| `arm` 仍偏 9 cm 以上的比例低于 `pose`，区间不含 0 | 28 对 29 / 196，差 −0.005（−0.046 到 +0.031） | 没有减少 |
+| 窄缝比值 ≤ 0.8 且区间上端 < 1 | 我们 13.25 cm，小固定余量和开发路线上标定的固定余量都是 13.75 cm，比值 0.96（0.83–1.05） | 不成立，第三次 |
+| 有效性三条 | 一致性检查 0.00 mm；摔倒 0 对 0；模型误差 2.28 对 1.44 cm（1.58 倍） | 都满足 |
+
+预测落在区间外的：仍偏 9 cm 以上的比例（预测 `arm` 5–11 %、`pose` 8–14 %，实际 14.3 % 和 14.8 %）；终点朝向（预测 7–10°，实际 10.2°；直接发命令预测 19–22°，实际 22.1°）；直接发命令的 24 个球（预测 8.0–8.8 cm，实际 9.05 cm）。其余都在区间内，包括窄缝的四个数和"判据仍然不成立"这句话。
+
+**补充分析的判据逐条（提交 `9a8637f0`）：**
+
+| | 碰到箱子的伸手（196 次） | 和直接发命令之差（区间） | 肩 / 肘碰到的伸手 | 结论 |
+|---|---|---|---|---|
+| 想要的路线本身 | 6.6 % | | 0 / 0 | |
+| 直接发命令 | 45.9 % | | 3 / 4 | |
+| 常数修正 | 61.7 % | +0.158（+0.071 到 +0.245） | 4 / 4 | 反而更多 |
+| 只挪位置（`via_point_20261121`） | 10.2 % | −0.357（−0.474 到 −0.250） | 3 / 2 | 减少了 |
+| `arm`（第 4 轮模型） | 26.0 % | −0.199（−0.327 到 −0.071） | 14 / 11 | 减少了 |
+| `pose`（第 4 轮模型） | 27.6 % | −0.184（−0.301 到 −0.066） | 16 / 14 | 减少了 |
+
+- 只挪位置对 `arm`：+0.158（+0.077 到 +0.240），区间不含 0。**只挪位置在真障碍物上更好。按登记的规则，下一步（有真障碍物的场景）用只挪位置。**
+- 预测落在区间外的：直接发命令（预测 28–42 %，实际 45.9 %）；只挪位置（预测 11–22 %，实际 10.2 %）；常数修正（预测 20–35 %，实际 61.7 %）；肩和肘（直接发命令和只挪位置预测 0–1 %，实际 1–2 %；`arm` 和 `pose` 预测 1–5 %，实际 6–8 %）；"九成以上是手指碰的"只对直接发命令成立（只挪位置 17 / 20，`arm` 44 / 51）。
+- 两种度量排出来的次序相反。离想要的路线：`arm` 3.69 cm，只挪位置 6.13 cm。碰不碰到箱子：只挪位置 10 %，`arm` 26 %。加朝向把指尖转回规划的位置，也就是离箱子只有 1.5 cm 的地方，又把上臂往前带；只挪位置把手掌的路线和终点修回去（终点 0.90 cm，`arm` 1.17 cm），上臂反而往后（肩的间隙 13.8 cm，直接发命令 12.3 cm）。
+
+**同一项检查用在前两批测试路线和 SONIC 上（探索，没有事先登记；这两批路线以前用别的度量看过。输出 `outputs/reachwm_20261030/old_tests_scene_check_20261123`，第二批为此补跑了一组只挪位置 `test2_point`）：**
+
+```
+reachwm_20261030/data_via_fresh: 84 reaches on 21 detour routes
+  all 24                                   1.50 / 0.119     1.50 / 0.119     0.43 / 0.274     0.19 / 0.417
+  depth of the touches: median 0.83 cm, largest 3.59 cm; reaches touching with: shoulder 3, elbow 2, wrist 2, palm 1, fingers 35
+reachwm_20261030/data_via_const: 84 reaches on 21 detour routes
+  all 24                                   1.50 / 0.119     1.25 / 0.119    -0.03 / 0.524    -0.41 / 0.571
+  depth of the touches: median 0.75 cm, largest 3.22 cm; reaches touching with: shoulder 4, elbow 3, wrist 0, palm 0, fingers 47
+  against data_via_fresh, 84 pairs on 21 routes: touching 35 (0.417) there, 48 (0.571) this run; difference +0.155 (+0.024 to +0.286); touching in both 32, only there 3, only this run 16
+reachwm_20261030/data_via_comp: 84 reaches on 21 detour routes
+  all 24                                   1.50 / 0.119     1.11 / 0.226     1.23 / 0.107     1.21 / 0.155
+  depth of the touches: median 0.74 cm, largest 2.46 cm; reaches touching with: shoulder 3, elbow 3, wrist 0, palm 0, fingers 10
+  against data_via_fresh, 84 pairs on 21 routes: touching 35 (0.417) there, 13 (0.155) this run; difference -0.262 (-0.393 to -0.143); touching in both 13, only there 22, only this run 0
+reachwm_20261030/data_via_pose: 84 reaches on 21 detour routes
+  all 24                                   1.50 / 0.119     0.23 / 0.476     1.25 / 0.167     0.89 / 0.190
+  depth of the touches: median 0.80 cm, largest 4.88 cm; reaches touching with: shoulder 5, elbow 8, wrist 1, palm 2, fingers 12
+  against data_via_fresh, 84 pairs on 21 routes: touching 35 (0.417) there, 16 (0.190) this run; difference -0.226 (-0.381 to -0.083); touching in both 15, only there 20, only this run 1
+  against data_via_comp, 84 pairs on 21 routes: touching 13 (0.155) there, 16 (0.190) this run; difference +0.036 (-0.060 to +0.155); touching in both 9, only there 4, only this run 7
+reachwm_20261030/test2_direct: 180 reaches on 45 detour routes
+  all 24                                   1.57 / 0.083     1.57 / 0.083     0.43 / 0.361     0.09 / 0.456
+  depth of the touches: median 0.88 cm, largest 2.99 cm; reaches touching with: shoulder 4, elbow 1, wrist 0, palm 1, fingers 80
+reachwm_20261030/test2_const: 180 reaches on 45 detour routes
+  all 24                                   1.57 / 0.083     1.37 / 0.083     0.05 / 0.478    -0.18 / 0.594
+  depth of the touches: median 0.98 cm, largest 2.94 cm; reaches touching with: shoulder 4, elbow 1, wrist 0, palm 3, fingers 106
+  against test2_direct, 180 pairs on 45 routes: touching 82 (0.456) there, 107 (0.594) this run; difference +0.139 (+0.072 to +0.211); touching in both 80, only there 2, only this run 27
+reachwm_20261030/test2_point: 180 reaches on 45 detour routes
+  all 24                                   1.57 / 0.083     1.42 / 0.200     1.30 / 0.100     1.16 / 0.172
+  depth of the touches: median 0.28 cm, largest 2.71 cm; reaches touching with: shoulder 2, elbow 1, wrist 4, palm 0, fingers 25
+  against test2_direct, 180 pairs on 45 routes: touching 82 (0.456) there, 31 (0.172) this run; difference -0.283 (-0.389 to -0.167); touching in both 27, only there 55, only this run 4
+reachwm_20261030/test2_pose: 180 reaches on 45 detour routes
+  all 24                                   1.57 / 0.083     0.02 / 0.494     1.05 / 0.183     0.81 / 0.228
+  depth of the touches: median 1.30 cm, largest 4.86 cm; reaches touching with: shoulder 12, elbow 9, wrist 1, palm 3, fingers 33
+  against test2_direct, 180 pairs on 45 routes: touching 82 (0.456) there, 41 (0.228) this run; difference -0.228 (-0.361 to -0.089); touching in both 29, only there 53, only this run 12
+  against test2_point, 180 pairs on 45 routes: touching 31 (0.172) there, 41 (0.228) this run; difference +0.056 (-0.056 to +0.161); touching in both 17, only there 14, only this run 24
+reachwm_20261030/data_via_fresh_sonic: 84 reaches on 21 detour routes
+  all 24                                   1.95 / 0.024     1.95 / 0.024     2.29 / 0.060     2.00 / 0.155
+  depth of the touches: median 0.74 cm, largest 1.89 cm; reaches touching with: shoulder 1, elbow 3, wrist 1, palm 2, fingers 11
+reachwm_20261030/data_via_comp_sonic: 84 reaches on 21 detour routes
+  all 24                                   1.95 / 0.024    -0.44 / 0.690     1.61 / 0.024     1.16 / 0.131
+  depth of the touches: median 0.73 cm, largest 2.96 cm; reaches touching with: shoulder 0, elbow 2, wrist 2, palm 2, fingers 9
+  against data_via_fresh_sonic, 84 pairs on 21 routes: touching 13 (0.155) there, 11 (0.131) this run; difference -0.024 (-0.095 to +0.048); touching in both 8, only there 5, only this run 3
+```
+
+| | 想要的路线本身 | 直接发命令 | 常数修正 | 只挪位置 | 位置加朝向 |
+|---|---|---|---|---|---|
+| 开发路线（164 次） | 9.1 % | 34.8 % | | 15.2 % | `arm` 20.1 %，`pose` 26.2 % |
+| 第一批测试（84 次） | 11.9 % | 41.7 % | 57.1 % | 15.5 % | `pose`（第 2 轮模型）19.0 % |
+| 第二批测试（180 次） | 8.3 % | 45.6 % | 59.4 % | 17.2 % | `pose`（第 2 轮模型）22.8 % |
+| 第三批测试（196 次） | 6.6 % | 45.9 % | 61.7 % | 10.2 % | `arm` 26.0 %，`pose` 27.6 % |
+| SONIC，第一批测试（84 次） | 2.4 % | 15.5 % | | 13.1 % | |
+
+- ScaleBFM 上，只挪位置在四批路线上都把碰到的比例从 35–46 % 降到 10–17 %，接近想要的路线本身的 7–12 %。位置加朝向在前两批上和只挪位置分不出来（+0.036 和 +0.056，区间含 0），在开发路线和第三批上更差。
+- SONIC 上直接发命令本来就很少碰到（15.5 %），只挪位置没有再减少（−0.024，−0.095 到 +0.048）。SONIC 的偏差不朝着障碍物：直接发命令时间隙的中位数是 2.00 cm，和规划的 1.95 cm 一样；补偿把手拉回规划的路线，间隙变成 1.16 cm，终点误差从 4.54 降到 1.58 cm。补偿在真障碍物上有没有好处，取决于控制器的偏差朝哪边。
+
+**规划的间隙被执行吃掉多少（探索，事后想到的度量）。** 每次伸手取"想要的路线的最小间隙 − 实际的最小间隙"：
+
+| | 直接发命令：中位数 / 95 % 分位 | 只挪位置：中位数 / 95 % 分位 |
+|---|---|---|
+| 开发路线 | 0.89 / 4.13 cm | 0.11 / 1.85 cm |
+| 第一批测试 | 0.94 / 3.35 cm | 0.14 / 2.01 cm |
+| 第三批测试 | 1.16 / 3.78 cm | 0.30 / 2.01 cm |
+
+规划器要让 95 % 的伸手不碰，直接发命令得多留约 4 cm，只挪位置约 2 cm。这是单侧的、对着真障碍物的量；窄缝计分是四面都算的管子，把无害的偏差也算了进去，所以三次都没过。这个度量是看到结果之后想到的，要作为结论得在新路线上事先登记再测。
+
+**补不动的那部分是高度问题（探索）。** 按想要的路线上手腕小球的最高点分组，看补偿后仍偏 9 cm 以上的比例和补偿后的中位误差（训练路线用 `onpol_r2_pose`，开发 `onpol_dev_r4_arm_narrow`，第二批 `test2_pose`，第三批 `test3_arm`）：
+
+| 手腕最高点 | 训练路线（760 次） | 开发（164 次） | 第二批测试（180 次） | 第三批测试（196 次） |
+|---|---|---|---|---|
+| 低于 1.10 m | 7 %，3.3 cm | 1 %，3.0 cm | 5 %，3.3 cm | 7 %，2.8 cm |
+| 1.10–1.15 m | 21 %，5.8 cm | 25 %，6.3 cm | 22 %，6.2 cm | 25 %，6.5 cm |
+| 1.15–1.20 m | 63 %，10.9 cm | 没有这样的路线 | 100 %（4 次），14.7 cm | 62 %（8 次），12.0 cm |
+
+手腕要到 1.10 m 以上的路线，直接发命令就偏 10–13 cm，补偿也拉不回来。这是控制器够不到的高度。各批路线"补不动"的比例从 6 % 到 14 % 不等，是因为高路线占的比例不同（开发路线 22 %，第三批 31 %）。放宽修正的上限没有用，原因也在这里。
+
 ## 意外
 
 - 手的方向稳定度 0.16，远低于预测的 0.6–0.9，而肘是 0.85。原因见"预测修订"：统计量取的时刻在两处偏差之间跳。
@@ -2329,3 +2827,142 @@ All numbers below are computed by me, in /workspace/tmp/review_via_gap_20261122/
 - 自助抽样的区间丢掉了对手在 15 cm 以内完全过不去的那 18 % 重抽样，网格也只到 15 cm：属实，区间是有条件的、被截断的，引用时要说明。没有改脚本重算，因为结论不靠这个区间的上端。
 - 顶到上限是"补不动"的必要条件，不是充分条件（两项都顶到上限的 61 次里只有 19 次补不动）：属实，上面"为什么"一段的说法应当按这个读。
 - 事先写判据的时间从文件上证明不了：属实。这一节是在跑之前写的，但没有单独提交，后来又在同一个文件里追加了结果，文件时间就晚于结果了。以后事先写的判据要在跑之前单独提交一次。
+
+### 第四步补充之四（第三批测试路线）的复核（2026-11-23）
+
+复核人只拿到数据、脚本、结果文件和提交里的判据（`91f03b5a`、`ea13f62a`、`9a8637f0`），没有拿到我的结论，也不读工作区里的方案文件。交代的话在 `outputs/reachwm_20261030/review_via_test3_20261123/BRIEF.md`，复核人自己的代码和输出也在那个目录。报告全文：
+
+> # Review of the third test set (test3, seed 20261125) - 2026-11-23
+>
+> Own code: rv.py (loader, own sweep error, own bootstrap), partA.py (hand error), partB.py / partC.py / partD.py (scene
+> check, frame, location, sensitivity), partE.py (controller's own ok flag). Outputs: A.out, B.out, C.out, D.out.
+> Everything read from all.npz / arm.npz / table.npz / prep_*.npz; the experimenter's analysis scripts were only read.
+> Bootstraps resample the 49 routes (2000 draws, my own seeds).
+>
+> ## Findings
+>
+> 1. Order of events is clean for the registered criteria, with two soft spots.
+>    - Routes planned 09:52 (test3_routes mtime), 91f03b5a 07:38 (plan for arm/wide limits), ea13f62a 09:56:36 (design, predictions,
+>      criteria), first replay launched 10:03 (asrun copied 10:03:33). So the ea13f62a criteria precede every replay. Scripts as run
+>      are byte-identical to the working copy (cmp: via_comp, via_comp_eval, via_point, arm_spheres).
+>    - Run order: direct 10:12:48, const 10:24:00, arm 10:42:24, pose 10:57:48, gap scoring 11:16, point 11:27:24, scene check 11:27:33.
+>    - 9a8637f0 (supplement: boxes put back, extra `point` run, predictions, criteria) is 10:33:09. It says "written before any
+>      test result was looked at". By then direct and const were finished and test3_const/comp_eval.out (direct vs const errors)
+>      existed since 10:24; arm was still running. Whether anyone looked cannot be shown from files. The scene check itself on the
+>      test routes ran at 11:27, after the commit; via_scene.py (md5 509ef2ef, matches the registered md5) was written 10:08:35 and
+>      already run on the development routes at 10:08:40. The test boxes (prep_*.npz) existed since 09:52, so nothing about the
+>      test routes' boxes was hidden; the supplement was designed after seeing the dev scene check (34.8 % direct, 15.2 % point,
+>      20.1 % arm, 26.2 % pose), which is the same ordering as the test result - the predictions were informed by that.
+>    - The point run was NOT part of the four registered replays; it was added in 9a8637f0 and ran last. Its model
+>      (via_point_20261121) differs from the arm/pose model (onpol4), see 6.
+>
+> 2. Headline hand numbers reproduce exactly (A.out). Wrist+palm+fingers (the 17 spheres wrist_pitch + all hand_*), swept-region
+>    error, 49 routes / 196 reaches, median cm: direct 8.66, const 9.04, point 6.13, arm 3.69, pose 3.94. 24-sphere medians
+>    9.05 / 9.66 / 7.31 / 7.32 / 7.55. Drop vs direct (route bootstrap): const -0.04 (-0.13 to -0.01), point 0.29 (0.22-0.36),
+>    arm 0.57 (0.40-0.65), pose 0.55 (0.39-0.64). arm vs pose: drop of the median 0.064 (-0.036 to 0.142); mean paired difference
+>    0.00 cm (-0.25 to +0.26); arm lower on 54 % of reaches, tied on 13 %. Still above 9 cm: direct 90/196 (45.9 %), const 98,
+>    point 36 (18.4 %), arm 28 (14.3 %), pose 29 (14.8 %); arm minus pose -0.005 (-0.046 to +0.031). All match the experimenter's
+>    files. (My single palm-sphere medians differ from their "palm" (3 spheres); not an error.)
+>    - The arm-over-pose choice made on the development routes (1-22 %, excluding 0) did not reproduce: the interval includes 0.
+>      The 90 % level is worse for arm (12.02) than pose (10.50) and than point (10.87): the median gain does not reach the tail.
+>    - Const is worse than direct and is a weak opponent by construction (one offset for all routes); the real opponent is `point`.
+>      arm vs point: median drop 0.40 (0.20-0.49) - but see 3: the other metric reverses.
+>
+> 3. Scene check reproduces exactly (B.out). Touch = any of 24 spheres inside a box at any 10 Hz tick (my own box distance).
+>    direct 90/196 = 0.459, const 0.617, point 0.102, arm 0.260, pose 0.276; the wanted plan itself 0.066. Differences vs direct
+>    (route bootstrap): const +0.158 (+0.071 to +0.245) worse, point -0.357 (-0.469 to -0.240), arm -0.199 (-0.332 to -0.077),
+>    pose -0.184 (-0.296 to -0.071). arm minus point +0.158 (+0.077 to +0.255): 35 reaches touch only for arm, 4 only for point.
+>    So on collisions the cheap position-only `point` beats the headline method clearly, while on hand shape arm wins. The text
+>    of the registered rule makes the next step `point`-based.
+>    - Frame: arm.npz and the boxes are in one frame to about 1 cm: palm sphere at the first tick minus prep jaw_p = (+2.5,-0.4,-1.9) cm,
+>      sd (0.9, 0.5, 1.4) over 196 reaches (constant offset = palm-to-jaw, small spread). The wanted plan touches only 6.6 %, consistent
+>      with the planner leaving ~1.5 cm. But the score is very sensitive to the frame: moving all boxes +3 cm in x gives direct 0.133,
+>      point 0.082, arm 0.245 (arm worse than direct!); z +3 cm: 0.929/0.806/0.944; z -3 cm 0.393/0.224/0.311; yaw 5 deg: 0.362/0.102/0.255
+>      (C.out). A 1 cm frame error is not excluded and the absolute rates (and in x even the ordering direct vs arm) depend on it. The
+>      ordering point < arm < direct holds under y, z and yaw changes, not under +3 cm in x.
+>    - Radius: sphere radii are 1.00 cm (fingers etc.) up to 4.01 cm (palm). Scaling all radii x0.5..x1.25: direct .301-.510, point .071-.173,
+>      arm .199-.327, pose .245-.367; ordering point < arm <= pose < direct < const is stable. Tolerance: requiring penetration > 0.5 cm /
+>      > 1 cm: direct .301/.153, point .087/.036, arm .209/.117, pose .255/.209. Near-miss within 0.5 / 1 cm counts as touching:
+>      direct .602/.791, point .235/.454, arm .383/.577. Touch depth median 0.78 cm (direct): most "touches" are sub-centimetre
+>      overlaps with 1 cm finger spheres whose own planner margin was ~1.5 cm. At > 1 cm penetration pose (.209) is worse than arm
+>      (.117), a gap that is not visible at the registered threshold (arm-pose +0.015, -0.041 to +0.082).
+>    - 10 Hz: interpolating ticks to 100 Hz raises rates slightly (direct .480, point .133, arm .265, pose .291, const .633): ordering unchanged.
+>    - Which spheres: fingers dominate (hand_index_1, hand_thumb_2, hand_middle_1). For arm/pose shoulder/elbow touch in 7.1 % / 9.2 % of
+>      reaches (arm 14 shoulder_yaw, 11 elbow) against 2 % for direct and point; 6 (arm) and 7 (pose) reaches touch with a non-hand sphere only
+>      (D.out). That is the cost of the wrist-turn compensation (the shoulder is displaced ~7 cm, unfixed).
+>    - Where: touches occur along the way, not at the goal. First touch at median 0.28-0.43 of the ticks; palm-to-goal distance at first
+>      touch ~29-35 cm; only 0 (direct, point), 5 (arm), 7 (pose) reaches first touch in the last 20 % of ticks. Touch is by box: FreshBox
+>      direct .554 / point .116 / arm .312 / pose .286; FreshEdge .333 / .083 / .190 / .262.
+>    - Is point vs arm fair? Models differ (point: via_point_20261121 random paths only; arm/pose: onpol4 trained with replays), and the modes differ
+>      (position only vs attitude). That is the question being asked, but `point` was run with the OLDER, less-tuned model and still wins on collisions.
+>      Trivial explanations checked: point's settled palm end error is smaller (0.90 vs 1.17 cm), so it does not stop short; its hand
+>      is slightly higher along the route (dz vs wanted +0.24 cm vs arm -0.27 cm; settled +0.52 vs -0.12) - but raising the whole arm
+>      by 0.5-1 cm only moves arm 0.260 -> 0.204-0.219, point stays ~0.10 (D.out). So height does not explain it; the attitude turn
+>      (arm swinging fingers into the box, plus shoulder/elbow) does.
+>    - Caveat for the whole check: it is a geometric overlap against boxes that were not in the simulation, with the arm's own 24 spheres,
+>      and the wanted plan already overlaps in 6.6 % (plan's spheres differ from the 24 spheres).
+>
+> 4. The controller's own success flag points the other way and is not mentioned in the registered metrics. On the 196 detour reaches
+>    (all.npz `ok`, `jaw_err_cm`, `att_err_deg`; E): ok direct 72 (36.7 %), const 65, point 61 (31.1 %), arm 17 (8.7 %), pose 15 (7.7 %);
+>    median jaw_err 2.30 / 2.40 / 2.32 / 4.13 / 4.88 cm; att_err 22 / 22 / 21 / 43 / 44 deg. Likely these are measured against the
+>    (moved, turned) commanded goal and so not comparable - I could not confirm which goal they use - but a reader should not be
+>    left thinking task success was checked. Direct "ok" is already only 37 %. The headline is path shape, not task success.
+>
+> 5. Narrow gap (gap.out): "ours" is arm, margin 3.81 cm from onpol_dev_r4_arm_narrow (the registered source). Narrowest safe half-width: small 13.75,
+>    fixed_dev 13.75, ours 13.25 (10.75-14.50). ratio = 13.25/13.75 = 0.9636, interval (0.83-1.05). By the registered rule ratio > 0.95 -> does NOT hold.
+>    Conditional / truncated: the ratio's bootstrap is `ours / nanmin(others)` and the interval is `nanpercentile`, so every resample in which
+>    ours (or all others) never reaches 90 % success within the 15 cm grid ceiling is silently dropped (gap.err shows the All-NaN warnings
+>    from exactly those lines). The grid stops at 15 cm and ours reaches only 0.93-0.95 success at 14-15 cm and 0.89 at 13 cm; small
+>    passes at 13.75 - so a meaningful part of resamples can be NaN and the interval is conditional on being defined. I did not recompute
+>    the bootstrap (needs the model sweeps), so I cannot say how many were dropped. Also: "narrowest" takes the FIRST grid point meeting
+>    the rule, with no monotonicity check; ours at 13 cm is 0.89 vs the 0.90 line, i.e. the 13.25 is a one-step knife edge. Whether it
+>    is better than best-other is not established (interval includes 1). At 8 cm: ours 0.61 success / 0.01 collision; small 0.44 / 0.56.
+>
+> 6. Other points that could mislead.
+>    - arm and pose were chosen/tuned using the 41 development routes; their margin (3.81) comes from the same dev run: an optimistic margin
+>      (the plan says so). On test the arm model's predicted-error check is 2.28 cm (direct 1.44), within the registered 2x limit.
+>    - Predicted ranges were missed for several items (table below); some predictions written AFTER the dev scene check were still off by a lot (direct 46 % vs 28-42 %).
+>    - The 9 cm "still above" measure counts wrist/fingers max over 17 spheres; arm's 90 % level got worse than direct-vs-point. Residual failures cluster:
+>      10 routes have any, in arm, pose and point alike (vs_pose.out), so ~14 % of reaches are not fixed by any variant.
+>    - const run is a deliberately weak opponent and was worse than doing nothing; do not read "arm beats const" as strong.
+>
+> ## Criterion by criterion (both commits)
+>
+> | Criterion | Result | Holds? |
+> |---|---|---|
+> | arm better than pose (median lower and route-bootstrap interval excludes 0) | 3.69 vs 3.94; drop 0.064 (-0.036 to 0.142) | NOT established ("cannot tell on the test routes") |
+> | hand accuracy: arm drop vs direct >= 0.5 and lower end >= 0.4 | 0.574 (0.40 to 0.65) by me; their 0.57 (0.42-0.65) | Holds (lower end 0.42 theirs; my 0.40 is exactly at the line, resampling noise) |
+> | fewer reaches still above 9 cm for arm than pose, interval excludes 0 | 28 vs 29; -0.005 (-0.046 to +0.031) | Fails (only report both shares) |
+> | narrow gap ratio <= 0.8 and upper < 1 | 0.96 (0.83-1.05) | Fails; also > 0.95 -> "not established" |
+> | validity: three consistency checks 0.00 mm | 0.00 in all comp_eval.out | Holds |
+> | validity: falls not > direct + 5 | 0 falls in all five runs | Holds |
+> | validity: model error on arm run <= 2x direct | 2.28 vs 1.44 (1.58x) | Holds |
+> | scene: method reduces collisions vs direct (CI excludes 0) | point -.357, arm -.199, pose -.184: all hold; const +.158 (worse) | point, arm, pose hold; const does not |
+> | scene: point vs arm, interval excludes 0 | arm - point +0.158 (+0.077 to +0.255) | Excludes 0: point better; next step on point |
+> | 24 spheres / shoulder: reported only | 7.32 cm (arm), shoulder 7.08 | n/a |
+>
+> Predictions outside their stated ranges: >9 cm arm 14.3 % (5-11 %) high; >9 cm pose 14.8 % (8-14 %) slightly high; end attitude arm
+> 10.2 deg (7-10) slightly high; direct end attitude 22.1 (19-22) slightly high; direct 24-sphere 9.05 (8.0-8.8) high; scene: direct touching
+> 45.9 % (28-42) high; point 10.2 % (11-22) low; const 61.7 % (20-35) far high; shoulder/elbow for direct and point 2 % (0-1) and arm/pose
+> 7-9 % (1-5) high; fingers-only share of arm touches 45/51 = 88 % (>90). Inside: direct hand 8.66 (7.5-8.7), arm 3.69 (3.0-3.9), drop 0.57
+> (0.52-0.62), arm over pose 6 % (3-15), 24-sphere arm 7.32 (7.0-7.8), model error 2.28 (1.8-2.6), wanted plan 6.6 % (6-13), arm 26.0 % (15-27, top
+> edge), pose 27.6 % (19-32), gap numbers ours 13.25 (11-13.5), small 13.75 (12-14), fixed_dev 13.75 (12.75-14), ratio 0.96 (0.85-1.0),
+> 8 cm gap ours 61 % / 1 %, small 44 % / 56 %.
+>
+> ## Could not verify
+> - Whether any test result was viewed before 10:33 (not recoverable from files).
+> - The narrow-gap bootstrap: number of NaN-dropped resamples (needs the model sweeps and via_gap internals; not recomputed).
+> - What goal `jaw_err_cm` / `att_err_deg` / `ok` refer to for compensated runs.
+> - The true frame offset between arm.npz and the box frame beyond about 1 cm (only indirect evidence: palm-start vs jaw_p spread, wanted-plan touch 6.6 %).
+> - The spheres' correspondence to the planner's collision spheres (the wanted plan overlapping 6.6 % suggests they differ).
+
+对复核意见的处理：
+
+- 所有数字用复核人自己的代码复现，判据逐条的结论和我的相同。
+- **`9a8637f0` 的先后顺序有软肋**：属实。提交时直接发命令和常数修正两组已经跑完，常数修正的评测文件已经存在。我当时只看过各步的时刻和进度行，但这一点从文件上证明不了。放回箱子的检查本身是 11:27 才第一次在测试路线上跑的，这一点可以验证。第四批测试改成在规划路线之前就提交（`51d0bf33`）。
+- **"碰到的比例"对箱子的位置很敏感**：属实，这是最要紧的一条。多数重叠不到 1 cm；箱子整体往前挪 3 cm，直接发命令从 46 % 掉到 13 %，`arm` 反而比直接发命令差。"只挪位置最少"在所有挪法下都成立，但 46 % 和 10 % 这两个绝对数不能单独引用。第四批测试因此改用不靠阈值的量（被吃掉的间隙的 95 % 分位），并把"箱子挪 ±1 cm 时比值是否还成立"写进判据。
+- **控制器自己的成功标志指向相反的方向**：`ok`、`jaw_err_cm`、`att_err_deg` 在补偿回放里是相对实际发出的命令算的（`gen_reach.py` 里有注释），所以不能和直接发命令比。复核人说得对，报告里不能让人以为检查过任务成功。第四批测试加了相对想要的终点的"到位且不碰"。另外要写明：只挪位置不改手的朝向（终点朝向误差 21°，和直接发命令一样），加朝向是 10°。
+- **只挪位置和 `arm` 用的模型不同**：属实，而且对只挪位置不利（它用的是没见过规划器路线的旧模型）。开发路线上只挪位置换成第 4 轮模型，碰到的比例相同（15.2 %）。
+- **窄缝区间丢掉了没有定义的重抽样、13.25 cm 卡在一格上**：属实，和前两次相同。这个说法三次没过，不再用。
+- **24 个球和规划器的碰撞球是否一致**：是同一份（`arm_spheres.py` 读 SIMPLE 的 `spheres/g1_29dof.yml`，规划器的机器人配置 `g1_29dof_with_dex3.yml` 指向的也是它；规划器另外给每个球加 0.5 cm 的缓冲，检查里没有加）。想要的路线本身有 6.6 % 碰到，是因为回放只沿用规划器的手部路点，手臂姿态由我们的全身逆解另外解出，和规划器的关节路径不同。
+- 没法验证的几条照录在报告末尾，没有补做。

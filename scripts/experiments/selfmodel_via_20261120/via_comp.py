@@ -31,6 +31,16 @@ The model has to know the commands this sends. One trained on random paths alone
 wrist command is turned 20 deg or more (its error on the run 2.8 -> 6.9 cm, 41 development routes, 2026-11-22); one that
 also saw compensated runs on other planner routes does (7.2 -> 2.5 cm on routes held out). So this mode is for a model
 trained that way.
+REACH_VIA_COMP_MODE=arm is pose with one change in how the turned command is planned (Motor.reach's body_rot): the body is
+planned for the ORIGINAL wrist attitudes at the moved points, and the reaching arm's seven joints alone turn the wrist. In
+mode pose the whole-body IK paid for the turns partly with the torso: the plan's shoulder went 1 cm forward where the
+position-only plan takes it 2 cm back (which cancels the controller's own 2 cm lead), and the robot's shoulder ended 7.5 cm
+off where it was wanted against 3.8 cm (41 development routes, 2026-11-23). info: arm_only, body_via_R, body_rot.
+REACH_VIA_COMP_MODE=body is arm with one more thing moved: the points the BODY is planned for (Motor.reach's body_rot with
+points). The controller itself leans further forward when the hand is turned (its shoulder 3.2 cm ahead of its plan
+against 1.9 cm), which no plan of the hand undoes; the plan's shoulder follows the body's points about 1 : 1, so these
+are moved against the shoulder's predicted offset, as the hand's points are against the palm's. info: bshift (17, 3),
+body_points, body_via_p, body_goal.
 An optional trust rule (off by default: REACH_VIA_COMP_TRUST=inf, REACH_VIA_COMP_TRUST_ABS=inf): a point's new correction
 is kept only while the ensemble's disagreement about the hand at that point stays within `trust` times what it was for the
 original command and below `trust_abs` (m); a refused point keeps its last accepted correction and its gain is halved. At
@@ -54,7 +64,8 @@ import via_model as VM  # noqa: E402
 import via_point as VP  # noqa: E402
 from arm_fk import ArmFK  # noqa: E402
 
-Q, ITERS, CAP = VM.Q, 2, 0.08
+Q, ITERS = VM.Q, 2
+CAP = float(os.environ.get("REACH_VIA_COMP_CAP", "0.08"))  # m: the most a point (or the body's point) is moved
 # REACH_VIA_COMP_MODE=pose: rounds, the share of the remaining correction taken a round, the most a wrist command is turned
 # (deg), and the trust rule's two numbers (see the docstring). Overridable for development runs.
 POSE = dict(iters=int(os.environ.get("REACH_VIA_COMP_ITERS", "6")), gain=float(os.environ.get("REACH_VIA_COMP_GAIN", "0.5")),
@@ -115,6 +126,7 @@ class Comp:
         self.palm = link.index("hand_palm_link")
         self.hand2 = np.array([self.palm + 1, link.index("hand_index_1_link")])
         self.hand = np.array([i for i, x in enumerate(link) if x.startswith("hand_")])
+        self.shoulder = np.array([i for i, x in enumerate(link) if "shoulder" in x])
         self.nets: dict = {}
 
     def members(self, T: dict) -> np.ndarray:
@@ -132,11 +144,13 @@ class Comp:
                 out.append((P["mu_y"] + P["sd_y"] * f(X).numpy()).reshape(Q + 1, 24, 3))
         return np.array(out)
 
-    def sweep(self, m, st: dict, side: str, goal_w, rot_w, pelvis_z, via_p, via_R, speed):
+    def sweep(self, m, st: dict, side: str, goal_w, rot_w, pelvis_z, via_p, via_R, speed, body=None):
         """The reference sweep (Q, 24, 3), the predicted offsets (Q + 1, 24, 3) and each via point's and the goal's moment
         (fractions of the plan's duration) for one candidate command, and the ensemble's disagreement about the hand at
-        the Q + 1 points; heading frame."""
-        kw: dict = dict(via=list(via_p), via_rot=list(via_R)) if len(via_p) else {}
+        the Q + 1 points; heading frame. body: Motor.reach's body_rot (the attitudes the body is planned for)."""
+        kw: dict = dict(via=list(via_p), via_rot=list(via_R)) if len(via_p) or body is not None else {}
+        if body is not None:
+            kw["body_rot"] = body
         if speed is not None:
             kw["speed"] = speed
         poses, durations = plan(m, side, goal_w, rot_w, pelvis_z, kw)
@@ -157,7 +171,7 @@ class Comp:
             0
         ]  # the ensemble's mean, exactly as the offline evaluation computes it
         spread = np.zeros(Q + 1)
-        if self.mode == "pose":
+        if self.mode in ("pose", "arm"):
             ys = self.members(T)
             spread = np.linalg.norm(ys - ys.mean(0), axis=-1).mean(0)[:, self.hand].mean(1)  # (Q + 1,), m
         # Motor.reach: a leg lasts max(reach_min_s, its length / speed)
@@ -176,7 +190,7 @@ class Comp:
                   fingers=fingers, jaw_w=m.jaw_centre(side)[0])  # fmt: skip
         via0, goal0 = np.asarray(via_p, float).reshape(-1, 3), np.asarray(goal_w, float)
         viaR0, rot0 = [np.asarray(r, float) for r in via_R], np.asarray(rot_w, float)
-        pose = self.mode == "pose"
+        pose = self.mode in ("pose", "arm", "body")
         gain = np.full(len(via0) + 1, POSE["gain"] if pose else 1.0)
         cap_turn = np.radians(POSE["cap_turn"])
 
@@ -185,14 +199,28 @@ class Comp:
             return (via0 + sw[:-1], goal0 + sw[-1], [Rh @ turn[k] @ Rh.T @ viaR0[k] for k in range(len(viaR0))],
                     Rh @ turn[-1] @ Rh.T @ rot0)  # fmt: skip
 
-        def run(shift, turn):
+        def body_of(bshift):
+            """Motor.reach's body_rot. arm: the body is planned for the original attitudes at the hand's moved points and
+            the arm alone turns the wrist; body: the body has its own points too, the original ones moved by bshift."""
+            if self.mode == "arm":
+                return (viaR0, rot0)
+            if self.mode == "body":
+                bw = bshift @ Rh.T
+                return (viaR0, rot0, list(via0 + bw[:-1]), goal0 + bw[-1])
+            return None
+
+        def run(shift, turn, bshift, plain=False):  # plain: the original command exactly as a direct run plans it
             via, goal, viaR, rot = command(shift, turn)
-            ref, off, u, sp = self.sweep(m, st, side, goal, rot, pelvis_z, via, viaR, speed)
+            body = None if plain else body_of(bshift)
+            ref, off, u, sp = self.sweep(m, st, side, goal, rot, pelvis_z, via, viaR, speed, body)
             return ref, off, u, np.array([at(sp[:Q], x) for x in u[:-1]] + [sp[Q]])
 
         shift = np.zeros((len(via0) + 1, 3))  # heading frame
+        bshift = np.zeros((len(via0) + 1, 3))  # mode body: how far the body's own points are moved, heading frame
         turn = [np.eye(3) for _ in range(len(via0) + 1)]  # each point's wrist correction, heading frame
-        ref0, off0, u0, sp0 = run(shift, turn)
+        ref0, off0, u0, sp0 = run(shift, turn, bshift, plain=True)
+        sh0 = ref0[:, self.shoulder].mean(1)  # the wanted shoulder (its spheres' centre) along the sweep
+        want_sh = [at(sh0, x) for x in u0[:-1]] + [sh0[-1]]
         want = [at(ref0[:, self.palm], u) for u in u0[:-1]] + [ref0[-1, self.palm]]  # the wanted palm at each point
         want_hand = [at(ref0[:, self.hand], u) for u in u0[:-1]] + [
             ref0[-1, self.hand]
@@ -202,7 +230,7 @@ class Comp:
             allowed = np.maximum(np.minimum(POSE["trust"] * np.maximum(sp0, 1e-9), POSE["trust_abs"]), sp0)
         ref, off, u = ref0, off0, u0
         refused = 0
-        for _ in range(dict(const=1, pose=POSE["iters"]).get(self.mode, ITERS)):
+        for _ in range(dict(const=1).get(self.mode, POSE["iters"] if pose else ITERS)):
             pred = np.concatenate([ref, ref[-1:]]) + (self.const[side] if self.mode == "const" else off)
             now = [at(pred[:Q, self.palm], x) for x in u[:-1]] + [pred[Q, self.palm]]
             new_shift = shift - gain[:, None] * (np.array(now) - np.array(want))
@@ -215,16 +243,24 @@ class Comp:
                     step = VG.expm(gain[k] * VG.logm(kabsch(want_hand[k], now_hand[k]).T))
                     v = VG.logm(step @ turn[k])
                     new_turn[k] = VG.expm(v * min(1.0, cap_turn / max(float(np.linalg.norm(v)), 1e-9)))
-            ref_n, off_n, u_n, sp_n = run(new_shift, new_turn)
+            new_bshift = bshift
+            if self.mode == "body":  # the body's points against the shoulder's predicted offset
+                sh = pred[:, self.shoulder].mean(1)
+                now_sh = [at(sh[:Q], x) for x in u[:-1]] + [sh[Q]]
+                new_bshift = bshift - gain[:, None] * (np.array(now_sh) - np.array(want_sh))
+                nb = np.linalg.norm(new_bshift, axis=1, keepdims=True)
+                new_bshift = new_bshift * np.minimum(1.0, CAP / np.maximum(nb, 1e-9))
+            ref_n, off_n, u_n, sp_n = run(new_shift, new_turn, new_bshift)
             ok = sp_n <= allowed if pose else np.ones(len(gain), bool)
             if ok.all():
-                shift, turn, ref, off, u = new_shift, new_turn, ref_n, off_n, u_n
+                shift, turn, bshift, ref, off, u = new_shift, new_turn, new_bshift, ref_n, off_n, u_n
                 continue
             refused += int((~ok).sum())
             gain[~ok] *= 0.5
             shift = np.where(ok[:, None], new_shift, shift)
+            bshift = np.where(ok[:, None], new_bshift, bshift)
             turn = [new_turn[k] if ok[k] else turn[k] for k in range(len(turn))]
-            ref, off, u, _ = run(shift, turn)
+            ref, off, u, _ = run(shift, turn, bshift)
         via, goal, viaR, rot = command(shift, turn)
         out = np.zeros((VM.VIA_MAX + 1, 3), np.float32)
         out[: len(via0)], out[-1] = shift[:-1], shift[-1]
@@ -234,4 +270,15 @@ class Comp:
         tv[-1] = VG.logm(turn[-1])
         info = dict(ref0=ref0, off0=off0.astype(np.float32), ref=ref, off=off.astype(np.float32), shift=out, turn=tv,
                     goal0=head(goal0[None])[0].astype(np.float32), refused=refused)  # fmt: skip
+        # what gen_reach.py hands to Motor.reach as body_rot; float64, so the run plans exactly what was planned here
+        bR = np.zeros((VM.VIA_MAX, 3, 3))
+        if len(viaR0):
+            bR[: len(viaR0)] = viaR0
+        bs = np.zeros((VM.VIA_MAX + 1, 3), np.float32)
+        bs[: len(via0)], bs[-1] = bshift[:-1], bshift[-1]
+        bP, bw = np.zeros((VM.VIA_MAX, 3)), bshift @ Rh.T
+        if len(via0):
+            bP[: len(via0)] = via0 + bw[:-1]
+        info.update(arm_only=int(self.mode in ("arm", "body")), body_via_R=bR, body_rot=rot0.copy(), bshift=bs,
+                    body_points=int(self.mode == "body"), body_via_p=bP, body_goal=goal0 + bw[-1])  # fmt: skip
         return via, np.array(viaR).reshape(-1, 3, 3), goal, rot, info

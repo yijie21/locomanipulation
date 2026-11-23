@@ -32,7 +32,7 @@ import torch
 
 from locomani.backends.scalebfm import runtime as R
 from locomani.primitives.arm_ik import ArmIK
-from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
+from locomani.primitives.g1_joints import ARM_MJ, MUJOCO_JOINT_NAMES
 from locomani.primitives.whole_body_ik import WholeBodyIK, rotvec
 
 SIDES = ("left", "right")
@@ -689,6 +689,7 @@ class Motor:
         start=None,
         start_rot=None,
         ik_from_ref: bool = False,
+        body_rot=None,
     ) -> Outcome:
         """Move `side`'s jaw centre to `pos` (world) with wrist rotation `rot` (3x3 world; None keeps the current one)
         through the points `via`, legs straight at `speed`, whole-body IK at waypoints reach_step_m apart, feet
@@ -703,7 +704,14 @@ class Motor:
         ik_from_ref: the whole-body IK is built on the current reference pose and seeded there, not on the measured joints
         with its waist-forward seed. The reference is what the first leg blends from, so the plan stays in its posture
         family; from a measured posture far from the reference the IK can land in another family and the joint-space
-        blend swings the reference jaw tens of cm (grasp_exp.py, top shelf, 2026-11-08)."""
+        blend swings the reference jaw tens of cm (grasp_exp.py, top shelf, 2026-11-08).
+        body_rot (one side, with via_rot): (rotations, rotation) or (rotations, rotation, points, point) -- the wrist
+        attitudes, one per via point and the goal's, and optionally the jaw-centre points, that the BODY is planned for.
+        Each waypoint's whole-body IK is solved for these; the reaching arm's seven joints are then solved again, the rest
+        of the body held, for the points `via` / `pos` and attitudes `via_rot` / `rot` that the hand is to have. A wrist
+        turn asked of the whole-body IK is paid partly with the torso: 20-40 deg corrections of the wrist commands moved
+        the plan's shoulder 5 cm and the robot's 7.5 cm off where it was wanted (selfmodel_via_20261120, 2026-11-23). The
+        body's own points let a caller place the trunk apart from the hand: the plan's shoulder follows them about 1 : 1."""
         cfg = self.cfg
         sides = SIDES if side == "both" else (side,)
         solver = self._solver(pelvis_height_target=pelvis_z, at=self.ref(self.t) if ik_from_ref else None)
@@ -728,6 +736,19 @@ class Motor:
         if via_rot is not None:  # the attitude at each leg's end
             assert side != "both" and len(via_rot) == len(via), "reach: via_rot is one rotation per via point, one side"
             ends = [{side: np.asarray(r, float)} for r in via_rot] + [goal_R]
+        if body_rot is not None:
+            assert via_rot is not None and len(body_rot[0]) == len(via), (
+                "reach: body_rot goes with via_rot, one per point"
+            )
+            body_ends = [{side: np.asarray(r, float)} for r in body_rot[0]] + [{side: np.asarray(body_rot[1], float)}]
+            body_points = points
+            if len(body_rot) > 2:  # the body's own jaw-centre points, leg for leg with `points`
+                assert len(body_rot[2]) == len(via), "reach: body_rot's points are one per via point"
+                body_points = (
+                    [points[0]]
+                    + [{side: np.asarray(v, float)} for v in body_rot[2]]
+                    + [{side: np.asarray(body_rot[3], float)}]
+                )
         yaw = self.yaw()
         weights = tuple(1.0 if s in sides else 0.3 for s in SIDES)
         poses, durations, errs = [self.ref(self.t)], [], []
@@ -750,10 +771,25 @@ class Motor:
                     else:
                         tp.append(cur[s][0])
                         tr.append(cur[s][1])
+                hand_R = None
+                if body_rot is not None:  # the body's plan is for the attitude body_rot; the arm turns to tr afterwards
+                    i = SIDES.index(side)
+                    Ra = cur[side][1] if leg == 0 else body_ends[leg - 1][side]
+                    hand_R, tr[i] = tr[i], Ra @ expmap(u * rotvec(Ra.T @ body_ends[leg][side]))
+                    hand_p = tp[i]
+                    tp[i] = body_points[leg][side] + u * (body_points[leg + 1][side] - body_points[leg][side])
                 ik_pose = self._solve(
                     solver, np.array(tp), np.array(tr), weights=weights, rotation_weight=rotation_weight
                 )
-                poses.append(self._pose_of(ik_pose, yaw))
+                pose = self._pose_of(ik_pose, yaw)
+                if hand_R is not None:
+                    Rb = R.mat(pose.quat)
+                    q, _, _ = self.ik.solve(side, Rb.T @ (hand_p - pose.pos), Rb.T @ hand_R, q_mj29=pose.joints, iters=60,
+                                            rot_weight=1.0, point_offset=R.OFF, posture=pose.joints, posture_weight=0.02)  # fmt: skip
+                    joints = pose.joints.copy()
+                    joints[list(ARM_MJ[side])] = q[list(ARM_MJ[side])]
+                    pose = Pose(pose.pos, pose.quat, joints, pose.velocity)
+                poses.append(pose)
                 durations.append(dur / n)
                 errs.append([float(e) for e in ik_pose.hand_errors])
         at, total = self._blend(poses, durations)

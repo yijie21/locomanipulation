@@ -526,7 +526,13 @@ def segment(
                     hand_q(m, side),
                 )
                 via = dict(via, p=cp, R=cR)
-        if len(via["p"]):
+        body = None
+        if comp is not None and comp.get("arm_only"):  # REACH_VIA_COMP_MODE=arm: Motor.reach's body_rot
+            body = (list(comp["body_via_R"][: len(via["p"])]), comp["body_rot"])
+            if comp.get("body_points"):  # REACH_VIA_COMP_MODE=body: the body's own points too
+                body += (list(comp["body_via_p"][: len(via["p"])]), comp["body_goal"])
+            kw["body_rot"] = body
+        if len(via["p"]) or body is not None:
             kw.update(via=list(via["p"]), via_rot=list(via["R"]))
         if via["speed"] is not None and v is not None:
             kw["speed"] = via["speed"]
@@ -818,7 +824,16 @@ def save(segs: list[dict], path: Path) -> None:
             pack[k] = np.concatenate([s[k] for s in segs])
     if any("comp_ref0" in s for s in segs):  # REACH_VIA_COMP; a segment that was not compensated (an entry) holds zeros
         proto = next(s for s in segs if "comp_ref0" in s)
-        for k in ("comp_ref0", "comp_off0", "comp_ref", "comp_off", "comp_shift", "comp_turn", "comp_goal0"):
+        for k in (
+            "comp_ref0",
+            "comp_off0",
+            "comp_ref",
+            "comp_off",
+            "comp_shift",
+            "comp_turn",
+            "comp_bshift",
+            "comp_goal0",
+        ):
             pack[k] = np.stack([s.get(k, np.zeros_like(proto[k])) for s in segs])
         pack["comp_refused"] = np.array([s.get("comp_refused", -1) for s in segs])
     if "walk" in segs[0]:  # REACH_APPROACH

@@ -1,7 +1,8 @@
 """selfmodel_via_20261120: where along the arm a model is wrong, and what a compensated command did to each part.
 
-    $PY via_parts.py <model dir> <dataset dir> ...
+    $PY via_parts.py <model dir> <dataset dir> ... [--detour]
 
+--detour: a replay's detour routes only (routes.json; every kind but FreshUnder), as via_comp_eval.py's headline.
 Per dataset (all.npz, arm.npz, table.npz) and per group of spheres (shoulder, elbow, wrist, palm, fingers), medians over
 the paths, cm, of the group's largest swept-region error (via_model.sweep_err):
   model    the recorded ticks against the sweep <model dir> predicts for the command that was run -- for a compensated
@@ -12,6 +13,7 @@ the paths, cm, of the group's largest swept-region error (via_model.sweep_err):
 Last line per dataset: the model's error over all 24 spheres (what via_comp_eval.py calls the model's own error).
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -34,12 +36,17 @@ GROUPS = {
 
 def main(argv=None) -> int:
     a = sys.argv[1:] if argv is None else argv
+    detour = "--detour" in a
+    a = [x for x in a if x != "--detour"]
     M = torch.load(Path(a[0]) / "via_point.pt", map_location="cpu", weights_only=False)
     for d in a[1:]:
         D = Path(d)
         T, z, X = VP.load([D]), dict(np.load(D / "all.npz")), dict(np.load(D / "arm.npz"))
         link = [str(x) for x in X["link"]]
         rows = np.arange(len(T["seg"]))
+        if detour:
+            names = json.load(open(D / "routes.json"))["names"]
+            rows = rows[[not names[r].startswith("FreshUnder") for r in T["route"]]]
         off = VP.offsets(M, T, rows)["direction"]
         em, er, ea = [], [], []
         for n, j in enumerate(rows):

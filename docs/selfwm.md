@@ -425,6 +425,26 @@ $PY $V/via_gap.py $I/via_gap_pose $M2 $I/data_via_fresh $I/data_via_const $I/dat
 
 得到什么：2026-11-23 的结果，41 条开发路线上腕、掌、指离想要的路线 7.91 cm，只挪位置 5.56 cm，两轮之后 3.79 cm。21 条测试绕行路线上 8.06 → 3.40 cm，终点朝向 19.3° → 7.1°，0 摔倒；整条手臂 24 个球没有改善（8.10 → 7.33 cm，区间含 0）。窄缝计分里我们 12.75 cm，小固定余量 12.50 cm，没有优势：我们的碰撞率处处为 0，但出发规则太保守。补偿回放里的 `jaw_err_cm`、`att_err_deg`、`ok` 是相对实际发出的命令算的，不要当任务成功率读。
 
+**手腕只靠手臂转，以及把真障碍物放回去检查（2026-11-23）。**
+
+```bash
+M3=$I/via_point_onpol3; M4=$I/via_point_onpol4; W="REACH_VIA_COMP_CAP=0.12 REACH_VIA_COMP_CAP_TURN=60"
+X0=$X; X="$X0 $W"                                          # 两轮回放用最宽的上限采
+replay $I/onpol_r3_arm $T 1360 49000000 4700000 $M2 arm
+$PY $V/via_point.py train $M3 $I/data_via $I/data_via2 $I/data_via3 $I/onpol_r1_direct $I/onpol_r1_point $I/onpol_r1_pose $I/onpol_r2_pose $I/onpol_r3_arm
+replay $I/onpol_r4_arm $T 1360 49000000 4800000 $M3 arm
+$PY $V/via_point.py train $M4 $I/data_via $I/data_via2 $I/data_via3 $I/onpol_r1_direct $I/onpol_r1_point $I/onpol_r1_pose $I/onpol_r2_pose $I/onpol_r3_arm $I/onpol_r4_arm
+replay $I/dev_arm_wide $D 164 47000000 3800000 $M4 arm; X=$X0   # 下面两遍回到默认的 8 cm 和 40°
+replay $I/dev_arm $D 164 47000000 3800000 $M4 arm; replay $I/dev_pose4 $D 164 47000000 3800000 $M4 pose
+for d in dev_arm_wide dev_arm dev_pose4; do $PY $V/via_comp_eval.py $M4 $I/dev_direct $I/$d; done
+python3 -I $V/via_vs.py $I/dev_pose4 $I/dev_arm $I/dev_arm_wide; $PY $V/via_parts.py $M4 $I/dev_direct $I/dev_arm --detour
+$PY $V/via_scene.py $M4 $I/dev_routes $I/dev_direct $I/dev_point $I/dev_arm $I/dev_pose4
+```
+
+做什么：`REACH_VIA_COMP_MODE=arm` 让身体按原来的手腕朝向规划，手腕的转角只由手臂的七个关节实现（`Motor.reach` 的 `body_rot` 选项）；`pose` 是让全身逆解一起实现转角，它会拿躯干去凑，把肩带偏。`REACH_VIA_COMP_CAP`（米）和 `REACH_VIA_COMP_CAP_TURN`（度）是每个路点修正的上限，默认 0.08 和 40。`via_vs.py` 的第一个目录是基线，后面每个目录和它逐对比较，只看绕行路线，最后一行是仍偏 9 cm 以上的伸手各有多少。`via_parts.py` 加 `--detour` 只看绕行路线。`via_scene.py` 把每条路线规划时的箱子（路线目录 `prep/` 里存着）放回去，数记录下来的 24 个球有没有进箱子；第一个回放目录是基线，后面的和它逐对比较。回放是在空地上跑的，所以这是几何上的重叠，不是接触。
+
+得到什么：2026-11-23 的结果。开发路线上（41 条，164 次伸手）同样 8 cm 和 40° 下 `arm` 3.33 cm、`pose` 3.70 cm；上限放宽到 12 cm 和 60° 反而让仍偏 9 cm 以上的伸手从 10 次变成 20 次，所以不放宽。第三批测试路线上（种子 20261125，49 条绕行路线，196 次伸手，只跑一次）：`arm` 8.66 → 3.69 cm，和 `pose` 的 3.94 cm 分不出来；仍偏 9 cm 以上的各占 14 %；窄缝比值 0.96，第三次不成立。补不动的那部分是高度问题：想要的路线上手腕要到 1.10 m 以上时，直接发命令就偏 10 cm 以上，补偿拉不回来。把箱子放回去之后次序反过来：直接发命令 45.9 % 的伸手会碰到，只挪位置 10.2 %，`arm` 26.0 %，`pose` 27.6 %，常数修正 61.7 %；想要的路线本身 6.6 %。前两批测试路线上只挪位置是 15.5 % 和 17.2 %。所以对着真障碍物用只挪位置（`REACH_VIA_COMP_MODE=point`，模型只需要随机路线），不用加朝向。SONIC 上直接发命令本来就只有 15.5 % 碰到，只挪位置没有再减少。
+
 **换一个控制器做同样的事（SONIC，2026-11-23）。**
 
 ```bash
