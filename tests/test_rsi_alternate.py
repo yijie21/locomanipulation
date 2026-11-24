@@ -142,39 +142,33 @@ class Sync(unittest.TestCase):
             self.assertEqual(json.loads((cand / "candidate.json").read_text()), {"set": {"bimanual.D": 45}})
             self.assertEqual(prep["report"]["merged"], ["pick.py"])
 
-    def test_a_merge_whose_every_hunk_kept_the_receivers_side_gives_no_candidate(self):
-        """2026-11-19 smoke run: both sides changed the same line; the merge kept the receiver's, so the candidate was
-        the receiver's incumbent and the gate refused it ("the candidate is the incumbent"), a wasted gate call."""
-        with tempfile.TemporaryDirectory() as d:
-            run = fake_run(Path(d))
-            st = json.loads((run / AL.STATE_FILE).read_text())
-            set_incumbent(run, "a", "fa", {"pick.py": "A = 13\nB = 2\nC = 3\n"})
-            set_incumbent(run, "b", "fb", {"pick.py": "A = 14\nB = 2\nC = 3\n"})
-            prep = AL.prepare_sync(run, st, 0, 1)
-        self.assertIsNone(prep["cand"])
-        self.assertEqual(prep["report"]["merged"], [])
-        self.assertEqual(prep["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
-
-    def test_a_conflict_stays_a_conflict_after_an_accepted_sync(self):
-        """2026-11-19 smoke run: b -> a merged bimanual.py and kept a's pick.py (both had changed it). With b's whole
-        package as the next base, a -> b then read a's pick.py as a's only change and overwrote b's without a
-        conflict. The conflicted file keeps the old base: the next sync finds the conflict again and keeps b's."""
+    def test_both_changing_the_same_lines_fails_the_sync_and_names_the_conflict(self):
+        """Rules 40, version 28 (user 2026-11-23): until then the merge kept the receiver's side and the sender's work
+        there was lost without a word (the 2026-11-19 smoke run: the candidate was the receiver's own incumbent and
+        the gate refused it). Now there is no candidate, the base stays, and `failed` says where they differ."""
         with tempfile.TemporaryDirectory() as d:
             run = fake_run(Path(d))
             st = json.loads((run / AL.STATE_FILE).read_text())
             set_incumbent(run, "a", "fa", {"pick.py": "A = 13\nB = 2\nC = 3\n"})
             set_incumbent(run, "b", "fb", {"pick.py": "A = 14\nB = 2\nC = 3\n", "bimanual.py": "D = 18\n"})
-            prep = AL.prepare_sync(run, st, 1, 0)  # b -> a
-            self.assertEqual(prep["report"]["merged"], ["bimanual.py"])
-            self.assertEqual(prep["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
-            AL.advance_base(run, Path(prep["theirs"]), prep["report"]["conflicts"])  # the sync passed
-            base = run / "sync/base/skills"
-            self.assertEqual((base / "pick.py").read_text(), BASE["pick.py"])  # the conflicted file: the old base
-            self.assertEqual((base / "bimanual.py").read_text(), "D = 18\n")  # the rest: the sender's
-            set_incumbent(run, "a", "fa", {"pick.py": "A = 13\nB = 2\nC = 3\n", "bimanual.py": "D = 18\n"})
-            back = AL.prepare_sync(run, st, 0, 1)  # a -> b
-        self.assertIsNone(back["cand"])  # b keeps its A = 14
-        self.assertEqual(back["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
+            prep = AL.prepare_sync(run, st, 1, 0)  # b -> a: bimanual.py would merge, pick.py conflicts
+            base = (run / "sync/base/skills/pick.py").read_text()
+        self.assertIsNone(prep["cand"])
+        self.assertEqual(prep["failed"], "conflict: pick.py: 1 hunk(s) changed on both sides")
+        self.assertEqual(prep["report"]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
+        self.assertEqual(base, BASE["pick.py"])
+        self.assertIn(
+            "both families changed these lines", KN._sync_line(dict(iter=1, skipped=prep["failed"], **prep["report"]))
+        )
+
+    def test_an_override_that_cannot_be_folded_fails_the_sync(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            set_incumbent(run, "a", "fa", {"pick.py": "A = 1\nB = 2\nC = 3\nE = 5\n"}, {"NAME": 11})
+            prep = AL.prepare_sync(run, st, 0, 1)
+        self.assertIsNone(prep["cand"])
+        self.assertTrue(prep["failed"].startswith("conflict: override NAME"), prep["failed"])
 
     def test_nothing_to_merge_gives_no_candidate(self):
         with tempfile.TemporaryDirectory() as d:
@@ -187,9 +181,10 @@ class Sync(unittest.TestCase):
 class FakeRunner:
     """Records the calls; `loops` maps a family to the exit code and an optional stop reason per call."""
 
-    def __init__(self, run: Path, stops=None, rc=None, gate=None, build_error=False):
+    def __init__(self, run: Path, stops=None, rc=None, gate=None, build_error=False, tests_fail=False):
         self.run, self.calls = run, []
         self.stops, self.rc, self.gate, self.build_error = stops or {}, rc or {}, gate, build_error
+        self.tests_fail = tests_fail
 
     def loop(self, sb: Path, family: str, tag: str) -> int:
         self.calls.append(("loop", family))
@@ -215,6 +210,11 @@ class FakeRunner:
                         + [dict(id=f"{family}/m", tag="single" if family == "fa" else "bimanual",
                                 source=dict(family=family))])  # fmt: skip
         return dict(entries=1, cost_usd=0.0, tag="x")
+
+    def tests(self, sb: Path, family: str, cand: Path, tag: str):
+        self.calls.append(("tests", family))
+        assert (cand / "skills").is_dir()
+        return (False, "1 failed, 3 passed") if self.tests_fail else (True, "4 passed")
 
     def sync_gate(self, sb: Path, family: str, cand: Path, source: dict, tag: str):
         self.calls.append(("sync", family))
@@ -243,7 +243,8 @@ class Driver(unittest.TestCase):
                                        text=True).stdout  # fmt: skip
         self.assertEqual(why, "1 iterations done")
         # fa's half: loop, build, sync into fb (fa changed pick.py); fb's half: loop, build, nothing to merge back
-        self.assertEqual(r.calls, [("loop", "fa"), ("build", "fa"), ("sync", "fb"), ("loop", "fb"), ("build", "fb")])
+        self.assertEqual(r.calls, [("loop", "fa"), ("build", "fa"), ("tests", "fb"), ("sync", "fb"), ("loop", "fb"),
+                                   ("build", "fb")])  # fmt: skip
         self.assertEqual((st["iter"], st["turn"], st["phase"]), (1, 0, "loop"))
         self.assertEqual([(s["from"], s.get("accepted"), s.get("skipped")) for s in syncs],
                          [("fa", True, None), ("fb", None, "the merge changes nothing")])  # fmt: skip
@@ -259,6 +260,34 @@ class Driver(unittest.TestCase):
             base = (run / "sync/base/skills/pick.py").read_text()
         self.assertEqual((syncs[0]["accepted"], syncs[0]["reason"]), (False, "losses 2 > wins 0"))
         self.assertEqual(base, BASE["pick.py"])
+
+    def test_a_merged_package_that_fails_its_tests_is_not_gated(self):
+        """Rule 40 (version 28): the merged package's own tests run in the receiving sandbox before the gate."""
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            r = FakeRunner(run, tests_fail=True)
+            why = AL.run_all(run, 1, r)
+            syncs = KN.jl(run / "knowledge" / KN.SYNCS)
+            base = (run / "sync/base/skills/pick.py").read_text()
+        self.assertEqual(why, "1 iterations done")
+        self.assertNotIn(("sync", "fb"), r.calls)
+        self.assertEqual(syncs[0]["skipped"], "the merged package fails its tests: 1 failed, 3 passed")
+        self.assertEqual(base, BASE["pick.py"])
+
+    def test_a_conflict_is_recorded_for_both_families_and_the_run_goes_on(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            set_incumbent(run, "b", "fb", {"pick.py": "A = 7\nB = 2\nC = 3\n"})  # fb changed the line fa will change
+            r = FakeRunner(run)
+            why = AL.run_all(run, 1, r)
+            syncs = KN.jl(run / "knowledge" / KN.SYNCS)
+            shown = run / "b/scripts/rsi/knowledge/KNOWLEDGE.md"
+            text = shown.read_text() if shown.exists() else ""
+        self.assertEqual(why, "1 iterations done")
+        self.assertNotIn(("sync", "fb"), r.calls)
+        self.assertTrue(syncs[0]["skipped"].startswith("conflict: pick.py"), syncs[0])
+        self.assertEqual(syncs[0]["conflicts"], ["pick.py: 1 hunk(s) changed on both sides"])
+        self.assertTrue(not text or "both families changed these lines" in text)
 
     def test_a_stopped_family_skips_its_halves_and_nothing_is_merged_into_it(self):
         with tempfile.TemporaryDirectory() as d:

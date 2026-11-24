@@ -22,11 +22,15 @@ kind and skill file), which loop.py turns into a line of the Reviewer's and the 
    usage.jsonl (knowledge.usage_rows), which sets each entry's standing (tested, candidate, doubtful).
 3. sync: F's incumbent (its parameter overrides folded into the constants, writeback.fold) is merged three-way into
    the other family G's incumbent (`git merge-file`; the base is the version of the last accepted sync, at first the
-   common start); where both changed the same lines G's side is kept and the conflict recorded. The merge goes to
-   G's gate as a candidate under the non-inferior rule (`loop.py sync G`, gate.py --non-inferior: kept iff it loses
-   no more of G's acceptance starts than it wins); the verdict is a gate row of G's ledger (it counts as a gate call)
-   and a line of the shared `sync.jsonl`, which KNOWLEDGE.md shows both families. Accepted, it is G's incumbent and
-   the next merge base; rejected, the two packages differ there until a later merge carries it.
+   common start). Where both changed the same lines the sync fails (rules.md 40, version 28, user 2026-11-23: until
+   then G's side was kept silently and F's work there lost): nothing is merged, the conflict is recorded in
+   `sync.jsonl` for both families' Engineers to see, the base stays and the next sync tries again. Otherwise the
+   merged package's own tests (skills/test_*.py, rules.md 41) run in G's sandbox; a failure is a failed sync too.
+   Then the merge goes to G's gate as a candidate under the non-inferior rule (`loop.py sync G`, gate.py
+   --non-inferior: kept iff it loses no more of G's acceptance starts than it wins); the verdict is a gate row of G's
+   ledger (it counts as a gate call) and a line of the shared `sync.jsonl`, which KNOWLEDGE.md shows both families.
+   Accepted, it is G's incumbent and the next merge base; rejected, the two packages differ there until a later merge
+   carries it.
 When it stops (user 2026-11-18), whichever comes first:
 - `--iters` iterations are done (5: five halves of each family);
 - the run has been running `--max-hours` (default 10), both families together: the time the driver ran, summed over
@@ -221,7 +225,8 @@ def prepare_sync(run: Path, st: dict, i_from: int, i_to: int) -> dict:
     """The merge of family i_from's incumbent into family i_to's, as a gate candidate under
     <run>/sync/<NN>_<from>_to_<to>/: `theirs` (the sender's skills, overrides folded) and `cand` (the receiver's skills
     with the merge applied, the receiver's own overrides in candidate.json). `cand` is None when the merge changes
-    nothing."""
+    nothing, or when it conflicts (`failed` says where: both sides changed the same lines since the last accepted
+    sync, or a sender's override could not be folded)."""
     fams = st["families"]
     s_sb, r_sb = run / SIDES[i_from], run / SIDES[i_to]
     s_skills, s_set = incumbent_of(s_sb, fams[i_from])
@@ -233,6 +238,10 @@ def prepare_sync(run: Path, st: dict, i_from: int, i_to: int) -> dict:
     write_texts(theirs, folded)
     rep = merge_trees(run / "sync" / "base" / "skills", r_skills, theirs)
     rep["conflicts"] += unfolded
+    if rep["conflicts"]:  # version 28: a conflict fails the sync instead of silently keeping the receiver's side
+        report = {k: v for k, v in rep.items() if k != "texts"}
+        return dict(work=str(work), theirs=str(theirs), cand=None, report=report,
+                    failed="conflict: " + "; ".join(rep["conflicts"]))  # fmt: skip
     # a file whose merge is the receiver's own text changes nothing (every hunk a conflict kept the receiver's side):
     # without this the candidate was the receiver's incumbent and the gate refused it as such (2026-11-19 smoke run)
     r_files = tree(r_skills)
@@ -254,7 +263,8 @@ def prepare_sync(run: Path, st: dict, i_from: int, i_to: int) -> dict:
 
 def advance_base(run: Path, theirs: Path, conflicts: list[str]) -> None:
     """After an accepted sync the merge base is the sender's version, except for a file the merge left in conflict:
-    there the old base stays. The receiver kept its own lines there; with the sender's file as the base, the next sync
+    there the old base stays (since version 28 a conflict fails the sync, so an accepted one has none; kept for the
+    records of older runs). The receiver kept its own lines there; with the sender's file as the base, the next sync
     the other way read the receiver's lines as its only change and overwrote the other side without a conflict (the
     2026-11-19 smoke run). With the old base the two sides stay in conflict there, each keeping its own, every sync
     recording it."""
@@ -314,6 +324,28 @@ class Runner:
     def build(self, sb: Path, family: str) -> dict:
         lib = self.run / "knowledge"
         return KN.build(sb, family, lib, stub=self.stub, ctx_root=self.run / "ctx" / family)
+
+    def tests(self, sb: Path, family: str, cand: Path, tag: str) -> tuple[bool, str]:
+        """The merged package's own tests (its skills/test_*.py, rules.md 41) run in the receiving sandbox before its
+        gate: (passed, pytest's last line). The candidate directory is a package of its own (skills/__init__.py), so
+        the tests' relative imports read the merged copy, not the sandbox's."""
+        env = {**os.environ, "PYTHONPATH": str(sb / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")}
+        cmd = [
+            str(SIM_PY),
+            "-m",
+            "pytest",
+            "-q",
+            "-x",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "no:warnings",
+            str(cand / "skills"),
+        ]
+        r = subprocess.run(cmd, cwd=sb, env=env, capture_output=True, text=True)
+        (self.run / "logs" / f"{tag}_sync_tests.log").write_text(r.stdout + r.stderr)
+        lines = [x for x in r.stdout.splitlines() if x.strip()]
+        return r.returncode == 0, (lines[-1] if lines else f"pytest exited {r.returncode}")[:200]
 
     def sync_gate(self, sb: Path, family: str, cand: Path, source: dict, tag: str) -> tuple[int, dict]:
         """`loop.py sync` in the receiving sandbox: (exit code, its verdict line)."""
@@ -419,8 +451,11 @@ def step(run: Path, st: dict, runner) -> None:
             prep = prepare_sync(run, st, i, 1 - i)
             rep = prep["report"]
             row = {"iter": st["iter"] + 1, "from": fam, "to": other, **rep}
-            if prep["cand"] is None:
-                row["skipped"] = "the merge changes nothing"
+            tests_ok, tests_line = (True, "") if prep["cand"] is None else runner.tests(run / SIDES[1 - i], other,
+                                                                                         Path(prep["cand"]), tag)  # fmt: skip
+            if prep["cand"] is None or not tests_ok:
+                row["skipped"] = prep.get("failed") or ("the merge changes nothing" if prep["cand"] is None
+                                                        else f"the merged package fails its tests: {tests_line}")  # fmt: skip
                 append_sync(run, row)
                 event(st, family=fam, step="sync", skipped=row["skipped"])
                 st["phase"] = "next"

@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 27, 2026-11-18)
+# Rules for the scene RSI loop (TODO 27, version 28, 2026-11-23)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -290,6 +290,22 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     26, user 2026-11-18). An alternating run gives each family one iteration in turn. After a family's iteration its
     incumbent is merged into the other family's skills package and enters there only through that family's gate
     under the non-inferior rule (gate.py --non-inferior: it may not lose more of the other family's acceptance
-    starts than it wins); the verdict counts as one of that family's gate calls (code). Each family's prompts name
-    the other family and its skill file; a change to a module both skills use must stay correct for both, and an
-    Engineer does not edit the other family's skill file for its own tasks (prompt).
+    starts than it wins); the verdict counts as one of that family's gate calls (code). Where both families changed
+    the same lines since the last accepted sync the sync fails: nothing is merged, the conflict is recorded in
+    sync.jsonl (KNOWLEDGE.md shows it to both families' Engineers) and the merge base stays, so the next sync tries
+    again (code; version 28, user 2026-11-23: until then the receiver's side was kept silently and the sender's work
+    there lost). Before the gate the merged package's own tests (skills/test_*.py) run in the receiving sandbox; a
+    failure is a failed sync too (code). Each family's prompts name the other family and its skill file; a change
+    to a module both skills use must stay correct for both, and an Engineer does not edit the other family's skill
+    file for its own tasks (prompt).
+41. The shared stage module skills/grasp_common.py (version 28, user 2026-11-23; the first alternating run, gso-alt-a,
+    reached the same two principles in both families by different code). The computations both grasp skills need
+    live in this one file, two sections: the lift judged against the goal's lifted(X, c, t) -- the goal read, the
+    lowest box corner's clearance and the tilt measured, the check with a margin, the top-up when held but short --
+    and the collision hull's cross-section (pieces, cut, band, extent within a strip, widths), from which the one-hand
+    skill reads a width across the jaw and the two-hand skill the band where both walls are at full width. An
+    Engineer may change it and add pure functions to it; a change must keep every test of the package passing, the
+    other family's included (code for a sync: rule 40's tests; prompt for a family's own candidate). It holds no
+    policy constants: every tolerance, margin, scan step and retry count is a parameter, set by a constant in the
+    family's own module (pick.py, grasp_program.py, bimanual.py), so the families may tune them apart and `set`
+    overrides keep their family keys; it reads no family configuration and no candidate overrides (prompt).
