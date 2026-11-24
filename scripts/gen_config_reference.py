@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO / "src"))
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
 from locomani.backends.sonic.config import LockstepConfig, SonicBackendConfig  # noqa: E402
 from locomani.bench.bigym2.config import BiGym2Config  # noqa: E402
+from locomani.bench.humanoidarena.config import HumanoidArenaConfig  # noqa: E402
 from locomani.bench.locomanilab.config import LocoManiLabConfig  # noqa: E402
 from locomani.bench.options import BenchOptions  # noqa: E402
 from locomani.bench.simple.config import SimpleConfig  # noqa: E402
@@ -76,6 +77,11 @@ CONFIGS = [
         "BiGym2Config",
         BiGym2Config,
         "locomani/bench/bigym2/config.py (the BiGym 2.0 bed's paths, render size, depth and seed pools)",
+    ),
+    (
+        "HumanoidArenaConfig",
+        HumanoidArenaConfig,
+        "locomani/bench/humanoidarena/config.py (the HumanoidArena bed's paths, GPU, cores and seed pools)",
     ),
 ]
 

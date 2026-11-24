@@ -98,9 +98,12 @@ class CapabilityTables(unittest.TestCase):
 
     def test_a_planned_value_stops_a_run_unless_allowed(self):
         with self.assertRaisesRegex(ValueError, "planned, not implemented yet"):
-            resolve("humanoidarena")
-        r = resolve("humanoidarena", allow_planned=True)
+            resolve(
+                "humanoidarena", ["target=perception", "sensor=rgbd"]
+            )  # perception on its front camera is still planned
+        r = resolve("humanoidarena", ["target=perception", "sensor=rgbd"], allow_planned=True)
         self.assertTrue(r.planned)
+        self.assertFalse(resolve("humanoidarena").planned)  # the truth profile is what the bed runs
 
     def test_simple_runs_the_switches_49_2_verified(self):
         # TODO 49.2: the loops' switches, truth targets, RGB-D with and without noise are ready on SIMPLE

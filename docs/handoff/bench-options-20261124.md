@@ -131,3 +131,56 @@ check); the demonstration seeds 1-199 are never used. Tasks that ignore the seed
   `g1_29dof_with_dex1_1/head` on `torso_link`; at the settled pose it looks steeply down at the work surface. Physics is unchanged by depth (identical step counts).
 - Seed package `bigym2/seed/` (skill.py, frozen `__init__.py`), guard `guard.py` (R1-R8, `python -I guard.py --selftest`).
 - Evidence and numbers: `/workspace/tmp/bench49/bigym2_notes.md`.
+
+## HumanoidArena port (TODO 49.5b, 2026-11-24)
+
+An adapter in `src/locomani/bench/humanoidarena/` in the BiGym pattern: target=truth, controller=native (the benchmark's TWIST2 tracker), the rgbd channel built.
+Tasks in scope: `pp_box` (P&PBox), `double_desk`, `open_door`. The environment server runs in the benchmark's own venv as a standalone file (`server.py`, no locomani imports)
+and drives the benchmark's own evaluation worker (`script/eval_scripts/twist2/sim_eval_vla.py`) as a library: the same task configs (`base_test/*_twist2_test.yaml`), the TWIST2
+ONNX the repository ships, the benchmark's reward and fall detector, physics on the CPU as its own run script sets it. Only the policy's HTTP client is replaced in process by
+one that returns the action the bed sends; no file of the benchmark is edited. The bed starts the server (`client.ServerLink`, pinned with `taskset -c 28-31`,
+`CUDA_VISIBLE_DEVICES=1`, Kit's `activeGpu=1`) and the machine's one-simulator lock is `session.Lock`.
+
+Install (everything under `third_party/HumanoidArena/`, nothing in /venv/main or another venv; no sudo, no apt; sizes and commands in `/workspace/tmp/bench49/humanoidarena_notes.md`):
+`repo/` is the mirror clone at `68479287a784a69be9ce6ad739311d2f11f75ef9` (2026-08-10); `venv/` Python 3.11.15 with torch 2.7.0+cu128, `isaacsim[all,extscache]==5.0.0`, Isaac Lab
+`release/2.2.0` (`IsaacLab/`, commit `46dff135f44683f031edf346e544fcfd8456b2bb`, `uv pip install -e` of isaaclab, isaaclab_assets, isaaclab_tasks), the repository's
+`requirements.txt`, `h5py`, `unitree_sdk2_python` (`814556d1...`, `--no-deps`) and `cyclonedds==0.10.5` built against a conda-forge `cyclonedds` prefix (`cdds/`; the server needs
+`LD_LIBRARY_PATH=cdds/lib`). The asset package (Google Drive zip, 2.5 GB, sha256 `d0a0c6be...`) is unpacked into `repo/isaaclab_twist2_g1/assets`. About 26 GB in all.
+Kit starts on the RTX 5090 (driver 580, sm_120) with Isaac Sim 5.0; the first start took about 5 minutes (shader cache), later ones about 30 s.
+
+```bash
+PYTHONPATH=src /venv/main/bin/python -m locomani.bench.humanoidarena run pp_box --ids pp_box/P/0-4 --out rows.jsonl [--set overlay_dir=D --set snap_dir=D]
+```
+
+- Episode ids `<task>/<pool>/<n>`. The benchmark's evaluation episodes are the 60 seeds `sha256("<gym task>|<g>|<r>")` for g in {0,1,2}, r in 0..19. A pool episode is
+  (group, repeat) = (first group + n // 20, n % 20) with groups P 1000-1999, A 2000-2999, S 3000-3999, its seed from the same formula. The evaluation groups and any seed equal
+  to one of the 60 are refused in six places (config, CLI, `check_id`, `reset_msg`, `collides`, the server's own derivation); `tests/test_humanoidarena_episodes.py`.
+- Truth view and judge: `privileged.py`, `truth.py` (`view.goal()` for pp_box: the box, a spot the benchmark's own check accepts, the layer height, the table and shelf boxes), `judge.py`:
+  the benchmark's checks need no hand contact, so a run counts (`success`) only when the benchmark's reward reached 1 without a fall, a hand link (Dex3 palm, fingers) pressed
+  on the task object on at least 5 steps, links other than the hand pressed on it on fewer than 3, and it moved at least 0.10 m. The record is a Isaac Lab contact sensor on every
+  robot link filtered to the task object (force > 1 N per physics step, history of the control step), added to the scene config at run time (physics unchanged). `open_door` has no
+  object record, so its compliant verdict is `no_record` (never ok).
+- rgbd: the front camera, 640x480, K from the benchmark's pinhole (f = 243 px), the renderer's exact depth, the camera in the pelvis frame; `--set overlay_dir=D` saves the first frame
+  of an episode with the object's projected centre and depth for a person to look at, `--set snap_dir=D` saves the third-person camera at every mark of the package.
+- Native action space: 40 floats (root step in the reference heading frame, root height, root rotation as rot6d, the 29 canonical joints, two hand values). The first two columns of the
+  rotation matrix, row-major (identity is `[1 0 0 1 0 0]`; the first guess was the rows and the robot fell at once).
+- Gait: the tracker needs the legs of its reference to show a gait; moving the reference root alone left the robot standing (400 steps at 0.35 m/s, the pelvis did not move).
+  `gait_build.py` (benchmark venv, `python -I`) averages the near-straight strides of the ten walking clips the repository ships (`TWIST2/assets/example_motions`) into
+  `gait_cycle.json` (6 strides, period 1.31 s, 0.80 m/s); `env.gait` hands it to a package. With it the robot walks about 0.4-0.5 m/s and the pelvis steers within 2-3 cm of a goal.
+- Seed package `humanoidarena/seed/` (skill.py, frozen `__init__.py`), guard `guard.py` (R1-R8, `python -I guard.py --selftest`).
+- Numbers and the smoke: see below and `/workspace/tmp/bench49/humanoidarena_notes.md`.
+
+Checked on this machine (2026-11-24, GPU 1, 4 cores): reset and 60 hold steps headless on `pp_box`, `double_desk` and `open_door` with the native tracker; the rgbd frame (640x480, depth 0.10-2.3 m)
+with the overlay (the box's projected centre lies on the box, its depth reads 0.98 m); the judge on fake outcomes and the contact record on real ones. The renderer shows the stage as spawned until
+the physics has stepped, so the overlay is taken at the package's first mark, not at the reset.
+
+Seed package (`pp_box`, target=truth, native action space): walk to the table's edge level with the box, raise both wrists to the box's sides, squeeze, lift, carry to the layer the benchmark's check names,
+lower, let go. Chosen because the box is the one object two palms can hold, the success check is geometric (layer height 0.648 m, a rectangle) and the whole scene is static and known to the truth view;
+`double_desk` needs a pinch grasp of a hammer with a binary Dex3 hand, `open_door` the latch and a walk through the frame and has no object record for the compliance check.
+
+Smoke, 5 practice episodes `pp_box/P/0-4`, target=truth, cold start through the bed: **0/5 compliant, 0/5 by the benchmark's own check**; 3 falls (P/2, P/3, P/4), 2 standing to the 1450-step limit;
+hand contact steps 0 / 2 / 0 / 6 / 27, body contact steps 0 / 0 / 0 / 0 / 11; the box was moved 0.005 / 0.18 / 0.40 / 0.85 / 1.76 m; 59-161 s per episode (545 s in all, one Kit start inside).
+Every episode reached the table (the walk with the gait cycle works, 2-3 cm of the aimed pelvis position). The flow stops at the arms: with the legs held at the standing pose and only the arm joint
+targets changing (even at 0.006 rad per step) this tracker does not stand still: the pelvis wandered 1-1.5 m and turned up to 50 degrees within 6 s. What would be needed next: a leg and waist
+reference that balances with the arms out (a recorded whole-body pose from the benchmark's data, or the SONIC tracker, `nvidia/GEAR-SONIC`, not downloaded), then the squeeze. Nothing here is a statement about the
+benchmark's policies; it is the seed of a scripted flow.

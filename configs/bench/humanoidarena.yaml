@@ -1,10 +1,10 @@
-# bench/humanoidarena: the switches HumanoidArena runs with unless a run overrides them (TODO 49.1): its own tracker, leg odometry not planned
+# bench/humanoidarena: the switches HumanoidArena runs with unless a run overrides them (TODO 49.5b): simulator truth for the target, its own TWIST2 tracker; the rgbd channel exists (the front camera) but only perception reads it
 defaults:
 - _schema
 - _self_
 bench: humanoidarena
-target: perception
-sensor: rgbd
+target: truth
+sensor: none
 depth_noise: none
 self_pose: truth
 controller_root: truth
