@@ -26,14 +26,19 @@ if [ ! -f $D/blind_f1_TabletopGraspMP.json ]; then
 fi
 one() {  # one <controller> <card> <cards>: A, plan, JR; radius; three checks; their runs; tables
   local c=$1 g=$2 gs=$3 B=$D/bench/$1
-  for s in A plan JR; do BENCH_GPU=$g BENCH_GPUS="$gs" bash $E/bench_via.sh $B $c none $s 30 49; done
-  log "$c: A, plan, JR done; $(tail -1 $B/pipeline.log)"
-  CUDA_VISIBLE_DEVICES=$g $PY -I $E/jref_data.py build $B/jref_dev outputs/scene/simple_g1_sonic $B/films_JR $B/rows/JR_TabletopGraspMP.jsonl > $B/logs/jref_dev.txt 2>&1
-  $PY -I $E/s_check.py calib $M/model_$c $B/jref_dev > $B/calib.json 2> $B/logs/calib.txt
+  if [ "$(cat $B/rows/JR_TabletopGraspMP.jsonl 2>/dev/null | wc -l)" != 20 ]; then  # a rerun resumes after JR
+    for s in A plan JR; do BENCH_GPU=$g BENCH_GPUS="$gs" bash $E/bench_via.sh $B $c none $s 30 49; done
+    log "$c: A, plan, JR done; $(tail -1 $B/pipeline.log)"
+  fi
+  if [ ! -s $B/calib.json ]; then
+    CUDA_VISIBLE_DEVICES=$g $PY -I $E/jref_data.py build $B/jref_dev outputs/scene/simple_g1_sonic $B/films_JR $B/rows/JR_TabletopGraspMP.jsonl > $B/logs/jref_dev.txt 2>&1
+    $PY -I $E/s_check.py calib $M/model_$c $B/jref_dev > $B/calib.json 2> $B/logs/calib.txt
+  fi
   local r=$(python3 -c "import json; print(json.load(open('$B/calib.json'))['direction']['q90'])")
   log "$c: radius (90 % of the development paths' errors) $r cm; $(cat $B/calib.json)"
   for v in end clear both; do
     case $v in end) o="--tau-end 2 --delta 1e9";; clear) o="--tau-end 1e9 --delta 0 --r $r";; both) o="--tau-end 2 --delta 0 --r $r";; esac
+    rm -rf $B/S_$v  # a rerun starts each check from round 0
     BENCH_GPU=$g bash $E/s_run.sh $B $c $M/model_$c $B/S_$v 2 $o
     log "$c S_$v: $(tail -1 $B/S_$v/s_pipeline.log)"
   done

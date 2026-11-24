@@ -273,10 +273,12 @@ def check(a) -> None:
             round=rnd,
             act=0.02 if "try_act02" in str(st["plan_src"]) else 0.03,
         )  # plan2.py's activation distance for J's plan
-        if not pf.exists():
+        # plan2.py writes a file without Q when cuRobo finds no plan (IK_FAIL ...): no candidate this round, so the
+        # episode is not replanned again and is given up unless an earlier round passed
+        pl = np.load(pf) if pf.exists() else None
+        if pl is None or "Q" not in pl.files:
             out.write(json.dumps(dict(row, plan=False)) + "\n")
             continue
-        pl = np.load(pf)
         assert [str(x) for x in pl["names"]] == [str(x) for x in st["names"]], "the plan's joints"
         ref, total, length, end = reference(fk, st, pl["Q"])
         T = dict(x=model_input(fk, st, ref, total, end)[None], ref=ref[None].astype(np.float32), key=key, hand2=hand2)
@@ -294,7 +296,11 @@ def check(a) -> None:
         V, vs = obstacles(fk, st, ob, pr, cloud)
         gap, at = sweep_clearance(to_w(P_h), fk.radius, V, vs, a.clear_until)
         gap0, _ = sweep_clearance(to_w(np.concatenate([ref, ref[-1:]])), fk.radius, V, vs, a.clear_until)
-        end_off = off[-1, palm].mean(0)  # heading frame, m
+        # the end check is against the look's goal too: the predicted palm at rest against where J's own plan puts it.
+        # Round 0 is the plan's own predicted offset; a repaired plan (goal moved) passes when the moved goal brings
+        # the predicted palm back to J's end, not when the model stops predicting an offset
+        ref0 = ref if rnd == 0 else reference(fk, st, np.load(Path(str(st["plan_src"])) / f"plan_{name}.npz")["Q"])[0]
+        end_off = P_h[-1, palm].mean(0) - ref0[-1, palm].mean(0)  # heading frame, m
         k = int(np.argmin(gap))
         clear = float(gap[k]) - a.r / 100
         fire_end, fire_clear = float(np.linalg.norm(end_off)) > a.tau_end / 100, clear < -a.delta / 100
@@ -383,21 +389,24 @@ def table(a) -> None:
             cells.append(f"{c45} / {co}")
         print(f"  {t + f' ({len(names)})':22s}" + "".join(f"{c:>12s}" for c in cells))
     routed = sorted(ch)
-    j = np.array([ok("J", n, "success_45") for n in routed])
-    sx = np.array([ok(a.arm, n, "success_45") for n in routed])
     same_plan = [n for n in routed if ch[n]["chosen"] == 0]
     same = sum(R["J"][n].get("success_45") == R[a.arm].get(n, {}).get("success_45") and
                R["J"][n].get("t_success") == R[a.arm].get(n, {}).get("t_success") for n in same_plan)  # fmt: skip
-    rng = np.random.default_rng(0)
-    d = [float((sx[i] - j[i]).sum()) for i in (rng.integers(len(routed), size=len(routed)) for _ in range(2000))]
     print(
         f"\nepisodes J ran a plan on: {len(routed)}; S kept J's plan {len(same_plan)} (rows identical to J's: {same}), "
         f"replanned and passed {sum(1 for n in routed if (ch[n]['chosen'] or 0) > 0)}, gave up {len(gave_up)}"
     )
-    print(
-        f"  45 s successes: J {int(j.sum())}, S {int(sx.sum())}, S - J {int(sx.sum() - j.sum()):+d} (95 % interval "
-        f"{np.percentile(d, 2.5):+.0f} to {np.percentile(d, 97.5):+.0f}), only S {int((sx & ~j).sum())}, only J {int((j & ~sx).sum())}"
-    )
+    for key, label in (("success_45", "45 s"), ("success_official", "official limit")):
+        j = np.array([ok("J", n, key) for n in routed], bool)
+        sx = np.array([ok(a.arm, n, key) for n in routed], bool)
+        rng = np.random.default_rng(0)
+        di = sx.astype(int) - j.astype(int)
+        d = [float(di[i].sum()) for i in (rng.integers(len(routed), size=len(routed)) for _ in range(2000))]
+        print(
+            f"  {label} successes: J {int(j.sum())}, S {int(sx.sum())}, S - J {int(di.sum()):+d} (95 % interval "
+            f"{np.percentile(d, 2.5):+.0f} to {np.percentile(d, 97.5):+.0f}), only S {int((sx & ~j).sum())}, "
+            f"only J {int((j & ~sx).sum())}"
+        )
     for n in routed:
         c = ch[n]
         print(f"  {n:26s} chosen {str(c['chosen']):4s} J {int(ok('J', n, 'success_45'))} S {int(ok(a.arm, n, 'success_45'))} | round 0: end "
