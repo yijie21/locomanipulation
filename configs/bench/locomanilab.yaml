@@ -1,0 +1,11 @@
+# bench/locomanilab: the switches LocoManiLab runs with unless a run overrides them (ported from bench-options, its TODO 49.1): the loops so far (rendered depth; leg odometry for the skill's belief and for the pelvis ScaleBFM is told)
+defaults:
+- _schema
+- _self_
+bench: locomanilab
+target: perception
+sensor: rgbd
+depth_noise: none
+self_pose: odometry
+controller_root: odometry
+controller: scalebfm

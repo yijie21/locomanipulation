@@ -18,7 +18,7 @@ for G in A0 A1 B C D E F; do for so in -0.20 -0.19 -0.21; do for e in $EPS; do e
   xargs -P 150 -L1 sh -c '
     G=$0; so=$1; e=$2
     case $G in A0) av="";; A1) av="--avoid $C/via_tabletop";; *) av="--avoid $D/via_$G";; esac
-    $PY $E/simple_bench.py TabletopGraspMP --method direct --column perception --cloud cloud_eyes_final --trace --side-off=$so $av \
+    $PY $E/simple_bench.py TabletopGraspMP --method direct --trace --side-off=$so $av \
       --episodes $e --out $D/rows/${G}_${so}_$e.jsonl > $D/logs/${G}_${so}_$e.log 2>&1 || echo "FAIL $G $so $e" >> $D/logs/pipeline.log'
 log "rows $(ls $D/rows | wc -l) of 588"
 log "DONE"

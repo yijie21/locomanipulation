@@ -17,20 +17,26 @@
 # (default 1). On the 4090: BENCH_REPO=/wuji-vefps-D/wuji-il/yijie/ws/code/loco
 # SIMPLE_ROOT=/wuji-vefps-D/wuji-il/yijie/tools/simple_isaac/SIMPLE; SONIC's networks run on the GPU there, so take
 # REACH_SONIC_NETS from the environment (default allcpu, as vastgpu's onnxruntime has no CUDA provider).
+# Run switches (2026-11-24, TODO 38.11; locomani.bench): <scalebfm|sonic> is --bench-set controller=; BENCH_SET adds
+# more, space-separated (e.g. "sensor=rgbd" or "target=truth"); the look and the planner's cloud follow the sensor
+# (python -m locomani.bench.simple). Default: the main metric's setting (perception column, the stereo Isaac look).
 set -uo pipefail
 D=$1 CTRL=$2 MODEL=$3 STEP=$4 E0=${5:-0} E1=${6:-29}
 W=${BENCH_REPO:-/workspace/code/locomanipulation-selfwm}; cd $W
 S=${SIMPLE_ROOT:-$W/third_party/SIMPLE}; SP=$S/.venv/bin/python; PY=$W/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 G=${BENCH_GPU:-1}
 E=scripts/experiments/simple_eval_20261112; C=scripts/experiments/curobo_avoid_20261120
-O=$W/outputs/simple_eval_20261112; CL=$O/cloud_eyes_final; LOOK=$O/look_dump_eyes
+O=$W/outputs/simple_eval_20261112
 TASKS="XMovePickTeleop XMoveBendPickTeleop BendPickMP TabletopGraspMP"
-export REACH_HAND_OFF=0.0415,0,0 BFM_ROOT=odo REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl
+export REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl
 export MUJOCO_EGL_DEVICE_ID=$G CUDA_VISIBLE_DEVICES=$G SIMPLE_ROOT=$S
-[ "$CTRL" = sonic ] && export REACH_CONTROLLER=sonic REACH_SONIC_NETS=${REACH_SONIC_NETS:-allcpu}
+[ "$CTRL" = sonic ] && export REACH_SONIC_NETS=${REACH_SONIC_NETS:-allcpu}
+SETS="--bench-set controller=$CTRL"; for kv in ${BENCH_SET:-}; do SETS="$SETS --bench-set $kv"; done
+BED=$($PY -m locomani.bench.simple $SETS) || exit 2; eval "$BED"
+CL=$O/$BED_CLOUD; LOOK=$O/$BED_LOOK
 mkdir -p $D/rows $D/rows_ep $D/logs $D/step1 $D/step2 $D/try_act02 $D/via $D/asrun
 log() { echo "[$(date -u +%T)] $*" >> $D/pipeline.log; }
-ARGS="--column perception --cloud cloud_eyes_final --trace --episodes $E0-$E1"
+ARGS="$SETS --trace --episodes $E0-$E1"
 
 # BENCH_GPUS (2026-11-24, the 4090): the GPUs the four tasks' processes go to in turn, e.g. "2 3" -- SONIC with its
 # networks on the GPU takes ~7.4 GB a process, so four do not fit one 24 GB card. Default: all four on BENCH_GPU.
@@ -52,7 +58,7 @@ bench() {  # bench <arm> <extra args...>: the four tasks side by side
 if [ "$STEP" = A ] || [ "$STEP" = all ]; then
   cp $E/simple_bench.py $E/bench_via.sh $C/obstacles_box.py $C/prep2.py $C/plan2.py $C/via2.py \
      scripts/experiments/selfmodel_via_20261120/via_comp.py $D/asrun/
-  log "start: $CTRL, episodes $E0-$E1, model $MODEL, commit $(git log -1 --format=%h) + uncommitted (copies in asrun/)"
+  log "start: $BED_SIGNATURE, episodes $E0-$E1, model $MODEL, commit $(git log -1 --format=%h) + uncommitted (copies in asrun/)"
   bench A
   $PY - <<PYEOF
 import json, glob
@@ -65,6 +71,7 @@ PYEOF
 fi
 
 if [ "$STEP" = plan ] || [ "$STEP" = all ]; then
+  [ -d $LOOK ] || { log "FAIL plan: no look dump $LOOK for $BED_SIGNATURE (blind.py look with LOOK_DUMP makes it)"; exit 2; }
   for T in $TASKS; do for e in $(seq $E0 $E1); do echo "$T $e"; done; done |
     xargs -P 4 -L1 sh -c "$PY -I $C/obstacles_box.py $LOOK $D/films_A $CL $D/step1 \$0 \$1 2>/dev/null | grep '^{'" > $D/step1_rows.jsonl
   log "step 1: $(wc -l < $D/step1_rows.jsonl) rows, $(ls $D/step1/obst_*.npz 2>/dev/null | wc -l) obstacle files"

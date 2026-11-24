@@ -50,7 +50,7 @@ log "step 2c: $(ls $D/via/via_*.npz | wc -l) via files"
 export REACH_HAND_OFF=0.0415,0,0 BFM_ROOT=odo REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 TMPDIR=/workspace/tmp
 E=$R/scripts/experiments/simple_eval_20261112
 WM="--wm outputs/reachwm_20261030/invert/wrist_wrist_odo/wm_ref.pt"
-ARGS="--column perception --cloud cloud_eyes_final --trace"
+ARGS="--trace"  # the run switches' default: perception column, the stereo Isaac look (TODO 38.11)
 for T in $TASKS; do
   pids=()
   for e in $(seq 0 29); do

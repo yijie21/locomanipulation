@@ -11,8 +11,9 @@ S=/wuji-vefps-D/wuji-il/yijie/tools/simple_isaac/SIMPLE; SP=$S/.venv/bin/python;
 E=scripts/experiments/simple_eval_20261112
 TASKS="XMovePickTeleop XMoveBendPickTeleop BendPickMP TabletopGraspMP"
 read -ra GS <<< "${GPUS:-1 2 3}"; NS=${SRV_PER_GPU:-5}
-export REACH_HAND_OFF=0.0415,0,0 BFM_ROOT=odo REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl SIMPLE_ROOT=$S
-[ "$CTRL" = sonic ] && export REACH_CONTROLLER=sonic REACH_SONIC_NETS=${REACH_SONIC_NETS:-gpu}
+export REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl SIMPLE_ROOT=$S
+[ "$CTRL" = sonic ] && export REACH_SONIC_NETS=${REACH_SONIC_NETS:-gpu}
+SETS="--bench-set controller=$CTRL"  # run switches (TODO 38.11): the controller; the rest is the main metric's setting
 mkdir -p $D/rows $D/logs $D/films $D/srv $D/asrun
 cp $E/simple_bench.py $E/jref_collect.py $E/jref_plan_server.py $E/jref_data.py $E/jref_collect.sh src/locomani/backends/scalebfm/motor.py $D/asrun/
 log() { echo "[$(date -u +%T)] $*" >> $D/collect.log; }
@@ -34,8 +35,8 @@ pids=() w=0
 for T in $TASKS; do for c in $(seq 0 $((CHUNKS - 1))); do
   a=$((r0 + c * per)); b=$((a + per - 1)); [ $b -gt $r1 ] && b=$r1; [ $a -gt $r1 ] && continue
   g=${GS[$((w % ${#GS[@]}))]}; sk=${socks[$((w % ${#socks[@]}))]}; w=$((w + 1))
-  MUJOCO_EGL_DEVICE_ID=$g CUDA_VISIBLE_DEVICES=$g nice -n 10 $PY $E/simple_bench.py $T --method direct --column perception \
-    --cloud cloud_eyes_final --episodes 0-29 --collect $sk --reps $a-$b --collect-k $K --film $D/films \
+  MUJOCO_EGL_DEVICE_ID=$g CUDA_VISIBLE_DEVICES=$g nice -n 10 $PY $E/simple_bench.py $T --method direct $SETS \
+    --episodes 0-29 --collect $sk --reps $a-$b --collect-k $K --film $D/films \
     --out $D/rows/${T}_r$a-$b.jsonl > $D/logs/${T}_r$a-$b.log 2>&1 & pids+=($!)
 done; done
 log "${#pids[@]} bench processes (pids ${pids[*]})"

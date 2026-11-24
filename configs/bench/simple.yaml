@@ -1,0 +1,11 @@
+# bench/simple: the switches SIMPLE runs with unless a run overrides them (ported from bench-options, its TODO 49.1; selfwm TODO 38.11): the main metric's setting (perception column, the stereo look, leg odometry for the belief and for the pelvis ScaleBFM is told, ScaleBFM)
+defaults:
+- _schema
+- _self_
+bench: simple
+target: perception
+sensor: stereo
+depth_noise: none
+self_pose: odometry
+controller_root: odometry
+controller: scalebfm

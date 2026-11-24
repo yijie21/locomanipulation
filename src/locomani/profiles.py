@@ -18,6 +18,7 @@ import yaml
 from locomani import paths
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
 from locomani.backends.sonic.config import SonicBackendConfig
+from locomani.bench.options import BenchOptions
 from locomani.pipeline.eval_config import EvalConfig
 from locomani.tasks.bottle.config import BottleTaskConfig
 from locomani.tasks.bottle_visual.config import BottleVisualTaskConfig
@@ -31,7 +32,7 @@ SCHEMAS = {  # the name a profile gives in its `defaults` -> the dataclass that 
     "_sonic": SonicBackendConfig,
     "_scalebfm": ScaleBfmBackendConfig,
 }
-GROUP_SCHEMAS = {"eval": EvalConfig}  # groups with one dataclass, whose files just say `_schema`
+GROUP_SCHEMAS = {"eval": EvalConfig, "bench": BenchOptions}  # groups with one dataclass, whose files just say `_schema`
 
 
 def load(group: str, name: str):

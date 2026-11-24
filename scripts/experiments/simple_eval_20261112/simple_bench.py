@@ -34,13 +34,13 @@ By default the waypoint is left out and the pregrasp is the first reach after th
 about 2 s longer. The defaults (no waypoint, the grasp 0.30 m ahead) are the best direct had on 3 of the 30 episodes of
 three tasks (2026-11-19 smoke5: 0.40 m and the waypoint were worse for direct); every method runs with the same.
 
-The "perception" column (--column perception): the robot's own look at the start, cached (blind.py look: SAM 3 on the head
+The "perception" column (target=perception): the robot's own look at the start, cached (blind.py look: SAM 3 on the head
 camera's image, the target's points from depth, GraspGen-X's grasps on them, grasps_graspgen.py), the grasp chosen as
 pick.graspgen_grasp chooses it, the table's edge as blind.py saw it (its rows' "edge"); no second look: after the walk
 the robot takes its pelvis from leg odometry (leg_odo.TickFeed, as room_grasp's feedback arm), and a goal goes to the
 Motor kept where it lies from that believed pelvis (place.Belief.to_sim), heights as seen. Every method gets the same.
---cloud picks the look: cloud_blind is the replica's MuJoCo images (the 11-19 tables), cloud_eyes_final SIMPLE's Isaac
-images (blind.py look --eyes, 2026-11-20; docs/handoff/simple-isaac-eyes-20261120.md). An episode without a grasp there
+The sensor switch picks the look: sensor=rgbd cloud_blind, the replica's MuJoCo images (the 11-19 tables); sensor=stereo
+cloud_eyes_final, SIMPLE's Isaac images (blind.py look --eyes, 2026-11-20; docs/handoff/simple-isaac-eyes-20261120.md). An episode without a grasp there
 fails ("no grasp"); the table's edge stays the MuJoCo look's (blind_f1) with either.
 
 --avoid with --comp <model dir> (2026-11-23, selfmodel_bench_20261123): the planned path's via points and the pregrasp goal
@@ -61,9 +61,19 @@ start, faded out along the path).
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
 
-    cd <repo>; export REACH_HAND_OFF=0.0415,0,0 BFM_ROOT=odo REACHWM_GOAL_REF=1 PYTHONPATH=src
-    $PY scripts/experiments/simple_eval_20261112/simple_bench.py XMovePickTeleop --method model --out rows.jsonl
+    cd <repo>; export REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 PYTHONPATH=src
+    $PY scripts/experiments/simple_eval_20261112/simple_bench.py XMovePickTeleop --method model --out rows.jsonl \
+        [--bench-set controller=sonic] [--bench-set target=truth | --bench-set sensor=rgbd]
 -> one json line per episode appended to --out, and a summary line
+
+Run switches (2026-11-24, TODO 38.11; the bench-options branch's way, locomani.bench): --bench simple and repeatable
+--bench-set key=value over configs/bench/simple.yaml, resolved once here and checked against SIMPLE's capability table
+(python -m locomani.bench show --bench simple). The profile is the main metric's setting: target=perception,
+sensor=stereo (the Isaac look, cloud_eyes_final), self_pose=odometry, controller_root=odometry (BFM_ROOT=odo),
+controller=scalebfm. They replace --column (target), --cloud (sensor: stereo cloud_eyes_final, rgbd cloud_blind) and the
+REACH_CONTROLLER / BFM_ROOT variables: the controller and the root go to env.Env explicitly, the two variables are set
+from the switches for modules that still read them, and one already set to something else stops the run. Every row
+carries the resolved switches under "bench".
 """
 
 import argparse
@@ -87,6 +97,9 @@ import env as E  # noqa: E402
 import episodes as EP  # noqa: E402
 import gen_reach as GR  # noqa: E402
 import pick as P  # noqa: E402
+
+from locomani.bench import options as BO  # noqa: E402
+from locomani.bench import simple as BS  # noqa: E402
 
 # SIMPLE's max_episode_steps at the evaluation's 50 Hz (papers/simple_protocols_20261119.md, 1.3)
 LIMIT_S = {"XMovePickTeleop": 16.0, "XMoveBendPickTeleop": 16.0, "BendPickMP": 8.0, "TabletopGraspMP": 16.0,
@@ -212,7 +225,7 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
     sid = sample_id(a, task, ep, rep) if rep is not None else None
     info = EP.build(ep)
     os.environ["REACH_SCENE_DIR"] = info["dir"]
-    env = E.Env("open")
+    env = E.Env("open", controller=a.controller, root=a.root)
     m, sim = env.m, env.sim
     rec = GR.Recorder(env)
     b = sim.m.body(info["target"]).id
@@ -289,7 +302,7 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
 
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
-               clear=a.clear, column=a.column, avoid=a.avoid or None, joint=a.joint)  # fmt: skip
+               clear=a.clear, column=a.column, avoid=a.avoid or None, joint=a.joint, bench=a.bench_record)  # fmt: skip
     if sid is not None:
         row["sid"] = sid
     p0, Rp0 = env.pelvis()
@@ -389,7 +402,7 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
                    success_end=bool(EP.lifted(task, z0, z)), t_success=first[0], fell=m.fell_at, t=round(float(m.t - t0), 2),
                    touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"],
                    hits=[[*k, round(100 * v, 2)] for k, v in sorted(hits.items())], comp=a.comp or None,
-                   controller=os.environ.get("REACH_CONTROLLER", "scalebfm"))  # fmt: skip
+                   controller=a.controller)  # fmt: skip
         if trace is not None:
             row["trace"] = trace
         row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
@@ -553,6 +566,22 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
     return finish()
 
 
+def switches(a) -> None:
+    """Resolve the run switches once (locomani.bench) and set this bed's own settings from them: a.column, a.cloud,
+    a.controller, a.root, and the record every row carries. REACH_CONTROLLER and BFM_ROOT are set from the switches for
+    the modules that still read them; one already set to another value is an error, not a silent second source."""
+    r = BO.resolve(a.bench or "simple", a.bench_set)
+    bed = BS.bed_settings(r.options)
+    a.column, a.cloud, a.controller, a.root = bed["column"], bed["cloud"], bed["controller"], bed["root"]
+    a.bench_record = r.record()
+    for var, value in (("REACH_CONTROLLER", a.controller), ("BFM_ROOT", a.root)):
+        if os.environ.get(var, value) != value:
+            raise SystemExit(f"{var}={os.environ[var]} but the switches say {value} ({r.options.signature()}); "
+                             f"unset it and use --bench-set")  # fmt: skip
+        os.environ[var] = value
+    print("switches", r.options.signature(), "explicit", list(r.explicit), "normalized", list(r.normalized), flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("task", choices=PICK_TASKS)
@@ -582,14 +611,7 @@ def main() -> None:
     )
     ap.add_argument("--inverse", default="outputs/reachwm_20261030/inverse/inverse.pt", help="method inverse's model")
     ap.add_argument("--k", type=int, default=32, help="lookup's neighbours")
-    ap.add_argument("--column", choices=("truth", "perception"), default="truth")
-    ap.add_argument(
-        "--cloud",
-        default="cloud_blind",
-        help="the perception column's look and grasps, under outputs/simple_eval_20261112: cloud_blind (the replica's "
-        "MuJoCo images, 2026-11-19), cloud_eyes_final (SIMPLE's Isaac images, 2026-11-20). The table's edge is "
-        "blind_f1's either way",
-    )
+    BO.add_arguments(ap)  # --bench simple, --bench-set target=|sensor=|controller=... (the docstring's run switches)
     ap.add_argument(
         "--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)"
     )
@@ -610,6 +632,7 @@ def main() -> None:
                     "skipped (a stance's run is fixed by its id, so a stopped collection is completed, not redone)")  # fmt: skip
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    switches(a)
     assert not (a.comp and a.shift), "--comp or --shift, not both"
     assert not (a.joint and (a.comp or a.shift or not a.avoid)), "--joint goes with --avoid alone"
     if a.collect:
@@ -621,7 +644,7 @@ def main() -> None:
     if a.column == "perception":  # the table's edge as blind.py's look saw it
         for r in json.load(open(EP.OUT / f"blind_f1_{a.task}.json")):
             a.edges[(str(r["level"]), int(r["index"]))] = r.get("edge")
-    assert os.environ.get("BFM_ROOT") == "odo" and os.environ.get("REACH_HAND_OFF"), "the self model's data settings"
+    assert a.root == "odo" and os.environ.get("REACH_HAND_OFF"), "the self model's data settings"
     models = {}
     if a.method in ("model", "model_pose"):
         import torch

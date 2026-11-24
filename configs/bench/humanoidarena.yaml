@@ -1,0 +1,11 @@
+# bench/humanoidarena: the switches HumanoidArena runs with unless a run overrides them (ported from bench-options, its TODO 49.1): its own tracker, leg odometry not planned
+defaults:
+- _schema
+- _self_
+bench: humanoidarena
+target: perception
+sensor: rgbd
+depth_noise: none
+self_pose: truth
+controller_root: truth
+controller: native

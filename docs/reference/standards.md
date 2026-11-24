@@ -20,13 +20,12 @@ Use inspectable evidence to distinguish implementation, observation and interpre
 | `backends/<backend>/` | Controller protocol, observations, execution | Backend execution behind a task-independent interface |
 | `primitives/` | Shared geometry and joint calculations | Values in, values out |
 | `sim/` | Simulator integration, assets and rendering | Scene and simulation inputs |
+| `bench/<benchmark>/` | A public benchmark's run switches and capability table (on selfwm the beds themselves are experiment runners) | Resolved options in; every record carries them |
 
-The entry composes tasks and backends. Task-specific grasp geometry belongs in the
-task; a backend receives data or a callable. New backend-to-task imports are rejected
-by `scripts/lint_repository.py`. The historical exception list in `tests/fixtures/architecture_debt.json` is now
-empty; do not add an exception to bypass ownership.
-Production modules cannot import experiment runners. The checker enforces these
-specific rules, not every architectural property or dynamic dependency.
+The entry composes tasks and backends. Task-specific grasp geometry belongs in the task; a backend receives data or a
+callable. New backend-to-task imports are rejected by `scripts/lint_repository.py`. The historical exception list in
+`tests/fixtures/architecture_debt.json` is now empty; do not add an exception to bypass ownership.
+Production modules cannot import experiment runners. The checker enforces these specific rules, not every architectural property or dynamic dependency.
 
 ## Interfaces and configuration
 

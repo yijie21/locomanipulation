@@ -67,16 +67,17 @@ def wrap(a: float) -> float:
 class Env:
     """One worker's simulator: the grip-probe scene under ScaleBFM, stepped at 10 Hz."""
 
-    def __init__(self, scene: str = "grip"):
+    def __init__(self, scene: str = "grip", controller: str | None = None, root: str | None = None):
         """scene "grip": the probe's table and box (the minimal proof); "open": walk_mars with nothing on the floor
-        (the generalised world model's data, gen_data2.py)."""
+        (the generalised world model's data, gen_data2.py). `controller` and `root` (2026-11-24, TODO 38.11): an entry
+        that resolved the run switches (locomani.bench) passes them; None reads REACH_CONTROLLER / BFM_ROOT as before."""
         import capability_probe as cap
 
         self.cap = cap
         # REACH_CONTROLLER (2026-11-16): "scalebfm" (default), "sonic" -- SONIC v1.1 in process (backends.sonic_onnx) --
         # or "amo" (backends.amo: AMO's legs and waist, our arm solver; 2026-11-23),
         # same scene, robot, joint order and Motor, so the self-model data of the two compare column for column
-        self.controller = os.environ.get("REACH_CONTROLLER", "scalebfm")
+        self.controller = controller or os.environ.get("REACH_CONTROLLER", "scalebfm")
         sonic = None
         if self.controller == "sonic":
             # REACH_SONIC_NETS: "gpu" (default) all three ONNX sessions on the worker's GPU; "cpu" encoder and decoder on
@@ -117,7 +118,7 @@ class Env:
         # centre (runtime.OFF); SIMPLE's Dex3 palm is "0.0415,0,0" (simple_eval_20261112/pick.py PALM)
         if os.environ.get("REACH_HAND_OFF"):
             self.R.OFF[:] = [float(v) for v in os.environ["REACH_HAND_OFF"].split(",")]
-        root = os.environ.get(
+        root = root or os.environ.get(
             "BFM_ROOT", "true"
         )  # what ScaleBFM is told about the pelvis position; "true": the simulator's, as a perfect tracker
         if root != "true":  # the stop correction and the walk's end test read the true pelvis

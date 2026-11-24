@@ -1447,4 +1447,11 @@
     - SONIC 的两个对照（D、E）：D 跑到 46 / 120 局时 vastgpu 重启，E 没开始。SONIC 上 B 和 C 本来就分不出，补不补由 38.10.2 一起带上决定
     - 放回 SIMPLE 这一轮的独立复核没做。说明在 vastgpu 的 `outputs/simple_eval_20261112/bench_via_20261123/review/BRIEF.md`，数据也只在 vastgpu
     - vastgpu 上的逐局结果、录像状态和 Isaac 视频在 `outputs/simple_eval_20261112/bench_via_20261123`（不在 git 里）；报告 https://claude.ai/artifact/Cp3E4u2sygAZypwxZRA95L 第三节
+- [~] 38.11 运行开关，做法和 bench-options 分支一致（用户 2026-11-24："不是合进 bench-options，就是推送到 selfwm……只是我说的那几个切换的实现方式和 bench-options 保持一致"；两个分支任务不同，互不影响）
+  - 要能随意切换的组合：基准（SIMPLE、HumanoidArena、BiGym 2.0，另有 LocoManiLab）× 控制器（ScaleBFM、SONIC 等）× 抓取目标来自真值还是感知 × 感知读双目还是单目 RGB-D
+  - [x] 开关层从 bench-options 搬过来：`src/locomani/bench/`、`configs/bench/<基准>.yaml`、`--bench` / `--bench-set key=value`、每个基准一张能力表、`python -m locomani.bench table`。selfwm 改了两处：控制器一项加上 sonic、amo、gr00t_wbc；能力表可以绑定两项（selfwm 的 SIMPLE 环境里，机器人以为自己在哪跟着真值或感知走）
+  - [x] SIMPLE：`simple_bench.py` 改用开关（去掉 `--column`、`--cloud`、`REACH_CONTROLLER`、`BFM_ROOT`），每行结果记下开关；默认就是主指标的设置。ScaleBFM、SONIC × 真值、双目、RGB-D 都可选；AMO、GR00T-WBC 记为计划中（在别的场景跑过，没在这个环境跑过）
+  - [x] 4090 上新旧代码同局对照（2026-11-24）：ScaleBFM、SONIC × 双目、RGB-D、真值、双目加 J × TabletopGrasp 第 0、1 局和 XMovePick 第 15、18 局，32 局逐字段相同；新代码的 J 和 38.10.2 存下的 J 8 局相同；`bench_via.sh` 的直线伸手两个控制器 × 四个任务各 1 局，和 38.10.2 的 A 相同。输出在 4090 的 `outputs/simple_eval_20261112/parity_switches_20261124/`
+  - [ ] RGB-D 的规划路线：缺逐局的观察快照 `look_dump_blind`（`blind.py look` 加 `LOOK_DUMP` 生成），现在 RGB-D 只能跑不规划路线的做法
+  - [ ] LocoManiLab、BiGym 2.0、HumanoidArena 的环境接口（表里都是计划中）。按 bench-options 的表，BiGym 2.0 和 HumanoidArena 只用基准自带的控制器（11-23 定的），要在上面换 WBC 得用户改这个决定
 - [ ] 38.7 演示（先仿真）：蹲下从塞满瓶子的矮柜底层取后排饮料；三联画面 + 半透明手臂叠加 + 缝越推越窄；参数事先定，所有试次都展示
