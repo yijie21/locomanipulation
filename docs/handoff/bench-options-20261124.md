@@ -82,3 +82,22 @@ service, makes the missing looks and GraspGen-X grasps, runs the episodes and wr
 - self_pose=truth and controller_root=truth were refused until TODO 49.3, now selectable. On the esc bed the loops always used leg
   odometry for both (OdoRoot is ScaleBFM's root_source, re-anchored at the true pelvis at each stand; the anchor
   cancels because goals go through Belief.to_sim). An earlier report of mine said the opposite; it was wrong.
+
+## LocoManiLab port (TODO 49.4, 2026-11-24)
+
+One bed for all 26 LocoManiLab tasks (the 20 practice tasks, 3 fridge-door, 3 low-drawer tasks) in `src/locomani/bench/locomanilab/`;
+the three esc beds (escalation_20261116, lml_bed2_20261121, lml_bed3_20261121) were copies of one file set plus articulation code.
+The engine is robosuite / robocasa on MuJoCo (not AI2-THOR); the environment server runs in LocoManiLab's own venv as a standalone
+file and is started by the bed process (`client.ServerLink`), which it dies with.
+
+```bash
+PYTHONPATH=src /venv/main/bin/python -m locomani.bench.locomanilab run IThorKitchenApproachFridge_scene13 --ids ids.txt \
+  --setting '{"feed_torque": true}' --out rows.jsonl --set kinds=P --bench-set depth_noise=realsense
+```
+
+`ids.txt`: one `<Task>/<kind>/<n>` per line. Kind `Q` is line n of the task's practice file (the loops' pool, default), `P` and `W` are
+development episodes (`--set kinds=P`), the benchmark's own episodes (kind `E`, jitter seed 0) are refused in every layer: the CLI before
+a slot is taken, `episodes.check_id`, `episodes.reset_msg` and the environment server (`seed_floor` as an argument; tests/test_lml_episodes.py).
+SAM 3 must be up on port 18832. Switches: `target=perception` (rgbd, depth_noise none or realsense: no right-camera depth, hence no
+occlusion shadows), `self_pose` and `controller_root` both values, `target=truth` for the 20 original tasks with `self_pose=truth`;
+`sensor=stereo` stays unsupported (one head camera). Checks and results: `lml_port_notes.md` (outputs under /workspace/tmp/bench49/lml/).

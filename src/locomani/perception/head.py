@@ -39,29 +39,32 @@ def head_frame(sim):
     return rgb, depth
 
 
-def intrinsics() -> np.ndarray:
-    """The head camera's pinhole intrinsics (pixels): the calibration cam_points uses, as the K a Frame carries."""
-    W, H = HEAD_CAM_WH
-    f = 0.5 * H / np.tan(np.radians(HEAD_CAM_FOVY) / 2)
+def intrinsics(wh: tuple = HEAD_CAM_WH, fovy: float = HEAD_CAM_FOVY) -> np.ndarray:
+    """A head camera's pinhole intrinsics (pixels): the calibration cam_points uses, as the K a Frame carries. `wh`, `fovy`:
+    the image size and vertical field of view (SIMPLE's head camera by default)."""
+    W, H = wh
+    f = 0.5 * H / np.tan(np.radians(fovy) / 2)
     return np.array([[f, 0.0, W / 2 - 0.5], [0.0, f, H / 2 - 0.5], [0.0, 0.0, 1.0]])
 
 
-def cam_points(depth: np.ndarray) -> np.ndarray:
-    """Each pixel's point in the camera's frame (x right, y up, -z forward), H x W x 3, by the camera's calibration. A pixel with
-    no depth (NaN or infinite: a RealSense-like hole, the renderer's sky) is depth 0, like the stereo model's invalid pixels:
-    its point is the camera's origin and callers mask it by `depth > 0.2`."""
+def cam_points(depth: np.ndarray, fovy: float = HEAD_CAM_FOVY) -> np.ndarray:
+    """Each pixel's point in the camera's frame (x right, y up, -z forward), H x W x 3, by the camera's calibration (`fovy`: the
+    vertical field of view in degrees, SIMPLE's head camera by default; LocoManiLab's camera reports its own with every image). A
+    pixel with no depth (NaN or infinite: a RealSense-like hole, the renderer's sky) is depth 0, like the stereo model's invalid
+    pixels: its point is the camera's origin and callers mask it by `depth > 0.2`."""
     depth = np.where(np.isfinite(depth), depth, 0.0)
     H, W = depth.shape
-    f = 0.5 * H / np.tan(np.radians(HEAD_CAM_FOVY) / 2)
+    f = 0.5 * H / np.tan(np.radians(fovy) / 2)
     v, u = np.mgrid[0:H, 0:W]
     return np.stack([(u - W / 2 + 0.5) * depth / f, -(v - H / 2 + 0.5) * depth / f, -depth], axis=2)
 
 
 class HeadKin:
-    """Where the head camera sits on the pelvis, from the joint readings and the robot's own model."""
+    """Where the head camera sits on the pelvis, from the joint readings and the robot's own model. `cam`: the camera's name in
+    the model (SIMPLE's "head"; LocoManiLab's mirrored model calls it "head_camera")."""
 
-    def __init__(self, model, qadr):
-        self.m, self.d, self.qadr, self.cam = model, mujoco.MjData(model), qadr, model.camera(HEAD_CAM).id
+    def __init__(self, model, qadr, cam: str = HEAD_CAM):
+        self.m, self.d, self.qadr, self.cam = model, mujoco.MjData(model), qadr, model.camera(cam).id
 
     def __call__(self, joints):
         d = self.d

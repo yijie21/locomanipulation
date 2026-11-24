@@ -98,9 +98,9 @@ class CapabilityTables(unittest.TestCase):
 
     def test_a_planned_value_stops_a_run_unless_allowed(self):
         with self.assertRaisesRegex(ValueError, "planned, not implemented yet"):
-            resolve("locomanilab")
-        r = resolve("locomanilab", allow_planned=True)
-        self.assertIn("sensor=rgbd", r.planned)
+            resolve("bigym2")
+        r = resolve("bigym2", allow_planned=True)
+        self.assertTrue(r.planned)
 
     def test_simple_runs_the_switches_49_2_verified(self):
         # TODO 49.2: the loops' switches, truth targets, RGB-D with and without noise are ready on SIMPLE

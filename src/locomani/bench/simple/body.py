@@ -141,16 +141,26 @@ class PlaceBelief:
         self.mo.jaw_source, self.anchored = self.feed.jaw, True
         return float(100 * np.linalg.norm((self.pb - self.pt)[:2])), float(np.degrees(R.wrap(self.yb - self.yt)))
 
+    cam = head.HEAD_CAM  # the camera's name in the robot's model
+
+    def frame(self):
+        """The head camera's (colour image, depth image in m, vertical field of view in degrees). A benchmark whose camera
+        differs from SIMPLE's (LocoManiLab: its own size, a field of view that comes with each image) overrides this and `cam`."""
+        rgb, depth = head.head_frame(self.sim)
+        return rgb, depth, head.HEAD_CAM_FOVY
+
     def scene(self):
         """The head camera's colour image, each pixel's point in the robot's frame and which pixels have a depth. The
         camera sits on the pelvis by the joint readings; the pelvis is the one of the robot's own estimate (before the
-        first walk: the place and heading that define the robot's frame, with the IMU's tilt)."""
-        rgb, depth = head.head_frame(self.sim)
+        first walk: the place and heading that define the robot's frame, with the IMU's tilt). The camera's own place in the
+        robot's frame is left in `cam_b`."""
+        rgb, depth, fovy = self.frame()
         if not hasattr(self, "kin"):
-            self.kin = head.HeadKin(self.sim.m, self.sim.qadr)
+            self.kin = head.HeadKin(self.sim.m, self.sim.qadr, self.cam)
         rel_p, rel_R = self.kin(self.sim.d.qpos[self.sim.qadr])
         ps, Rs = self._pelvis_sim()
-        c = head.cam_points(depth).reshape(-1, 3)
+        c = head.cam_points(depth, fovy).reshape(-1, 3)
+        self.cam_b = self.from_sim(ps + Rs @ rel_p)
         return (
             rgb,
             self.from_sim(ps + (rel_p + c @ rel_R.T) @ Rs.T).reshape(*depth.shape, 3),

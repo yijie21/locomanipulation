@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
 from locomani.backends.sonic.config import LockstepConfig, SonicBackendConfig  # noqa: E402
+from locomani.bench.locomanilab.config import LocoManiLabConfig  # noqa: E402
 from locomani.bench.options import BenchOptions  # noqa: E402
 from locomani.bench.simple.config import SimpleConfig  # noqa: E402
 from locomani.pipeline.eval_config import EvalConfig  # noqa: E402
@@ -65,6 +66,11 @@ CONFIGS = [
     ("EvalConfig", EvalConfig, "locomani/pipeline/eval_config.py"),
     ("BenchOptions", BenchOptions, "locomani/bench/options.py (run switches on a public benchmark)"),
     ("SimpleConfig", SimpleConfig, "locomani/bench/simple/config.py (the SIMPLE bed's paths, services and GPUs)"),
+    (
+        "LocoManiLabConfig",
+        LocoManiLabConfig,
+        "locomani/bench/locomanilab/config.py (the LocoManiLab bed's paths, pools, services and seed wall)",
+    ),
 ]
 
 FIELD_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:")
