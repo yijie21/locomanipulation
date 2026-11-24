@@ -212,16 +212,30 @@ class Scope(unittest.TestCase):
         for kv in ([], ["target=truth"], ["sensor=rgbd"], ["sensor=rgbd", "depth_noise=realsense"]):
             cfgmod.check_scope(self.opts(*kv))
 
+    def test_both_pose_and_root_switches_take_both_values(self):
+        for pose in ("odometry", "truth"):
+            for root in ("odometry", "truth"):
+                cfgmod.check_scope(self.opts(f"self_pose={pose}", f"controller_root={root}"))
+
     def test_refused(self):
-        for kv in (["self_pose=truth"], ["controller_root=truth"]):
-            with self.assertRaises(cfgmod.ScopeError, msg=kv):
-                cfgmod.check_scope(self.opts(*kv))
-        with self.assertRaises(cfgmod.ScopeError) as c:
-            cfgmod.check_scope(self.opts("controller_root=truth"))
-        self.assertIn("49.3", str(c.exception))
+        import dataclasses
+
+        with self.assertRaises(cfgmod.ScopeError):  # (the capability table refuses native before the bed does)
+            cfgmod.check_scope(dataclasses.replace(self.opts(), controller="native"))
 
 
 class CacheKey(unittest.TestCase):
+    def test_pose_and_root_switches_enter_the_key_only_when_not_default(self):
+        pkg = bed.load_package(SEED_DIR)
+        k = bed.cache_key(pkg, "XMovePickTeleop", {})
+        self.assertEqual(k, bed.cache_key(pkg, "XMovePickTeleop", {}, DEFAULT_VIEW, ("odometry", "odometry")))
+        others = {
+            bed.cache_key(pkg, "XMovePickTeleop", {}, DEFAULT_VIEW, c)
+            for c in (("truth", "odometry"), ("odometry", "truth"), ("truth", "truth"))
+        }
+        self.assertEqual(len(others), 3)
+        self.assertNotIn(k, others)
+
     def test_default_key_is_the_old_recipe_and_every_other_switch_set_differs(self):
         pkg = bed.load_package(SEED_DIR)
         S = pkg.skill

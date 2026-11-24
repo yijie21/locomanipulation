@@ -56,6 +56,22 @@ service, makes the missing looks and GraspGen-X grasps, runs the episodes and wr
   CloseDoorTeleop and OpenOvenTeleop (P/0, P/10) for each combination, no errors; the rendered depth agrees with the
   stereo depth to 0.8-1.2 cm median, the overlay lines up (`step6/frames/`); realsense: 7 % holes, 0.8 cm median error.
 
+## Self pose and the pelvis ScaleBFM is told (TODO 49.3, evidence under outputs/bench49_20261124/phase3/)
+
+- `self_pose` (the skill's belief) and `controller_root` (ScaleBFM's root_source) are separate: `Belief(sim, mo, odo,
+  root_odo)` builds Body, JawFeed and the stop-servo change only for odometry belief, OdoRoot only for an odometry
+  root. The default (odometry, odometry) replays bit-identical to the committed code at every step (oven 13/26,
+  XMovePick 89/0, perception frozen).
+- Four combinations on 46 development episodes each (40 articulated, 6 XMovePick), compliant wins: odometry/odometry
+  27, odometry/truth 25, truth/odometry 24, truth/truth 25: within same-code noise, not rankable. Larger than noise:
+  with a true belief the stop error after the first walk is 1.3-2.3 cm instead of 2.9-5.7 cm; the mixed
+  truth/odometry pair reaches worse on XMovePick (palm error 3.3 cm against 0.8), its two frames disagreeing.
+- Truth still read on the odometry path (11 places, file:line in phase3_notes.md). The one that matters: the belief
+  is re-tied to the true pelvis at the start and after every walk, so odometry error does not accumulate across walks
+  as it would on a robot. Others: the true pose before the first walk, gravity from the true orientation (an IMU
+  gives it), the reach settle ending when the true palm is within 1 cm (timing). A truth-free mode needs these
+  replaced; it is not done.
+
 ## Gaps and limits
 
 - Success rates on SIMPLE vary run to run by several episodes in 70 with identical code; compare versions on many
@@ -63,6 +79,6 @@ service, makes the missing looks and GraspGen-X grasps, runs the episodes and wr
 - target=truth `art()` takes the moving part as a moving body's collision geometry of at most 0.5 m, ranked by its
   distance from the hinge; checked on the door and the oven only. Faucet, trash can and the five pick tasks other than
   XMovePickTeleop were not smoked under truth or rgbd.
-- self_pose=truth and controller_root=truth are refused until TODO 49.3. On the esc bed the loops always used leg
+- self_pose=truth and controller_root=truth were refused until TODO 49.3, now selectable. On the esc bed the loops always used leg
   odometry for both (OdoRoot is ScaleBFM's root_source, re-anchored at the true pelvis at each stand; the anchor
   cancels because goals go through Belief.to_sim). An earlier report of mine said the opposite; it was wrong.

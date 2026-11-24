@@ -88,9 +88,8 @@ class Loading(unittest.TestCase):
 
         ok = options.resolve("simple", allow_planned=True).options
         bed.check_scope(ok)
-        for kv in ("controller_root=truth", "self_pose=truth"):
-            with self.assertRaises(bed.ScopeError):
-                bed.check_scope(options.resolve("simple", [kv], allow_planned=True).options)
+        for kv in ("controller_root=truth", "self_pose=truth"):  # TODO 49.3: both switches take both values
+            bed.check_scope(options.resolve("simple", [kv], allow_planned=True).options)
 
 
 if __name__ == "__main__":

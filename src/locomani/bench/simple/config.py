@@ -105,10 +105,14 @@ SCOPE = dict(
     target=("perception", "truth"),
     sensor=("stereo", "rgbd", "none"),
     depth_noise=("none", "realsense"),
-    self_pose=("odometry",),
-    controller_root=("odometry",),
+    self_pose=("odometry", "truth"),
+    controller_root=("odometry", "truth"),
     controller=("scalebfm",),
 )  # the switch values this bed implements: the loops' (perception, stereo, none, odometry, odometry, scalebfm) and TODO 49.2 step 6's
+DEFAULT_CONTROL = (
+    "odometry",
+    "odometry",
+)  # self_pose, controller_root of the loops: part of the look cache key only when they differ
 DEFAULT_VIEW = (
     "perception",
     "stereo",
@@ -123,8 +127,6 @@ class ScopeError(ValueError):
 def check_scope(options) -> None:
     """Refuse the switch values this bed does not implement, naming where they come from."""
     later = {
-        ("self_pose", "truth"): "TODO 49.3 (self_pose=truth: Belief without odometry)",
-        ("controller_root", "truth"): "TODO 49.3 (controller_root=truth: root_source=None)",
         ("controller", "native"): "TODO 49.2 step 6 (SIMPLE's own whole-body controller)",
     }
     bad = []
@@ -134,6 +136,6 @@ def check_scope(options) -> None:
             bad.append(f"{axis}={got} -> {later.get((axis, got), 'not implemented')}")
     if bad:
         raise ScopeError(
-            "the SIMPLE bed runs target=perception|truth sensor=stereo|rgbd depth_noise=none|realsense self_pose=odometry "
-            "controller_root=odometry controller=scalebfm: " + "; ".join(bad)
+            "the SIMPLE bed runs target=perception|truth sensor=stereo|rgbd depth_noise=none|realsense self_pose=odometry|truth "
+            "controller_root=odometry|truth controller=scalebfm: " + "; ".join(bad)
         )

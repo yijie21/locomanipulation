@@ -4,7 +4,7 @@ The bed was ported from the escalation bed on branch esc (scripts/experiments/es
 checked against it (docs/handoff/bench-options-20261124.md); entry `python -m locomani.bench.simple run`.
 """
 
-from locomani.bench.spec import PLANNED, READY, BenchSpec
+from locomani.bench.spec import READY, BenchSpec
 
 SPEC = BenchSpec(
     name="simple",
@@ -14,8 +14,8 @@ SPEC = BenchSpec(
         target={"truth": READY, "perception": READY},
         sensor={"stereo": READY, "rgbd": READY},
         depth_noise={"none": READY, "realsense": READY},
-        self_pose={"truth": PLANNED, "odometry": READY},
-        controller_root={"truth": PLANNED, "odometry": READY},
+        self_pose={"truth": READY, "odometry": READY},
+        controller_root={"truth": READY, "odometry": READY},
         controller={"scalebfm": READY},
     ),
     notes={
@@ -24,9 +24,10 @@ SPEC = BenchSpec(
         "sensor=stereo": "the head's stereo pair; depth from a stereo model (perception/stereo_server.py; the loops so far)",
         "sensor=rgbd": "the left head camera with Isaac's rendered depth; smoked on XMovePick, CloseDoor, OpenOven only",
         "depth_noise=realsense": "perception/noise.py, shadows from the right camera's rendered depth",
-        "self_pose=truth": "the skill's belief from the simulator's pelvis; selectable in TODO 49.3",
+        "self_pose=truth": "the skill's belief from the simulator's pelvis, stop correction on it (TODO 49.3)",
+        "self_pose=odometry": "leg odometry, but re-tied to the true pelvis at the start and after each walk (TODO 49.3 notes)",
         "controller_root=odometry": "the loops so far: OdoRoot is ScaleBFM's root_source, re-anchored at each stand",
-        "controller_root=truth": "the policy told the simulator's pelvis (root_source None); selectable in TODO 49.3",
+        "controller_root=truth": "the policy told the simulator's pelvis (root_source None; TODO 49.3)",
         "controller=native": "the environment is driven by joint targets; SIMPLE's own whole-body controller is not wired here",
     },
 )

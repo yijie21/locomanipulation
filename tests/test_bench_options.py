@@ -101,12 +101,18 @@ class CapabilityTables(unittest.TestCase):
             resolve("locomanilab")
         r = resolve("locomanilab", allow_planned=True)
         self.assertIn("sensor=rgbd", r.planned)
-        with self.assertRaisesRegex(ValueError, "self_pose=truth is planned"):
-            resolve("simple", ["self_pose=truth"])  # TODO 49.3
 
     def test_simple_runs_the_switches_49_2_verified(self):
         # TODO 49.2: the loops' switches, truth targets, RGB-D with and without noise are ready on SIMPLE
-        for over in ([], ["target=truth"], ["sensor=rgbd"], ["sensor=rgbd", "depth_noise=realsense"]):
+        for over in (
+            [],
+            ["target=truth"],
+            ["sensor=rgbd"],
+            ["sensor=rgbd", "depth_noise=realsense"],
+            ["self_pose=truth"],
+            ["controller_root=truth"],
+            ["self_pose=truth", "controller_root=truth"],
+        ):
             r = resolve("simple", over)
             self.assertEqual(r.planned, (), over)
         self.assertNotIn("depth_noise=none", resolve("simple", allow_planned=True).planned)  # no noise without rgbd

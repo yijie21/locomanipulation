@@ -62,11 +62,7 @@ class Cli(unittest.TestCase):
     ids = "XMovePickTeleop/Q/0\n"
 
     def test_switch_values_outside_the_beds_set_are_refused_with_a_pointer(self):
-        for kv, pointer in (
-            ("self_pose=truth", "49.3"),
-            ("controller_root=truth", "49.3"),
-            ("controller=native", "does not support"),
-        ):
+        for kv, pointer in (("controller=native", "does not support"),):
             rc, err = self.run_cli("--bench-set", kv)
             self.assertEqual(rc, 2, kv)
             self.assertIn(pointer, err, kv)

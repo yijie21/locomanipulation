@@ -69,12 +69,23 @@ class PlaceBelief:
     reaching, leg_odo.JawFeed (load-weighted feet, arm joints) follows the pelvis and the palm from that tie on. Without
     odometry both places are the simulator's and nothing changes."""
 
-    def __init__(self, sim, mo, odo: bool):
-        self.sim, self.mo, self.odo, self.anchored = sim, mo, odo, False
-        if odo:  # as grasp_room.make_env with BFM_ROOT=odo: ScaleBFM is told the pelvis position from leg odometry
+    def __init__(self, sim, mo, odo: bool = True, root_odo: bool | None = None):
+        """Two independent switches (TODO 49.3):
+        `odo` (self_pose=odometry): the robot's belief of its pelvis and palm is leg odometry (Body + JawFeed), the walk's stop
+        servo is off (stop_ki 0, stop_timeout = settle_s) and the frames are tied after each walk; False (self_pose=truth): no
+        feed, the Motor's stop correction runs on the true pelvis, the belief is the simulator's.
+        `root_odo` (controller_root=odometry; default: as `odo`, the old single flag): OdoRoot is built and sets pol.root_source,
+        so ScaleBFM is told the odometry pelvis, re-anchored at each stand; False (controller_root=truth): no OdoRoot, ScaleBFM
+        is told the simulator's pelvis."""
+        root_odo = odo if root_odo is None else root_odo
+        self.sim, self.mo, self.odo, self.root_odo, self.anchored = sim, mo, odo, root_odo, False
+        if odo or root_odo:
             self.body = Body(sim, mo)
+        if odo:
             mo.cfg = dataclasses.replace(mo.cfg, stop_ki=0.0, stop_timeout=mo.cfg.settle_s)
+        if root_odo:  # as grasp_room.make_env with BFM_ROOT=odo: ScaleBFM is told the pelvis position from leg odometry
             self.body.odo_root = odometry.OdoRoot(self.body)
+        if odo:
             self.feed = odometry.JawFeed(self.body)
 
     def _truth(self):

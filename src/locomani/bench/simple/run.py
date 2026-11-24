@@ -13,8 +13,8 @@ module name (`load_package`); nothing is put on sys.path. A package gets the epi
 layout, the Motor and the Belief, the parameters, the record, the clock's phases, and its view; `sam3`, `cloud_dir` and
 `mask_post` are what its camera view needs of the run.
 
-Only the switches the loops ran with are implemented (target=perception, sensor=stereo, depth_noise=none, self_pose=odometry,
-controller_root=odometry, controller=scalebfm): `check_scope` refuses the others with a pointer to TODO 49.2 step 6 / 49.3.
+All switch values of the bench options except controller=native are implemented (`check_scope`); the loops ran with target=perception,
+sensor=stereo, depth_noise=none, self_pose=odometry, controller_root=odometry, controller=scalebfm.
 Not ported (hand switches that were off in every loop, record only): PHASE_BOX, FOOT_LOG, ART_FRAMES, NEAR_DIAG; the named speed
 settings L2/L3/L4 (sweep_simple); the legacy non-loop cache folders (cloud, cloud_clean, cloud_self_n*).
 """
@@ -48,6 +48,7 @@ from locomani.bench.simple import episodes as EP
 from locomani.bench.simple import feed as FL
 from locomani.bench.simple import judge
 from locomani.bench.simple.config import (  # noqa: F401
+    DEFAULT_CONTROL,
     DEFAULT_VIEW,
     SCOPE,
     SEED_DIR,
@@ -143,7 +144,13 @@ class Bed:
     def switch(self, axis: str) -> str:
         """A run switch's value: the resolved options', else the loops' default."""
         o = self.options
-        return getattr(o, axis) if o is not None else dict(zip(("target", "sensor", "depth_noise"), DEFAULT_VIEW))[axis]
+        return (
+            getattr(o, axis)
+            if o is not None
+            else dict(
+                zip(("target", "sensor", "depth_noise"), DEFAULT_VIEW), self_pose="odometry", controller_root="odometry"
+            )[axis]
+        )
 
     @property
     def depth_source(self) -> str:
@@ -172,7 +179,10 @@ class Bed:
 
     def cache_dir(self, task: str, setting: dict | None) -> Path:
         """The look + GraspGen-X cache of this package and these parameters: <cache_dir>/<key>."""
-        return Path(self.cfg.cache_dir) / cache_key(self.pkg, task, setting, self.switches())
+        return Path(self.cfg.cache_dir) / cache_key(self.pkg, task, setting, self.switches(), self.control())
+
+    def control(self) -> tuple:
+        return tuple(self.switch(a) for a in ("self_pose", "controller_root"))
 
     def switches(self) -> tuple:
         return tuple(self.switch(a) for a in ("target", "sensor", "depth_noise"))
@@ -183,7 +193,9 @@ def resolved(S, task: str, setting: dict | None) -> dict:
     return {**S.defaults(task, S.K_CUT), **(setting or {})}
 
 
-def cache_key(pkg: ModuleType, task: str, setting: dict | None, switches: tuple = DEFAULT_VIEW) -> str:
+def cache_key(
+    pkg: ModuleType, task: str, setting: dict | None, switches: tuple = DEFAULT_VIEW, control: tuple = DEFAULT_CONTROL
+) -> str:
     """First 10 hex of sha1 over the package's camera_view.py and the sorted JSON of the look's parameters. (Not in the key:
     the fixed perception code, the depth service, SAM 3's weights: as before.) `switches` = (target, sensor, depth_noise): a
     look made from the stereo depth must never be read by an rgbd run or the other way round, so they are hashed too, but
@@ -194,6 +206,10 @@ def cache_key(pkg: ModuleType, task: str, setting: dict | None, switches: tuple 
     h = hashlib.sha1((Path(pkg.path) / "camera_view.py").read_bytes())
     keys = tuple(LOOK_KEYS) + tuple(S.MOTOR_KEYS)
     h.update(json.dumps({k: K.get(k) for k in sorted(keys)}, sort_keys=True, default=str).encode())
+    if (
+        tuple(control) != DEFAULT_CONTROL
+    ):  # (self_pose, controller_root): the start hold, hence the look's pose, depends on them
+        h.update(json.dumps(dict(self_pose=control[0], controller_root=control[1])).encode())
     if tuple(switches) != DEFAULT_VIEW:
         h.update(json.dumps(dict(target=switches[0], sensor=switches[1], depth_noise=switches[2])).encode())
     return h.hexdigest()[:10]
@@ -355,14 +371,14 @@ def setup(bed: Bed, episode_id: str, K: dict, stance: dict | None, cloud_dir: Pa
             model_xml=info["dir"] + "/scene_locomani.xml",
         )
     bel = RecBelief(
-        sim, mo, True
-    )  # odo=True: self_pose=odometry; it also hooks OdoRoot into the policy (controller_root=odometry)
+        sim, mo, bed.switch("self_pose") == "odometry", bed.switch("controller_root") == "odometry"
+    )  # self_pose=odometry: Body + JawFeed, stop servo off; controller_root=odometry: OdoRoot hooked into the policy
     bel.walk_hold = K["walk_hold"]
     if K.get("feed_torque") or K.get(
         "seat_feed"
     ):  # the robot's own torque command where the odometry reads the foot loads
         FL.patch_torques(sim)
-        if K.get("seat_feed"):
+        if K.get("seat_feed") and bel.odo:
             bel.feed = FL.SlipFeed(bel.body)
     if K.get("odo_stop") and bel.odo:  # Belief switched the stop servo off for odometry: back on, steering on odometry
         bel.odo_stop = True
