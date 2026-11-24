@@ -341,7 +341,7 @@ def test_check_bench_errors(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="no mirror bed"):
         BB.signature(dict(fam, probe_bed="mirror"), "probe")
     with pytest.raises(ValueError, match="not ported"):
-        BB.check_bench(dict(fam, bench=dict(fam["bench"], name="bigym2")))
+        BB.check_bench(dict(fam, bench=dict(fam["bench"], name="nosuchbench")))
     with pytest.raises(ValueError, match="bench.root"):
         BB.check_bench(dict(fam, bench=dict(fam["bench"], root="")))
     for key in ("cache_dir", "practice_dir_drawer", "kinds"):

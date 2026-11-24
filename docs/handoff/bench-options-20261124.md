@@ -184,3 +184,37 @@ Every episode reached the table (the walk with the gait cycle works, 2-3 cm of t
 targets changing (even at 0.006 rad per step) this tracker does not stand still: the pelvis wandered 1-1.5 m and turned up to 50 degrees within 6 s. What would be needed next: a leg and waist
 reference that balances with the arms out (a recorded whole-body pose from the benchmark's data, or the SONIC tracker, `nvidia/GEAR-SONIC`, not downloaded), then the squeeze. Nothing here is a statement about the
 benchmark's policies; it is the seed of a scripted flow.
+
+## BiGym 2.0 and HumanoidArena in the loop (TODO 49.7a, 2026-11-24)
+
+`scripts/rsi/backend_bench.py` has two more ADAPTERS rows, "bigym2" and "humanoidarena". Their episodes are seeds, not practice
+files (`pool_mode="seeds"`), so the rows add `pool_sizes`, `tasks` and `stub_file`; `scripts/rsi/backend_seeded.py` is their
+row and card module. Families: `bigym2_reach_drawer` (reach_target_single, drawer_top_open: the two tasks the seed covers) and
+`humanoidarena_pp_box` (pp_box), with `rules_bigym2.md`, `rules_humanoidarena.md` (version 1) and `prompts_bigym2/`,
+`prompts_humanoidarena/`.
+
+| Pool | Episodes | Who sees them |
+|---|---|---|
+| diag | `<task>/P/0..per_task-1` | the roles |
+| accept (gate) | `<task>/A/n`, a hidden offset ≥ 100 per task | hidden tree only |
+| sealed | `<task>/S/n`, same rule | hidden tree only |
+
+Diagnostic and probe calls open `pools=P` and refuse A/S ids; the gate and the sealed set open `pools=PAS`. Evaluation seeds
+have no pool letter and no index reaches them (BiGym's [620000, 630000), HumanoidArena's 60 derived seeds per task, all
+60000 ids checked in `tests/test_rsi_backend_seeded.py`); the adapters refuse them again.
+
+Checked: both sandboxes build with an empty leak audit; a BiGym diagnostic round through try.py won 4/4 (19 s); the BiGym
+stub loop (`loop.py run bigym2_reach_drawer --stub --max-iters 1`) ran to "dry run: static checks passed" with the seed
+10/10 on its diagnostic pool, so reach leaves the loop little to find and drawer is the informative task. Before a real loop,
+pin a worktree and point `bench.root` at it.
+
+## HumanoidArena seed: balance with the arms out (TODO 49.7b, 2026-11-24)
+
+The 1-1.5 m pelvis wander of the first smoke was table contact, not the tracker: with the legs at the stand, four arm poses
+(the failed flow's extremes included) hold 10 s within 6 mm and 2°; the same arm stream at the table had 95 of 300 steps with
+hand links inside the table, the seed lifting its arms under the edge. `seed/skill.py` now raises the arms to a ready pose in
+free space before the last leg (`raise_arms`), stands `box_gap` 0.24 m from the box face, brakes before the stand, and holds
+the heading while standing (`Ctl.step`): arms-out drift 0.3 cm and 2.9° over 10 s. pp_box P/0-9 is still 0/10 (official and
+compliant), falls 1/10 (smoke 3/5): the box is shoved during approach or reach, the walk ends 0.1-0.4 m sideways of a grasp
+that needs ±3 cm, and the lift comes too late to carry. Walking with raised arms is poor under TWIST2 with our averaged gait
+(heading swings 10-18°). Traces and clips: outputs/bench49_20261124/ha_balance/.

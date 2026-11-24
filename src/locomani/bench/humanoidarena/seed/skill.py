@@ -7,6 +7,7 @@ pelvis, the wrists, the arm Jacobians).
 
 pp_box (pick the box off the table, put it on the shelf layer the benchmark's check names):
   1 settle     stand
+  1b ready     raise both wrists to a ready pose in free space (before the table is near)
   2 approach   walk to the table's edge, one thigh's depth short of it, level with the box, facing it
   3 reach      both wrists to the box's two sides, a palm's length behind the box's middle (arms raised by the Jacobian servo)
   4 squeeze    close in on the sides a few centimetres, then hold the joint targets (the tracker keeps the squeeze)
@@ -24,22 +25,28 @@ K = dict(
     settle_steps=30,
     heading_gain=1.0,  # rad/s of reference heading per rad of heading error while walking
     ramp_s=0.6,  # the legs blend between standing and the stride over this long
+    brake=0.15,  # stop this many seconds of speed short of the goal
     slow_s=1.0,  # slow down to arrive: speed = distance / slow_s
     turn_speed=0.6,  # rad/s
     pos_tol=0.06,
-    align_tol=0.025,  # level with the box to this (the arms must be symmetric about the pelvis)
+    align_tol=0.04,  # level with the box to this (the arms must be symmetric about the pelvis)
     yaw_tol=0.06,
     walk_limit_s=9.0,
+    box_gap=0.24,  # the pelvis this far short of the box's near face (first run: 0.14 put the torso on the box)
     edge_gap=0.17,  # the pelvis this far short of the table's edge
     palm=0.09,  # the wrist is this far behind the palm's middle (m, along the forearm)
-    side_gap=0.012,  # the wrists' distance from the box's sides when they arrive (m)
-    reach_z=0.0,  # the wrists' height above the box's middle
-    squeeze=0.03,  # then close in this far on each side
+    side_gap=0.03,  # the wrists' distance from the box's sides when they arrive (m)
+    reach_z=0.04,  # the wrists' height above the box's middle
+    squeeze=0.045,  # then close in this far on each side
     squeeze_steps=45,
-    arm_step=0.006,  # rad per control step, the servo's largest joint change
+    arm_step=0.012,  # rad per control step, the servo's largest joint change
     servo_damp=0.02,
-    servo_tol=0.012,
-    reach_limit=300,
+    servo_tol=0.03,
+    reach_limit=110,
+    ready_x=0.22,  # the ready pose: wrists this far ahead of the pelvis and this far to each side, at the box's height
+    ready_y=0.27,
+    ready_above=-0.065,  # the ready pose: wrists this far above the box top face (negative: box-middle height + 0.04; +0.12 for the from-above variant fails, notes)
+    lead_in=0.55,  # the approach's first leg ends this far short of the stand, level with the box
     lift=0.05,
     lift_steps=60,
     back_off=0.55,  # m, backward from the stand
@@ -76,6 +83,7 @@ class Ctl:
         self.hands = (0.0, 0.0)
         self.height = env.start_height
         self.phase = 0.0
+        self.hold_yaw = None  # the world heading the standing pelvis is held to (set when a walk or a turn ends)
         self.gain = 0.0  # 0 standing .. 1 walking: how far the legs follow the stride
 
     def step(self, dxy_world=(0.0, 0.0), walking=False, K=None):
@@ -89,6 +97,11 @@ class Ctl:
             self.q[legs] = (1 - self.gain) * self.stand[legs] + self.gain * g.pose(self.phase)[legs]
         else:
             self.q[self.env.leg_ids] = self.stand[self.env.leg_ids]
+            if (
+                self.hold_yaw is not None
+            ):  # the tracker follows the reference heading to a few degrees only: close the loop slowly
+                err = wrap(self.hold_yaw - self.env.me.pelvis()[1])
+                self.yaw += float(np.clip(1.0 * err * 0.02, -0.004, 0.004))
         d = rot2(-(self.yaw0 + self.yaw)) @ np.asarray(
             dxy_world, float
         )  # the action's step is in the reference heading frame
@@ -104,6 +117,7 @@ class Ctl:
             cur = self.yaw0 + self.yaw
             err = wrap(yaw_world - cur)
             if abs(err) < K["yaw_tol"] and abs(wrap(yaw_world - self.env.me.pelvis()[1])) < 2 * K["yaw_tol"]:
+                self.hold_yaw = yaw_world
                 return True
             self.yaw += float(np.clip(err, -K["turn_speed"] * 0.02, K["turn_speed"] * 0.02))
             self.step(walking=True, K=K)
@@ -119,11 +133,14 @@ class Ctl:
             p = self.env.me.pelvis()[0][:2]
             e = goal - p
             dist = float(np.linalg.norm(e))
-            if dist < tol:
-                break
             v = min(self.env.gait.speed, 1.0 * dist / K["slow_s"])
+            if (
+                dist < tol + K["brake"] * v
+            ):  # the legs carry the pelvis on after the command stops (first runs: 0.1-0.15 m past the stand)
+                break
             self.step(e / dist * v * 0.02, walking=True, K=K)
-        n = int(1.2 / 0.02)
+        self.hold_yaw = hold
+        n = int(0.8 / 0.02)
         for _ in range(n):
             self.step(walking=False, K=K)
         return float(np.linalg.norm(goal - self.env.me.pelvis()[0][:2])) < 2 * tol
@@ -166,13 +183,40 @@ def note(env, name):
     env.mark(name, dict(t=round(env.t, 2), pelvis=[round(float(x), 3) for x in p], yaw=round(float(yaw), 3), wrists=w))
 
 
+def raise_arms(env, c, g):
+    """1b: lift both wrists to the ready pose (a forearm's length in front of the chest, a hand's width outside each shoulder, at the box's
+    height) in free space, before the table is near. Raised from the standing start 0.8 m from the table the tracker holds the stand
+    (drift 1-6 mm over 10 s, probe_poses in notes); raised at the table's edge the hands lift under the top and push the robot."""
+    Kp = env.K
+    p, yaw = env.me.pelvis()
+    z = (
+        float(g["box_center"][2]) + g["half"] + Kp["ready_above"]
+    )  # above the box's top: the hands cannot sweep it on the way in
+    lat = rot2(yaw)
+    left = np.append(p[:2] + lat @ np.array([Kp["ready_x"], Kp["ready_y"]]), z)
+    right = np.append(p[:2] + lat @ np.array([Kp["ready_x"], -Kp["ready_y"]]), z)
+    err = c.servo({"left": left, "right": right}, Kp["reach_limit"], Kp["servo_tol"], Kp["arm_step"], Kp["servo_damp"])
+    c.stand_still(30)
+    note(env, "ready")
+    return err
+
+
 def approach(env, c, g):
     """2: walk to the table's edge, level with the box, facing +x."""
     Kp = env.K
     table = g["table"]
     box = g["box_center"]
-    x_stand = (table[0][0] - Kp["edge_gap"]) if table is not None else box[0] - 0.45
-    c.turn_to(c.yaw0, Kp)
+    x_stand = (
+        box[0] - env.view.goal()["half"] - Kp["box_gap"]
+    )  # the chest must not touch the box (the torso reaches ~0.1 m past the pelvis)
+    if table is not None:
+        x_stand = min(x_stand, table[0][0] - Kp["edge_gap"])
+    # two legs: first level with the box well short of the table, then straight in. With the hands raised ahead of the chest an
+    # oblique approach drags a hand along the box's side (the box moved 0.2 m before the reach in the first run of this flow).
+    c.walk_to((x_stand - Kp["lead_in"], box[1]), Kp, tol=0.08)
+    raise_arms(
+        env, c, g
+    )  # here, in free space (the arms swing the walk off line and the hands lead into the box when raised early)
     c.walk_to((x_stand, box[1]), Kp, tol=Kp["align_tol"])
     c.stand_still(15)
     note(env, "at_table")
@@ -186,12 +230,21 @@ def reach(env, c, g):
     xw, zw = box[0] - Kp["palm"], box[2] + Kp["reach_z"]
     left = np.array([xw, box[1] + g["half"] + Kp["side_gap"], zw])
     right = np.array([xw, box[1] - g["half"] - Kp["side_gap"], zw])
-    # raise first with the elbows in, so the forearms clear the table's edge
-    mid = {"left": np.array([p[0] + 0.30, box[1] + 0.20, zw]), "right": np.array([p[0] + 0.30, box[1] - 0.20, zw])}
-    c.servo(mid, Kp["reach_limit"], Kp["servo_tol"], Kp["arm_step"], Kp["servo_damp"])
-    note(env, "mid")
-    c.stand_still(10)
-    err = c.servo({"left": left, "right": right}, Kp["reach_limit"], Kp["servo_tol"], Kp["arm_step"], Kp["servo_damp"])
+    # the wrists are already in the ready pose (raise_arms), wider than the box, a palm's length ahead of the chest
+    hi = Kp["ready_above"] + g["half"] - Kp["reach_z"]
+    if hi > 0.02:  # the from-above variant (ready_above > 0): level with the sides first, then down onto them
+        up = np.array([0.0, 0.0, hi])
+        c.servo(
+            {"left": left + up, "right": right + up},
+            Kp["reach_limit"],
+            Kp["servo_tol"],
+            Kp["arm_step"],
+            Kp["servo_damp"],
+        )
+        note(env, "above")
+    err = c.servo(
+        {"left": left, "right": right}, Kp["reach_limit"], Kp["servo_tol"], Kp["arm_step"], Kp["servo_damp"]
+    )  # down onto them
     note(env, "reached")
     return err, left, right
 
@@ -250,6 +303,7 @@ def place(env, c, goal):
 def run_pp_box(env):
     g = env.view.goal()
     c = Ctl(env)
+    c.hold_yaw = c.yaw0
     c.stand_still(env.K["settle_steps"])
     note(env, "settled")
     approach(env, c, g)

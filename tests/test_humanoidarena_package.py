@@ -2,6 +2,7 @@
 kinematics, the guard refuses reaches for the simulator, the truth view reads the goal from the privileged facts, the capability table
 says exactly what the bed implements."""
 
+import importlib
 import shutil
 import tempfile
 import unittest
@@ -149,13 +150,36 @@ class Flow(unittest.TestCase):
         out = pkg.run(env)
         self.assertEqual(
             env.marks,
-            ["settled", "at_table", "mid", "reached", "squeezed", "lifted", "at_shelf", "lowered", "released"],
+            [
+                "settled",
+                "ready",
+                "at_table",
+                "reached",
+                "squeezed",
+                "lifted",
+                "at_shelf",
+                "lowered",
+                "released",
+            ],
         )
-        self.assertLess(out["reach_err"], 0.02)
+        self.assertLess(out["reach_err"], 0.035)  # the servo stops within servo_tol (0.03)
         # at the shelf the box would ride in front of the pelvis: the pelvis ended in front of the shelf, facing +y
         self.assertGreater(env.yaw, 1.2)
         self.assertLess(env.xy[1], -3.0)
         self.assertTrue(all(a.shape == (40,) for a in env.actions))
+
+    def test_the_arms_are_raised_before_the_last_leg_of_the_walk_and_standing_holds_the_heading(self):
+        pkg = run.load_package(SEED)
+        env = FakeEnv(pkg.apply_set({"arm_step": 0.03}, "pp_box"))
+        pkg.run(env)
+        # the ready mark comes before the table is near: the pelvis is still more than the lead-in short of the stand
+        self.assertLess(env.marks.index("ready"), env.marks.index("at_table"))
+        ctl = importlib.import_module(pkg.__name__ + ".skill").Ctl(env)
+        ctl.hold_yaw = (
+            ctl.yaw0 + 0.3
+        )  # the pelvis stands at 0 and is to be held at +0.3 rad: the reference heading turns toward it
+        ctl.stand_still(20)
+        self.assertGreater(ctl.yaw, 0.0)
 
     def test_the_hands_close_on_the_squeeze_and_open_at_the_end(self):
         pkg = run.load_package(SEED)
