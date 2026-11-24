@@ -13,7 +13,7 @@ TASKS="XMovePickTeleop XMoveBendPickTeleop BendPickMP TabletopGraspMP"
 read -ra GS <<< "${GPUS:-1 2 3}"; NS=${SRV_PER_GPU:-5}
 export REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl SIMPLE_ROOT=$S
 [ "$CTRL" = sonic ] && export REACH_SONIC_NETS=${REACH_SONIC_NETS:-gpu}
-SETS="--bench-set controller=$CTRL"  # run switches (TODO 38.11): the controller; the rest is the main metric's setting
+SETS="--bench-set controller=$CTRL --bench-set sensor=stereo"  # run switches (TODO 38.11): 38.10.3 ran on the stereo look
 mkdir -p $D/rows $D/logs $D/films $D/srv $D/asrun
 cp $E/simple_bench.py $E/jref_collect.py $E/jref_plan_server.py $E/jref_data.py $E/jref_collect.sh src/locomani/backends/scalebfm/motor.py $D/asrun/
 log() { echo "[$(date -u +%T)] $*" >> $D/collect.log; }

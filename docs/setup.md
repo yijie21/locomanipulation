@@ -1,6 +1,6 @@
 # 安装
 
-从零装好运行[场景 RSI](rsi.md)和已归档的三条 VLA 线（bottle、crate、warehouse）所需的环境。每一步依次写命令、做什么、怎么确认装好了。
+从零装好运行[场景 RSI](rsi.md)、自身模型在公开基准上的评测（[分支 `selfwm`](selfwm_bench.md)）和已归档的三条 VLA 线（bottle、crate、warehouse）所需的环境。每一步依次写命令、做什么、怎么确认装好了。
 所有命令都在仓库根目录的 bash 里执行；踩过的坑和背后的原因集中在最后一节「[安装排错与说明](#安装排错与说明)」。
 
 ## 要装哪几步
@@ -15,14 +15,15 @@
 | 4 | 场景源资产 | 所有人，每个克隆都要（`outputs/` 不在 git 里） | 5 秒 |
 | 5 | GR00T 训练环境 | 要训练或评测 VLA（三条主线都要） | 按上游 README |
 | 6 | conda 训练环境、EmbodiedGen | 只有训练 SONIC 本身或重新生成场景才要 | 1 小时以上 |
-| 7 | Isaac 渲染环境 | warehouse 选 Isaac 出图时，以及 Isaac 重渲 | 约 20 GB 下载 |
+| 7 | Isaac 渲染环境 | warehouse 选 Isaac 出图时，以及 Isaac 重渲；selfwm 的 SIMPLE 基准 | 约 20 GB 下载 |
 | 8 | Unreal 渲染环境 | warehouse 默认用它出图（实验文件写 `images.source: unreal`）；场景 RSI 只在渲染报告视频时用 | 引擎约 26 GB 下载，编译约 9 分钟 |
 | 9 | 场景脚本的 Python 环境 `/venv/main` | 场景 RSI | 2 分钟 |
 | 10 | ADT 数据 | 场景 RSI | 约 5 GB 下载 |
-| 11 | ScaleBFM 权重 | 场景 RSI | 1 分钟 |
+| 11 | ScaleBFM 权重 | 场景 RSI、selfwm | 1 分钟 |
 | 12 | Claude CLI | 场景 RSI 的 L1 以上（内环的角色调用它） | 2 分钟 |
+| 13 | SIMPLE 基准：cuRobo、SIMPLE 的补丁和资产、GPU 版 ONNX Runtime | selfwm | 编译 cuRobo 约 10 分钟 |
 
-场景 RSI 要做准备、第 0–2 步、第 4 步和第 9–12 步，第 3、5、6、7 步不用。VLA 线：做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 8 步（Unreal，默认）或第 7 步（Isaac）。
+场景 RSI 要做准备、第 0–2 步、第 4 步和第 9–12 步，第 3、5、6、7 步不用。selfwm 的 SIMPLE 基准要做准备、第 0–2 步、第 7 步、第 11 步和第 13 步。VLA 线：做完 0–4 步就能采集并转换数据；三条主线都要训练和评测，所以还要做第 5 步；warehouse 再加第 8 步（Unreal，默认）或第 7 步（Isaac）。
 
 ## 准备
 
@@ -392,6 +393,41 @@ claude
 
 验证：`claude -p "say ok" --model claude-opus-5-5` 打印 `ok`。
 
+## 13. SIMPLE 基准（selfwm）
+
+selfwm 在 SIMPLE 的四个抓取任务上评测。物理在本仓库的 MuJoCo 复刻场景里跑，用 `.venv_sim`；第 7 步装的 SIMPLE 提供机器人、物体和评测局，它的环境还要编进 cuRobo，用来规划手臂路线。第 7 步说不用做的 cuRobo 和 `data/_download.sh`，这里都要做。第 11 步用的是 `/venv/main` 的 Python，没装第 9 步时换成 `.venv_data_collection` 的 Python，它也带 `huggingface_hub`。
+
+```bash
+S=$PWD/third_party/SIMPLE
+# 1) 系统库：Isaac 不开窗口也要这四个 X 库，缺了会卡住、日志里不报错；unzip 解评测局时要用
+sudo apt-get install -y unzip libglu1-mesa libsm6 libice6 libxt6
+# 2) cuRobo：SIMPLE 的子模块，编进 SIMPLE 的环境。nvcc 的 CUDA 版本要和环境里的 torch 一致（cu128），算力按自己的卡写
+(cd $S && git submodule update --init --depth 1 third_party/curobo \
+  && UV_PROJECT_ENVIRONMENT=$S/.venv TORCH_CUDA_ARCH_LIST=8.9 bash scripts/install_curobo.sh)
+# 3) 本仓库给 SIMPLE 的补丁，加回放和对齐两项
+SIMPLE_ROOT=$S RENDER_PY=$S/.venv/bin/python bash scripts/setup_render_runtime.sh --with-replay --with-alignment
+# 4) SIMPLE 的机器人和物体资产，以及 AMO 任务要的策略文件（Git LFS）
+(cd $S && PYTHON=.venv/bin/python bash data/_download.sh --only robots,assets --jobs 4 \
+  && git lfs pull --include "src/simple/robots/policy/*")
+# 5) SONIC 的网络放在 GPU 上时，仿真环境要 GPU 版的 ONNX Runtime
+VIRTUAL_ENV=third_party/GR00T-WholeBodyControl/.venv_sim uv pip install onnxruntime-gpu==1.23.2
+```
+
+做什么：让 SIMPLE 的环境能规划手臂路线，让复刻场景能读到 SIMPLE 的机器人和物体，让 SONIC 能用 GPU 跑网络。第 1 到 4 条是 2026-11-19 到 11-20 在 4090 上装 SIMPLE 时做过的，那次的脚本 `install.sh` 带国内镜像，放在装好的目录里，路径见 [4090 的交接记录](handoff/selfmodel-4090-20261123.md)。编 cuRobo 时 4090 还另外指定了 CUDA 12.8 的 nvcc 和 torch 自带的 cuBLAS 等头文件，见那份脚本的第 6 步。第 5 条的版本是 4090 上现在装的那个。没有 GPU 版 ONNX Runtime 也能跑 SONIC，设 `REACH_SONIC_NETS=allcpu`，但慢得多。
+
+验证：
+
+```console
+$ third_party/SIMPLE/.venv/bin/python -c "import curobo.curobolib.kinematics_fused_cu; print('ok')"
+ok
+$ third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -c "import onnxruntime as o; print(o.get_available_providers())"
+['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+$ PYTHONPATH=src third_party/GR00T-WholeBodyControl/.venv_sim/bin/python -m locomani.bench show --bench simple | grep signature
+ "signature": "simple/perception-rgbd/pose-odometry/root-odometry/scalebfm",
+```
+
+评测局和缓存的看一眼不在这一步，见[基准 runbook](selfwm_bench.md)第 2 节。
+
 ## 安装排错与说明
 
 ### git-lfs 不能省
@@ -467,8 +503,8 @@ done
 ### Isaac 渲染环境
 
 - SIMPLE 的 `.gitmodules` 里有四个 SSH 地址，没配 GitHub SSH key 会卡住，所以先改成 https。只拉五个子模块，curobo、gsnet、AMO 是 SIMPLE 自己规划和抓取用的，渲染不需要。
-- `uv sync` 报 `Unable to uninstall lerobot==0.3.3` 时，删掉 `third_party/SIMPLE/.venv/lib/python3.10/site-packages/lerobot-*.egg-info` 再重跑。上游的 `scripts/install_curobo.sh` 不要跑。
-- 不需要执行 SIMPLE 的 `data/_download.sh`（十几 GB），渲染走本仓库自己的场景文件。只有跑 SIMPLE 自己的回放工具或对照工具（`setup_render_runtime.sh --with-replay`、`--with-alignment`，见 `patches/simple.md`）才需要。
+- `uv sync` 报 `Unable to uninstall lerobot==0.3.3` 时，删掉 `third_party/SIMPLE/.venv/lib/python3.10/site-packages/lerobot-*.egg-info` 再重跑。只出图时，上游的 `scripts/install_curobo.sh` 不要跑；selfwm 的 SIMPLE 基准要它（第 13 步）。
+- 只出图时不需要执行 SIMPLE 的 `data/_download.sh`（十几 GB），渲染走本仓库自己的场景文件；selfwm 只下其中的机器人和物体（第 13 步）。只有跑 SIMPLE 自己的回放工具或对照工具（`setup_render_runtime.sh --with-replay`、`--with-alignment`，见 `patches/simple.md`）才需要。
 - 机器上已经有一份 SIMPLE：`ln -s <那个目录> third_party/SIMPLE`，或者 `export SIMPLE_ROOT=<那个目录>`。`RENDER_PY` 默认跟着 `SIMPLE_ROOT/.venv`，也可以指向别的装了 isaacsim 的环境（[原因](rendering.md)）。
 - 桌子和台面的源网格由第 4 步装好；房间背景随 Git 提供（`assets/scene/empty_room_world.ply.gz`）。更新代码后重跑 `build_isaac_assets.sh`，新的缓存键会触发重建（[资产构建](rendering.md#资产构建)）。
 

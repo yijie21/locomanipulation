@@ -27,12 +27,13 @@ class Profiles(unittest.TestCase):
             r = resolve(name, allow_planned=True)
             self.assertEqual((r.options, r.explicit, r.normalized), (o, (), ()), name)
 
-    def test_the_simple_profile_is_the_main_metric_setting(self):
-        # SIMPLE's main metric: perception column, the stereo (Isaac) look, leg odometry for the belief and for
-        # ScaleBFM's root (BFM_ROOT=odo), ScaleBFM
+    def test_the_simple_profile_is_the_default_combination(self):
+        # the user's default (2026-11-24): SIMPLE, ScaleBFM, one RGB-D camera -- perception column, the replica's
+        # MuJoCo look, leg odometry for the belief and for ScaleBFM's root (BFM_ROOT=odo)
         s = resolve("simple").options
         self.assertEqual((s.target, s.sensor, s.depth_noise, s.self_pose, s.controller_root, s.controller),
-                         ("perception", "stereo", "none", "odometry", "odometry", "scalebfm"))  # fmt: skip
+                         ("perception", "rgbd", "none", "odometry", "odometry", "scalebfm"))  # fmt: skip
+        self.assertEqual(s.signature(), "simple/perception-rgbd/pose-odometry/root-odometry/scalebfm")
         self.assertEqual(resolve("locomanilab", allow_planned=True).options.sensor, "rgbd")
         for name in ("bigym2", "humanoidarena"):
             self.assertEqual(resolve(name, allow_planned=True).options.controller, "native")
@@ -47,7 +48,7 @@ class Precedence(unittest.TestCase):
         self.assertEqual(r.explicit, ("self_pose",))
 
     def test_an_explicit_value_equal_to_the_default_is_still_recorded_as_explicit(self):
-        r = resolve("simple", ["sensor=stereo"])
+        r = resolve("simple", ["sensor=rgbd"])
         self.assertEqual(r.explicit, ("sensor",))
         self.assertEqual(r.record()["explicit"], ["sensor"])
 
@@ -85,7 +86,9 @@ class InvalidInput(unittest.TestCase):
         r = resolve("bigym2", ["depth_noise=realsense"], allow_planned=True)
         self.assertEqual(r.options.signature(), "bigym2/perception-rgbd-realsense/pose-truth/root-truth/native")
         with self.assertRaisesRegex(ValueError, "rgbd only"):
-            resolve("simple", ["depth_noise=realsense"])
+            resolve("simple", ["sensor=stereo", "depth_noise=realsense"])
+        with self.assertRaisesRegex(ValueError, "does not support depth_noise=realsense.*not ported"):
+            resolve("simple", ["depth_noise=realsense"])  # the RGB-D default, but no noise model on selfwm's bed
 
 
 class Couplings(unittest.TestCase):
@@ -93,7 +96,7 @@ class Couplings(unittest.TestCase):
         r = resolve("simple", ["target=truth"])
         self.assertEqual((r.options.self_pose, r.normalized), ("truth", ("sensor", "self_pose")))
         self.assertEqual(r.options.signature(), "simple/truth/pose-truth/root-odometry/scalebfm")
-        self.assertEqual(resolve("simple", ["sensor=rgbd"]).options.self_pose, "odometry")
+        self.assertEqual(resolve("simple", ["sensor=stereo"]).options.self_pose, "odometry")
 
     def test_an_explicit_contradiction_is_refused_with_the_reason(self):
         with self.assertRaisesRegex(ValueError, "target=truth fixes self_pose=truth.*simulator"):
@@ -131,8 +134,8 @@ class CapabilityTables(unittest.TestCase):
             resolve("simple", ["controller=amo"])
 
     def test_simple_runs_both_controllers_with_every_view(self):
-        # the combinations selfwm's SIMPLE bed has run: ScaleBFM and SONIC, truth, the stereo and the RGB-D look
-        for ctrl, view in itertools.product(("scalebfm", "sonic"), ([], ["target=truth"], ["sensor=rgbd"])):
+        # the combinations selfwm's SIMPLE bed has run: ScaleBFM and SONIC, truth, the RGB-D and the stereo look
+        for ctrl, view in itertools.product(("scalebfm", "sonic"), ([], ["target=truth"], ["sensor=stereo"])):
             r = resolve("simple", [f"controller={ctrl}", *view])
             self.assertEqual(r.planned, (), (ctrl, view))
 
@@ -157,10 +160,11 @@ class CapabilityTables(unittest.TestCase):
 class SimpleBed(unittest.TestCase):
     def test_the_switches_map_onto_simple_benchs_own_settings(self):
         bed = S.bed_settings(resolve("simple").options)
-        self.assertEqual(bed, dict(column="perception", cloud="cloud_eyes_final", look="look_dump_eyes", controller="scalebfm",
+        self.assertEqual(bed, dict(column="perception", cloud="cloud_blind", look="look_dump_blind", controller="scalebfm",
                                    root="odo"))  # fmt: skip
-        bed = S.bed_settings(resolve("simple", ["sensor=rgbd", "controller=sonic"]).options)
-        self.assertEqual((bed["column"], bed["cloud"], bed["controller"]), ("perception", "cloud_blind", "sonic"))
+        bed = S.bed_settings(resolve("simple", ["sensor=stereo", "controller=sonic"]).options)
+        self.assertEqual((bed["column"], bed["cloud"], bed["look"], bed["controller"]),
+                         ("perception", "cloud_eyes_final", "look_dump_eyes", "sonic"))  # fmt: skip
         bed = S.bed_settings(resolve("simple", ["target=truth"]).options)
         self.assertEqual((bed["column"], bed["cloud"]), ("truth", "cloud_blind"))  # simple_bench's old default
         with self.assertRaisesRegex(ValueError, "runs bench=simple"):
@@ -171,8 +175,8 @@ class SimpleBed(unittest.TestCase):
 
         out = io.StringIO()
         with redirect_stdout(out):
-            self.assertEqual(bed_cli.main(["--bench-set", "controller=sonic", "--bench-set", "sensor=rgbd"]), 0)
-        self.assertIn("BED_CLOUD=cloud_blind\n", out.getvalue())
+            self.assertEqual(bed_cli.main(["--bench-set", "controller=sonic", "--bench-set", "sensor=stereo"]), 0)
+        self.assertIn("BED_CLOUD=cloud_eyes_final\n", out.getvalue())
         self.assertIn("BED_CONTROLLER=sonic\n", out.getvalue())
         err = io.StringIO()
         with redirect_stdout(io.StringIO()), redirect_stderr(err):

@@ -63,14 +63,14 @@ of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH
 
     cd <repo>; export REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 PYTHONPATH=src
     $PY scripts/experiments/simple_eval_20261112/simple_bench.py XMovePickTeleop --method model --out rows.jsonl \
-        [--bench-set controller=sonic] [--bench-set target=truth | --bench-set sensor=rgbd]
+        [--bench-set controller=sonic] [--bench-set target=truth | --bench-set sensor=stereo]
 -> one json line per episode appended to --out, and a summary line
 
 Run switches (2026-11-24, TODO 38.11; the bench-options branch's way, locomani.bench): --bench simple and repeatable
 --bench-set key=value over configs/bench/simple.yaml, resolved once here and checked against SIMPLE's capability table
-(python -m locomani.bench show --bench simple). The profile is the main metric's setting: target=perception,
-sensor=stereo (the Isaac look, cloud_eyes_final), self_pose=odometry, controller_root=odometry (BFM_ROOT=odo),
-controller=scalebfm. They replace --column (target), --cloud (sensor: stereo cloud_eyes_final, rgbd cloud_blind) and the
+(python -m locomani.bench show --bench simple). The profile is the default combination (the user's, 2026-11-24):
+target=perception, sensor=rgbd (the replica's MuJoCo look, cloud_blind), self_pose=odometry, controller_root=odometry
+(BFM_ROOT=odo), controller=scalebfm; the rows recorded from 11-20 to 11-24 are sensor=stereo (cloud_eyes_final). They replace --column (target), --cloud (sensor: stereo cloud_eyes_final, rgbd cloud_blind) and the
 REACH_CONTROLLER / BFM_ROOT variables: the controller and the root go to env.Env explicitly, the two variables are set
 from the switches for modules that still read them, and one already set to something else stops the run. Every row
 carries the resolved switches under "bench".

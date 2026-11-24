@@ -1,36 +1,49 @@
-# locomanipulation
+# locomanipulation：分支 selfwm（自身世界模型）
 
-Unitree G1 人形机器人的移动操作仿真。这个分支的主线是**自我模型抓取**：全身控制器 ScaleBFM 保持冻结，在它外面加走路模型、抓取选择和只读关节的连续伺服，让它抓得准，没见过的摆放上从 19 % 提到 80 %。
-物理仿真用 MuJoCo，手是 Dex1 两指夹爪，物体来自 NVIDIA SimReady。
+Unitree G1 人形机器人移动操作的仿真研究。这个分支做**自身世界模型**：全身控制器保持冻结，另外学一个只描述机器人自己的模型，给控制器一个命令，预测身体实际会到哪、手会落在哪，在出发前用它挑命令或改命令。模型和不用模型的做法放在公开基准上比，基准、控制器、感知来源都可以换。
 
-## 投稿计划：RSS 2027（2026-11-15 的判断）
+和其他分支的关系：`main` 的主线是场景 RSI，这里不维护；`bench-options` 做 RSI 在公开基准上的评测，运行开关的写法和这里一样，两边的任务互不影响。
 
-第一阶段的 5 页扩展摘要 2026-12-04 截止，实验可以是初步的；终稿 2027-04-16 截止。完整的整理、证据表、日程和文献对照见[投稿故事与缺口](docs/handoff/rss-story-20261115.md)。
+## 能跑哪些组合
 
-- 故事：通用全身控制器抓不准，差的东西分两种。把手送到位，靠反馈纠偏就够；站哪、用哪个抓取、用什么姿态，要在出发前由自身模型预测。
-- 原来的说法不能再写：不用任何模型的纠偏在 294 个留出摆法里抓起 220 个，学出来的落点模型是 215 个。
-- **最弱的一环是自身模型本身**：它在纠偏之上只多 15 个，统计上不显著；换成相机感知后是 179 对 218，输给纠偏。
-- 现有材料够交第一阶段，不够交终稿。
+一次运行由几个开关定下来，`python -m locomani.bench table` 打印完整的表和每一项的原因。
 
-| 2026-12-04 前要做的 | 现状 |
-|---|---|
-| 训练逐局选站位和抓取的结果预测模型，在难房间的 203 局上对纠偏。纠偏抓起 103 个，四个站位里事后挑最好的是 129 个 | 没做，训练数据已有 |
-| 按停下、抬手看、再走一小段的流程补数据重训，重跑相机感知那张对比表 | 没做 |
-| 清掉手臂逆运动学读的真实骨盆位置 | 没做 |
-| 写 5 页摘要 | 没开始 |
+| 开关 | 现在能跑 | 登记为计划中 | 默认 |
+|---|---|---|---|
+| 基准 `bench` | SIMPLE 的四个抓取任务 | LocoManiLab、BiGym 2.0、HumanoidArena | SIMPLE |
+| 全身控制器 `controller` | ScaleBFM、SONIC | AMO、GR00T-WBC；其他基准用自带的控制器 | ScaleBFM |
+| 目标和抓取 `target` | 感知、仿真真值 | | 感知 |
+| 感知的输入 `sensor` | 单目 RGB-D、双目 | | 单目 RGB-D |
 
-终稿前还要补：真机 G1，SIMPLE 六个任务在官方环境里对 HITCH，第二个控制器，成组的统计。
+默认组合是 SIMPLE、ScaleBFM、单目 RGB-D（2026-11-24 起）。2026-11-20 到 11-24 记录的数都是双目，重复它们要加 `--bench-set sensor=stereo`。
 
-## 主线：自我模型抓取
+## 上手
 
-先照[安装指南](docs/setup.md)装好仿真环境和 ScaleBFM 权重，再按 runbook 准备材料、跑评测。
+1. 安装：照[安装指南](docs/setup.md)做准备、第 0–2 步、第 7 步、第 11 步和第 13 步。
+2. 准备材料、跑默认组合、换组合：照[基准 runbook](docs/selfwm_bench.md)。跑一个任务的命令是
+
+```bash
+PYTHONPATH=src REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 OMP_NUM_THREADS=1 MUJOCO_GL=egl SIMPLE_ROOT=$PWD/third_party/SIMPLE \
+    third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scripts/experiments/simple_eval_20261112/simple_bench.py \
+    TabletopGraspMP --method direct --out outputs/try/rows.jsonl
+```
+
+做什么：默认组合下跑 SIMPLE 桌面抓取的 30 局，直线伸手。得到什么：每局一行记录，开头打印这次的开关 `switches simple/perception-rgbd/...`。换控制器加 `--bench-set controller=sonic`，换双目加 `--bench-set sensor=stereo`。
+
+主指标是 SIMPLE 四个抓取任务感知栏的成功局数，45 秒内和官方时限内都报，重点是 TabletopGrasp。现在的数在基准 runbook 的第 6 节。
+
+## 这个分支的文档
 
 | 文档 | 写什么 |
 |---|---|
-| [自我模型抓取 runbook](docs/selfwm.md) | 准备材料、跑一组评测、看结果和看过程的命令 |
-| [自我模型抓取详解](docs/selfwm_design.md) | 误差怎么分两类、系统组成、一局怎么跑、伺服怎么不读真值、评测方法、结果、试过没采用的、已知限制 |
-| [开发记录](docs/handoff/selfwm-20261029.md) | 10-29 起按天记的实验、数字和复现命令 |
-| [SIMPLE 换 Isaac 画面的记录](docs/handoff/simple-isaac-eyes-20261120.md) | 11-19 到 11-20：对比视频、感知改用 SIMPLE 的 Isaac 画面、哪些数没重跑、交给 4090 的清单 |
+| [基准 runbook](docs/selfwm_bench.md) | 按开关跑组合：准备材料、跑一个任务、四个任务五种伸手做法、看结果、现在的数 |
+| [自身模型抓取 runbook](docs/selfwm.md) | 房间抓取（11-11 之前的主线）和 SIMPLE 上每次实验当时的命令 |
+| [自身模型抓取详解](docs/selfwm_design.md) | 自身模型是什么、怎么采数据和评测、试过没采用的、运行开关为什么这样分 |
+| [实验条目](docs/handoff/notebook-20261120/) | 每次实验事先登记的预测和判据、原始输出、复核 |
+| [开发记录](docs/handoff/selfwm-20261029.md)、[4090 的记录](docs/handoff/selfmodel-4090-20261123.md)、[SIMPLE 换 Isaac 画面的记录](docs/handoff/simple-isaac-eyes-20261120.md) | 按天记的实验、数字、机器和路径 |
+| [基准的代码导航](docs/reference/change-map-bench.md) | 开关、各基准的能力表、SIMPLE 的接法分别在哪个文件 |
+
+投稿计划（RSS 2027，第一阶段 2026-12-04）见[投稿故事与缺口](docs/handoff/rss-story-20261115.md)。那份是 11-15 写的，以连续伺服为基线；11-19 起不再展示伺服和查表这类做法，那一部分待改。
 
 ## 其他文档
 

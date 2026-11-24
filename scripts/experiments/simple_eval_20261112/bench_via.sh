@@ -11,7 +11,7 @@
 #      Motor.reach_joints), the rest of the body held: no IK of ours on the way
 #   JR (2026-11-24, TODO 38.10.3) J again with --film-ref: the films carry the motor's reference and the rows the self
 #      model's inputs at the command (jref_data.py turns them into the check's dataset); the rows should equal J's
-# bench_via.sh <out dir> <scalebfm|sonic> <model dir for C> <step: A|plan|B|C|all|D|E|M|J|JR> [first episode] [last episode]
+# bench_via.sh <out dir> <scalebfm|sonic> <model dir for C> <step: A|plan|B|C|all|D|E|M|J|JR|S> [first episode] [last episode]
 # One process a task (4 at a time); the planner 4 at a time on one GPU. Progress: <out>/pipeline.log.
 # Another machine: BENCH_REPO (the checkout, default vastgpu's), SIMPLE_ROOT (default <repo>/third_party/SIMPLE), BENCH_GPU
 # (default 1). On the 4090: BENCH_REPO=/wuji-vefps-D/wuji-il/yijie/ws/code/loco
@@ -19,15 +19,19 @@
 # REACH_SONIC_NETS from the environment (default allcpu, as vastgpu's onnxruntime has no CUDA provider).
 # Run switches (2026-11-24, TODO 38.11; locomani.bench): <scalebfm|sonic> is --bench-set controller=; BENCH_SET adds
 # more, space-separated (e.g. "sensor=rgbd" or "target=truth"); the look and the planner's cloud follow the sensor
-# (python -m locomani.bench.simple). Default: the main metric's setting (perception column, the stereo Isaac look).
+# (python -m locomani.bench.simple). Default: configs/bench/simple.yaml, since 2026-11-24 the RGB-D look (the replica's
+# MuJoCo head camera, cloud_blind and look_frame.py's look_dump_blind); the runs above were on the stereo look, so
+# BENCH_SET=sensor=stereo repeats them.
 set -uo pipefail
 D=$1 CTRL=$2 MODEL=$3 STEP=$4 E0=${5:-0} E1=${6:-29}
 W=${BENCH_REPO:-/workspace/code/locomanipulation-selfwm}; cd $W
 S=${SIMPLE_ROOT:-$W/third_party/SIMPLE}; SP=$S/.venv/bin/python; PY=$W/third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
 G=${BENCH_GPU:-1}
 E=scripts/experiments/simple_eval_20261112; C=scripts/experiments/curobo_avoid_20261120
-O=$W/outputs/simple_eval_20261112
-TASKS="XMovePickTeleop XMoveBendPickTeleop BendPickMP TabletopGraspMP"
+# SIMPLE_EVAL_OUT (2026-11-24): another tree of episodes and cached looks (the development episodes of selfmodel_s_20261124);
+# BENCH_TASKS: fewer tasks. Defaults: the test tree, the four pick tasks
+O=${SIMPLE_EVAL_OUT:-$W/outputs/simple_eval_20261112}
+TASKS=${BENCH_TASKS:-"XMovePickTeleop XMoveBendPickTeleop BendPickMP TabletopGraspMP"}
 export REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl
 export MUJOCO_EGL_DEVICE_ID=$G CUDA_VISIBLE_DEVICES=$G SIMPLE_ROOT=$S
 [ "$CTRL" = sonic ] && export REACH_SONIC_NETS=${REACH_SONIC_NETS:-allcpu}
@@ -71,7 +75,7 @@ PYEOF
 fi
 
 if [ "$STEP" = plan ] || [ "$STEP" = all ]; then
-  [ -d $LOOK ] || { log "FAIL plan: no look dump $LOOK for $BED_SIGNATURE (blind.py look with LOOK_DUMP makes it)"; exit 2; }
+  [ -d $LOOK ] || { log "FAIL plan: no look dump $LOOK for $BED_SIGNATURE (stereo: look_all.sh makes it; rgbd: look_frame.py)"; exit 2; }
   for T in $TASKS; do for e in $(seq $E0 $E1); do echo "$T $e"; done; done |
     xargs -P 4 -L1 sh -c "$PY -I $C/obstacles_box.py $LOOK $D/films_A $CL $D/step1 \$0 \$1 2>/dev/null | grep '^{'" > $D/step1_rows.jsonl
   log "step 1: $(wc -l < $D/step1_rows.jsonl) rows, $(ls $D/step1/obst_*.npz 2>/dev/null | wc -l) obstacle files"
@@ -100,7 +104,7 @@ if [ "$STEP" = B ] || [ "$STEP" = all ]; then bench B --avoid $D/via; fi
 if [ "$STEP" = C ] || [ "$STEP" = all ]; then bench C --avoid $D/via --comp $MODEL; fi
 if [ "$STEP" = D ]; then bench D --avoid $D/via --shift=-6,0,2; fi
 if [ "$STEP" = E ]; then export REACH_VIA_COMP_MODE=const; bench E --avoid $D/via --comp $MODEL; unset REACH_VIA_COMP_MODE; fi
-if [ "$STEP" = M ] || [ "$STEP" = J ] || [ "$STEP" = JR ]; then
+if [ "$STEP" = M ] || [ "$STEP" = J ] || [ "$STEP" = JR ] || [ "$STEP" = S ]; then
   mkdir -p $D/asrun_$STEP
   cp $E/simple_bench.py $E/bench_via.sh $C/vias_e1.py src/locomani/backends/scalebfm/motor.py $D/asrun_$STEP/
 fi
@@ -111,4 +115,7 @@ if [ "$STEP" = M ]; then
 fi
 if [ "$STEP" = J ]; then bench J --avoid $D/via --joint; fi
 if [ "$STEP" = JR ]; then bench JR --avoid $D/via --joint --film-ref; fi
+# S (2026-11-24, selfmodel_s_20261124, TODO 38.10.4): J's paths as the self model's check chose them (s_run.sh, s_check.py
+# choose -> $S_DIR/via); an episode it gave up on has no via file (scored a failure, s_check.py table); S_ARM names the rows
+if [ "$STEP" = S ]; then bench ${S_ARM:-S} --avoid $S_DIR/via --joint; fi
 log "DONE $STEP"

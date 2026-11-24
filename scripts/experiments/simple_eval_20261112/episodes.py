@@ -29,7 +29,10 @@ REPO = Path(__file__).resolve().parents[3]
 SIMPLE = Path(os.environ.get("SIMPLE_ROOT", "/workspace/code/locomanipulation/third_party/SIMPLE"))
 OUT = Path(os.environ.get("SIMPLE_EVAL_OUT", REPO / "outputs" / "simple_eval_20261112"))
 ROBOT = SIMPLE / "data" / "robots" / "g1_sonic"
-LEVELS = ("0", "1", "2")
+# SIMPLE_LEVELS (2026-11-24, selfmodel_s_20261124): more folders after the three test levels, e.g. "0,1,2,3,4" with
+# dr-level-3 and dr-level-4 linked to SIMPLE's unused "hard-old" and "hard" episodes in a development tree
+# (SIMPLE_EVAL_OUT): their positions 30-49 then name themselves L3_e*, L4_e* as every step expects (level * 10 + index)
+LEVELS = tuple(os.environ.get("SIMPLE_LEVELS", "0,1,2").split(","))
 OBJ_PULL = (
     -9.81 * 0.1
 )  # N on every object besides its weight (SIMPLE's "pseudo gravity"; a 0.1 kg object weighs double)

@@ -2,7 +2,7 @@
 
 Unitree G1 加 Dex1 夹爪，全身控制器 ScaleBFM 不改。ScaleBFM 单独执行抓取命令时，手会偏 3 到 5 cm、姿态偏 10 度左右，在没见过的摆放上只抓成 19 %。这条线在控制器外面加三样东西：学出来的走路模型和抓取选择，腿部里程计，以及只读关节的连续伺服，把成功率提到 80 %。机制和取舍见[详解](selfwm_design.md)，按天的记录和每个数字的来源见[开发记录](handoff/selfwm-20261029.md)。
 
-这一页只有命令。全部只用 MuJoCo，不开 Unreal，6 个进程。耗时是 2026-11 在这台机器上的实测。
+这一页只有命令：第 0 到 6 节是房间抓取，2026-11-11 之前的主线；第 7 节是 SIMPLE 上每次实验当时的命令，按时间排。按开关跑 SIMPLE 的各种组合（控制器、真值或感知、单目 RGB-D 或双目），用[基准 runbook](selfwm_bench.md)，那里的命令随代码维护。全部只用 MuJoCo，不开 Unreal，6 个进程。耗时是 2026-11 在这台机器上的实测。
 
 | 步骤 | 做什么 | 耗时 |
 |---|---|---|
@@ -250,6 +250,8 @@ export GRASP_ROOM_OUT=$I/grasp_room_hard_ho
 
 SIMPLE 是别人的基准，机器人用它官方的 G1 加 Dex3 三指手，不用我们的 mars 加 Dex1。HITCH 论文在它的六个任务上各跑 30 局。
 
+下面是每次实验当时的命令。2026-11-24 起 `simple_bench.py` 的 `--column`、`--cloud` 和环境变量 `REACH_CONTROLLER`、`BFM_ROOT` 由运行开关代替（`--bench-set target=`、`sensor=`、`controller=`），默认的一眼也从双目换成了单目 RGB-D；`bench_via.sh` 要重复 11-24 之前的数，加 `BENCH_SET=sensor=stereo`。现在的用法见[基准 runbook](selfwm_bench.md)。
+
 ```bash
 D=outputs/simple_eval_20261112
 huggingface-cli download USC-PSI-Lab/psi-data --repo-type dataset --include "simple-eval/*" --local-dir $D/dl
@@ -478,7 +480,7 @@ python3 -I $E/bench_via_clips.py pick $B/scalebfm scalebfm $B/film_stage    # �
 python3 -I $E/bench_via_clips.py grid $B/film_stage $B/film_clips $B/film_grid   # isaac_film.py 渲染之后，三种做法并排
 ```
 
-做什么：`bench_via.sh` 对四个抓取任务各 30 局跑感知栏。第一遍直线伸手，同时录下每局伸手开始时的状态；然后用开局那一眼的点云当障碍物让 cuRobo 规划右臂的路线；第二遍沿路线原样发，第三遍把路点和目标先用多路点模型挪过再发。SONIC 把第二个参数换成 `sonic`，模型换成 `via_point_sonic_20261123`。换机器时用 `BENCH_REPO`、`SIMPLE_ROOT`、`BENCH_GPU` 三个环境变量指路径和卡。`simple_bench.py` 新增的三个选项是 `--comp <模型目录>`、`--shift x,y,z`（厘米，对照用）和每行里的 `hits`（伸手途中机器人哪个连杆穿进了桌子或别的物体，多深）。
+做什么：`bench_via.sh` 对四个抓取任务各 30 局跑感知栏。第一遍直线伸手，同时录下每局伸手开始时的状态；然后用开局那一眼的点云当障碍物让 cuRobo 规划右臂的路线；第二遍沿路线原样发，第三遍把路点和目标先用多路点模型挪过再发。SONIC 把第二个参数换成 `sonic`，模型换成 `via_point_sonic_20261123`。换机器时用 `BENCH_REPO`、`SIMPLE_ROOT`、`BENCH_GPU` 三个环境变量指路径和卡。这些数都是双目那一眼，现在重复要加 `BENCH_SET=sensor=stereo`。`simple_bench.py` 新增的三个选项是 `--comp <模型目录>`、`--shift x,y,z`（厘米，对照用）和每行里的 `hits`（伸手途中机器人哪个连杆穿进了桌子或别的物体，多深）。
 
 得到什么：每个输出目录下 `rows/<做法>_<任务>.jsonl` 每局一行，`films_<做法>/` 是录下的状态，`via/` 是路线，`table.out` 和 `controls.out` 是两张汇总表的原始输出。2026-11-24 的结果：ScaleBFM 120 局 45 秒内抓起，直线 80、路线原样发 92、先挪命令 103、固定后撤 104；模型对终点偏差的预期和实际差 11 cm，增益来自后撤而不是模型。SONIC 是 21、25、25，分不出。全文在[方案条目](handoff/notebook-20261120/selfmodel_bench_20261123.md)，接下来的任务在 TODO 38.10。
 

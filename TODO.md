@@ -1438,6 +1438,10 @@
     - “对照点云检查”和“放弃”这两步以前从没接进 SIMPLE，这次要接
     - 修正怎么做还没定，两种可行的：在预测会偏过去的那一侧把障碍物加厚后重新规划；把目标反方向挪后重新规划。在开发局上选，不在测试局上选
     - 在 SIMPLE 里和 38.10.2 的全部做法比，判据事先写
+    - 2026-11-24 进展：
+      - `s_check.py` 和 `s_run.sh` 写好：发令时刻的状态从 J 带录像的那遍（JR）读，照 `Motor.reach_joints` 重推参考，在双目的 JR 录像上核对过，33 条路线最大差 0.08 cm；
+      - 开发局用 SIMPLE 下载包里测试没用过的 TabletopGrasp hard-old、hard 两级 20 局，放在 `outputs/simple_dev_20261124/`；
+      - 三种检查（只查终点、只查间隙、两样都查）在开发局上选，选法登记在 `docs/handoff/notebook-20261120/selfmodel_s_dev_20261124.md`（提交 `5c9f0d05`）
   - [ ] 38.10.5 要用户定：TabletopGrasp 分不出规划方法（11-20 的 B46，11-24 又重演了一次：固定模板和固定后撤都够用，30 局是同一张桌子，障碍物永远在目标下方）。要说明“感知规划加自身模型”有必要，得有一个障碍物位置会变的基准任务。候选：SIMPLE 11-01 放出的 17 个全身任务里有没有合适的；BiGym 2.0 的厨房任务；或者按事先定好的规则在 SIMPLE 的桌面上加障碍物只当测试用（用户 11-20 否过“桌上放随机障碍物”，那次否的是拿它当训练数据）
   - [ ] 38.10.6 直接涨主指标的三件便宜事（和上面并行）
     - 逐局看 TabletopGrasp 上 B 和 D 剩下没抓起来的局失败在哪一步（D 是 19 / 30）
@@ -1452,6 +1456,16 @@
   - [x] 开关层从 bench-options 搬过来：`src/locomani/bench/`、`configs/bench/<基准>.yaml`、`--bench` / `--bench-set key=value`、每个基准一张能力表、`python -m locomani.bench table`。selfwm 改了两处：控制器一项加上 sonic、amo、gr00t_wbc；能力表可以绑定两项（selfwm 的 SIMPLE 环境里，机器人以为自己在哪跟着真值或感知走）
   - [x] SIMPLE：`simple_bench.py` 改用开关（去掉 `--column`、`--cloud`、`REACH_CONTROLLER`、`BFM_ROOT`），每行结果记下开关；默认就是主指标的设置。ScaleBFM、SONIC × 真值、双目、RGB-D 都可选；AMO、GR00T-WBC 记为计划中（在别的场景跑过，没在这个环境跑过）
   - [x] 4090 上新旧代码同局对照（2026-11-24）：ScaleBFM、SONIC × 双目、RGB-D、真值、双目加 J × TabletopGrasp 第 0、1 局和 XMovePick 第 15、18 局，32 局逐字段相同；新代码的 J 和 38.10.2 存下的 J 8 局相同；`bench_via.sh` 的直线伸手两个控制器 × 四个任务各 1 局，和 38.10.2 的 A 相同。输出在 4090 的 `outputs/simple_eval_20261112/parity_switches_20261124/`
-  - [ ] RGB-D 的规划路线：缺逐局的观察快照 `look_dump_blind`（`blind.py look` 加 `LOOK_DUMP` 生成），现在 RGB-D 只能跑不规划路线的做法
-  - [ ] LocoManiLab、BiGym 2.0、HumanoidArena 的环境接口（表里都是计划中）。按 bench-options 的表，BiGym 2.0 和 HumanoidArena 只用基准自带的控制器（11-23 定的），要在上面换 WBC 得用户改这个决定
+  - [x] RGB-D 的规划路线（2026-11-24）：`blind.py look` 只在双目时存整帧点云，新加 `look_frame.py` 用复刻场景的头部相机补出 `look_dump_blind/`，120 局，和 `cloud_blind/` 的目标点差 0.40 到 0.56 cm
+  - [x] 默认组合改成 SIMPLE + ScaleBFM + 单目 RGB-D（用户 2026-11-24："现在这个默认的组合设置为 simple+scalebfm+单目 rgbd"）：`configs/bench/simple.yaml` 的 `sensor: rgbd`；要重复双目记录的 `run_attrib.sh`、`run_box.sh`、`jref_collect.sh` 固定 `sensor=stereo`
+  - [x] 新默认组合在 SIMPLE 上跑一遍：五种做法 × 两个控制器，事先登记在 `docs/handoff/notebook-20261120/simple_rgbd_20261124.md`（提交 `6a5fd67d`）。2026-11-24 跑完：
+    - ScaleBFM：直线伸手 83 / 73，TabletopGrasp 18 / 18；J 95 / 81（30 / 26）；M 94 / 84（29 / 29）；
+    - SONIC：直线伸手 29 / 18；D 39 / 17；J 34 / 20；
+    - 两眼总数接近，按任务差得大：BendPick RGB-D 10、双目 30；TabletopGrasp 直线伸手 18 对 2；
+    - 数填进了 `docs/selfwm_bench.md` 第 6 节。
+  - [x] 文档（用户 2026-11-24："把 selfwm 的 readme 和相关文档全部更新一下，让读者知道这个分支是干什么的，怎么安装环境，怎么跑这些组合"）：README 重写开头；新的基准 runbook `docs/selfwm_bench.md`；安装第 13 步；详解第 12 节；术语表、代码导航、文档归属
+  - [ ] LocoManiLab、BiGym 2.0、HumanoidArena 的环境接口（表里都是计划中）。BiGym 2.0 和 HumanoidArena 只用基准自带的控制器，11-23 定的，用户 2026-11-24 再次确认："就用他们自带的控制器，如果没有训练过自身模型的话，就参照 scalebfm 和 sonic 的方式把它的自身模型训练出来再继续"
+    - 主表只跑 A、J、S 三行（用户 2026-11-24："只需要跑对照中的 A，J，S 就行了……这 4 张 4090 卡一起用"）
+    - 用户 2026-11-24 同意：HumanoidArena 上的 ScaleBFM 先做 1 天可行性检查，不行就空着；BiGym 2.0 用 640×360 的头部 RGB-D，不用它规定的 84×84；不建 vastgpu 和 4090 之间的隧道，SAM 3 和 GraspGen-X 装在 4090 上
+    - 2026-11-24 起在 4090 上装：BiGym 2.0（github.com/swirl-uk/BiGym2，自带 GR00T-WBC 管下身，手臂直接收关节目标）；HumanoidArena（github.com/William-wAng618/HumanoidArena，IsaacLab，自带 SONIC）
 - [ ] 38.7 演示（先仿真）：蹲下从塞满瓶子的矮柜底层取后排饮料；三联画面 + 半透明手臂叠加 + 缝越推越窄；参数事先定，所有试次都展示

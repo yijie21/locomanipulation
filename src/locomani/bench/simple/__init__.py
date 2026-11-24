@@ -14,8 +14,8 @@ PICK_TASKS = ("XMovePickTeleop", "XMoveBendPickTeleop", "BendPickMP", "TabletopG
 
 # sensor -> the cached look the perception column reads (target points, grasps) and the per-episode look dump the path
 # planner's obstacles come from (curobo_avoid_20261120/obstacles_box.py), both under outputs/simple_eval_20261112/.
-# rgbd has no look dump yet (blind.py look with LOOK_DUMP=look_dump_blind makes it): its straight reach runs, its
-# planned paths do not.
+# The stereo look's dump comes from look_all.sh (blind.py look --eyes with LOOK_DUMP), the RGB-D look's from look_frame.py
+# (2026-11-24: blind.py look writes none without --eyes).
 LOOKS = {"stereo": ("cloud_eyes_final", "look_dump_eyes"), "rgbd": ("cloud_blind", "look_dump_blind")}
 
 SPEC = BenchSpec(
@@ -35,9 +35,9 @@ SPEC = BenchSpec(
         "target=perception": "the main metric's column: SAM 3 on the head image, the target's points from depth, "
         "GraspGen-X's grasps, all from the start's look (cached); the table's edge from blind_f1",
         "sensor=stereo": "cloud_eyes_final: SIMPLE's Isaac head stereo pair, depth by matching + LingBot-Depth "
-        "(depth_server.py; 2026-11-20); the main metric's look",
+        "(depth_server.py; 2026-11-20); the look of the numbers recorded from 11-20 to 11-24",
         "sensor=rgbd": "cloud_blind: the replica's MuJoCo head camera, its colour and rendered depth (2026-11-19); "
-        "MuJoCo's image, not Isaac's; no look dump for the path planner yet (planned paths need look_dump_blind)",
+        "MuJoCo's image, not Isaac's; the planner's frame from look_frame.py (look_dump_blind); the default since 11-24",
         "depth_noise=realsense": "bench-options' perception/noise.py is not ported to selfwm",
         "self_pose=truth": "with target=truth only: the Motor gets the goals in the simulator's frame",
         "self_pose=odometry": "with target=perception only: leg odometry after the walk (place.Belief)",

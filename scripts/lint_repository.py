@@ -32,7 +32,9 @@ GUIDES = {
     "docs/bimanual.md": 125,
     "docs/warehouse.md": 300,  # 2026-10-04 (user): raised from 220 (2026-09-30: + step 8 wrap-up, stop_unreal.sh)
     "docs/running.md": 180,
-    "docs/setup.md": 490,  # 2026-09-29: + step 8 (Unreal); 2026-10-20: + steps 9-12 (scene RSI: /venv/main, ADT, ScaleBFM, Claude CLI)
+    # 2026-09-29: + step 8 (Unreal); 2026-10-20: + steps 9-12 (scene RSI: /venv/main, ADT, ScaleBFM, Claude CLI);
+    # 2026-11-24: + step 13 (selfwm's SIMPLE bench: cuRobo, SIMPLE's patches and assets, GPU ONNX Runtime)
+    "docs/setup.md": 530,
     "docs/warehouse_design.md": 122,  # 2026-10-20: + the archive note
     # 2026-10-12: the GraspNet-object line (grasp cache or graspnet), a side line with its own runbook and design page
     "docs/object_grasp.md": 130,
@@ -41,6 +43,9 @@ GUIDES = {
     # and its design page. The VLA pages above are archived in place.
     "docs/rsi.md": 215,
     "docs/rsi_design.md": 150,
+    # 2026-11-24 (user): branch selfwm's runbook for the run switches -- benchmark, controller, truth or perception,
+    # RGB-D or stereo -- with the default combination (SIMPLE, ScaleBFM, RGB-D)
+    "docs/selfwm_bench.md": 170,
     "docs/agents/doc-ownership.md": 50,
     "docs/reference/change-map.md": 40,
     "docs/reference/change-map-bottle.md": 45,
@@ -70,6 +75,7 @@ COMMAND_DOCUMENTS = (
     "docs/object_grasp.md",
     "docs/rsi.md",  # 2026-10-20: the main line's runbook
     "docs/selfwm.md",  # 2026-11-11: the self-model grasp line's runbook (branch selfwm)
+    "docs/selfwm_bench.md",  # 2026-11-24: its runbook for the run switches on public benchmarks
 )
 # Only the source tree. `outputs/` is runtime and `<name>`/`*`/`$VAR` are placeholders.
 COMMAND_PATH = re.compile(r"(?<![\w/-])((?:scripts|configs|src|tests)/[\w./-]*[\w-])")
