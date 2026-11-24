@@ -3,7 +3,7 @@
 A family file with `"backend": "bench"` and a `"bench"` block runs every round (diagnostic, probe, draft, check half, gate,
 sealed) through the adapter's own command, `python -m locomani.bench.<name> run <Task> ...`, from the bench root:
 
-    "bench": {"name": "simple" | "locomanilab", "root": <a bench worktree>, "options": {BenchOptions overrides},
+    "bench": {"name": "simple" | "locomanilab" | "bigym2" | "humanoidarena", "root": <a bench worktree>, "options": {BenchOptions overrides},
               "config": {the adapter's config fields, --set k=v; e.g. slots}, "python": optional, "files": optional globs}
 
 What is generic here (written once): the runner's argv, the signature (the adapter's files, the resolved switches), the
@@ -12,8 +12,10 @@ rows, the work units and their slots, rows -> rounds, cards, and the render flag
 
 What is adapter specific is ONE table below (ADAPTERS): the module name, the seed and guard paths, which files are read and
 hashed, the config keys the backend sets itself (practice files, kinds, run dir, the look cache) and the render flag, and the
-module that knows the adapter's row schema (`flavor`: SIMPLE's rows, LocoManiLab's allow-listed rows). A new adapter is
-one more entry. The sibling modules are reused for what is not about the adapter: backend_simple.py holds the pools,
+module that knows the adapter's row schema (`flavor`: SIMPLE's rows, LocoManiLab's allow-listed rows, the seed-pool
+adapters' rows). A new adapter is one more entry. The adapters whose episodes are seed pools (`pool_mode` "seeds": BiGym 2.0,
+HumanoidArena) have no practice files: the diagnostic pool is the practice pool P, the acceptance pool is a block of the
+pool A and the sealed pool one of the pool S, at an offset the hidden seed chooses (`draw_seeded`). The sibling modules are reused for what is not about the adapter: backend_simple.py holds the pools,
 the process handling and the sandbox walk; backend_lml.py (only a family of that flavor loads it) the LocoManiLab rows and
 cards. Families without a `bench` block stay on backend_simple / backend_lml as before.
 """
@@ -25,6 +27,7 @@ import hashlib
 import importlib
 import json
 import os
+import random
 import shutil
 import subprocess
 import sys
@@ -100,6 +103,98 @@ ADAPTERS: dict[str, dict] = {
         benchmark="third_party/LocoManiLab",
         flavor="backend_lml",
     ),
+    "bigym2": dict(
+        module="locomani.bench.bigym2",
+        seed="src/locomani/bench/bigym2/seed",
+        guard="src/locomani/bench/bigym2/guard.py",
+        files=(  # read-only copies for roles: the facade and runner, the judge and row, the guard, the switches, the frame type
+            "src/locomani/bench/options.py",
+            "src/locomani/bench/bigym2/run.py",
+            "src/locomani/bench/bigym2/client.py",
+            "src/locomani/bench/bigym2/judge.py",
+            "src/locomani/bench/bigym2/record.py",
+            "src/locomani/bench/bigym2/guard.py",
+            "src/locomani/perception/sensor.py",
+        ),
+        hash_files=(  # in the signature, not shown to roles: the server (truth side, contact record), the pools, the session
+            "src/locomani/bench/bigym2/*.py",
+            "src/locomani/bench/spec.py",
+            "src/locomani/config_base.py",
+            "configs/bench/bigym2.yaml",
+        ),  # no ScaleBFM, no perception beyond the frame type: BiGym keeps its own GR00T-WBC controller and runs on truth
+        kinds=None,  # no kinds key: the pools are letters of its `pools` config field
+        practice_keys=(),  # no practice files: the episodes are `<task>/<P|A|S>/<n>`, seeds of the adapter's pools
+        render_key=None,  # no lazy render: the head camera is not drawn unless `depth` is set
+        cache_key=None,
+        own=("pools", "run_dir", "lock_file"),
+        strip_env=("BIGYM", "SIMPLE_", "LML_"),
+        tmpdir=True,  # sockets and scene builds go to the scratch directory
+        units=1,  # one MuJoCo server at a time (the family pins its cores); the lock file is the scratch directory's
+        benchmark="third_party/BiGym2",
+        flavor="backend_seeded",
+        stub_file="skill.py",  # the package is skill.py (editable) and a frozen __init__.py
+        pool_mode="seeds",
+        pool_sizes=dict(P=9000, A=1000, S=10000),  # episodes per pool (config.POOLS); E, [620000, 630000), is no letter
+        tasks=(
+            "reach_target_single",
+            "reach_target_multi_modal",
+            "reach_target_dual",
+            "move_plate",
+            "move_two_plates",
+            "flip_cup",
+            "flip_cutlery",
+            "stack_blocks",
+            "dishwasher_close",
+            "dishwasher_load_cups",
+            "dishwasher_load_cutlery",
+            "dishwasher_load_plates",
+            "drawer_top_open",
+            "drawer_top_close",
+            "pick_box",
+            "put_cups",
+            "saucepan_to_hob",
+            "sandwich_remove",
+            "wall_cupboard_open",
+            "wall_cupboard_close",
+        ),  # fmt: skip
+    ),
+    "humanoidarena": dict(
+        module="locomani.bench.humanoidarena",
+        seed="src/locomani/bench/humanoidarena/seed",
+        guard="src/locomani/bench/humanoidarena/guard.py",
+        files=(
+            "src/locomani/bench/options.py",
+            "src/locomani/bench/humanoidarena/run.py",
+            "src/locomani/bench/humanoidarena/client.py",
+            "src/locomani/bench/humanoidarena/judge.py",
+            "src/locomani/bench/humanoidarena/record.py",
+            "src/locomani/bench/humanoidarena/guard.py",
+            "src/locomani/perception/sensor.py",
+        ),
+        hash_files=(  # the server, the truth side, the pools, the session, the gait the native tracker follows
+            "src/locomani/bench/humanoidarena/*.py",
+            "src/locomani/bench/humanoidarena/gait_cycle.json",
+            "src/locomani/bench/spec.py",
+            "src/locomani/config_base.py",
+            "configs/bench/humanoidarena.yaml",
+        ),
+        kinds=None,
+        practice_keys=(),
+        render_key=None,
+        cache_key=None,
+        own=("pools", "run_dir", "lock_file"),
+        strip_env=("ISAAC", "OMNI_", "HA_", "SIMPLE_", "LML_"),
+        tmpdir=True,
+        units=1,  # one Isaac server at a time (GPU 1, four cores): the lock file is the scratch directory's
+        benchmark="third_party/HumanoidArena/repo",
+        flavor="backend_seeded",
+        stub_file="skill.py",
+        pool_mode="seeds",
+        pool_sizes=dict(
+            P=20000, A=20000, S=20000
+        ),  # 1000 groups of 20 each (config.POOLS); the groups 0-2 are no letter
+        tasks=("pp_box", "double_desk", "open_door"),
+    ),
 }
 
 
@@ -134,10 +229,14 @@ def check_bench(fam: dict) -> None:
     own = sorted(set(b.get("config") or {}) & set(ad["own"]))
     if own:
         raise ValueError(f"{fam.get('name')}: bench.config may not set {own} (the backend sets them)")
+    if seeded(fam):
+        check_seeded(fam)
 
 
 def load(name: str) -> dict:
     fam = B.load(name)
+    if seeded(fam):  # no practice files: B's sandbox and practice_dir read a directory that holds none
+        fam.setdefault("practice_dir", "outputs/_no_practice_files")
     check_bench(fam)
     return fam
 
@@ -146,13 +245,135 @@ def _fam(family) -> dict:
     return load(family) if isinstance(family, str) else family
 
 
+# ---------------------------------------------------------------------------------------- seed pools
+POOL_LETTER = {
+    "diag": "P",
+    "accept": "A",
+    "sealed": "S",
+}  # the loop's pools -> the adapter's (practice, acceptance, sealed)
+PROBE_LETTERS = "P"  # a diagnostic round or a probe opens the practice pool only
+GATE_LETTERS = "PAS"  # the gate (accept, and the check half's diagnostic starts) and the sealed set
+OFFSET_FLOOR = (
+    100  # the first index a hidden pool block may start at: the practice pool's labels (`s0`..) never repeat there
+)
+
+
+def seeded(fam: dict) -> bool:
+    """True for an adapter whose episodes are seed pools (BiGym 2.0, HumanoidArena), not practice files."""
+    b = bench(fam)
+    return bool(b) and ADAPTERS.get(b.get("name", "simple"), {}).get("pool_mode") == "seeds"
+
+
+def parse_id(eid: str) -> tuple[str, str, int]:
+    """(task, pool letter, n) of `<task>/<pool>/<n>`; ValueError for anything else."""
+    parts = str(eid).split("/")
+    if len(parts) != 3 or not (parts[2].isascii() and parts[2].isdigit()):
+        raise ValueError(f"{eid!r} is not <task>/<pool>/<n>")
+    return parts[0], parts[1], int(parts[2])
+
+
+def id_refusal(fam: dict, eid: str, letters: str = GATE_LETTERS) -> str | None:
+    """Why an episode id is not one this family may name or this call may run (None: fine). The evaluation episodes are no
+    letter of the pools: an `E` id, a pool the call does not open and an index outside the pool are refused here, the adapter
+    refuses the same again (its CLI, its episodes module and its server)."""
+    ad = adapter(fam)
+    try:
+        task, letter, n = parse_id(eid)
+    except ValueError as e:
+        return str(e)
+    if task not in ad["tasks"]:
+        return f"{eid}: task {task!r} is not one of the adapter's"
+    if letter not in ad["pool_sizes"]:
+        return (
+            f"{eid}: pool {letter!r} is not one of {''.join(ad['pool_sizes'])} (the evaluation episodes are never run)"
+        )
+    if letter not in letters:
+        return f"{eid}: pool {letter} is not open to this call (opens {letters})"
+    if n >= ad["pool_sizes"][letter]:
+        return f"{eid}: pool {letter} has {ad['pool_sizes'][letter]} episodes"
+    return None
+
+
+def check_seeded(fam: dict) -> None:
+    """A family of a seed-pool adapter names its pools by size and split seed only: each pool takes its letter from its name
+    (diag P, accept A, sealed S) and `per_task` episodes of every task; a `letter` or `ids` entry may only repeat that. The
+    evaluation episodes cannot be named: they are no letter and no index of any pool (id_refusal)."""
+    ad = adapter(fam)
+    for name, spec in (fam.get("pools") or {}).items():
+        if name not in POOL_LETTER:
+            raise ValueError(
+                f"{fam.get('name')}: pool {name!r}: a seed-pool family has the pools {sorted(POOL_LETTER)}"
+            )
+        letter = POOL_LETTER[name]
+        if spec.get("letter", letter) != letter:
+            raise ValueError(f"{fam.get('name')}: pool {name} is the adapter's pool {letter}, not {spec['letter']!r}")
+        per = int(spec.get("per_task", 0) or 0)
+        room = ad["pool_sizes"][letter] - (0 if name == "diag" else OFFSET_FLOOR)
+        if per < 1 or per > (OFFSET_FLOOR if name == "diag" else room):
+            raise ValueError(f"{fam.get('name')}: pool {name}: per_task {per} is not a count of 1 to {OFFSET_FLOOR if name == 'diag' else room}")  # fmt: skip
+        for eid in spec.get("ids") or []:
+            bad = id_refusal(fam, eid, letter)
+            if bad:
+                raise ValueError(f"{fam.get('name')}: pool {name}: {bad}")
+    for t in fam.get("tasks") or []:
+        if t not in ad["tasks"]:
+            raise ValueError(f"{fam.get('name')}: task {t!r} is not one of the adapter's: {', '.join(ad['tasks'])}")
+
+
+def draw_seeded(fam: dict, pool: str, out, n: int | None = None, tasks: list[str] | None = None) -> dict:
+    """Write the pool's files `<task>_s<n>.json` (`task`, `episode_id` `<task>/<letter>/<n>`) into `out`: `per_task` episodes of
+    every task. The diagnostic pool is the practice pool's first `per_task` indices; the acceptance and sealed pools are a block
+    of `per_task` consecutive indices of the pool A / S, at an offset (at least OFFSET_FLOOR, so no label repeats the
+    practice pool's) a hidden seed chooses for each task, the way the other backends hide which lines are held out. `n` caps
+    the total (tasks taken in turn), `tasks` restricts them."""
+    ad = adapter(fam)
+    out = Path(out)
+    out.mkdir(parents=True, exist_ok=True)
+    letter, spec = POOL_LETTER[pool], fam["pools"][pool]
+    per = int(spec["per_task"])
+    ids = spec.get("ids") if pool != "diag" else None
+    seed = None
+    if pool != "diag" and not ids:
+        seed = B._pool_seed(fam)
+        if seed is None:
+            raise SystemExit(f"{fam['name']}: the {pool} pool's seed is blank and the hidden seeds.json has none")
+    per_task: dict[str, list[int]] = {}
+    for task in fam["tasks"] if tasks is None else tasks:
+        if ids:
+            per_task[task] = sorted(int(x.rsplit("/", 1)[1]) for x in ids if x.startswith(f"{task}/{letter}/"))
+            continue
+        if pool == "diag":
+            first = 0
+        else:
+            room = ad["pool_sizes"][letter] - OFFSET_FLOOR - per + 1
+            first = OFFSET_FLOOR + random.Random(f"{seed}:{task}:{letter}").randrange(room)
+        per_task[task] = list(range(first, first + per))
+    order, k = [], 0
+    while any(per_task.values()) and (n is None or len(order) < n):
+        t = list(per_task)[k % len(per_task)]
+        k += 1
+        if per_task[t]:
+            order.append((t, per_task[t].pop(0)))
+    for t, i in order:
+        (out / f"{t}_s{i}.json").write_text(json.dumps(dict(task=t, episode_id=f"{t}/{letter}/{i}"), indent=1))
+    summary = dict(family=fam["name"], pool=pool, written=len(order), skipped=[], unavailable={},
+                   next_seed=(seed if seed is not None else 0))  # fmt: skip
+    (out / "_pool.json").write_text(json.dumps(summary, indent=1))
+    return summary
+
+
+def draw(fam: dict, pool: str, out, n: int | None = None, tasks: list[str] | None = None) -> dict:
+    """The pool's files for the loop (the practice files' lines, or for a seed-pool adapter its pool blocks)."""
+    fam = _fam(fam)
+    return draw_seeded(fam, pool, out, n, tasks) if seeded(fam) else B.draw(fam, pool, out, n, tasks)
+
+
 bed_root = B.bed_root
 base_dir = B.base_dir
 package_dir = B.package_dir
 ensure_package = B.ensure_package
 guard_write = B.guard_write
 practice_dir = B.practice_dir
-draw = B.draw
 skills_hash = B.skills_hash
 bed_fixed = B.bed_fixed
 gate_env = B.gate_env
@@ -296,8 +517,11 @@ def _extra(root: Path) -> dict:
 
 def package_parameters(root: Path) -> dict:
     """The package's parameters read from the source text (the loop's process never imports a package): skill.py's K_ORIG,
-    K_CUT, PLACING, K_ART and ART_TASK keys (backend_simple.package_parameters) and `EXTRA` of __init__.py."""
-    return {**B.package_parameters(root), **_extra(root)}
+    K_CUT, PLACING, K_ART and ART_TASK keys (backend_simple.package_parameters), `EXTRA` of __init__.py and the keywords of
+    `K = dict(...)` of skill.py (the seed-pool adapters' packages)."""
+    import backend_seeded
+
+    return {**B.package_parameters(root), **_extra(root), **backend_seeded.package_parameters(root)}
 
 
 def load_skills(root, name: str = "scene_skills", family=None):
@@ -336,7 +560,9 @@ def layout(family) -> dict:
         prompts=B._abs(fam["prompts"]),
         plan=B._abs(plan) if plan else None,
         leak=list(fl.LEAK),
-        stub_file="pick.py",  # __init__.py is frozen for the guard, so a stub draft appends its comment to an editable file
+        stub_file=adapter(fam).get(
+            "stub_file", "pick.py"
+        ),  # __init__.py is frozen for the guard: a stub draft appends its comment to an editable file
         class_suggest=dict(fl.CLASS_SUGGEST),
         caps={**B.FALLBACK_CAPS, **fam.get("caps", {})},
     )
@@ -377,7 +603,13 @@ def bench_sets(fam: dict, run_dir, full: bool) -> list[str]:
     files and render every step; everything else the family's visible files, lazily."""
     ad = adapter(fam)
     pdir = practice_dir(fam, full)
-    sets = [f"kinds={ad['kinds']}", *(f"{k}={pdir}" for k in ad["practice_keys"]), f"run_dir={run_dir}"]
+    sets = [f"kinds={ad['kinds']}"] if ad["kinds"] else []
+    sets += [*(f"{k}={pdir}" for k in ad["practice_keys"]), f"run_dir={run_dir}"]
+    if seeded(fam):  # the pools this call opens (a diagnostic round: the practice pool only), one simulator at a time
+        sets += [
+            f"pools={GATE_LETTERS if full else PROBE_LETTERS}",
+            f"lock_file={B._scratch()}/{bench(fam)['name']}.lock",
+        ]
     if ad["render_key"]:
         sets.append(f"{ad['render_key']}={'false' if full else 'true'}")
     if ad["cache_key"]:
@@ -477,7 +709,11 @@ def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where: str = "prob
                 continue
             by = B._ids_by_task(pool, todo)
             pdir = practice_dir(fam, where == "gate")  # the practice files this call is given (a sandbox: blanked rows)
-            gone = [x for rows in by.values() for x, eid in rows if not B._in_practice(pdir, eid)]
+            if seeded(fam):  # no practice files: the pools this call opens (id_refusal)
+                letters = GATE_LETTERS if where == "gate" else PROBE_LETTERS
+                gone = [x for rows in by.values() for x, eid in rows if id_refusal(fam, eid, letters)]
+            else:
+                gone = [x for rows in by.values() for x, eid in rows if not B._in_practice(pdir, eid)]
             for x in gone:  # an id that is blank or missing there is not an episode this call may run
                 B._write(out / f"{x}.json", _blank(fam, x, "not a diagnostic episode", sh, setting, sig, "refused"))
             by = {t: [(x, e) for x, e in rows if x not in gone] for t, rows in by.items()}
@@ -506,7 +742,9 @@ def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where: str = "prob
                         rec = json.loads(line)
                     except ValueError:
                         continue
-                    x = by_id.get(rec.get("episode_id"))
+                    x = by_id.get(
+                        rec.get("episode_id") or rec.get("id")
+                    )  # LocoManiLab and SIMPLE rows: episode_id; seed pools: id
                     if x is not None:
                         B._write(out / f"{x}.json", to_round(rec, x, sh, setting, sig, fam))
             result[k] = [x for x in todo if not B._current(out / f"{x}.json", sig)]
@@ -517,12 +755,15 @@ def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where: str = "prob
 
 # ----------------------------------------------------------------------------------------------------- cards
 def _fam_of_rounds(rounds: list[dict]) -> str:
-    """The flavor a round list belongs to: a LocoManiLab round keeps its raw record under `lml`, SIMPLE's under `simple`."""
+    """The flavor a round list belongs to: a LocoManiLab round keeps its raw record under `lml`, a seed-pool adapter's under
+    `seeded`, SIMPLE's under `simple`."""
+    if any("seeded" in r for r in rounds):
+        return "backend_seeded"
     return "backend_lml" if any("lml" in r for r in rounds) else "backend_simple"
 
 
 def card_text(r: dict) -> list[str]:
-    mod = importlib.import_module("backend_lml" if "lml" in r else "backend_simple")
+    mod = importlib.import_module(_fam_of_rounds([r]))
     lines = mod.card_text(r)
     if r.get("bench") and not any(x.startswith("bench:") for x in lines):
         lines.insert(1, f"bench: {r['bench']}")
