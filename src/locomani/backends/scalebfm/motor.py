@@ -821,6 +821,72 @@ class Motor:
 
         return self._run("reach", update, total + cfg.reach_settle_s + 1.0)
 
+    def reach_joints(self, side: str, path, joint_idx, *, speed: float | None = None, servo: bool = False) -> Outcome:
+        """`side`'s arm joints along a planned joint path, no IK of ours (selfmodel_jref_20261124, TODO 38.10.2): `path`
+        (T, k) holds the joints `joint_idx` (indices into the 29, MuJoCo order), e.g. cuRobo's right-arm trajectory
+        (curobo_avoid_20261120 plan2.py). The pelvis and every other joint hold the reference pose at the command. The
+        path is retimed min-jerk in the jaw centre's arc length (FK of the reference with the path's joints), lasting
+        that length / `speed` (default reach_speed), at least reach_min_s. The path's first row is the arm's reading at
+        the planned start; the reference's own arm joints at the command differ from it a little, so that difference is
+        added at the start and faded out linearly along the arc: the reference starts exactly where it is and ends exactly
+        on the path's last row. The controller gets the result as it gets any reference (ScaleBFM: FK keypoints; SONIC:
+        the VR wrist and head targets). Ends like reach: after the path, up to reach_settle_s of settling."""
+        cfg = self.cfg
+        base = self.ref(self.t)
+        P, idx = np.asarray(path, float), list(joint_idx)
+        gap = base.joints[idx] - P[0]
+
+        def jaw_of(q):
+            j = base.joints.copy()
+            j[idx] = q
+            p, quat = self.kp(base.pos, base.quat, j)[WRIST[side]]
+            return p + R.mat(quat) @ R.OFF
+
+        jaw = np.array([jaw_of(q) for q in P])
+        arc = np.r_[0.0, np.cumsum(np.linalg.norm(np.diff(jaw, axis=0), axis=1))]
+        length = float(arc[-1])
+        total = max(cfg.reach_min_s, length / (speed or cfg.reach_speed))
+        frac = arc / max(length, 1e-9)
+
+        def joints_at(u: float) -> np.ndarray:  # u: the arc fraction
+            q = np.array([np.interp(u, frac, P[:, i]) for i in range(len(idx))]) + (1.0 - u) * gap
+            j = base.joints.copy()
+            j[idx] = q
+            return j
+
+        t_start = self.t
+
+        def at(t):
+            tt = t - t_start
+            if tt >= total:
+                return Pose(base.pos, base.quat, joints_at(1.0), np.zeros(29))
+            u, h = minjerk(tt / total), 1e-3
+            vel = (joints_at(minjerk(min(tt + h, total) / total)) - joints_at(u)) / h
+            return Pose(base.pos, base.quat, joints_at(u), vel)
+
+        goal = jaw_of(P[-1])
+        self._stand(base)
+        self.ref = at
+        self.servo_on[side] = servo
+        self.servo_target.pop(side, None)
+        t0 = self.t
+
+        def update(t):
+            tt = t - t0
+            if tt < total:
+                return None
+            err = float(np.linalg.norm(self.jaw_centre(side)[0] - goal))
+            if tt >= total + cfg.reach_settle_s or (tt >= total + 0.3 and err <= cfg.reach_tolerance):
+                return Outcome(
+                    err <= max(cfg.reach_tolerance, 0.02),
+                    "" if err <= 0.02 else f"jaw centre {100 * err:.1f} cm off",
+                    info=dict(jaw_err_cm=round(100 * err, 2), path_cm=round(100 * length, 2), dur_s=round(total, 2),
+                              start_gap_deg=round(float(np.degrees(np.abs(gap).max())), 2)),
+                )  # fmt: skip
+            return None
+
+        return self._run("reach_joints", update, total + cfg.reach_settle_s + 1.0)
+
     def adopt_hand(self, side: str) -> None:
         """Make the reference carry `side`'s wrist where `hand` drives it now, then release the override: a walk after
         a hand program then carries the hand with the body instead of snapping the wrist back to the last IK pose."""

@@ -5,7 +5,11 @@
 #   C  the same path, its via points and goal moved by the controller's multi-waypoint self model (simple_bench.py --comp)
 #   D  (control, 2026-11-24) the same path, every via point and the goal 6 cm back and 2 cm up, no model (--shift)
 #   E  (control) the same path moved by the model file's constant correction (REACH_VIA_COMP_MODE=const)
-# bench_via.sh <out dir> <scalebfm|sonic> <model dir for C> <step: A|plan|B|C|all|D|E> [first episode] [last episode]
+#   M  (2026-11-24, TODO 38.10.2) the fixed template on the episodes that have a path: 8 cm back along the heading, up to
+#      the pregrasp height, over to it (curobo_avoid_20261120/vias_e1.py's group E, from B's via files and the preps)
+#   J  (2026-11-24, TODO 38.10.2) the planned right-arm joint trajectory itself as the reference (simple_bench.py --joint,
+#      Motor.reach_joints), the rest of the body held: no IK of ours on the way
+# bench_via.sh <out dir> <scalebfm|sonic> <model dir for C> <step: A|plan|B|C|all|D|E|M|J> [first episode] [last episode]
 # One process a task (4 at a time); the planner 4 at a time on one GPU. Progress: <out>/pipeline.log.
 # Another machine: BENCH_REPO (the checkout, default vastgpu's), SIMPLE_ROOT (default <repo>/third_party/SIMPLE), BENCH_GPU
 # (default 1). On the 4090: BENCH_REPO=/wuji-vefps-D/wuji-il/yijie/ws/code/loco
@@ -26,17 +30,21 @@ mkdir -p $D/rows $D/rows_ep $D/logs $D/step1 $D/step2 $D/try_act02 $D/via $D/asr
 log() { echo "[$(date -u +%T)] $*" >> $D/pipeline.log; }
 ARGS="--column perception --cloud cloud_eyes_final --trace --episodes $E0-$E1"
 
+# BENCH_GPUS (2026-11-24, the 4090): the GPUs the four tasks' processes go to in turn, e.g. "2 3" -- SONIC with its
+# networks on the GPU takes ~7.4 GB a process, so four do not fit one 24 GB card. Default: all four on BENCH_GPU.
+read -ra GS <<< "${BENCH_GPUS:-$G}"
 bench() {  # bench <arm> <extra args...>: the four tasks side by side
   local arm=$1; shift
-  local pids=()
+  local pids=() i=0 g
   for T in $TASKS; do
+    g=${GS[$((i % ${#GS[@]}))]}; i=$((i + 1))
     rm -f $D/rows/${arm}_$T.jsonl
-    nice -n 10 $PY $E/simple_bench.py $T --method direct $ARGS --film $D/films_$arm "$@" --out $D/rows/${arm}_$T.jsonl \
-      > $D/logs/${arm}_$T.log 2>&1 & pids+=($!)
+    MUJOCO_EGL_DEVICE_ID=$g CUDA_VISIBLE_DEVICES=$g nice -n 10 $PY $E/simple_bench.py $T --method direct $ARGS \
+      --film $D/films_$arm "$@" --out $D/rows/${arm}_$T.jsonl > $D/logs/${arm}_$T.log 2>&1 & pids+=($!)
   done
   local fails=0
   for p in "${pids[@]}"; do wait $p || fails=$((fails + 1)); done
-  log "arm $arm: $(cat $D/rows/${arm}_*.jsonl | wc -l) rows, $fails failed processes"
+  log "arm $arm (GPUs ${GS[*]}): $(cat $D/rows/${arm}_*.jsonl | wc -l) rows, $fails failed processes"
 }
 
 if [ "$STEP" = A ] || [ "$STEP" = all ]; then
@@ -83,4 +91,14 @@ if [ "$STEP" = B ] || [ "$STEP" = all ]; then bench B --avoid $D/via; fi
 if [ "$STEP" = C ] || [ "$STEP" = all ]; then bench C --avoid $D/via --comp $MODEL; fi
 if [ "$STEP" = D ]; then bench D --avoid $D/via --shift=-6,0,2; fi
 if [ "$STEP" = E ]; then export REACH_VIA_COMP_MODE=const; bench E --avoid $D/via --comp $MODEL; unset REACH_VIA_COMP_MODE; fi
+if [ "$STEP" = M ] || [ "$STEP" = J ]; then
+  mkdir -p $D/asrun_$STEP
+  cp $E/simple_bench.py $E/bench_via.sh $C/vias_e1.py src/locomani/backends/scalebfm/motor.py $D/asrun_$STEP/
+fi
+if [ "$STEP" = M ]; then
+  $PY -I $C/vias_e1.py $D/via $D/step2 $D/tmpl > $D/logs/tmpl.txt 2>&1 || log "FAIL vias_e1"
+  log "template: $(ls $D/tmpl/via_E/via_*.npz 2>/dev/null | wc -l) via files"
+  bench M --avoid $D/tmpl/via_E
+fi
+if [ "$STEP" = J ]; then bench J --avoid $D/via --joint; fi
 log "DONE $STEP"

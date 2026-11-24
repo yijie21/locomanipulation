@@ -52,6 +52,12 @@ penetration (cm); "bel": the believed and the true pelvis at the stance (percept
 --avoid with --shift x,y,z (cm; 2026-11-24, the entry's control arm D): every via point and the pregrasp goal are moved by
 this one vector in the heading frame at the command; no model, the episode is not looked at.
 
+--avoid with --joint (2026-11-24, TODO 38.10.2, selfmodel_jref_20261124): the pregrasp reach does not go through the via
+points and our whole-body IK; the right arm follows the planned path's own joint trajectory (the via file's src plan,
+plan2.py's Q and names), the rest of the body held at the reference pose of the command (Motor.reach_joints). The entry
+is sent as usual. The stage records joint_path_cm, joint_dur_s and joint_gap_deg (the reference's arm against the plan's
+start, faded out along the path).
+
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
 
@@ -61,6 +67,7 @@ of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH
 """
 
 import argparse
+import gc
 import json
 import math
 import os
@@ -265,7 +272,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
 
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
-               clear=a.clear, column=a.column, avoid=a.avoid or None)  # fmt: skip
+               clear=a.clear, column=a.column, avoid=a.avoid or None, joint=a.joint)  # fmt: skip
     p0, Rp0 = env.pelvis()
     yaw0 = E.yaw_of(Rp0)
     R0 = E.rot_z(yaw0)
@@ -419,9 +426,21 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
                          comp_shift_goal=(100 * ci["shift"][-1]).round(2).tolist(),
                          comp_wrist_top=round(float((ci["ref0"][:, wr_, 2] + cm_.fk.radius[wr_]).max()), 3))  # fmt: skip
         live[0] = True
-        out = m.reach(
-            side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw
-        )
+        if via is not None and a.joint:  # the plan's right-arm joint trajectory itself as the reference (no IK of ours)
+            from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
+
+            name = f"{task}_L{ep['level']}_e{ep['index']}"
+            pl = np.load(Path(str(via["src"])) / f"plan_{name}.npz")
+            jn = [str(n) for n in pl["names"]]
+            out = m.reach_joints(
+                side, pl["Q"], [MUJOCO_JOINT_NAMES.index(n) for n in jn], speed=kw.get("speed"), servo=servo
+            )
+            s.update(joint_src=str(via["src"]), joint_names=jn, joint_path_cm=out.info.get("path_cm"),
+                     joint_dur_s=out.info.get("dur_s"), joint_gap_deg=out.info.get("start_gap_deg"))  # fmt: skip
+        else:
+            out = m.reach(
+                side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw
+            )
         s["ik_cm"] = out.info.get(
             "ik_err_cm"
         )  # the whole-body IK's own miss of the command (the reference's, not the body's)
@@ -503,6 +522,8 @@ def main() -> None:
                     "points and goal are moved by it before they are sent")  # fmt: skip
     ap.add_argument("--shift", default="", help="with --avoid: 'x,y,z' cm in the heading frame at the command; every via point "
                     "and the pregrasp goal are moved by it (a control without a model)")  # fmt: skip
+    ap.add_argument("--joint", action="store_true", help="with --avoid: the pregrasp reach follows the planned path's own "
+                    "right-arm joint trajectory (the via file's plan, Motor.reach_joints), not its via points through our IK")  # fmt: skip
     ap.add_argument("--episodes", default="0-29", help="indices into the task's 30 episodes, 'a-b' or 'i,j,k'")
     ap.add_argument("--side", default="right")
     ap.add_argument("--stand", type=float, default=0.30, help="m, the grasp ahead of the pelvis at the stance")
@@ -534,6 +555,7 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     assert not (a.comp and a.shift), "--comp or --shift, not both"
+    assert not (a.joint and (a.comp or a.shift or not a.avoid)), "--joint goes with --avoid alone"
     a.edges = {}
     if a.column == "perception":  # the table's edge as blind.py's look saw it
         for r in json.load(open(EP.OUT / f"blind_f1_{a.task}.json")):
@@ -567,6 +589,10 @@ def main() -> None:
             f.write(json.dumps(row) + "\n")
         short = {k: row[k] for k in ("ep", "level", "index", "palm_cm", "success_end", "t_success", "fell", "wall_s")}
         print(short, [(s["stage"], s["err_cm"], s.get("shift_cm")) for s in row["stages"]], flush=True)
+        # every episode builds a new Env; the last one's objects sit in reference cycles that the cyclic collector
+        # rarely reaches, and with SONIC's networks on the GPU each holds ~1 GB of onnxruntime arena (2026-11-24, the
+        # 4090: two of four processes died allocating after 16-17 episodes). Collect them now.
+        gc.collect()
 
 
 if __name__ == "__main__":
