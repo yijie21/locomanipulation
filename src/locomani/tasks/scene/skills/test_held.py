@@ -639,6 +639,7 @@ class ContinuousClose(unittest.TestCase):
         with (
             mock.patch.object(grasp_program, "_touching", closed),
             mock.patch.object(grasp_program, "CONTINUOUS_CLOSE", continuous),
+            mock.patch.object(grasp_program, "LIFT_M", 0.10),  # the lift the 1.9 mm-a-tick figure below was measured at
         ):
             out = grasp_program.run(ctx, "Can", "right", Rc, np.array([0.19, 0.0, 1.0]), 0.037)
         self.assertEqual(notes["phases"], ["settle", "entry", "close", "lift", "recover"], out.why)

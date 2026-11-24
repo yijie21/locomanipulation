@@ -151,6 +151,7 @@ class NearLift(unittest.TestCase):
         world.free = {"Can": 7}
         m = SimpleNamespace(t=0.0, sim=SimpleNamespace(d=SimpleNamespace(qpos=np.zeros(3))), cfg=MotorConfig())
         ahead = dict(near=True, lift=0.23, crossed=["Tall"])
+        lift_m = into.grasp_program.LIFT_M
         with (
             mock.patch.object(place, "blocking_neighbour", return_value=None),
             mock.patch.object(into, "plan_ahead", return_value=ahead),
@@ -161,7 +162,7 @@ class NearLift(unittest.TestCase):
             ctx = Ctx(world, m)
             into.place_into(ctx, "Can", "Bowl")
         self.assertEqual(seen["lift"], 0.23)
-        self.assertEqual(into.grasp_program.LIFT_M, 0.10)
+        self.assertEqual(into.grasp_program.LIFT_M, lift_m)
         self.assertEqual(ctx.log[0]["step"], "near_lift")
 
 

@@ -81,7 +81,31 @@ tells place.place_on to level the object by up to place.LOW_LEVEL_MAX_DEG before
 2). A failed low grasp is not retried, a pre-grasp that ends more than LOW_PREGRASP_MISS_M off runs no hand program
 (a snagged hand's settle swept the vase off its shelf), an entry whose grasp point drifts more than LOW_LATERAL_ABORT_M
 across the jaw fails before the fingers reach it (one that went on struck the vase off its shelf), and a failure's
-set-down levels it (place.set_down)."""
+set-down levels it (place.set_down).
+
+The end-on long box (gso_single_grasp iteration 0, `end_on`): a box whose only side that fits the jaw is its thickness
+and whose other side is longer than END_ON_M (the logistics room's game, snack, cartridge, candy, block and software
+boxes and the hammer: 14-29 cm long, 2-6 cm thick) is entered end-on along its length by every side grasp: the housing
+4.1-4.9 cm behind the jaw centre meets the near end once the half-length passes about 6.6 cm, and every one of their 27
+diag rounds was knocked, closed on nothing or found no side. `is_top` takes it top-down: `pick_top` closes across the
+thickness with the jaw TOP_INSET_M below the object's own top under the jaw (`top_grasp`; the descent to the support
+tipped every tall box and stalled the palm on the low ones' tops 4-7 cm short), over its box centre (the hammer's
+centre of mass lies 8 cm toward its head: gripped over it, one of 3 diag starts slipped in the lift and one missed the
+pre-grasp; at the box centre the probe held 2 and the third hung 45 deg, its low corner 19.1 cm up), each step
+through stage() (a missed descent or an empty close rises and comes down again), then lifts TOP_LIFT_M
+(the jaw no higher than TOP_JAW_MAX_M) and holds TOP_HOLD_S so the goal holds over the judging window. A top-down
+wrist is delivered when it is turned toward the body's midline (`top_yaw_pref`): on the right hand, over the 24
+top-down rounds of iteration 0's probe, the pre-grasp attitude error was 8-24 deg with the closing yaw within 10 deg of
+the facing and at most 2.5 deg from 50 deg on (the lift's 39-62 deg against 7-23); plan_approach takes the closing yaw
+nearest TOP_YAW_PREF_DEG off the facing, and `top_pass` first the hand (the left one mirrored) and edge where it comes
+within TOP_YAW_TOL_DEG.
+
+The corridor (gso_single_grasp iteration 1, `corridor_pass`): `clear_pass` sees only objects fixed on the support and
+only for a low grasp; the pallet's free neighbours stood in the side grasp's hand strip in 8 of the 10 side-grasp diag
+failures, and the pre-grasp or the entry moved them before the hand met X, which they then shoved or tipped. A first
+plan a free neighbour enters deeper than CORRIDOR_DEPTH_M (`corridor_intrusion`, the strip back past the pre-grasp)
+takes the same hand at another edge, else a turned approach (CORRIDOR_TURN_DEG, the far hand first) whose jaw still
+straddles X, whichever first has a clear strip, else the least entered one CORRIDOR_GAIN_M shallower; else it stands."""
 
 from __future__ import annotations
 
@@ -95,6 +119,8 @@ from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.motor import SIDES, Outcome
 from locomani.primitives.navigator import Navigator
 from locomani.primitives.navigator import build as build_navigation
+from locomani.tasks.scene import graspability
+from locomani.tasks.scene import stage as S
 from locomani.tasks.scene.navigate import path as nav_path
 
 from . import cover, grasp_program
@@ -124,6 +150,20 @@ TOP_TIP_CLEAR_M = 0.004  # top-down pinch: fingertips this far above the surface
 TOP_ABOVE_M = 0.10  # ... from a pre-grasp this far above the grasp
 TOP_DESCENT_SPEED = 0.05
 TOP_MAX_DEPTH_M = 0.39  # a top-down pinch's depth limit (fallback pass; MAX_DEPTH_M stays the side grasps')
+END_ON_M = 0.13  # a box whose only side fitting the jaw is entered end-on along more than this: top-down (`end_on`;
+# the mug's 12.6 cm and the hard drive's 10.4 cm stay side grasps, the software box's 14.2 cm does not)
+TOP_INSET_M = 0.035  # top-down: the jaw centre this far below the object's top under the jaw (housing 4.07 cm above it)
+TOP_FOOT_M = 0.02  # ... that top read on vertical lines this far either side of the jaw along the object's long axis
+TOP_YAW_PREF_DEG = 70.0  # top-down: the closing yaw this far off the facing toward the body's midline (+ right hand)
+TOP_YAW_TOL_DEG = 35.0  # ... a hand and edge where it comes within this first (`top_pass`; measured -70 to +88 deg)
+TOP_PRE_TOL_M = 0.04  # top-down pre-grasp check: the jaw within this of the point above the grasp
+TOP_ACROSS_MARGIN_M = 0.0  # descent check: the jaw across its closing axis within the open jaw's room a side less this
+TOP_HIGH_TOL_M = 0.025  # ... and at most this above the grasp (a finger standing on the top)
+TOP_RETRIES = 1  # a missed pre-grasp, descent or close: this many re-approaches (stage's round budget too)
+TOP_LIFT_M = 0.40  # top-down lift (the proxy's 0.40: 35-40 cm delivered) ...
+TOP_JAW_MAX_M = 0.95  # (0.86 until gso_single_grasp's set) ... the jaw no higher than this (a tall box's top grasp starts at 0.60 m)
+TOP_LIFT_MIN_M = 0.08  # lift check: X rose at least this
+TOP_HOLD_S = 2.0  # hold after the lift, so the goal holds over the judging window
 SPAWN_CLEAR_M = 0.08  # a fallback plan needs the start pelvis this far from every floor object footprint
 SIDE_AHEAD_M = None  # default-off switch (place.py's pick): object this far ahead for a right-hand side grasp ...
 SIDE_AHEAD_TOP_MIN_M = 0.6  # ... on a surface whose top is above this (None: STAND_AHEAD_M, held(X)'s pick)
@@ -173,6 +213,10 @@ CLEAR_YAW_DEG = 35.0  # a low grasp whose straight approach sweeps an object fix
 # comes in this far off the facing, turned away from it, with the hand on the far side (`plan_hand`)
 STRIP_HALF_M = 0.0575  # the hand's strip: grasp_program.PAD_Y and a finger either side of the approach line ...
 STRIP_BACK_M = 0.35  # ... from the object centre back this far (fingers, housing, wrist and forearm)
+CORRIDOR_DEPTH_M = 0.02  # a side grasp whose strip (back to STRIP_BACK_M + the pre-grasp's PREGRASP_BACK) a free
+# neighbour enters deeper than this (`corridor_intrusion`) takes another edge or a turned approach (`corridor_pass`) ...
+CORRIDOR_GAIN_M = 0.02  # ... the first whose strip is clear, else the least entered one when this much shallower
+CORRIDOR_TURN_DEG = (20.0, 35.0, 50.0)  # ... the turned approaches it tries, each hand (the far one first)
 LOW_PREGRASP_MISS_M = 0.035  # a low grasp's pre-grasp ending farther off fails without the hand program (place's
 # PICK_SETTLE_ABORT_M, which aborts only after the settle)
 LOW_LATERAL_ABORT_M = 0.03  # a low grasp's entry fails once its grasp point sits more than this across the jaw
@@ -180,6 +224,7 @@ LOW_LATERAL_ABORT_M = 0.03  # a low grasp's entry fails once its grasp point sit
 # drifted past 3 cm 4.1 s before the outer finger hit and it fell off its shelf
 _NAV: dict = {}  # id(meta) -> (meta, occupancy, navigator, floor boxes): one map per scene and process
 _CLEAR: dict = {}  # (id(occupancy), furniture) -> (occupancy, clearance grid without that furniture's surfaces)
+_corridor_note: dict = {}  # the last plan_hand's corridor numbers (`corridor_pass`), logged on the walk step
 
 
 def facings(surface: dict, xy, edges=None) -> list[tuple[float, float]]:
@@ -197,13 +242,27 @@ def facings(surface: dict, xy, edges=None) -> list[tuple[float, float]]:
     return sorted(out, key=lambda f: f[1])
 
 
-def grasp_yaw(quat, half, face: float, tolerance_deg: float | None = None) -> float | None:
+def grasp_yaw(quat, half, face: float, tolerance_deg: float | None = None, hull=None) -> float | None:
     """The approach yaw (wrist x) closing the jaw across a side of the object's box that fits it, nearest `face`,
-    within `tolerance_deg` of it (default FACE_TOLERANCE_DEG)."""
+    within `tolerance_deg` of it (default FACE_TOLERANCE_DEG). A box that fits both ways is closed across at `face`
+    itself unless `hull` (approach yaw -> the collision hull's span across the jaw, `hull_span`; None: not known) says
+    the hull there spans more than JAW_SPAN_M: then across the nearest box face (object yaw + k 90 deg) where it fits,
+    or None when that is beyond the tolerance (plan_hand's yawed pass takes it); `face` when no box face fits either.
+    The square tapered plant pot (gso_single_grasp iteration 1) is 8.8 x 8.8 cm in its box but 10.7-10.9 cm across its
+    corners at the pads' band: at the facing the jaw closed on two corners 34-48 deg off a face (two diag starts; one
+    squirted out in the close, one was squeezed up out of the jaw in the hold), within 5 deg of a face it was held."""
     yaw_o = R.yaw_of(quat)
     fit_y, fit_x = 2 * half[1] <= JAW_SPAN_M, 2 * half[0] <= JAW_SPAN_M  # closing across local y / local x
+    limit = FACE_TOLERANCE_DEG if tolerance_deg is None else tolerance_deg
     if fit_x and fit_y:
-        return face
+        wide = (lambda a: (hull(a) or 0.0) > JAW_SPAN_M) if hull is not None else (lambda a: False)
+        if not wide(face):
+            return face
+        faces = [a for a in (yaw_o + k * np.pi / 2 for k in range(4)) if not wide(a)]
+        if not faces:
+            return face
+        turn = min((R.wrap(a - face) for a in faces), key=abs)
+        return float(face + turn) if abs(turn) <= np.radians(limit) else None
     cands = []
     if fit_y:
         cands += [yaw_o, yaw_o + np.pi]
@@ -212,8 +271,22 @@ def grasp_yaw(quat, half, face: float, tolerance_deg: float | None = None) -> fl
     if not cands:
         return None
     best = min(cands, key=lambda a: abs(R.wrap(a - face)))
-    limit = FACE_TOLERANCE_DEG if tolerance_deg is None else tolerance_deg
     return float(best) if abs(R.wrap(best - face)) <= np.radians(limit) else None
+
+
+def hull_span(world, key: str, psi: float) -> float | None:
+    """The span (m) across the jaw of a side grasp at approach yaw `psi` of X's collision hulls at its pose now, over
+    the pads' height (grasp_program.PAD_Z either side) at the side grasp's jaw height (X's origin + `grasp_pitch`'s
+    rise; graspability.section's cuts); None without a simulator model or a section there."""
+    if getattr(getattr(world, "sim", None), "m", None) is None:
+        return None
+    pos, _ = world.object_pose(key)
+    z = float(pos[2]) + grasp_pitch(world, key, pos)[1]
+    d = max(0.0, grasp_program.PAD_Z - graspability.SECTION_BAND_M)
+    pts = np.vstack([graspability.section(world, key, z + s) for s in (-d, d)])
+    if not len(pts):
+        return None
+    return graspability.width_across(pts, (-np.sin(psi), np.cos(psi)))
 
 
 def pick_simple(ctx, key: str, side: str = "right") -> Outcome:
@@ -620,6 +693,8 @@ def plan_approach(
     max_depth: float | None = None,
     yawed: bool = False,
     yaw_off: float | None = None,
+    top_tol: float | None = None,
+    exclude: tuple = (),
 ):
     """((face, edge depth, psi, stance xy, edge xy) or None, why): the first edge -- the surface's approach_edges
     nearest first, then its other edges nearest first -- from which a side of the object fits the jaw (`grasp_yaw`) with
@@ -632,7 +707,9 @@ def plan_approach(
     the wrist (WRIST_JAW_M behind the jaw along the approach yaw psi) instead of the jaw, which it equals at psi = face:
     at a large yaw the jaw-placed stance put the wrist 13-15 cm farther toward the hand, at or past the arm's reach.
     No yawed plan on a surface above YAWED_TOP_MAX_M. `yaw_off` (rad, with `yawed`; `plan_hand`'s clear pass): psi is
-    the facing + yaw_off, for a box that fits the jaw both ways."""
+    the facing + yaw_off, for a box that fits the jaw both ways. A top-down plan (`is_top`) takes the closing yaw
+    nearest the facing + `top_yaw_pref(side)`; with `top_tol` (rad, `top_pass`) only at edges where it comes that near.
+    `exclude` (`corridor_pass`): facings (rad) whose edges are skipped."""
     obj = world.meta["objects"][key]
     surf = world.meta["surfaces"][obj["surface"]]
     pos, quat = world.object_pose(key)
@@ -643,22 +720,39 @@ def plan_approach(
     edges = [(f, dep, True) for f, dep in facings(surf, pos, listed)]
     edges += [(f, dep, False) for f, dep in (facings(surf, pos, others) if others else [])]
     top_pinch = is_top(world, key)
-    fit = _nearest_closing_yaw if top_pinch else grasp_yaw
+    half = obj["box"]["half_extent"]
+    pref = top_yaw_pref(side)
+    spans: dict = {}
+
+    def hull(a):  # hull_span, once per yaw
+        k = round(float(R.wrap(a)), 6)
+        if k not in spans:
+            spans[k] = hull_span(world, key, a)
+        return spans[k]
+
+    def fit(q, h, f):
+        if not top_pinch:
+            return grasp_yaw(q, h, f, hull=hull)
+        psi = _nearest_closing_yaw(q, h, f, pref)
+        return None if top_tol is not None and abs(R.wrap(psi - f - pref)) > top_tol else psi
+
     why = "no side fits the jaw within reach of an approachable edge"
     if yawed and float(surf["top"]) > YAWED_TOP_MAX_M:
         return None, why
     max_depth = MAX_DEPTH_M if max_depth is None else max_depth
     ahead = stand_ahead(float(surf["top"]), side, top_pinch)
     for f, dep, is_listed in edges:
+        if any(abs(R.wrap(f - x)) < 1e-6 for x in exclude):
+            continue
         if dep > max_depth:
             psi = None
         elif yawed and not top_pinch and yaw_off is not None:
             fits = all(2 * float(h) <= JAW_SPAN_M for h in obj["box"]["half_extent"][:2])
             psi = float(f + yaw_off) if fits else None
         elif yawed and not top_pinch:
-            psi = grasp_yaw(quat, obj["box"]["half_extent"], f, FACE_TOLERANCE_YAWED_DEG)
+            psi = grasp_yaw(quat, obj["box"]["half_extent"], f, FACE_TOLERANCE_YAWED_DEG, hull=hull)
         else:
-            psi = fit(quat, obj["box"]["half_extent"], f)
+            psi = fit(quat, half, f)
         if psi is None:
             continue
         why = "no clear stance with a path at an edge where a side fits the jaw"
@@ -690,10 +784,18 @@ def plan_hand(world, start_xy, key: str, side: str):
     with a top-down pinch out to TOP_MAX_DEPTH_M, then the other hand (stance mirrored), then for a side grasp the
     yawed pass (`plan_approach` yawed, `side` first: a mug whose narrow side is 58 deg off the facing) -- whose plan is
     refused when the start is less than SPAWN_CLEAR_M from a floor object. A start no pass plans keeps the first pass's
-    why."""
+    why. A top-down object (`is_top`) first takes `top_pass`, the hand and edge whose wrist yaw is delivered. The first
+    pass's side grasp, when it is no `clear_pass` and a free neighbour stands in its hand's strip, takes `corridor_pass`
+    (another edge or a turned approach whose strip is clear)."""
+    _corridor_note.clear()
+    if is_top(world, key):
+        found = top_pass(world, start_xy, key, side)
+        if found is not None:
+            return found
     plan, why = plan_approach(world, start_xy, key, side)
     if plan is not None:
-        return clear_pass(world, start_xy, key, plan) or (plan, side, "")
+        found = clear_pass(world, start_xy, key, plan) or corridor_pass(world, start_xy, key, side, plan)
+        return found or (plan, side, "")
     depth = TOP_MAX_DEPTH_M if is_top(world, key) else MAX_DEPTH_M
     other = "left" if side == "right" else "right"
     passes = ([(side, depth, False)] if depth > MAX_DEPTH_M else []) + [(other, depth, False)]
@@ -706,6 +808,26 @@ def plan_hand(world, start_xy, key: str, side: str):
             return None, hand, "start against a floor object"
         return fallback, hand, ""
     return None, side, why
+
+
+def top_pass(world, start_xy, key: str, side: str) -> tuple | None:
+    """`plan_hand`'s first pass for a top-down object: (plan, hand, why) of the first of `side`, the other hand (stance
+    mirrored), each out to MAX_DEPTH_M and then TOP_MAX_DEPTH_M, that plans (`plan_approach`) at an edge where the
+    closing yaw comes within TOP_YAW_TOL_DEG of `top_yaw_pref` -- the two closing yaws 180 deg apart put one of the
+    hands there from 110 deg of the 180 the object's yaw takes against an edge; None when none does (the plain passes
+    then take the nearest yaw). Any but the first is refused as plan_hand's fallbacks are, from a start against a floor
+    object."""
+    other = "left" if side == "right" else "right"
+    tol = float(np.radians(TOP_YAW_TOL_DEG))
+    for k, (hand, limit) in enumerate(((side, MAX_DEPTH_M), (other, MAX_DEPTH_M), (side, TOP_MAX_DEPTH_M),
+                                       (other, TOP_MAX_DEPTH_M))):  # fmt: skip
+        plan, _ = plan_approach(world, start_xy, key, hand, limit, top_tol=tol)
+        if plan is None:
+            continue
+        if k and floor_clearance(nav_map(world)[2], start_xy) < SPAWN_CLEAR_M:
+            return None, hand, "start against a floor object"
+        return plan, hand, ""
+    return None
 
 
 def clear_pass(world, start_xy, key: str, plan) -> tuple | None:
@@ -755,6 +877,132 @@ def strip_blocker(world, key: str, psi: float) -> float | None:
     return None
 
 
+def _clip(poly: np.ndarray, d, lo: float, hi: float) -> np.ndarray:
+    """The convex polygon `poly` (k, 2; in order) clipped to lo <= p @ d <= hi (Sutherland-Hodgman, two planes)."""
+    for sign, bound in ((1.0, hi), (-1.0, -lo)):
+        out = []
+        for i in range(len(poly)):
+            a, b = poly[i], poly[(i + 1) % len(poly)]
+            fa, fb = sign * float(a @ d) - bound, sign * float(b @ d) - bound
+            if fa <= 0.0:
+                out.append(a)
+            if fa * fb < 0.0:
+                out.append(a + (fa / (fa - fb)) * (b - a))
+        poly = np.asarray(out, float).reshape(-1, 2)
+        if not len(poly):
+            break
+    return poly
+
+
+def corridor_intrusion(world, key: str, psi: float, low: float) -> tuple[float, float, str | None]:
+    """(depth (m), signed offset (m, + to the left of the approach yaw `psi`), key) of the free object that enters the
+    side grasp's hand strip deepest at its pose now: STRIP_HALF_M either side of the approach line through X's centre,
+    from STRIP_BACK_M + grasp_program.PREGRASP_BACK behind it (the arm at the pre-grasp) to it, its box's footprint
+    reaching up above the hand's lowest point `low` (world z); the depth is STRIP_HALF_M less the footprint's least
+    distance from the line inside that span. (0, 0, None) when none enters. Iteration 1's diag pool (incumbent
+    6b5f36afa742): of 33 side-grasp rounds, the 8 a neighbour entered 2.9-5.8 cm deep failed (the neighbour moved in
+    the pre-grasp or the entry before the hand met X, then shoved or tipped X), the 6 it entered 0.5-2.5 cm all held;
+    two held at 5.8 cm."""
+    pos, _ = world.object_pose(key)
+    u = np.array([np.cos(psi), np.sin(psi)])
+    n = np.array([-u[1], u[0]])
+    back = float(STRIP_BACK_M) + float(grasp_program.PREGRASP_BACK)
+    signs = np.array([[a, b, c] for a in (-1, 1) for b in (-1, 1) for c in (-1, 1)], float)
+    best = (0.0, 0.0, None)
+    for k, other in world.meta["objects"].items():
+        if k == key or not other.get("free") or not other.get("box"):
+            continue
+        p, q = world.object_pose(k)
+        half = np.asarray(other["box"]["half_extent"], float)
+        centre = np.asarray(other["box"].get("centre") or (0.0, 0.0, 0.0), float)
+        corners = np.asarray(p, float) + (centre + signs * half) @ R.mat(q).T
+        if float(corners[:, 2].max()) <= low:
+            continue
+        xy = corners[:, :2] - pos[:2]
+        try:
+            poly = xy[ConvexHull(xy).vertices]
+        except Exception:  # noqa: BLE001 -- a degenerate footprint (no area) is no blocker
+            continue
+        part = _clip(poly, u, -back, 0.0)
+        if not len(part):
+            continue
+        t = part @ n
+        gap = 0.0 if t.min() <= 0.0 <= t.max() else float(np.abs(t).min())
+        depth = float(STRIP_HALF_M) - gap
+        if depth > best[0]:
+            best = (depth, float(0.5 * (t.min() + t.max())), k)
+    return best
+
+
+def _hand_low(world, key: str, plan) -> float:
+    """The world z of the side grasp's lowest gripper point at X (`grasp_pitch`'s pitch and rise, `low_points`)."""
+    face, depth, psi, _, _ = plan
+    pos, _ = world.object_pose(key)
+    wrist = wrist_in(dict(edge_depth_m=depth, psi=psi, face=face))
+    pitch, rise = grasp_pitch(world, key, pos, wrist)
+    return float(pos[2]) + rise - (min_jaw(pitch, low_points(wrist)) - GRASP_CLEAR_M)
+
+
+def _turn_fits(world, key: str, psi: float, z: float) -> bool:
+    """A turned approach's jaw straddles X at the grasp height: graspability.fit on its collision hulls where a model
+    is at hand, else the box's span across the jaw within JAW_SPAN_M."""
+    if getattr(world, "sim", None) is not None or getattr(world, "m", None) is not None:
+        return graspability.fit(world, key, psi, z)["verdict"] != "too_wide"
+    _, quat = world.object_pose(key)
+    return span(quat, world.meta["objects"][key]["box"]["half_extent"], psi) <= JAW_SPAN_M
+
+
+def corridor_pass(world, start_xy, key: str, side: str, plan) -> tuple | None:
+    """`plan_hand`'s pass for a side grasp whose first plan `plan` (plan_approach's, hand `side`) has a free neighbour
+    in its hand's strip deeper than CORRIDOR_DEPTH_M (`corridor_intrusion`): (plan, hand, "") of the first clear one
+    (at most CORRIDOR_DEPTH_M) of -- the same hand at each other edge, nearest first; for a box that fits the jaw both
+    ways the approach turned by each of CORRIDOR_TURN_DEG away from the neighbour with the far hand, then the other way
+    with the other hand (plan_approach yaw_off, as `clear_pass`), where its jaw still straddles X (`_turn_fits`) --
+    else of the least entered one (the first of equals) when CORRIDOR_GAIN_M shallower than
+    `plan`'s. None (the first plan stands) otherwise, for a top-down
+    or narrow covered object, or from a start against a floor object. Iteration 1's diag pool: in 8 of
+    the 10 side-grasp failures the pre-grasp or the entry moved a neighbour standing in the strip before the hand met
+    X, which then shoved or tipped X; the strip test against fixed objects only (`strip_blocker`) never saw them.
+    Records the numbers in `_corridor_note` for the walk step."""
+    if is_top(world, key) or narrow_covered(world, key):
+        return None
+    pos, _ = world.object_pose(key)
+    face, depth, psi, _, _ = plan
+    _, rise = grasp_pitch(world, key, pos, wrist_in(dict(edge_depth_m=depth, psi=psi, face=face)))
+    deep, lateral, blocker = corridor_intrusion(world, key, psi, _hand_low(world, key, plan))
+    _corridor_note.update(corridor_cm=round(100 * deep, 1), blocker=blocker)
+    if deep <= CORRIDOR_DEPTH_M or floor_clearance(nav_map(world)[2], start_xy) < SPAWN_CLEAR_M:
+        return None
+    cands, seen = [], [face]
+    while True:  # the same hand at the other edges, nearest first
+        alt, _ = plan_approach(world, start_xy, key, side, exclude=tuple(seen))
+        if alt is None:
+            break
+        seen.append(alt[0])
+        cands.append(("edge", alt, side))
+    half = world.meta["objects"][key]["box"]["half_extent"]
+    if all(2 * float(h) <= JAW_SPAN_M for h in half[:2]):
+        hands = [("right", 1.0), ("left", -1.0)] if lateral >= 0 else [("left", -1.0), ("right", 1.0)]
+        for hand, sign in hands:
+            for deg in CORRIDOR_TURN_DEG:
+                alt, _ = plan_approach(world, start_xy, key, hand, None, True, sign * float(np.radians(deg)))
+                if alt is not None and _turn_fits(world, key, alt[2], float(pos[2]) + rise):
+                    cands.append(("turn", alt, hand))
+    scored = []
+    for kind, alt, hand in cands:
+        d, _, b = corridor_intrusion(world, key, alt[2], _hand_low(world, key, alt))
+        scored.append((d, kind, alt, hand, b))
+    clear = [c for c in scored if c[0] <= CORRIDOR_DEPTH_M]
+    best = clear[0] if clear else min(scored, key=lambda c: c[0], default=None)
+    if best is None or (not clear and best[0] > deep - CORRIDOR_GAIN_M):
+        _corridor_note.update(corridor_kept=len(scored))
+        return None
+    d, kind, alt, hand, b = best
+    _corridor_note.update(corridor_pass=kind, corridor_new_cm=round(100 * d, 1), corridor_new_blocker=b,
+                          corridor_turn_deg=round(float(np.degrees(R.wrap(alt[2] - alt[0]))), 1))  # fmt: skip
+    return alt, hand, ""
+
+
 def route(occ, nav, start_xy, goal_xy) -> list | None:
     """navigate.path, or -- when the start is inside a floor object's inflation, where the field cannot start -- a
     straight leg out to the nearest free cell first."""
@@ -792,9 +1040,13 @@ def approach(ctx, key: str, side: str) -> Outcome:
     occ, nav, _ = nav_map(world)
     off = float(np.degrees(R.wrap(psi - face)))
     yawed = {} if is_top(world, key) or abs(off) <= FACE_TOLERANCE_DEG else dict(yaw_off_deg=round(off, 1))
+    half = world.meta["objects"][key]["box"]["half_extent"]
+    turned = _corridor_note.get("corridor_pass") == "turn"  # `corridor_pass`'s turn is logged as corridor_turn_deg
+    if not is_top(world, key) and not turned and abs(off) > 0.5 and all(2 * float(h) <= JAW_SPAN_M for h in half[:2]):
+        yawed["hull_turn_deg"] = round(off, 1)  # `grasp_yaw`: a box that fits both ways, turned to a face by its hull
     out = ctx.note("walk", walk_route(m, occ, nav, stance, face), edge_depth_m=round(depth, 3),
                    face_deg=round(float(np.degrees(face)), 1), stance=np.round(stance, 3), side=side,
-                   **yawed)  # fmt: skip
+                   **yawed, **dict(_corridor_note))  # fmt: skip
     out.info.update(side=side, psi=psi, edge_depth_m=depth, face=face, edge_xy=edge)
     return out
 
@@ -822,41 +1074,150 @@ def edge_via(ctx, key: str, side: str, plan: Outcome, pre) -> tuple:
 
 
 def is_top(world, key: str) -> bool:
-    """A low flat object on a low surface (box half-height below TOP_FLAT_M, surface top below TOP_SURFACE_MAX_M): the
-    TV remote on the coffee table. Its only side that fits the jaw is its 3.6 cm width, so a side entry runs along its
-    16.4 cm length and the palm meets its near end about 12 cm short."""
+    """An object on a low surface (top below TOP_SURFACE_MAX_M) taken top-down: a low flat one (box half-height below
+    TOP_FLAT_M: the TV remote on the coffee table; its only side that fits the jaw is its 3.6 cm width, so a side entry
+    runs along its 16.4 cm length and the palm meets its near end about 12 cm short), or an end-on long box (`end_on`)."""
     o = world.meta["objects"][key]
     top = float(world.meta["surfaces"][o["surface"]]["top"])
-    return o["box"]["half_extent"][2] < TOP_FLAT_M and top < TOP_SURFACE_MAX_M
+    return top < TOP_SURFACE_MAX_M and (o["box"]["half_extent"][2] < TOP_FLAT_M or end_on(world, key))
 
 
-def _nearest_closing_yaw(quat, half, face: float) -> float:
+def end_on(world, key: str) -> bool:
+    """X's box has one horizontal side that fits the jaw (JAW_SPAN_M) and the other longer than END_ON_M: every side
+    grasp across the one that fits (`grasp_yaw`) enters along that length, and the housing meets its near end."""
+    w = sorted(2.0 * float(h) for h in world.meta["objects"][key]["box"]["half_extent"][:2])
+    return w[0] <= JAW_SPAN_M and w[1] > END_ON_M
+
+
+def top_yaw_pref(side: str) -> float:
+    """The top-down closing yaw's preferred offset from the facing (rad): TOP_YAW_PREF_DEG toward the body's midline,
+    + for the right hand, - for the left (mirrored)."""
+    return float(np.radians(TOP_YAW_PREF_DEG)) * (1.0 if side == "right" else -1.0)
+
+
+def _nearest_closing_yaw(quat, half, face: float, pref: float = 0.0) -> float:
     """The wrist yaw of a top-down pinch closing across the object's local y when that fits the jaw, else across its
-    local x, nearest `face` (no FACE_TOLERANCE_DEG: the hand comes from above)."""
+    local x, nearest `face` + `pref` (no FACE_TOLERANCE_DEG: the hand comes from above)."""
     yaw_o = R.yaw_of(quat)
     cands = [yaw_o, yaw_o + np.pi] if 2 * half[1] <= JAW_SPAN_M else [yaw_o + np.pi / 2, yaw_o - np.pi / 2]
-    return float(min(cands, key=lambda a: abs(R.wrap(a - face))))
+    return float(min(cands, key=lambda a: abs(R.wrap(a - face - pref))))
+
+
+def _line_top(parts, xy) -> float:
+    """The highest point of the convex point sets `parts` (world) on the vertical line through `xy` (-inf: none)."""
+    best = -np.inf
+    for v in parts:
+        if len(v) < 4:
+            continue
+        try:
+            eq = ConvexHull(v).equations
+        except Exception:  # noqa: BLE001 -- a flat or degenerate part has no volume to stand on
+            continue
+        rhs = -eq[:, 3] - eq[:, 0] * xy[0] - eq[:, 1] * xy[1]
+        flat = np.abs(eq[:, 2]) < 1e-9
+        if np.any(rhs[flat] < -1e-9):
+            continue
+        up, down = eq[:, 2] > 1e-9, eq[:, 2] < -1e-9
+        hi = float(np.min(rhs[up] / eq[up, 2])) if up.any() else np.inf
+        lo = float(np.max(rhs[down] / eq[down, 2])) if down.any() else -np.inf
+        if lo <= hi:
+            best = max(best, hi)
+    return best
+
+
+def top_grasp(world, key: str, psi: float) -> tuple[np.ndarray, dict]:
+    """(jaw centre, numbers) of the top-down grasp closing along rot_z(psi)'s y at X's pose now: over X's box centre,
+    the jaw TOP_INSET_M below X's top under the jaw -- the highest point of its collision hulls on vertical lines
+    TOP_FOOT_M either side along the long axis and across the open jaw (`_line_top`; the box's top when none meets it,
+    or in a world without a simulator) -- and no lower than the support top + FINGERTIP_M + TOP_TIP_CLEAR_M (a flat
+    object's fingertips over the slab)."""
+    o = world.meta["objects"][key]
+    pos, quat = world.object_pose(key)
+    box = o["box"]
+    centre = np.asarray(pos, float) + R.mat(quat) @ np.asarray(box.get("centre", (0.0, 0.0, 0.0)), float)
+    u = np.array([np.cos(psi), np.sin(psi)])  # the long axis (the jaw closes across it)
+    n = np.array([-u[1], u[0]])
+    xy = centre[:2].copy()
+    parts = graspability.world_parts(world, key) if getattr(world, "sim", None) is not None else []
+    across = np.linspace(-1.0, 1.0, 5) * grasp_program.PAD_Y
+    lines = [xy + a * u + b * n for a in (-TOP_FOOT_M, 0.0, TOP_FOOT_M) for b in across]
+    top_obj = max((_line_top(parts, p) for p in lines), default=-np.inf)
+    if not np.isfinite(top_obj):
+        top_obj = float(centre[2]) + float(box["half_extent"][2])
+    support = float(world.meta["surfaces"][o["surface"]]["top"])
+    z = max(top_obj - TOP_INSET_M, support + FINGERTIP_M + TOP_TIP_CLEAR_M)
+    info = dict(top_above_support_cm=round(100 * (top_obj - support), 1),
+                jaw_below_top_cm=round(100 * (top_obj - z), 1))  # fmt: skip
+    return np.r_[xy, z], info
 
 
 def pick_top(ctx, key: str, side: str, plan: Outcome) -> Outcome:
-    """Top-down pinch after `approach`: wrist x down, closing across the narrow side (plan psi); the pre-grasp
-    TOP_ABOVE_M above the grasp (fingertips TOP_TIP_CLEAR_M above the surface top), descend, grip, lift."""
+    """Top-down pinch after `approach`: wrist x down, closing across the narrow side (plan psi) at `top_grasp`, each
+    step through stage(): the pre-grasp TOP_ABOVE_M above it (within TOP_PRE_TOL_M, else reached again); the descent
+    (the jaw across its closing axis within the open jaw's room a side less TOP_ACROSS_MARGIN_M and at most
+    TOP_HIGH_TOL_M above the grasp, else up to the pre-grasp at X's pose now and down again); the close (both fingers
+    on X, else open, up, down and close again), TOP_RETRIES re-approaches each; the lift TOP_LIFT_M (the jaw no higher
+    than TOP_JAW_MAX_M; X must rise TOP_LIFT_MIN_M), then TOP_HOLD_S held."""
     world, m = ctx.world, ctx.motor
-    pos, _ = world.object_pose(key)
-    surf = world.meta["surfaces"][world.meta["objects"][key]["surface"]]
-    Rg = R.rot_z(plan.info["psi"]) @ R.rot_y(np.pi / 2)
-    grasp = np.r_[pos[:2], float(surf["top"]) + FINGERTIP_M + TOP_TIP_CLEAR_M]
-    above = grasp + np.array([0.0, 0.0, TOP_ABOVE_M])
-    via = edge_via(ctx, key, side, plan, above)
-    out = ctx.note("pregrasp", m.reach(side, above, Rg, via=via), via=[np.round(v, 3).tolist() for v in via])
-    if m.fell_at is not None:
-        return out
-    out = ctx.note("descend", m.reach(side, grasp, Rg, speed=TOP_DESCENT_SPEED))
-    if m.fell_at is not None:
-        return out
-    out = ctx.note("grip", m.grip(side))
+    body = world.free[key]
+    psi = plan.info["psi"]
+    Rg = R.rot_z(psi) @ R.rot_y(np.pi / 2)
+    _, quat = world.object_pose(key)
+    width = span(quat, world.meta["objects"][key]["box"]["half_extent"], psi)
+    across_tol = max(0.005, grasp_program.PAD_Y - 0.5 * width - TOP_ACROSS_MARGIN_M)  # beyond: a finger on X's top
+    goal: dict = {}
+
+    def aim():
+        goal["grasp"], goal["info"] = top_grasp(world, key, psi)
+        goal["above"] = goal["grasp"] + np.array([0.0, 0.0, TOP_ABOVE_M])
+
+    def retry(fn):
+        return lambda attempt, values: fn if attempt < int(TOP_RETRIES) else None
+
+    def descend():
+        aim()
+        return m.reach(side, goal["grasp"], Rg, speed=TOP_DESCENT_SPEED)
+
+    def descend_check(_out):
+        d = m.jaw_centre(side)[0] - goal["grasp"]
+        across, high = abs(float(d @ Rg[:, 1])), float(d[2])
+        values = dict(jaw_err_cm=round(100 * float(np.linalg.norm(d)), 2), across_cm=round(100 * across, 2),
+                      high_cm=round(100 * high, 2), track_ratio=S.track_ratio(m, side), **goal["info"])  # fmt: skip
+        return across <= across_tol and high <= TOP_HIGH_TOL_M, values
+
+    def again():  # up to the pre-grasp over X as it is now, and down again
+        aim()
+        up = ctx.note("top_rise", m.reach(side, goal["above"], Rg))
+        return up if m.fell_at is not None else descend()
+
+    def regrip():
+        opened = ctx.note("top_open", m.release(side))
+        if m.fell_at is not None:
+            return opened
+        down = again()
+        return down if m.fell_at is not None else m.grip(side)
+
+    aim()
+    via = edge_via(ctx, key, side, plan, goal["above"])
+    pre = goal["above"]
+    out = S.stage(ctx, "pregrasp", lambda: m.reach(side, pre, Rg, via=via),
+                  lambda o: S.reach_check(m, side, pre, TOP_PRE_TOL_M), retry(lambda: m.reach(side, pre, Rg)))  # fmt: skip
     if not out.ok:
         return out
-    out = ctx.note("lift", m.reach(side, m.jaw_centre(side)[0] + np.array([0.0, 0.0, LIFT_M]), Rg, speed=ENTRY_SPEED))
-    held = world.free[key] in m.between_fingers(side)
+    out = S.stage(ctx, "descend", descend, descend_check, retry(again))
+    if not out.ok:
+        return out
+    out = S.stage(ctx, "grip", lambda: m.grip(side), lambda o: S.grip_check(m, side, body), retry(regrip))
+    if not out.ok:
+        return out
+    jaw0 = m.jaw_centre(side)[0]
+    z0 = float(world.object_pose(key)[0][2])
+    rise = max(0.0, min(float(TOP_LIFT_M), float(TOP_JAW_MAX_M) - float(jaw0[2])))
+    up = jaw0 + np.array([0.0, 0.0, rise])
+    out = S.stage(ctx, "lift", lambda: m.reach(side, up, Rg, speed=ENTRY_SPEED),
+                  lambda o: S.lift_check(world, key, z0, TOP_LIFT_MIN_M))  # fmt: skip
+    if not out.ok:
+        return out
+    out = ctx.note("hold_up", m.hold(TOP_HOLD_S), lift_cm=round(100 * rise, 1))
+    held = body in m.between_fingers(side)
     return Outcome(held, "" if held else "not between the fingers after the lift", out.t0, out.t1)

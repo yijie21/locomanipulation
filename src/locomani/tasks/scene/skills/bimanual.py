@@ -9,12 +9,19 @@ at once, still pressing. Geometry (from the scene file and the object's measured
   when facing `v`; `w` the box's half width along `u`;
 - the stance pelvis stands STANDOFF_M outside that edge on the line through the box centre along `v`, facing `v`;
 - each wrist points along `v` with z up, so the jaw opens along `u` and the inner finger's outer flank (FLANK_M from the
-  jaw axis) is what touches the wall: the jaw centre goes to the wall plane + FLANK_M + CLEAR_M, at the box centre's
-  depth and GRASP_BELOW_RIM_M under the rim;
+  jaw axis) is what touches the wall: the jaw centre goes to the wall + FLANK_M + CLEAR_M, at the box centre's depth;
+- its height comes from the collision hull (`grip_height`): scanning down from GRASP_BELOW_RIM_M under the rim to just
+  above the centre of mass, the highest band where both walls are at their full width at the jaw's depth (a wall that
+  narrows towards the top squeezes the object down out of the jaws; a squeeze line below the centre of mass lets it
+  swing about the line between the hands), each wall's offset read there; the box's rim and width without a hull;
 - the hands come in outward first, then forward PRE_OUT_M beside the walls, then inward onto them.
 The jaws stay open (a closed jaw touches with its base, which `held` does not count). The lift (lift_margin_legs) asks for
 LIFT_DZ_M with the pelvis up to LIFT_PELVIS_Z, holds LIFT_HOLD_S, and checks the box rose LIFT_MIN_RISE_M (held()'s
-gap) with both hands on it; a miss re-arms the squeeze and lifts again (or re-grips when a hand came off).
+gap) with both hands on it; a miss re-arms the squeeze and lifts again (or re-grips when a hand came off). When the
+task's goal asks for lifted(X, c, t) the check is that goal after the hold (`lift_goal_check`: the lowest box corner
+c + LIFT_MARGIN_M above the support top, upright under t): the box hangs from the line between the hands and swings
+about it, so a held box can sit short of c; it is then raised by the deficit with the squeeze kept (no re-squeeze),
+the hands at most LIFT_MAX_DZ_M above the grasp, and held LIFT_HOLD_S again.
 
 Two-hand put-in (`place_into`, untested before the pack line's first run): the hug pick, then both hands raised with
 the squeeze kept until the object's underside is PUT_CLEAR_M + PUT_OVER_M above the container's rim, a step back, a
@@ -33,6 +40,7 @@ import math
 import numpy as np
 
 from locomani.backends.scalebfm.motor import Outcome
+from locomani.scene_discovery.predicates import parse
 from locomani.tasks.scene import navigate
 from locomani.tasks.scene import stage as S
 
@@ -42,15 +50,27 @@ from .pick import nav_map, walk_route
 SIDES = ("left", "right")
 
 # stance and crouch
-STANDOFF_M = 0.38  # pelvis outside the support edge
+STANDOFF_M = 0.3  # (0.38 until gso_bimanual_lift's set) pelvis outside the support edge
 HUG_PELVIS_Z = 0.72
 STANCE_TOL_M = 0.05
 STANCE_TOL_DEG = 8.0
 STANCE_RETRY_STRAIGHT_M = 0.30  # a missed stance this close is re-walked straight, farther by a new path
 POSTURE_TOL_M = 0.05
 # hand placement
-GRASP_BELOW_RIM_M = 0.10  # jaw-centre height under the box's rim
+GRASP_BELOW_RIM_M = 0.045  # (0.10 until gso_bimanual_lift's set) jaw-centre height under the box's rim: the highest grip the hull scan may choose
 GRASP_DEPTH_M = 0.0  # jaw centres along the approach, from the box centre
+# the grip height from the collision hull's width along u (`grip_height`): the scan runs down from GRASP_BELOW_RIM_M
+# under the rim in SCAN_STEP_M steps to SCAN_ABOVE_COM_M above the centre of mass (and SCAN_LOW_M above the bottom); it
+# takes the highest band (the finger pad's FINGER_HALF_M above and below the jaw centre, FINGER_DEPTH_M either side of
+# the jaw's depth along v) where each wall stays within WALL_TOL_M of its outermost section at that depth, so the pads
+# press a wall at its full width rather than one that narrows towards the top (which squeezes the object down and out)
+# or a handle cut-out; when no band is, the band whose walls fall least short
+SCAN_STEP_M = 0.01
+SCAN_ABOVE_COM_M = 0.01
+SCAN_LOW_M = 0.04
+FINGER_HALF_M = 0.015
+FINGER_DEPTH_M = 0.02
+WALL_TOL_M = 0.005
 FLANK_M = 0.0635  # the open jaw's finger flank from the jaw axis
 CLEAR_M = 0.005  # gap to the wall before the squeeze
 PRE_OUT_M = 0.06  # pre-grasp and via beside the wall, outward
@@ -59,21 +79,28 @@ PRE_TOL_M = 0.08
 MIN_TRACK = 0.12  # reach_check stall ratio
 # the entry is judged by where each jaw centre is against its wall, not by its distance to the target: the squeeze
 # closes a lateral gap, so a hand short along the approach or a little high still presses the wall
-BESIDE_EDGE_M = 0.04  # jaw centre inside the wall's ends along the approach by this much
-BESIDE_LOW_M = 0.06  # ... above the box's bottom
-BESIDE_RIM_M = 0.03  # ... under its rim
+BESIDE_EDGE_M = 0.015  # (0.04 until gso_bimanual_lift's set) jaw centre inside the wall's ends along the approach by this much (at least half the half depth)
+BESIDE_DZ_M = 0.03  # ... within this of the chosen grip height
+BESIDE_LOW_M = 0.02  # (0.06 until gso_bimanual_lift's set) ... and above the box's bottom
+BESIDE_RIM_M = 0.01  # (0.03 until gso_bimanual_lift's set) ... and under its rim
 BESIDE_IN_M = 0.02  # ... at most this far inside the target's wall-plane offset
 BESIDE_OUT_M = 0.04  # ... at most this far outside the target
 BOX_MOVED_MAX_M = 0.03  # the box knocked by a hand during the entry
 # squeeze and lift
 SQUEEZE_M = 0.06
 SQUEEZE_S = 1.0
-LIFT_DZ_M = 0.15
+LIFT_DZ_M = 0.4  # (0.15 until gso_bimanual_lift's set)
 LIFT_PELVIS_Z = 0.79
 LIFT_SPEED = 0.15  # m/s, the motor's reach speed
-LIFT_HOLD_S = 1.0
+LIFT_HOLD_S = 3  # (1.0 until gso_bimanual_lift's set)
 LIFT_MIN_RISE_M = 0.02  # held()'s gap: a box already held is kept as it is (re-squeezing and lifting higher dropped it)
 LIFT_RETRY_DZ_M = 0.10  # a retry lifts this far above where the hands are
+# against the goal's lifted(X, c, t) (`lift_goal_check`): a held box whose lowest corner is short of c + LIFT_MARGIN_M
+# after the hold is raised by the deficit, the squeeze kept, the hands at most LIFT_MAX_DZ_M above the grasp,
+# LIFT_TOPUPS times (the round's stage budget caps them too)
+LIFT_MARGIN_M = 0.03
+LIFT_MAX_DZ_M = 0.45
+LIFT_TOPUPS = 1
 # retries per step (the round's stage budget caps them all)
 STANCE_RETRIES = 1
 REACH_RETRIES = 1
@@ -127,9 +154,119 @@ def nearest_edge(surface: dict, xy) -> tuple[str, np.ndarray, float]:
     return e, _rot2(yaw) @ np.asarray(_edge_normals[e]), float(dist[e])
 
 
+_CUBE = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], float)
+
+
+def hull_pieces(world, key: str) -> list[np.ndarray]:
+    """The object's collision geoms now, each as its world vertices (a mesh's hull vertices, any other shape's
+    bounding-box corners); [] without a simulator (a test's world), so the callers fall back to the box."""
+    sim, free = getattr(world, "sim", None), getattr(world, "free", None) or {}
+    if sim is None or key not in free:
+        return []
+    mm, dd = sim.m, sim.d
+    out = []
+    for gid in np.flatnonzero(np.asarray(mm.geom_bodyid) == free[key]):
+        if not (mm.geom_contype[gid] or mm.geom_conaffinity[gid]):
+            continue
+        if int(mm.geom_type[gid]) == 7:  # mjGEOM_MESH
+            i = mm.geom_dataid[gid]
+            a, n = mm.mesh_vertadr[i], mm.mesh_vertnum[i]
+            local = np.asarray(mm.mesh_vert[a : a + n], float)
+        else:
+            local = mm.geom_aabb[gid, :3] + _CUBE * mm.geom_aabb[gid, 3:]
+        out.append(dd.geom_xpos[gid] + local @ dd.geom_xmat[gid].reshape(3, 3).T)
+    return out
+
+
+def _edges(v: np.ndarray) -> np.ndarray:
+    """The edges of the convex hull of `v` (every pair when the hull is flat)."""
+    from scipy.spatial import ConvexHull, QhullError
+
+    try:
+        tri = ConvexHull(v).simplices
+    except (QhullError, ValueError):
+        i, j = np.triu_indices(len(v), 1)
+        return np.column_stack([i, j])
+    return np.unique(np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [0, 2]]]), axis=1), axis=0)
+
+
+def _hug_frame_pieces(pieces, c, u, v) -> list[tuple]:
+    """Each piece's vertices as (s along u, t along v, z) from the box centre `c`, its hull edges and its ranges."""
+    out = []
+    for p in pieces:
+        if len(p) < 2:
+            continue
+        q = np.column_stack([(p[:, :2] - c) @ u, (p[:, :2] - c) @ v, p[:, 2]])
+        out.append((q, _edges(p), q.min(axis=0), q.max(axis=0)))
+    return out
+
+
+def _section(pieces, z: float, t0: float, dt: float):
+    """(lowest, highest) s of the pieces' cross-sections at height `z` within |t - t0| <= dt, or None. Each piece is
+    convex: its section is the hull of its edges' crossings of the plane, and the section's extreme points within the
+    strip are its points inside it or the crossings of a chord with the strip's two lines."""
+    lo, hi = np.inf, -np.inf
+    for q, e, qmin, qmax in pieces:
+        if not (qmin[2] <= z <= qmax[2]) or qmax[1] < t0 - dt or qmin[1] > t0 + dt:
+            continue
+        a, b = q[e[:, 0]], q[e[:, 1]]
+        da, db = a[:, 2] - z, b[:, 2] - z
+        k = da * db < 0
+        pts = np.concatenate([a[k, :2] + (da[k] / (da[k] - db[k]))[:, None] * (b[k, :2] - a[k, :2]),
+                              q[np.abs(q[:, 2] - z) < 1e-9, :2]])  # fmt: skip
+        if not len(pts):
+            continue
+        r = pts[:, 1] - t0
+        s = [pts[np.abs(r) <= dt, 0]]
+        i, j = np.triu_indices(len(pts), 1)
+        for line in (-dt, dt):
+            ri, rj = r[i] - line, r[j] - line
+            x = ri * rj < 0
+            s.append(pts[i[x], 0] + (ri[x] / (ri[x] - rj[x])) * (pts[j[x], 0] - pts[i[x], 0]))
+        s = np.concatenate(s)
+        if len(s):
+            lo, hi = min(lo, float(s.min())), max(hi, float(s.max()))
+    return (lo, hi) if hi >= lo else None
+
+
+def grip_height(pieces, c, u, v, bottom: float, rim: float, com_z: float) -> dict | None:
+    """The jaw-centre height and the walls' offsets along u there, from the collision hull (module constants above):
+    dict(z, left (the outermost s on +u over the pad's band), right (on -u, negative), short_cm (how far the band's
+    nearer wall falls inside its outermost section at the jaw's depth), band_cm / full_cm (the band's narrowest and the
+    hull's widest width there), how: "full_width" (the highest band within WALL_TOL_M), "widest" (no band is: the one
+    falling least short) or "top" (the object is too short to scan below the top)), or None without a hull section at
+    that depth."""
+    hp = _hug_frame_pieces(pieces, np.asarray(c, float), np.asarray(u, float), np.asarray(v, float))
+    t0, dt = GRASP_DEPTH_M, FINGER_DEPTH_M
+    secs = [s for s in (_section(hp, z, t0, dt) for z in np.arange(bottom + 0.01, rim - 0.005, SCAN_STEP_M)) if s]
+    if not secs:
+        return None
+    out_left, out_right = max(s[1] for s in secs), min(s[0] for s in secs)  # each wall's outermost section
+    full = max(s[1] - s[0] for s in secs)
+    top = rim - GRASP_BELOW_RIM_M
+    low = max(com_z + SCAN_ABOVE_COM_M, bottom + SCAN_LOW_M)
+    n = int(math.floor((top - low) / SCAN_STEP_M + 1e-9)) + 1 if top >= low else 1
+    best = None
+    for z in (top - k * SCAN_STEP_M for k in range(n)):
+        band = [_section(hp, z + dz, t0, dt) for dz in np.linspace(-FINGER_HALF_M, FINGER_HALF_M, 5)]
+        if any(b is None for b in band):
+            continue
+        short = max(out_left - min(b[1] for b in band), max(b[0] for b in band) - out_right)
+        cand = dict(z=float(z), left=max(b[1] for b in band), right=min(b[0] for b in band),
+                    short_cm=round(100 * short, 2), band_cm=round(100 * min(b[1] - b[0] for b in band), 2),
+                    full_cm=round(100 * full, 2))  # fmt: skip
+        if short <= WALL_TOL_M:
+            return dict(cand, how="full_width" if top >= low else "top")
+        if best is None or short < best[0]:
+            best = (short, cand)
+    return None if best is None else dict(best[1], how="widest")
+
+
 def geometry(world, key: str) -> dict:
     """The hug's frame and targets from the box's measured pose: approach `v`, left `u`, the stance, each hand's grasp
-    target, the wrist rotation, the box's half width and depth along them."""
+    target, the wrist rotation, the box's half width and depth along them. The jaw-centre height and each wall's
+    offset come from the collision hull's width along u at the jaw's depth (`grip_height`), or from the box,
+    GRASP_BELOW_RIM_M under its rim, without a hull."""
     meta = world.meta["objects"][key]
     pos, quat = world.object_pose(key)
     yaw = yaw_of(quat)
@@ -151,13 +288,22 @@ def geometry(world, key: str) -> dict:
     stance = c - v * (d_v + STANDOFF_M)
     bottom = float(pos[2]) + float(centre_off[2]) - float(half[2])
     rim = bottom + 2 * float(half[2])
-    z = rim - GRASP_BELOW_RIM_M
-    lateral = float(w) + FLANK_M + CLEAR_M
-    target = {s: np.r_[c + sgn * u * lateral + v * GRASP_DEPTH_M, z] for s, sgn in (("left", 1.0), ("right", -1.0))}
+    body = (getattr(world, "free", None) or {}).get(key)
+    sim = getattr(world, "sim", None)
+    com_z = float(sim.d.xipos[body][2]) if sim is not None and body is not None else bottom + float(half[2])
+    grip = grip_height(hull_pieces(world, key), c, u, v, bottom, rim, com_z)
+    if grip is None:
+        z, walls = rim - GRASP_BELOW_RIM_M, {"left": float(w), "right": float(w)}
+        grip = dict(z=z, how="box")
+    else:
+        z, walls = grip["z"], {"left": grip["left"], "right": -grip["right"]}
+    lateral = {s: walls[s] + FLANK_M + CLEAR_M for s in SIDES}
+    target = {s: np.r_[c + sgn * u * lateral[s] + v * GRASP_DEPTH_M, z] for s, sgn in (("left", 1.0), ("right", -1.0))}
     out = {s: np.r_[sgn * u * PRE_OUT_M, 0.0] for s, sgn in (("left", 1.0), ("right", -1.0))}
     rot = np.column_stack([np.r_[v, 0.0], np.r_[u, 0.0], [0.0, 0.0, 1.0]])
     return dict(edge=edge, depth=d, depth_v=d_v, v=v, u=u, w=float(w), depth_half=float(depth_half), centre=c, stance=stance,
-                stance_yaw=math.atan2(v[1], v[0]), target=target, out=out, rot=rot, grasp_z=z, bottom=bottom, rim=rim)  # fmt: skip
+                stance_yaw=math.atan2(v[1], v[0]), target=target, out=out, rot=rot, grasp_z=z, bottom=bottom, rim=rim,
+                lateral=lateral, com_z=com_z, grip=grip)  # fmt: skip
 
 
 def box_centre(world, key: str) -> np.ndarray:
@@ -171,6 +317,40 @@ def underside(world, key: str) -> float:
     """The object's lowest box corner (m) at its pose now."""
     pos, quat = world.object_pose(key)
     return float(pos[2]) - into.low_offset(quat, world.meta["objects"][key]["box"])
+
+
+def lift_goal(ctx, key: str) -> tuple[float, float] | None:
+    """The task's lifted(key, clearance, tilt) as (clearance m, tilt deg), or None when its goal asks for none (a
+    held() alone, the put-in's hug of the carried object)."""
+    for text in getattr(getattr(ctx, "task", None), "goal", None) or ():
+        p = parse(text)
+        if p.name == "lifted" and p.args[0] == key:
+            return float(p.args[1]), float(p.args[2])
+    return None
+
+
+def clearance_now(world, key: str) -> tuple[float, float]:
+    """lifted()'s two numbers now: (the lowest box corner above the top of the surface the scene file rests `key` on,
+    m; its upright axis off the vertical, deg)."""
+    meta = world.meta["objects"][key]
+    surface = world.meta["surfaces"].get(meta.get("surface")) or {}
+    axis = np.asarray((meta.get("semantic") or {}).get("upright_axis") or (0.0, 0.0, 1.0), float)
+    up = _rot3(world.object_pose(key)[1]) @ (axis / np.linalg.norm(axis))
+    tilt = math.degrees(math.acos(float(np.clip(up[2], -1.0, 1.0))))
+    return underside(world, key) - float(surface.get("top", 0.0)), tilt
+
+
+def lift_goal_check(world, m, key: str, z0: float, goal: tuple[float, float] | None):
+    """`bimanual_lift_check` (the rise and both hands on), and with the goal's (clearance, tilt) the goal itself with
+    LIFT_MARGIN_M to spare: the lowest corner clearance + LIFT_MARGIN_M above the support top, upright under tilt.
+    Values add low_cm, need_cm, tilt_deg."""
+    ok, values = S.bimanual_lift_check(world, m, key, z0, LIFT_MIN_RISE_M)
+    if goal is None:
+        return ok, values
+    low, tilt = clearance_now(world, key)
+    need = goal[0] + LIFT_MARGIN_M
+    values.update(low_cm=round(100 * low, 2), need_cm=round(100 * need, 1), tilt_deg=round(tilt, 1))
+    return ok and low >= need and tilt < goal[1], values
 
 
 def _rot3(quat) -> np.ndarray:
@@ -205,18 +385,28 @@ def _hands_check(m, goal: dict, tol: float, since: float | None = None):
     return ok, values
 
 
+def beside_window(g: dict) -> tuple[float, float, float]:
+    """The beside check's bounds in the box frame `g`: (|along| at most, lowest z, highest z) -- inside the wall's ends
+    by BESIDE_EDGE_M or at most half the half depth (a thin object's +-0.4 cm is not a window), within BESIDE_DZ_M of
+    the chosen grip height and between BESIDE_LOW_M above the bottom and BESIDE_RIM_M under the rim."""
+    along = max(g["depth_half"] - BESIDE_EDGE_M, 0.5 * g["depth_half"])
+    lo = max(g["grasp_z"] - BESIDE_DZ_M, g["bottom"] + BESIDE_LOW_M)
+    hi = min(g["grasp_z"] + BESIDE_DZ_M, g["rim"] - BESIDE_RIM_M)
+    return along, lo, hi
+
+
 def _beside_check(m, g: dict):
     """Each jaw centre beside its wall, in the box frame `g` was computed in: along the approach within the wall,
-    between the box's bottom and rim, laterally from BESIDE_IN_M inside to BESIDE_OUT_M outside the target's offset."""
+    near the chosen grip height (`beside_window`), laterally from BESIDE_IN_M inside to BESIDE_OUT_M outside the
+    target's offset."""
     ok, values = True, {}
     v3, u3 = np.r_[g["v"], 0.0], np.r_[g["u"], 0.0]
     c3 = np.r_[g["centre"], g["bottom"]]
-    lateral, rim = g["w"] + FLANK_M + CLEAR_M, g["rim"]
+    along_max, z_lo, z_hi = beside_window(g)
     for s, sgn in (("left", 1.0), ("right", -1.0)):
         p = m.jaw_centre(s)[0]
-        along, out = float((p - c3) @ v3), sgn * float((p - c3) @ u3) - lateral
-        ok_s = (abs(along) <= g["depth_half"] - BESIDE_EDGE_M and g["bottom"] + BESIDE_LOW_M <= p[2] <= rim - BESIDE_RIM_M
-                and -BESIDE_IN_M <= out <= BESIDE_OUT_M)  # fmt: skip
+        along, out = float((p - c3) @ v3), sgn * float((p - c3) @ u3) - g["lateral"][s]
+        ok_s = abs(along) <= along_max and z_lo <= p[2] <= z_hi and -BESIDE_IN_M <= out <= BESIDE_OUT_M
         ok = ok and ok_s
         values[f"{s}_jaw_err_cm"] = round(100 * float(np.linalg.norm(p - g["target"][s])), 2)
         values[f"{s}_along_cm"], values[f"{s}_out_cm"] = round(100 * along, 2), round(100 * out, 2)
@@ -228,10 +418,16 @@ def pick(ctx, key: str) -> Outcome:
     world, m = ctx.world, ctx.motor
     body = world.free[key]
     g = geometry(world, key)
+    grip = g["grip"]
     ctx.note("hug_plan", Outcome(True, t0=m.t, t1=m.t, info=dict(
         edge=g["edge"], depth_m=round(g["depth"], 3), half_width_m=round(g["w"], 3), grasp_z=round(g["grasp_z"], 3),
         grasp_line_m=round(g["depth_v"] + STANDOFF_M + GRASP_DEPTH_M, 3), stance=[round(float(x), 3) for x in g["stance"]],
-        stance_yaw_deg=round(math.degrees(g["stance_yaw"]), 1))))  # fmt: skip
+        stance_yaw_deg=round(math.degrees(g["stance_yaw"]), 1), grip_how=grip["how"],
+        grip_below_rim_cm=round(100 * (g["rim"] - g["grasp_z"]), 1),
+        grip_above_com_cm=round(100 * (g["grasp_z"] - g["com_z"]), 1),
+        wall_left_cm=round(100 * (g["lateral"]["left"] - FLANK_M - CLEAR_M), 1),
+        wall_right_cm=round(100 * (g["lateral"]["right"] - FLANK_M - CLEAR_M), 1),
+        wall_short_cm=grip.get("short_cm"), band_cm=grip.get("band_cm"), full_cm=grip.get("full_cm"))))  # fmt: skip
 
     # 1. stance: walk around the furniture to the edge, square to the box
     xy, yaw = g["stance"], g["stance_yaw"]
@@ -320,11 +516,14 @@ def pick(ctx, key: str) -> Outcome:
     if not out.ok:
         return out
 
-    # 6. lift by arms and legs, still pressing; hold, then check the rise with both hands on
+    # 6. lift by arms and legs, still pressing; hold, then check the rise with both hands on (and the goal's clearance)
     z0 = float(world.object_pose(key)[0][2])
     rot = state["g"]["rot"]
+    goal_lift = lift_goal(ctx, key)
+    tries = dict(retry=0, topup=0, goal=None)
 
     def lift(goal: dict) -> Outcome:
+        tries["goal"] = goal
         o = _reach_both(m, goal, rot, keep_squeeze=True, pelvis_z=LIFT_PELVIS_Z, speed=LIFT_SPEED)
         if m.fell_at is None:
             m.hold(LIFT_HOLD_S)
@@ -333,9 +532,33 @@ def pick(ctx, key: str) -> Outcome:
 
     up = {s: state["g"]["target"][s] + np.array([0.0, 0.0, LIFT_DZ_M]) for s in SIDES}
 
-    def re_lift(k, v):
-        if k >= LIFT_RETRIES:
+    def top_up(v):
+        """Held, upright enough, short of the goal's clearance: both hands up by the deficit from where they were sent,
+        the squeeze kept, at most LIFT_MAX_DZ_M above the grasp; None when nothing is left to raise."""
+        if tries["topup"] >= LIFT_TOPUPS or float(v["tilt_deg"]) >= goal_lift[1]:
             return None
+        short = max(float(v["need_cm"]) - float(v["low_cm"]), 0.0) / 100
+        cap = float(state["g"]["grasp_z"]) + LIFT_MAX_DZ_M
+        last = tries["goal"]
+        goal = {s: np.r_[last[s][:2], min(float(last[s][2]) + short, cap)] for s in SIDES}
+        if max(float(goal[s][2] - last[s][2]) for s in SIDES) < 0.005:
+            return None
+        tries["topup"] += 1
+
+        def again():
+            o = lift(goal)
+            o.info["topup_cm"] = round(100 * max(float(goal[s][2] - last[s][2]) for s in SIDES), 1)
+            return o
+
+        return again
+
+    def re_lift(k, v):
+        held = v.get("touching") == list(SIDES) and float(v.get("rise_cm", 0.0)) >= 100 * LIFT_MIN_RISE_M
+        if goal_lift is not None and held:  # in both hands and off the support, short of the goal or tipped
+            return top_up(v)
+        if tries["retry"] >= LIFT_RETRIES:
+            return None
+        tries["retry"] += 1
         if v.get("touching") == list(SIDES):  # still in both hands, too low: press again and lift higher
 
             def higher():
@@ -357,7 +580,7 @@ def pick(ctx, key: str) -> Outcome:
         return regrip
 
     return S.stage(ctx, "hug_lift", lambda: lift(up),
-                   lambda o: S.bimanual_lift_check(world, m, key, z0, LIFT_MIN_RISE_M), re_lift)  # fmt: skip
+                   lambda o: lift_goal_check(world, m, key, z0, goal_lift), re_lift)  # fmt: skip
 
 
 # -- the two-hand put-in -----------------------------------------------------------------------------------------------
