@@ -190,6 +190,8 @@ cd $S1 && $PY scripts/rsi/loop.py status gso_single_grasp; cd -      # 看进度
 做什么：和 1030 runbook 第 5 节一样：建沙盒、抽池，然后在后台跑内环，直到满足终止条件。`--fresh` 让沙盒既不带知识库也不带经验库，这次运行不继承任何以前的知识。
 - **池**：按任务数分配（用户 11-18），默认每个任务诊断 3 局、验收 4 局、封存 5 局：单手 20 个任务是 60 / 80 / 100 局，双手 8 个任务是 24 / 32 / 40 局。验收池至少比验收门第一阶段（`gate.py` 的 `STAGE1`，30 局）多 1 局。局数记在任务族文件的 `pool_per_task` 和各池的 `n` 里，建沙盒、内环和封存集都从这里读；要改就用 `PYTHONPATH=src $PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_gso_single --per-task diag=3 accept=4 sealed=5` 重写任务族（可以只给其中几项），提交后再建沙盒。池种子：单手 9000000 / 9100000 / 9200000，双手 9500000 / 9600000 / 9700000。
 - **终止条件**：验收池上赢到 80 %、跑满 5 小时、做满 5 轮或验收门调用满 12 次，先满足哪条就停。只想先试一轮，加 `--max-iters 1`。
+- **起点（11-24 起）**：主库的技能包就是 gso-alt-a 写回的最终现任（7.5），验收池上单手 70/80、双手 28/32，都已超过 80 %，所以第一次验收门之后就会按停止线停下。要接着往上推，启动时抬高停止线，例如 `--stop-rate 0.95`（单手 76/80、双手 31/32）。模式 2 同样。
+- 11-24 从 fdf6d850 各建一个 `--fresh` 沙盒跑过一轮桩迭代（`--stub --max-iters 1`，角色不调用模型，池和验收门真实）：两边都走完 diag_pool → review → probe → manager → engineer → compose → gate → pause，诊断池单手 45/60、双手 19/24；沙盒内的技能包测试通过。
 - 场景目录必须在本机 `outputs/scene_discovery/` 下（第 3 节）。规则第 30 条照旧：技能代码里不能出现物体名字。
 
 得到什么：账本 `$S1/outputs/scene_rsi_20261016/gso_single_grasp/loop/ledger.jsonl`，最后一行 `stop` 写着停下的原因。
@@ -236,6 +238,7 @@ $PY scripts/rsi/alternate.py status $R                                  # 看进
 ```
 
 做什么：
+- **先看停止线**：11-24 起主库的技能包就是上次的最终现任（7.5），两边在验收池上都已超过默认 `--stop-rate` 0.8，第一次验收门之后两边都会停，一个迭代就结束；接着跑要加 `--stop-rate 0.95` 之类更高的线。
 - `init` 建两个 `--fresh` 沙盒 `$R/a`（单手）和 `$R/b`（双手）、一个空的共享知识目录 `$R/knowledge`，以及合并用的共同祖先 `$R/sync/base`。两个沙盒的任务族文件里写上 `shares_skills_with`，Reviewer 和 Engineer 的提示会说明技能包和另一个任务族共用：`pick.py` 归单手，`bimanual.py` 归双手，共用的模块改了会影响对方。
 - `run` 先单手、后双手，轮流各做半轮，两个半轮算一个迭代。每个半轮：
   1. 把共享知识复制进这一方的沙盒并提交，跑一轮内环（`loop.py run --max-iters 1`）。
