@@ -20,13 +20,13 @@ Use inspectable evidence to distinguish implementation, observation and interpre
 | `backends/<backend>/` | Controller protocol, observations, execution | Backend execution behind a task-independent interface |
 | `primitives/` | Shared geometry and joint calculations | Values in, values out |
 | `sim/` | Simulator integration, assets and rendering | Scene and simulation inputs |
+| `bench/<benchmark>/` | A public benchmark behind one interface: run options, capability table, episodes, camera channels, privileged state, judge | Resolved options in, records out; privileged state only to the truth view, the judge and records |
+| `perception/` | Views, sensors, self pose: what the robot knows of the world and itself, from truth or from cameras | A skill package sees these interfaces, never the simulator |
 
-The entry composes tasks and backends. Task-specific grasp geometry belongs in the
-task; a backend receives data or a callable. New backend-to-task imports are rejected
-by `scripts/lint_repository.py`. The historical exception list in `tests/fixtures/architecture_debt.json` is now
-empty; do not add an exception to bypass ownership.
-Production modules cannot import experiment runners. The checker enforces these
-specific rules, not every architectural property or dynamic dependency.
+The entry composes tasks and backends. Task-specific grasp geometry belongs in the task; a backend receives data or a
+callable. New backend-to-task imports are rejected by `scripts/lint_repository.py`. The historical exception list in
+`tests/fixtures/architecture_debt.json` is now empty; do not add an exception to bypass ownership.
+Production modules cannot import experiment runners. The checker enforces these specific rules, not every architectural property or dynamic dependency.
 
 ## Interfaces and configuration
 

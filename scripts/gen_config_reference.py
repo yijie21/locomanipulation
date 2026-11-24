@@ -20,6 +20,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
 from locomani.backends.sonic.config import LockstepConfig, SonicBackendConfig  # noqa: E402
+from locomani.bench.options import BenchOptions  # noqa: E402
 from locomani.pipeline.eval_config import EvalConfig  # noqa: E402
 from locomani.tasks.bottle.config import BottleTaskConfig, SpawnConfig  # noqa: E402
 from locomani.tasks.bottle.image_servo_config import BottleCalibration, ServoLimits  # noqa: E402
@@ -61,6 +62,7 @@ CONFIGS = [
     ("BottleVisualTaskConfig", BottleVisualTaskConfig, "locomani/tasks/bottle_visual/config.py"),
     ("GraspConfig", GraspConfig, "locomani/tasks/bottle_visual/config.py (BottleVisualTaskConfig.grasp)"),
     ("EvalConfig", EvalConfig, "locomani/pipeline/eval_config.py"),
+    ("BenchOptions", BenchOptions, "locomani/bench/options.py (run switches on a public benchmark)"),
 ]
 
 FIELD_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:")

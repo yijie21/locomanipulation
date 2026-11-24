@@ -1,0 +1,11 @@
+# bench/locomanilab: the switches LocoManiLab runs with unless a run overrides them (TODO 49.1): the loops so far (rendered depth, odometry belief, ScaleBFM told the true root)
+defaults:
+- _schema
+- _self_
+bench: locomanilab
+target: perception
+sensor: rgbd
+depth_noise: none
+self_pose: odometry
+controller_root: truth
+controller: scalebfm
