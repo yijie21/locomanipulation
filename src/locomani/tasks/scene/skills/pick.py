@@ -124,6 +124,7 @@ from locomani.tasks.scene import stage as S
 from locomani.tasks.scene.navigate import path as nav_path
 
 from . import cover, grasp_program
+from . import grasp_common as GC
 
 JAW_SPAN_M = 0.092  # widest side the open Dex1 jaw (9.5 cm) closes across (0.085 until the pick_single loop's set)
 STAND_AHEAD_M = 0.40  # object this far ahead of the pelvis ...
@@ -278,15 +279,15 @@ def hull_span(world, key: str, psi: float) -> float | None:
     """The span (m) across the jaw of a side grasp at approach yaw `psi` of X's collision hulls at its pose now, over
     the pads' height (grasp_program.PAD_Z either side) at the side grasp's jaw height (X's origin + `grasp_pitch`'s
     rise; graspability.section's cuts); None without a simulator model or a section there."""
-    if getattr(getattr(world, "sim", None), "m", None) is None:
+    pieces = GC.pieces(world, key)
+    if not pieces:
         return None
     pos, _ = world.object_pose(key)
     z = float(pos[2]) + grasp_pitch(world, key, pos)[1]
     d = max(0.0, grasp_program.PAD_Z - graspability.SECTION_BAND_M)
-    pts = np.vstack([graspability.section(world, key, z + s) for s in (-d, d)])
-    if not len(pts):
-        return None
-    return graspability.width_across(pts, (-np.sin(psi), np.cos(psi)))
+    b = graspability.SECTION_BAND_M
+    levels = [z + s + k for s in (-d, d) for k in (-b, 0.0, b)]
+    return GC.cuts_width(pieces, levels, (-np.sin(psi), np.cos(psi)))
 
 
 def pick_simple(ctx, key: str, side: str = "right") -> Outcome:
@@ -542,18 +543,9 @@ def low_grasp(world, key: str, pos, quat, psi: float, wrist: float | None = None
 
 def band_width(verts, lo: float, hi: float, across) -> float:
     """The extent along the horizontal `across` of the convex hull of `verts` (the simulator collides a mesh's hull)
-    between the heights `lo` and `hi`: of its vertices there and its edges' crossings of both planes (0 without any)."""
-    v = np.asarray(verts, float)
-    tri = ConvexHull(v).simplices
-    e = np.unique(np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [0, 2]]]), axis=1), axis=0)
-    a, b = v[e[:, 0]], v[e[:, 1]]
-    pts = [v[(v[:, 2] >= lo) & (v[:, 2] <= hi)]]
-    for z in (lo, hi):
-        da, db = a[:, 2] - z, b[:, 2] - z
-        k = da * db < 0
-        pts.append(a[k] + (da[k] / (da[k] - db[k]))[:, None] * (b[k] - a[k]))
-    s = np.concatenate(pts)[:, :2] @ np.asarray(across, float)[:2]
-    return float(s.max() - s.min()) if len(s) else 0.0
+    between the heights `lo` and `hi`: of its vertices there and its edges' crossings of both planes (0 without any);
+    grasp_common.band_width of the one hull."""
+    return GC.band_width(GC.prepare([verts]), lo, hi, across)
 
 
 def object_vertices(m, body: int) -> np.ndarray:

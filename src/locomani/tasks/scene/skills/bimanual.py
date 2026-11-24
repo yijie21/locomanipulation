@@ -40,10 +40,10 @@ import math
 import numpy as np
 
 from locomani.backends.scalebfm.motor import Outcome
-from locomani.scene_discovery.predicates import parse
 from locomani.tasks.scene import navigate
 from locomani.tasks.scene import stage as S
 
+from . import grasp_common as GC
 from . import into, place
 from .pick import nav_map, walk_route
 
@@ -154,91 +154,21 @@ def nearest_edge(surface: dict, xy) -> tuple[str, np.ndarray, float]:
     return e, _rot2(yaw) @ np.asarray(_edge_normals[e]), float(dist[e])
 
 
-_CUBE = np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)], float)
-
-
-def hull_pieces(world, key: str) -> list[np.ndarray]:
-    """The object's collision geoms now, each as its world vertices (a mesh's hull vertices, any other shape's
-    bounding-box corners); [] without a simulator (a test's world), so the callers fall back to the box."""
-    sim, free = getattr(world, "sim", None), getattr(world, "free", None) or {}
-    if sim is None or key not in free:
-        return []
-    mm, dd = sim.m, sim.d
-    out = []
-    for gid in np.flatnonzero(np.asarray(mm.geom_bodyid) == free[key]):
-        if not (mm.geom_contype[gid] or mm.geom_conaffinity[gid]):
-            continue
-        if int(mm.geom_type[gid]) == 7:  # mjGEOM_MESH
-            i = mm.geom_dataid[gid]
-            a, n = mm.mesh_vertadr[i], mm.mesh_vertnum[i]
-            local = np.asarray(mm.mesh_vert[a : a + n], float)
-        else:
-            local = mm.geom_aabb[gid, :3] + _CUBE * mm.geom_aabb[gid, 3:]
-        out.append(dd.geom_xpos[gid] + local @ dd.geom_xmat[gid].reshape(3, 3).T)
-    return out
-
-
-def _edges(v: np.ndarray) -> np.ndarray:
-    """The edges of the convex hull of `v` (every pair when the hull is flat)."""
-    from scipy.spatial import ConvexHull, QhullError
-
-    try:
-        tri = ConvexHull(v).simplices
-    except (QhullError, ValueError):
-        i, j = np.triu_indices(len(v), 1)
-        return np.column_stack([i, j])
-    return np.unique(np.sort(np.concatenate([tri[:, [0, 1]], tri[:, [1, 2]], tri[:, [0, 2]]]), axis=1), axis=0)
-
-
-def _hug_frame_pieces(pieces, c, u, v) -> list[tuple]:
-    """Each piece's vertices as (s along u, t along v, z) from the box centre `c`, its hull edges and its ranges."""
-    out = []
-    for p in pieces:
-        if len(p) < 2:
-            continue
-        q = np.column_stack([(p[:, :2] - c) @ u, (p[:, :2] - c) @ v, p[:, 2]])
-        out.append((q, _edges(p), q.min(axis=0), q.max(axis=0)))
-    return out
-
-
-def _section(pieces, z: float, t0: float, dt: float):
-    """(lowest, highest) s of the pieces' cross-sections at height `z` within |t - t0| <= dt, or None. Each piece is
-    convex: its section is the hull of its edges' crossings of the plane, and the section's extreme points within the
-    strip are its points inside it or the crossings of a chord with the strip's two lines."""
-    lo, hi = np.inf, -np.inf
-    for q, e, qmin, qmax in pieces:
-        if not (qmin[2] <= z <= qmax[2]) or qmax[1] < t0 - dt or qmin[1] > t0 + dt:
-            continue
-        a, b = q[e[:, 0]], q[e[:, 1]]
-        da, db = a[:, 2] - z, b[:, 2] - z
-        k = da * db < 0
-        pts = np.concatenate([a[k, :2] + (da[k] / (da[k] - db[k]))[:, None] * (b[k, :2] - a[k, :2]),
-                              q[np.abs(q[:, 2] - z) < 1e-9, :2]])  # fmt: skip
-        if not len(pts):
-            continue
-        r = pts[:, 1] - t0
-        s = [pts[np.abs(r) <= dt, 0]]
-        i, j = np.triu_indices(len(pts), 1)
-        for line in (-dt, dt):
-            ri, rj = r[i] - line, r[j] - line
-            x = ri * rj < 0
-            s.append(pts[i[x], 0] + (ri[x] / (ri[x] - rj[x])) * (pts[j[x], 0] - pts[i[x], 0]))
-        s = np.concatenate(s)
-        if len(s):
-            lo, hi = min(lo, float(s.min())), max(hi, float(s.max()))
-    return (lo, hi) if hi >= lo else None
-
-
 def grip_height(pieces, c, u, v, bottom: float, rim: float, com_z: float) -> dict | None:
     """The jaw-centre height and the walls' offsets along u there, from the collision hull (module constants above):
     dict(z, left (the outermost s on +u over the pad's band), right (on -u, negative), short_cm (how far the band's
     nearer wall falls inside its outermost section at the jaw's depth), band_cm / full_cm (the band's narrowest and the
     hull's widest width there), how: "full_width" (the highest band within WALL_TOL_M), "widest" (no band is: the one
     falling least short) or "top" (the object is too short to scan below the top)), or None without a hull section at
-    that depth."""
-    hp = _hug_frame_pieces(pieces, np.asarray(c, float), np.asarray(u, float), np.asarray(v, float))
-    t0, dt = GRASP_DEPTH_M, FINGER_DEPTH_M
-    secs = [s for s in (_section(hp, z, t0, dt) for z in np.arange(bottom + 0.01, rim - 0.005, SCAN_STEP_M)) if s]
+    that depth. `pieces` are grasp_common pieces (`GC.pieces`) or plain vertex arrays (a test's blocks)."""
+    hp = GC.prepare(pieces)
+    strip = (np.asarray(v, float), GRASP_DEPTH_M, FINGER_DEPTH_M)
+    c, u = np.asarray(c, float), np.asarray(u, float)
+    secs = [
+        s
+        for s in (GC.section_extent(hp, z, c, u, strip) for z in np.arange(bottom + 0.01, rim - 0.005, SCAN_STEP_M))
+        if s
+    ]
     if not secs:
         return None
     out_left, out_right = max(s[1] for s in secs), min(s[0] for s in secs)  # each wall's outermost section
@@ -248,7 +178,7 @@ def grip_height(pieces, c, u, v, bottom: float, rim: float, com_z: float) -> dic
     n = int(math.floor((top - low) / SCAN_STEP_M + 1e-9)) + 1 if top >= low else 1
     best = None
     for z in (top - k * SCAN_STEP_M for k in range(n)):
-        band = [_section(hp, z + dz, t0, dt) for dz in np.linspace(-FINGER_HALF_M, FINGER_HALF_M, 5)]
+        band = [GC.section_extent(hp, z + dz, c, u, strip) for dz in np.linspace(-FINGER_HALF_M, FINGER_HALF_M, 5)]
         if any(b is None for b in band):
             continue
         short = max(out_left - min(b[1] for b in band), max(b[0] for b in band) - out_right)
@@ -291,7 +221,7 @@ def geometry(world, key: str) -> dict:
     body = (getattr(world, "free", None) or {}).get(key)
     sim = getattr(world, "sim", None)
     com_z = float(sim.d.xipos[body][2]) if sim is not None and body is not None else bottom + float(half[2])
-    grip = grip_height(hull_pieces(world, key), c, u, v, bottom, rim, com_z)
+    grip = grip_height(GC.pieces(world, key), c, u, v, bottom, rim, com_z)
     if grip is None:
         z, walls = rim - GRASP_BELOW_RIM_M, {"left": float(w), "right": float(w)}
         grip = dict(z=z, how="box")
@@ -313,31 +243,9 @@ def box_centre(world, key: str) -> np.ndarray:
     return np.asarray(pos, float) + np.asarray(box.get("centre") or (0, 0, 0), float) @ _rot3(quat).T
 
 
-def underside(world, key: str) -> float:
-    """The object's lowest box corner (m) at its pose now."""
-    pos, quat = world.object_pose(key)
-    return float(pos[2]) - into.low_offset(quat, world.meta["objects"][key]["box"])
-
-
-def lift_goal(ctx, key: str) -> tuple[float, float] | None:
-    """The task's lifted(key, clearance, tilt) as (clearance m, tilt deg), or None when its goal asks for none (a
-    held() alone, the put-in's hug of the carried object)."""
-    for text in getattr(getattr(ctx, "task", None), "goal", None) or ():
-        p = parse(text)
-        if p.name == "lifted" and p.args[0] == key:
-            return float(p.args[1]), float(p.args[2])
-    return None
-
-
-def clearance_now(world, key: str) -> tuple[float, float]:
-    """lifted()'s two numbers now: (the lowest box corner above the top of the surface the scene file rests `key` on,
-    m; its upright axis off the vertical, deg)."""
-    meta = world.meta["objects"][key]
-    surface = world.meta["surfaces"].get(meta.get("surface")) or {}
-    axis = np.asarray((meta.get("semantic") or {}).get("upright_axis") or (0.0, 0.0, 1.0), float)
-    up = _rot3(world.object_pose(key)[1]) @ (axis / np.linalg.norm(axis))
-    tilt = math.degrees(math.acos(float(np.clip(up[2], -1.0, 1.0))))
-    return underside(world, key) - float(surface.get("top", 0.0)), tilt
+underside = GC.underside  # the object's lowest box corner (m) now
+lift_goal = GC.lift_goal  # the goal's lifted(key, clearance, tilt), or None
+clearance_now = GC.clearance_now  # (the lowest corner above the support top, m; the upright axis off vertical, deg)
 
 
 def lift_goal_check(world, m, key: str, z0: float, goal: tuple[float, float] | None):
@@ -345,12 +253,7 @@ def lift_goal_check(world, m, key: str, z0: float, goal: tuple[float, float] | N
     LIFT_MARGIN_M to spare: the lowest corner clearance + LIFT_MARGIN_M above the support top, upright under tilt.
     Values add low_cm, need_cm, tilt_deg."""
     ok, values = S.bimanual_lift_check(world, m, key, z0, LIFT_MIN_RISE_M)
-    if goal is None:
-        return ok, values
-    low, tilt = clearance_now(world, key)
-    need = goal[0] + LIFT_MARGIN_M
-    values.update(low_cm=round(100 * low, 2), need_cm=round(100 * need, 1), tilt_deg=round(tilt, 1))
-    return ok and low >= need and tilt < goal[1], values
+    return GC.goal_check(world, key, goal, LIFT_MARGIN_M, ok, values)
 
 
 def _rot3(quat) -> np.ndarray:
@@ -535,14 +438,13 @@ def pick(ctx, key: str) -> Outcome:
     def top_up(v):
         """Held, upright enough, short of the goal's clearance: both hands up by the deficit from where they were sent,
         the squeeze kept, at most LIFT_MAX_DZ_M above the grasp; None when nothing is left to raise."""
-        if tries["topup"] >= LIFT_TOPUPS or float(v["tilt_deg"]) >= goal_lift[1]:
+        if tries["topup"] >= LIFT_TOPUPS:
             return None
-        short = max(float(v["need_cm"]) - float(v["low_cm"]), 0.0) / 100
-        cap = float(state["g"]["grasp_z"]) + LIFT_MAX_DZ_M
         last = tries["goal"]
-        goal = {s: np.r_[last[s][:2], min(float(last[s][2]) + short, cap)] for s in SIDES}
-        if max(float(goal[s][2] - last[s][2]) for s in SIDES) < 0.005:
+        z = GC.top_up(v, goal_lift, [float(last[s][2]) for s in SIDES], float(state["g"]["grasp_z"]) + LIFT_MAX_DZ_M)
+        if z is None:
             return None
+        goal = {s: np.r_[last[s][:2], zs] for s, zs in zip(SIDES, z)}
         tries["topup"] += 1
 
         def again():
