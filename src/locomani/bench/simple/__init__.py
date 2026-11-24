@@ -23,7 +23,8 @@ SPEC = BenchSpec(
     notes={
         "sensor=stereo": "the head's stereo pair; depth from a stereo model served by depth_server_esc.py (the loops so far)",
         "sensor=rgbd": "the head camera's depth rendered by Isaac; new in TODO 49.2",
-        "controller_root=odometry": "OdoRoot exists but was never wired to ScaleBFM (BFM_ROOT=true); TODO 49.3",
+        "controller_root=odometry": "the loops so far: OdoRoot is ScaleBFM's root_source, re-anchored at each stand",
+        "controller_root=truth": "the policy told the simulator's pelvis (root_source None); selectable in TODO 49.3",
         "controller=native": "the environment is driven by joint targets; SIMPLE's own whole-body controller is not wired here",
     },
 )

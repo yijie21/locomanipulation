@@ -30,10 +30,10 @@ class Profiles(unittest.TestCase):
             self.assertEqual((r.options, r.explicit, r.normalized), (o, (), ()), name)
 
     def test_the_profiles_keep_the_loops_settings_so_far(self):
-        # SIMPLE's loops: stereo depth, odometry belief, ScaleBFM told the simulator's pelvis
+        # SIMPLE's loops: stereo depth; leg odometry for the belief and for ScaleBFM's root (OdoRoot as root_source)
         s = resolve("simple", allow_planned=True).options
         self.assertEqual((s.target, s.sensor, s.self_pose, s.controller_root, s.controller),
-                         ("perception", "stereo", "odometry", "truth", "scalebfm"))  # fmt: skip
+                         ("perception", "stereo", "odometry", "odometry", "scalebfm"))  # fmt: skip
         self.assertEqual(resolve("locomanilab", allow_planned=True).options.sensor, "rgbd")
         for name in ("bigym2", "humanoidarena"):
             self.assertEqual(resolve(name, allow_planned=True).options.controller, "native")
@@ -72,7 +72,7 @@ class InvalidInput(unittest.TestCase):
     def test_truth_takes_no_sensor(self):
         r = resolve("simple", ["target=truth"], allow_planned=True)
         self.assertEqual((r.options.sensor, r.normalized), ("none", ("sensor",)))
-        self.assertEqual(r.options.signature(), "simple/truth/pose-odometry/root-truth/scalebfm")
+        self.assertEqual(r.options.signature(), "simple/truth/pose-odometry/root-odometry/scalebfm")
         with self.assertRaisesRegex(ValueError, "takes no sensor"):
             resolve("simple", ["target=truth", "sensor=stereo"], allow_planned=True)
 
@@ -82,7 +82,7 @@ class InvalidInput(unittest.TestCase):
 
     def test_depth_noise_belongs_to_rgbd(self):
         r = resolve("simple", ["sensor=rgbd", "depth_noise=realsense"], allow_planned=True)
-        self.assertEqual(r.options.signature(), "simple/perception-rgbd-realsense/pose-odometry/root-truth/scalebfm")
+        self.assertEqual(r.options.signature(), "simple/perception-rgbd-realsense/pose-odometry/root-odometry/scalebfm")
         with self.assertRaisesRegex(ValueError, "rgbd only"):
             resolve("simple", ["depth_noise=realsense"], allow_planned=True)
 

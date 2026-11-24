@@ -11,8 +11,8 @@ One selector per mutually exclusive choice (docs/reference/standards.md, "Interf
                                                `none` exactly when target is truth
     depth_noise      none | realsense         rgbd only: the rendered depth as is, or with a RealSense-like noise model
     self_pose        truth | odometry         where the skill believes the pelvis is: the simulator's, or leg odometry
-    controller_root  truth | odometry         the pelvis position ScaleBFM is told (its policy input holds one); was
-                                               always the simulator's before TODO 49.3
+    controller_root  truth | odometry         the pelvis position ScaleBFM is told (its policy input holds one): the
+                                               simulator's, or leg odometry re-anchored at every stand (the loops so far)
     controller       scalebfm | native        our ScaleBFM motor layer, or the benchmark's own whole-body controller
 
 Resolution happens once, in this order: the code defaults below, the benchmark's profile
@@ -64,8 +64,8 @@ class BenchOptions:
         default="odometry", metadata={"choices": SELF_POSE}
     )  # where the skill believes the pelvis is: simulator or leg odometry
     controller_root: str = field(
-        default="truth", metadata={"choices": CONTROLLER_ROOT}
-    )  # the pelvis position ScaleBFM is told (TODO 49.3)
+        default="odometry", metadata={"choices": CONTROLLER_ROOT}
+    )  # the pelvis position ScaleBFM is told: the simulator's, or leg odometry re-anchored at each stand
     controller: str = field(
         default="scalebfm", metadata={"choices": CONTROLLERS}
     )  # our ScaleBFM motor layer, or the benchmark's own controller
@@ -88,7 +88,7 @@ class BenchOptions:
         return apply_overrides(self, overrides)
 
     def signature(self) -> str:
-        """`simple/perception-stereo/pose-odometry/root-truth/scalebfm`; rgbd adds its noise (`rgbd-realsense`)."""
+        """`simple/perception-stereo/pose-odometry/root-odometry/scalebfm`; rgbd adds its noise (`rgbd-realsense`)."""
         seen = "truth" if self.target == "truth" else f"perception-{self.sensor}"
         if self.sensor == "rgbd" and self.depth_noise != "none":
             seen += f"-{self.depth_noise}"
