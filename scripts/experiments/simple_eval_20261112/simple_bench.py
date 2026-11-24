@@ -73,6 +73,7 @@ import math
 import os
 import sys
 import time
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -191,13 +192,24 @@ def angle_deg(Ra: np.ndarray, Rb: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(Ra.T @ Rb) - 1) / 2, -1, 1))))
 
 
-def episode(ep: dict, method: str, a, models: dict) -> dict:
+def sample_id(a, task: str, ep: dict, rep: int) -> int:
+    """--collect: a sample's id, unique over the four tasks' 30 layouts and the reps."""
+    return a.collect_id0 + 1000 * (30 * PICK_TASKS.index(task) + 10 * int(ep["level"]) + int(ep["index"])) + rep
+
+
+def held_out(task: str, ep: dict, k: int) -> bool:
+    """--collect: the layouts left out of the data (the check's unseen ones), a third by crc32."""
+    return zlib.crc32(f"{task}:{ep['level']}:{ep['index']}".encode()) % k == 0
+
+
+def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> dict:
     import approach_eval as AE
     import plan_invert as PI
     import room_grasp as RGP
     import wrist_invert as WI
 
     task, side = ep["task"], a.side
+    sid = sample_id(a, task, ep, rep) if rep is not None else None
     info = EP.build(ep)
     os.environ["REACH_SCENE_DIR"] = info["dir"]
     env = E.Env("open")
@@ -234,7 +246,12 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         if live[0]:
             hit_scan()
         if film is not None and m.t - t0 >= len(film) * FILM_DT - 1e-9:  # the whole state, for isaac_film.py
-            film.append((float(m.t - t0), look["phase"], sim.d.qpos.copy()))
+            ref = None
+            if a.film_ref:  # the motor's reference pose (MuJoCo order) and the acting hand's finger command
+                r_ = m.ref(m.t)
+                fc = sim.fingers_cmd.get(side)
+                ref = np.r_[r_.pos, r_.quat, r_.joints, np.full(7, np.nan) if fc is None else fc].astype(np.float32)
+            film.append((float(m.t - t0), look["phase"], sim.d.qpos.copy(), ref))
         return ok
 
     def robot_on(bodies: set) -> set:  # robot bodies in contact with any of `bodies`
@@ -273,6 +290,8 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     m.tick = tick
     row = dict(task=task, level=ep["level"], index=ep["index"], method=method, stand=a.stand, side_off=a.side_off,
                clear=a.clear, column=a.column, avoid=a.avoid or None, joint=a.joint)  # fmt: skip
+    if sid is not None:
+        row["sid"] = sid
     p0, Rp0 = env.pelvis()
     yaw0 = E.yaw_of(Rp0)
     R0 = E.rot_z(yaw0)
@@ -317,6 +336,10 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         odo.begin()
     Tg = grasp_now()
     stance = Tg[:2, 3] - (R0 @ np.r_[a.stand, a.side_off, 0.0])[:2]
+    if rep is not None:  # --collect: the stance moved by up to --jitter ahead and to the side (the sample's own draw)
+        jit = np.random.default_rng([a.collect_seed, sid, 7]).uniform(-a.jitter, a.jitter, 2)  # ahead, left (m)
+        stance = stance + R0[:2, :2] @ jit
+        row["jitter"] = jit.round(4).tolist()
     if edge is not None:
         stance[0] = min(stance[0], edge - a.table_gap)
     w = (R0.T @ np.r_[stance - p0[:2], 0.0])[:2]
@@ -357,6 +380,43 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     def moved() -> float:  # cm, the target since the second look
         return round(100 * float(np.linalg.norm(sim.d.xpos[b] - o_look)), 2)
 
+    film_extra: dict = {}
+
+    def finish() -> dict:  # the row's outcome and the film
+        z = float(sim.d.xpos[b][2])
+        e = stages[-1] if stages and stages[-1]["stage"] == "entry" else {}
+        row.update(stages=stages, palm_cm=e.get("err_cm"), palm_deg=e.get("err_deg"), rise_cm=round(100 * (z - z0), 2),
+                   success_end=bool(EP.lifted(task, z0, z)), t_success=first[0], fell=m.fell_at, t=round(float(m.t - t0), 2),
+                   touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"],
+                   hits=[[*k, round(100 * v, 2)] for k, v in sorted(hits.items())], comp=a.comp or None,
+                   controller=os.environ.get("REACH_CONTROLLER", "scalebfm"))  # fmt: skip
+        if trace is not None:
+            row["trace"] = trace
+        row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
+        row["success_45"] = first[0] is not None and first[0] <= HITCH_S
+        if film is not None:
+            J = range(sim.m.njnt)
+            meta = dict({k: row[k] for k in ("task", "level", "index", "method", "column", "success_45", "success_official",
+                                             "t_success", "palm_cm", "palm_deg")}, lift=info["lift"], target=info["target"],
+                        objects={k: o["body"] for k, o in info["objects"].items()}, dt=FILM_DT, **({} if sid is None else dict(sid=sid)))  # fmt: skip
+            fr = [f for f in film if f[1].startswith("jref")] if a.collect else film  # --collect: the samples' reaches
+            more = dict(film_extra, ref=np.array([f[3] for f in fr])) if a.film_ref else film_extra
+            os.makedirs(a.film, exist_ok=True)
+            tag = "" if rep is None else f"_r{rep}"
+            np.savez_compressed(f"{a.film}/{task}_L{ep['level']}_e{ep['index']}_{a.column}_{method}{tag}.npz",
+                                t=np.array([f[0] for f in fr]), phase=np.array([f[1] for f in fr]),
+                                qpos=np.array([f[2] for f in fr]), jnt=np.array([sim.m.joint(j).name for j in J]),
+                                jnt_adr=sim.m.jnt_qposadr.copy(), jnt_type=sim.m.jnt_type.copy(), meta=json.dumps(meta), **more)  # fmt: skip
+        return row
+
+    if a.collect:  # 38.10.3's data (jref_collect.py): the body alone from this stance, then the episode ends
+        import jref_collect as JC
+
+        s_, extra = JC.sample(a, sid, env, m, sim, rec, side, info, pw, Tg[:3, :3], f_pre, look, t0)
+        stages.extend(s_)
+        film_extra.update(extra)
+        return finish()
+
     def reach(
         stage: str, goal_w: np.ndarray, rot_w: np.ndarray, chain: int, invert: bool, entry: bool = False, via=None
     ):
@@ -369,6 +429,9 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             j = m.jaw_centre(side)[0]
             kw = dict(speed=ENTRY_SPEED, start=j + ENTRY_CONT * (last_cmd[0] - j), ik_from_ref=True)
         s = dict(stage=stage, S0=np.round(np.asarray(rec.S[-1], float)[:29], 4).tolist())  # the joints at the command
+        if a.film_ref:  # 38.10.3's check: the self model's inputs at the command, and when it was sent
+            s.update(S3=[np.round(np.asarray(x, float), 5).tolist() for x in rec.S[-3:][::-1]], t_cmd=round(float(m.t - t0), 3),
+                     W=np.round(np.asarray(rec.W[-1], float), 5).tolist(), J=np.round(np.asarray(rec.J[-1], float), 5).tolist())  # fmt: skip
         target, rot_cmd = goal_w, rot_w
         if invert and method in ("lookup", "model", "model_pose", "inverse"):
             st_ = RGP.state_now(env, rec, side, goal_w, rot_w, chain)
@@ -487,28 +550,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
                 pelvis_z=None if pz < 0 else float(pz) + LIFT_M, speed=0.1, servo=False, **kw)  # fmt: skip
         m.hold(1.0)
         row["hand_rise_cm"] = round(100 * (float(m.jaw_centre(side)[0][2]) - h0), 2)
-    z = float(sim.d.xpos[b][2])
-    e = stages[-1] if stages and stages[-1]["stage"] == "entry" else {}
-    row.update(stages=stages, palm_cm=e.get("err_cm"), palm_deg=e.get("err_deg"), rise_cm=round(100 * (z - z0), 2),
-               success_end=bool(EP.lifted(task, z0, z)), t_success=first[0], fell=m.fell_at, t=round(float(m.t - t0), 2),
-               touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"],
-               hits=[[*k, round(100 * v, 2)] for k, v in sorted(hits.items())], comp=a.comp or None,
-               controller=os.environ.get("REACH_CONTROLLER", "scalebfm"))  # fmt: skip
-    if trace is not None:
-        row["trace"] = trace
-    row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
-    row["success_45"] = first[0] is not None and first[0] <= HITCH_S
-    if film is not None:
-        J = range(sim.m.njnt)
-        meta = dict({k: row[k] for k in ("task", "level", "index", "method", "column", "success_45", "success_official",
-                                         "t_success", "palm_cm", "palm_deg")}, lift=info["lift"], target=info["target"],
-                    objects={k: o["body"] for k, o in info["objects"].items()}, dt=FILM_DT)  # fmt: skip
-        os.makedirs(a.film, exist_ok=True)
-        np.savez_compressed(f"{a.film}/{task}_L{ep['level']}_e{ep['index']}_{a.column}_{method}.npz",
-                            t=np.array([f[0] for f in film]), phase=np.array([f[1] for f in film]),
-                            qpos=np.array([f[2] for f in film]), jnt=np.array([sim.m.joint(j).name for j in J]),
-                            jnt_adr=sim.m.jnt_qposadr.copy(), jnt_type=sim.m.jnt_type.copy(), meta=json.dumps(meta))  # fmt: skip
-    return row
+    return finish()
 
 
 def main() -> None:
@@ -552,10 +594,29 @@ def main() -> None:
         "--trace", action="store_true", help="every tick of the reaches and the close in the row (contacts)"
     )
     ap.add_argument("--film", help="a folder for each episode's whole MuJoCo state at 25 Hz (isaac_film.py renders it)")
+    ap.add_argument("--film-ref", action="store_true", help="with --film: also the motor's reference pose and the acting "
+                    "hand's finger command at every frame, and the self model's inputs at each reach's command")  # fmt: skip
+    ap.add_argument("--collect", default="", help="38.10.3's data (jref_collect.py): the planner's socket (jref_plan_server.py). "
+                    "Each episode walks to its stance (moved by --jitter), takes --collect-k samples and ends")  # fmt: skip
+    ap.add_argument("--reps", default="0", help="--collect: the stances a layout, 'a-b' or 'i,j,k'")
+    ap.add_argument("--collect-k", type=int, default=1, help="--collect: samples a stance")
+    ap.add_argument("--collect-seed", type=int, default=0)
+    ap.add_argument("--collect-id0", type=int, default=0)
+    ap.add_argument(
+        "--jitter", type=float, default=0.06, help="--collect: m, the stance moved by up to this ahead and aside"
+    )
+    ap.add_argument("--holdout", type=int, default=3, help="--collect: layouts with crc32 % this == 0 are left out")
+    ap.add_argument("--skip-done", default="", help="--collect: a rows dir; the task's stances already in any of its files are "
+                    "skipped (a stance's run is fixed by its id, so a stopped collection is completed, not redone)")  # fmt: skip
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     assert not (a.comp and a.shift), "--comp or --shift, not both"
     assert not (a.joint and (a.comp or a.shift or not a.avoid)), "--joint goes with --avoid alone"
+    if a.collect:
+        assert a.film and a.method == "direct" and not (a.avoid or a.comp or a.shift or a.clear), (
+            "--collect: --film, direct"
+        )
+        a.film_ref = True
     a.edges = {}
     if a.column == "perception":  # the table's edge as blind.py's look saw it
         for r in json.load(open(EP.OUT / f"blind_f1_{a.task}.json")):
@@ -581,14 +642,34 @@ def main() -> None:
         idx = range(i0, i1 + 1)
     else:
         idx = [int(i) for i in a.episodes.split(",")]
-    for i in idx:
+    reps = [None]
+    if a.collect:  # stance by stance, every layout once before the next stance (a stopped run covers them evenly)
+        r0, r1 = map(int, a.reps.split("-")) if "-" in a.reps else (None, None)
+        reps = list(range(r0, r1 + 1)) if r0 is not None else [int(r) for r in a.reps.split(",")]
+        idx = [i for i in idx if not held_out(a.task, eps[i], a.holdout)]
+        print(
+            f"collect: {len(idx)} layouts of {a.task} (held out: crc32 % {a.holdout} == 0), stances {a.reps}",
+            flush=True,
+        )
+    todo = [(r, i) for r in reps for i in idx]
+    if a.collect and a.skip_done:
+        import glob
+
+        done = {(int(r["rep"]), int(r["ep"])) for f in glob.glob(f"{a.skip_done}/*.jsonl") for r in map(json.loads, open(f))
+                if r["task"] == a.task}  # fmt: skip
+        todo = [p for p in todo if p not in done]
+        print(f"skip-done: {len(done)} stances of {a.task} done in {a.skip_done}, {len(todo)} to run", flush=True)
+    for rep, i in todo:
         t_ = time.time()
-        row = episode(eps[i], a.method, a, models)
-        row.update(ep=i, wall_s=round(time.time() - t_, 1))
+        row = episode(eps[i], a.method, a, models, rep)
+        row.update(
+            ep=i, wall_s=round(time.time() - t_, 1), **({} if rep is None else dict(rep=rep, sid=row.get("sid")))
+        )
         with open(a.out, "a") as f:
             f.write(json.dumps(row) + "\n")
         short = {k: row[k] for k in ("ep", "level", "index", "palm_cm", "success_end", "t_success", "fell", "wall_s")}
-        print(short, [(s["stage"], s["err_cm"], s.get("shift_cm")) for s in row["stages"]], flush=True)
+        print(short, [(s["stage"], s.get("err_cm"), s.get("shift_cm") if rep is None else s.get("jaw_err_cm")) for s in row["stages"]],
+              flush=True)  # fmt: skip
         # every episode builds a new Env; the last one's objects sit in reference cycles that the cyclic collector
         # rarely reaches, and with SONIC's networks on the GPU each holds ~1 GB of onnxruntime arena (2026-11-24, the
         # 4090: two of four processes died allocating after 16-17 episodes). Collect them now.

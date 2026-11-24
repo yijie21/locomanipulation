@@ -9,7 +9,9 @@
 #      the pregrasp height, over to it (curobo_avoid_20261120/vias_e1.py's group E, from B's via files and the preps)
 #   J  (2026-11-24, TODO 38.10.2) the planned right-arm joint trajectory itself as the reference (simple_bench.py --joint,
 #      Motor.reach_joints), the rest of the body held: no IK of ours on the way
-# bench_via.sh <out dir> <scalebfm|sonic> <model dir for C> <step: A|plan|B|C|all|D|E|M|J> [first episode] [last episode]
+#   JR (2026-11-24, TODO 38.10.3) J again with --film-ref: the films carry the motor's reference and the rows the self
+#      model's inputs at the command (jref_data.py turns them into the check's dataset); the rows should equal J's
+# bench_via.sh <out dir> <scalebfm|sonic> <model dir for C> <step: A|plan|B|C|all|D|E|M|J|JR> [first episode] [last episode]
 # One process a task (4 at a time); the planner 4 at a time on one GPU. Progress: <out>/pipeline.log.
 # Another machine: BENCH_REPO (the checkout, default vastgpu's), SIMPLE_ROOT (default <repo>/third_party/SIMPLE), BENCH_GPU
 # (default 1). On the 4090: BENCH_REPO=/wuji-vefps-D/wuji-il/yijie/ws/code/loco
@@ -91,7 +93,7 @@ if [ "$STEP" = B ] || [ "$STEP" = all ]; then bench B --avoid $D/via; fi
 if [ "$STEP" = C ] || [ "$STEP" = all ]; then bench C --avoid $D/via --comp $MODEL; fi
 if [ "$STEP" = D ]; then bench D --avoid $D/via --shift=-6,0,2; fi
 if [ "$STEP" = E ]; then export REACH_VIA_COMP_MODE=const; bench E --avoid $D/via --comp $MODEL; unset REACH_VIA_COMP_MODE; fi
-if [ "$STEP" = M ] || [ "$STEP" = J ]; then
+if [ "$STEP" = M ] || [ "$STEP" = J ] || [ "$STEP" = JR ]; then
   mkdir -p $D/asrun_$STEP
   cp $E/simple_bench.py $E/bench_via.sh $C/vias_e1.py src/locomani/backends/scalebfm/motor.py $D/asrun_$STEP/
 fi
@@ -101,4 +103,5 @@ if [ "$STEP" = M ]; then
   bench M --avoid $D/tmpl/via_E
 fi
 if [ "$STEP" = J ]; then bench J --avoid $D/via --joint; fi
+if [ "$STEP" = JR ]; then bench JR --avoid $D/via --joint --film-ref; fi
 log "DONE $STEP"
