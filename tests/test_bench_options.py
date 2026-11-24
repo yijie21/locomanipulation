@@ -98,8 +98,8 @@ class CapabilityTables(unittest.TestCase):
 
     def test_a_planned_value_stops_a_run_unless_allowed(self):
         with self.assertRaisesRegex(ValueError, "planned, not implemented yet"):
-            resolve("bigym2")
-        r = resolve("bigym2", allow_planned=True)
+            resolve("humanoidarena")
+        r = resolve("humanoidarena", allow_planned=True)
         self.assertTrue(r.planned)
 
     def test_simple_runs_the_switches_49_2_verified(self):

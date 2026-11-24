@@ -1,10 +1,10 @@
-# bench/bigym2: the switches BiGym 2.0 runs with unless a run overrides them (TODO 49.1): its own controller, leg odometry unverified until TODO 49.5
+# bench/bigym2: the switches BiGym 2.0 runs with unless a run overrides them (TODO 49.5): simulator truth for the target, its own GR00T-WBC controller; the rgbd channel exists (--set depth=true) but only perception reads it
 defaults:
 - _schema
 - _self_
 bench: bigym2
-target: perception
-sensor: rgbd
+target: truth
+sensor: none
 depth_noise: none
 self_pose: truth
 controller_root: truth

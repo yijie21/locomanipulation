@@ -101,3 +101,33 @@ a slot is taken, `episodes.check_id`, `episodes.reset_msg` and the environment s
 SAM 3 must be up on port 18832. Switches: `target=perception` (rgbd, depth_noise none or realsense: no right-camera depth, hence no
 occlusion shadows), `self_pose` and `controller_root` both values, `target=truth` for the 20 original tasks with `self_pose=truth`;
 `sensor=stereo` stays unsupported (one head camera). Checks and results: `lml_port_notes.md` (outputs under /workspace/tmp/bench49/lml/).
+
+## BiGym 2.0 port (TODO 49.5, 2026-11-24)
+
+The smallest useful adapter in `src/locomani/bench/bigym2/`: target=truth, controller=native (BiGym's frozen GR00T-WBC), the rgbd channel built.
+The environment server runs in BiGym's own venv as a standalone file (`server.py`, no locomani imports) and is started by the bed process
+(`client.ServerLink`), which it dies with; the machine's one-simulator lock is `session.Lock`.
+
+Install (third_party is shared by the worktrees): `git clone https://github.com/swirl-uk/BiGym2 third_party/BiGym2` at commit
+`35ec40923421aff26ac2a525adea428567732898` (2026-11-12, `fix(robots): snapshot the gripper slew targets`), then in that directory
+`uv sync --frozen --python 3.12` -> `.venv` with Python 3.12.3, MuJoCo 3.8.1 (its `uv.lock`; substrate `bigym2-mj381-v1`), onnxruntime from the
+lock. Nothing was installed into /venv/main. Licence: Apache-2.0; the GR00T weights fall under the NVIDIA Open Model License.
+
+```bash
+PYTHONPATH=src /venv/main/bin/python -m locomani.bench.bigym2 run drawer_top_open --ids drawer_top_open/P/0-4 --out rows.jsonl [--set depth=true]
+```
+
+`--ids` is a file or a spec `<task>/<pool>/<a>-<b>`. Pools: P practice (seed 1000+n), A acceptance (100000+n), S sealed (700000+n); `--set pools=PA`
+opens more than P. BiGym's evaluation seeds [620000, 630000) are refused in five places (config, CLI, `check_id`, `reset_msg`, the server's own
+check); the demonstration seeds 1-199 are never used. Tasks that ignore the seed (checked on all 20 by hashing the start state under three seeds):
+`dishwasher_close`, `wall_cupboard_open`, `wall_cupboard_close` (their pools repeat one start); the other 17 draw from it, and a reset is repeatable.
+
+- Truth view and judge: `privileged.py` (poses, scene joints with axes, the task's own facts, collision vertices), `truth.py` (`view.goal()`: the
+  reach sphere, the top drawer's handle bar and pull axis), `judge.py` (BiGym's verdict plus: the hands, bodies of the Dex1 gripper, touched the
+  task body on at least 5 steps and the body touched it on fewer than 3; the server records every robot-body / jointed-scene-body contact per step).
+- rgbd: `--set depth=true` makes the server replace `bigym.loco.env.CameraConfig` at run time by one that sets `depth=True` at the render shape
+  (their file hard-codes `depth=False`, env.py:669; no file of theirs is edited); only the head camera renders. `Cameras.rgbd()` returns the
+  `Frame` (rgb, metric depth, K from the 60 degree vertical field of view, the camera in the pelvis frame as x right, y down, z forward). The head camera is
+  `g1_29dof_with_dex1_1/head` on `torso_link`; at the settled pose it looks steeply down at the work surface. Physics is unchanged by depth (identical step counts).
+- Seed package `bigym2/seed/` (skill.py, frozen `__init__.py`), guard `guard.py` (R1-R8, `python -I guard.py --selftest`).
+- Evidence and numbers: `/workspace/tmp/bench49/bigym2_notes.md`.
