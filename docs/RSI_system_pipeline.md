@@ -34,6 +34,7 @@ src/locomani/
         ├── near.py (289)   拿着走到某物旁
         ├── held.py / clearance.py / cover.py / grasp_program.py   辅助：持握、避让、遮挡、种子抓取程序
         ├── bimanual.py / pack.py   两手抱取和两手放入、放入再抱箱（11-05，物流间线用，ADT 族不走到）
+        ├── grasp_common.py   单手和双手共用的计算：按目标判抬升并补抬、碰撞壳体的截面（11-23，规则第 41 条；纯函数，不放常数）
         └── test_*.py       技能自己的单元测试（写回时跑）
 
 scripts/rsi/                驱动程序（人写；report/ 和仓库的 rsi_kit/ 不进沙盒，角色读不到）

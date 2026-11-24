@@ -335,6 +335,16 @@ xdg-open outputs/scene_rsi_20261016/past_view/gso_single_grasp_sealed_final/inde
 - 单看一局，或者一局失败、一局成功按步骤对齐对比，用 `scripts/rsi/report/past_view_en.py`（rsi.md 第 5.4 节），同样要给 `--scene`。
 
 得到什么：`--out` 下每局一个 `<局名>.en.html` 和 `index.html`，浏览器直接打开；索引页标题行的成功数和 `summary.json` 里最终版本的一致。2026-11-19 两条同时跑：单手 100 局 3.2 分钟、70 MB，双手 40 局 1.3 分钟、36 MB；带帧每页 0.3–1.5 MB，不带帧每页几十 KB。
+**7.5 两个任务族共享的代码：`skills/grasp_common.py`（11-23）**
+
+gso-alt-a（7.3 的第一次交替运行）跑完后看两边最终现任的代码：两个任务族各自写出了同样两条原则——按目标 `lifted(X, c, t)` 判抬升、不够就补抬（双手写的；单手只把抬升常数调高了）；从碰撞壳体的截面量抓取处的宽度（两边各写了一份，算的量不同）。决定（用户 11-23）把这两项计算抽到一个共享文件。目的不是去重，而是让代码同步通道有东西可测、让知识迁移有落点。
+
+- **文件**：`src/locomani/tasks/scene/skills/grasp_common.py`，两节纯函数。第 1 节 `lift_goal / clearance_now / goal_check / top_up`（从 bimanual 原样抽出）；第 2 节 `pieces / prepare / cut / band / extent / section_extent / width / band_width / cuts_width`（建在 `graspability.body_parts` 上；bimanual 的 `grip_height` 扫描和 pick 的 `hull_span` / `band_width` 都改成调它）。不放策略常数：容差、扫描步长、补抬次数都留在 pick.py / grasp_program.py / bimanual.py 里传进去。规则第 41 条（第 28 版）：Engineer 可以改它、加纯函数，整个包的 `skills/test_*.py`（含另一方的）必须过；提示词点名它。测试 `skills/test_grasp_common.py` 从旁边导入，沙盒和同步候选里都能跑。
+- **底本**：先把 gso-alt-a 两边的最终现任写回主库（`writeback.py`，`set` 覆盖值折进常数；b 的最终版和 a 的只差已折进的那几行，没有再写），提交 dfda8f21；再抽取（f236e20d）。
+- **等价验证**（抽取前后的包在各自验收池上各跑一遍，参考版再跑一遍当噪声底；运行目录 `outputs/grasp_common_eq/`，不入库）：单手 80 起点逐局 (ok, failure_class, plan_ok) 全同，参考版两遍也全同。双手 32 起点 31 局全同，`lift_gso_0889_s9600026` 从成功变成 dropped_hold（28 → 27 局）；参考版两遍逐局逐值全同，说明仿真本身确定。离线在 32 个起点上比较新旧 `geometry`：所有手部目标、抓取高度、band 宽度差 ≤ 2.2e-16 m，`how` 一致——差别只是浮点运算次序（顶点按 body 位姿变换、先切平面再投影），接触仿真把它放大成一局翻转。按 11-23 定的标准接受（差别只在几何来源的浮点层面），这一局记在这里。
+- **同步规则的变化**见 7.3 第 3 步（两边改同一处时同步失败；先跑包的测试再过验收门）。
+- **第二步，单手改用按目标判的抬升**：`grasp_program.run` 的 recover 阶段和 `pick.pick_top` 的 hold 之后，物体在手里但最低角离支撑面顶不够 c + 余量时，按差额再抬一次、再 hold 一次（参数从双手抄：余量 0.03 m，侧抓夹爪最多比合拢处高 0.45 m，俯抓夹爪不超过 `TOP_JAW_MAX_M`，补抬 1 次；程序仍返回“拿住了”，目标由裁判判）。当作一个候选过单手的不变差验收门（`gate.py --non-inferior`，现任 = 抽取后的包 f236e20d，验收池同上）：**没过，没有提交**。80 起点配对：候选 68 胜、现任 70 胜，候选多赢 0 局、少赢 2 局（规则 sync 要求少赢 ≤ 多赢），没有摔倒增加。候选里 6 局触发了补抬（都在侧抓程序里，抬 1.6–5 cm），3 局成功、3 局失败；少赢的 2 局都是 `gso_0162`：hold 4 秒后物体在手里但离目标差 1.3–1.9 cm，补抬 1.6–1.8 cm 时垫片失去接触（failure_class slip），而现任同样的局没有再动手，裁判按 0.2 m 门槛（不含 0.03 m 余量）判成功——差额都在余量之内，这两次补抬本来就不需要。结论：单手的边缘抓取经不起 hold 之后再动一次；双手的补抬能过是因为两只手压着箱子。这一步的代码（`grasp_program.run` 的 `top_up` 阶段、`pick.pick_top` 的 `top_up` 步骤、各自的单元测试）留在 `outputs/grasp_common_eq/step2_single_lift_goal.patch`（不入库），验收门的账本在 `outputs/grasp_common_eq/step2_gate/ledger.jsonl`。要再试，先改成只在差额超过某个阈值时补抬，或补抬前再捏紧。
+
 ## 8. Unreal 关卡与预览图
 
 ```bash

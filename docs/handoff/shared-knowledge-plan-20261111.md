@@ -248,6 +248,8 @@ Counterexamples: pick_Plant4_1_s410018 -- the all-slab variant re-planned a succ
 
 `gso_all_s<seed>` 第一次内环（TODO 40.8）跑完后，`knowledge.py build <gso 沙盒> gso_all_s0 --promote`，看 ADT 的 `single_object` / `contested` 条目有没有在物流间的物体上触发并升级，和 `multi_object` 条目有没有被降级。再用 `gso_all_s1` 带 / 不带库各跑一次内环做真正的跨任务对照。这是另一个决定点，不在本页范围。
 
+2026-11-23：跨任务族的另一条通道——代码同步——在第一次交替运行（gso-alt-a）后落了地：两个任务族共用的计算抽进 `skills/grasp_common.py`，同步冲突即失败、先跑测试再过门，见 [runbook 7.5](../rsi_logistic_room_1030_single_bimanual.md)。
+
 ## 8. 文件与改动清单
 
 | 文件 | 改动 |
