@@ -115,7 +115,7 @@ stat -c%s third_party/GR00T-WholeBodyControl/decoupled_wbc/control/robot_model/m
  && .venv_data_collection/bin/python download_from_hf.py --sonic-v1-1 --no-planner)
 ```
 
-做什么：用上游的安装脚本建两个环境，`.venv_sim` 跑仿真和本仓库的所有脚本，`.venv_data_collection` 跑数据录制（exporter）；再下载两份 SONIC 权重，`sonic_v1_1` 是默认用的，`release` 留作对照。
+做什么：用上游的安装脚本建两个环境，`.venv_sim` 跑仿真和本仓库的所有脚本，`.venv_data_collection` 跑数据录制（exporter）；再下载两份 SONIC 权重，`sonic_v1_1` 是默认用的，`release` 留作对照。上游的 `install_data_collection.sh` 会 `sudo apt-get install espeak`（语音提示）；没有 sudo 的机器上它跳过这一项、只少了语音，不影响后面。两个环境约 13 GB，uv 的下载缓存还会再占约 13 GB（09-25 新机器实测：环境里的文件没有和缓存共用硬链接），装完可以 `uv cache clean`。
 
 ```bash
 uv pip install --python third_party/GR00T-WholeBodyControl/.venv_sim/bin/python scikit-fmm mujoco==3.11.0

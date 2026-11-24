@@ -1,0 +1,3 @@
+{"id": "IThorKitchenOpenFridge_scene13", "goal": "open the fridge door in front of you"}
+{"id": "IThorKitchenCloseFridge_scene13", "goal": "close the fridge door in front of you"}
+{"id": "IThorKitchenApproachOpenFridge_scene13", "goal": "walk to the fridge from far away and open the fridge door"}

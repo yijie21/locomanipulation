@@ -56,4 +56,9 @@ case "$CMD" in
         export USD_PY
         echo "  USD_PY=$USD_PY" ;;
 esac
-exec bash -c "set -eu; $CMD"
+bash -c "set -eu; $CMD"
+# TODO 4.7.8: one drawn mesh over 349,525 faces leaves MuJoCo's fast render path (12x slower); refuse the scene
+XML="outputs/scene/$NAME/scene_locomani.xml"
+if [ "$PART" = build ] && [ -f "$XML" ]; then
+    python3 scripts/scene_mesh_budget.py "$XML"
+fi

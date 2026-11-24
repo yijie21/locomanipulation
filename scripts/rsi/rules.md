@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 28, 2026-11-06)
+# Rules for the scene RSI loop (TODO 27, version 29, 2026-11-20: parameters searched by the program, review notes handed on, drafts run where they act, second gate shot off)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -136,10 +136,10 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     so it cannot be told whose it is (code, version 12). Once half the drafts are in, the rest get
     `--engineer-late-min` minutes (10 by default), then the driver stops them: a stopped draft is void and `late` in
     the ledger, its hypothesis counts as not built, and rule 33 builds it first next time (code, version 16, TODO
-    37.3). Each draft's diagnostic rounds start as soon as its Engineer answers. When the gate rejects the composed
-    candidate, the best draft it has not judged (more diagnostic starts fixed than broken, the largest net first)
+    37.3). Each draft's diagnostic rounds start as soon as its Engineer answers. With `--second-shot` (off unless the run asks for it), when the gate rejects the
+    composed candidate, the best draft it has not judged (more diagnostic starts fixed than broken, the largest net first)
     goes to the gate in the same iteration -- one more gate call of the budget instead of another iteration
-    (`--second-shot`, on by default; code, version 16, TODO 37.4). Version 14 (TODO 33.8, 33.14, user 2026-10-22):
+    (code, version 16, TODO 37.4; off by default since version 29). Version 14 (TODO 33.8, 33.14, user 2026-10-22):
     - the gate's best 2 rejected candidates with more wins than losses since the incumbent wait in
       `loop/candidates_pool.json` (cleared when the incumbent changes); the Manager may name one as `base`, so the
       Engineers build on it (the gate still compares with the incumbent), and the Composer may merge its edits or adopt
@@ -147,6 +147,10 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     - a mechanism Reviewers proposed in two or more iterations and no Engineer was given is built first, unless the
       Manager writes why not; the Manager links repeats to earlier ids (prompt; the driver counts them);
     - at most two iterations in a row reopen a park; after two, `reopen` is not offered (code).
+    Version 29: the Manager's `hypotheses` are different ones, preferably on different tasks; the same hypothesis is never
+    given to two Engineers (the driver removes duplicates, may run fewer Engineers, or tops up with an untested or
+    verified hypothesis on another task). The Reviewer's working files go to the Manager, the Engineers and the Composer
+    as review notes with an INDEX.md (code; prompt).
 
 29. The sandbox holds the experience library (scripts/rsi/experience, TODO 32.10): one entry per family that finished
     before, without this family's own or those its file's `library_exclude` names (code: sandbox.py), and the outer
@@ -192,7 +196,7 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     them; prompt) (version 15; version 18 for the body model and the chooser; version 22 for two_hand and curves).
 
 33. Each hypothesis gets a `status` from its probe: verified (it fixed a diagnostic start and broke none), refuted (it
-    fixed none), mixed, or hypothesis (not probed: its test needs code). A mechanism Reviewers proposed in two or more
+    fixed none), mixed, or untested (not probed: its mechanism needs code). A mechanism Reviewers proposed in two or more
     iterations, given to no Engineer and not refuted takes one Engineer slot, unless the Manager's `skip` names the
     check that fails: interface_kept, safety_checks_kept, changed_code_reached or evidence_not_refuting. After a
     rejection the Manager reads the failure classes, the gate's per-class tally and a standing suggestion per class
@@ -204,6 +208,15 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     the opposite one; else it stays a hypothesis. Only rounds the roles may see, on this machine, under the incumbent's
     own version unless scope is all. A correlation chooses what to build; the gate still decides what stays (rule 7)
     (code: loop.py records_statuses, records.judge; TODO 33.15.1) (version 20).
+    Version 29: parameters are searched by the program; the roles name the knobs. A hypothesis may carry `sweep`, at most 2
+    items {"key", "values"} (2-5 values each) besides `delta.set`, the fixed values. The program runs each value on the
+    starts of the hypothesis's tasks (the second key with the first held at its best), compares each run with the
+    incumbent start by start and keeps the best value: most starts fixed minus broken, ties to fewer broken, then to the
+    earlier in the list. The probe result carries `sweep` (key, value, n, fixed, broken, net) and `best_set`. Values
+    bracket the change the role expects and come from the quantity the value comes from, never from particular
+    episodes. A hypothesis whose mechanism needs code (`needs_code`) is not probed: its status is `untested`, which is
+    not a refutation. The Manager lists in `tune` the parameter-only hypotheses whose best net is at least 1, and the
+    program builds a draft for each (the incumbent's code plus `best_set`) without an Engineer (code; prompt).
 
 34. Preparatory actions (TODO 33.5; D2, D5, D9): when the chooser (rule 32) marks an object `needs_prep`, the skill
     asks `locomani.tasks.scene.prep` which goal would give it a standing stance -- turn the object about the vertical,
@@ -259,3 +272,9 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     that as the draft's `footprint` for the Composer (code: loop.py footprint; prompt). With `run --repair`, a draft that
     breaks a start the incumbent finishes gets one more turn in its own session with that run's result; the repair
     replaces it only if it breaks fewer starts without losing net ones (code: loop.py repair_draft; prompt) (version 28).
+    Version 29: a draft's diagnostic rounds run on the tasks its declared `scope.starts` belong to, plus a few sentinel
+    starts of every other task (starts the incumbent won first); `["all"]` runs the whole pool. Its flips and footprint
+    are over those starts (`ran`; `footprint.not_run` counts the rest); the composed candidate runs on the whole pool
+    beside the gate. A threshold the new code needs is a parameter key the Engineer lists in `tunable` (at most 3 items
+    {"key", "values"}, 2-5 values each); after the diagnostic run the program sweeps them on the declared scope and
+    keeps the best (rule 33) (code; prompt).

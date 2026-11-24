@@ -266,3 +266,18 @@ def test_the_fixed_start_option_differs_from_the_default_in_placement_only(name)
     }
     assert visual[0]["start_edges"] == ["xm", "xp", "ym", "yp"] and visual[0]["start_pose"] == "sampled"
     assert "start_edges" not in visual[1] and visual[1]["start_pose"] == "scene"
+
+
+def test_the_reminder_waits_only_at_a_terminal(capsys):
+    """TODO 10.7: at a terminal the collection prints the reminder and waits REMINDER_SECONDS before the first round;
+    under nohup (not a terminal) it prints and goes on."""
+    from locomani.tasks.crate import collect
+
+    slept = []
+    collect.announce(["collect: scene x"], interactive=True, sleep=slept.append)
+    assert slept == [collect.REMINDER_SECONDS]
+    assert f"first round in {collect.REMINDER_SECONDS} s" in capsys.readouterr().out
+    collect.announce(["collect: scene x"], interactive=False, sleep=slept.append)
+    assert slept == [collect.REMINDER_SECONDS] and "first round" not in capsys.readouterr().out
+    collect.announce([], interactive=True, sleep=slept.append)
+    assert slept == [collect.REMINDER_SECONDS]  # nothing to read, no wait

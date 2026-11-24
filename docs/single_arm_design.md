@@ -830,7 +830,7 @@ CUDA_VISIBLE_DEVICES=1 third_party/Isaac-GR00T/.venv/bin/python \
 ### 导出 LeRobot v2.1 并对接 GR00T
 
 exporter 的原始 session 在 `$LOCOMANI_TMP/p03/outputs/`（实例 0）或
-`$LOCOMANI_TMP/p03_i<N>/outputs/`（`--record` 在实例 N 上录制，见
+`$LOCOMANI_TMP/p03_i<N>/outputs/`（实例 0 是 `p03/`）（`--record` 在实例 N 上录制，见
 [双臂采集](bimanual_design.md#三观测动作渲染与其他双臂场景)）。转成 LeRobot v2.1
 (格式对齐 `hojjunekim/g1_sonic_orange_to_plate_locomani`,含 29-DoF 关节状态 +
 64 维 SONIC motion latent + 三路 25fps 视频):

@@ -229,8 +229,8 @@ bash scripts/setup_render_runtime.sh --deep
 随仓库提供，不需要从另一台机器复制 `outputs/`。
 
 ```bash
-# 换成该次采集保存的场景副本，而非后来修改过的工作场景
-SNAPSHOT="$LOCOMANI_ROOT/outputs/crate_collect_10/crate_table30"
+# 换成该次采集保存的场景副本（运行目录里那份，例如 outputs/runs/crate_smoke/crate_table30_depth04），而非后来修改过的工作场景
+SNAPSHOT="$LOCOMANI_ROOT/outputs/runs/<运行名>/<场景名>"
 export CUDA_VISIBLE_DEVICES=0 MUJOCO_EGL_DEVICE_ID=0
 bash scripts/build_isaac_assets.sh --snapshot "$SNAPSHOT"
 
@@ -393,7 +393,7 @@ RGB 写入按顶点插值的 `displayColor`。
 直接渲染已有 trace 的 ego 主视角示例（替换 `TRACE` 为实际文件）：
 
 ```bash
-TRACE="$LOCOMANI_ROOT/outputs/crate_collect_10/trace/visual_crate_s41_00_state_trace.npz"
+TRACE="$LOCOMANI_ROOT/outputs/runs/<运行名>/trace/visual_crate_s<种子>_00_state_trace.npz"
 "$RENDER_PY" -m locomani.sim.isaac.isaac_render \
   --session "" --episode 0 --state-trace "$TRACE" \
   --scene-xml "$SNAPSHOT/scene_locomani.xml" \

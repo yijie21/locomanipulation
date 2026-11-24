@@ -29,7 +29,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-sys.path[:0] = [str(REPO / "src")]
+sys.path[:0] = [str(HERE), str(REPO / "src")]
+
+import backend  # noqa: E402
 
 from locomani import paths  # noqa: E402
 
@@ -97,7 +99,18 @@ def motor_signature(controller: str = "scalebfm", motor_cfg=None, sleep: bool | 
         cuda_graph = ScaleBfmBackendConfig().cuda_graph
     motor = {k: v for k, v in dataclasses.asdict(motor_cfg).items() if OFF_SWITCHES.get(k, object()) != v}
     spec = dict(controller=controller, motor=motor, sleep=bool(sleep), cuda_graph=bool(cuda_graph))
+    if os.environ.get("RSI_GRIP_GUARD") == "1":  # TODO 41.2: only while on, so earlier records stay current
+        from locomani.tasks.scene import grip_guard
+
+        spec["grip_guard"] = grip_guard.VERSION
     return hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:10]
+
+
+def signature(family: str, where: str = "probe") -> str:
+    """The signature a round of `family` must carry to count as done: the motor signature of the scene backend, the
+    backend's own (hash over its bed files, base, track, environment) for a family with a "backend" key."""
+    be = backend.of(family)
+    return be.signature(family, where) if be else motor_signature()
 
 
 def stale(f: Path, motor: str | None = None) -> str | None:
@@ -158,9 +171,14 @@ def run_jobs(
     log: Path,
     gpus: str = "1",
     stop: threading.Event | None = None,
+    where: str = "probe",
 ) -> dict:
     """Run the jobs' missing rounds; returns {job index: labels still missing}. Setting `stop` kills the running
-    shards and drops the rest."""
+    shards and drops the rest. `where` is "gate" for the gate's calls and "probe" for every other caller: a second
+    backend (backend.py) runs the gate's rounds in the official environment and the rest in its mirror; the scene
+    backend has one environment and ignores it."""
+    if be := backend.of(family):
+        return be.run_jobs(jobs, family, pool, procs, log, gpus, stop, where=where)
     devices = gpus.split(",")
     env = dict(os.environ, PYTHONPATH="src", OMP_NUM_THREADS="2", NUMPY_MADVISE_HUGEPAGE="0")
     env.setdefault("TMPDIR", paths.TMP)

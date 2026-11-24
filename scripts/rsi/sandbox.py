@@ -12,6 +12,8 @@ earlier skill catalog, the scene RSI records or the earlier grasp programs) chan
 - `closure`: modules whose imports (traced with `python -X importtime`) decide which src/ modules stay; the skills
   package and the data files beside a kept module stay too;
 - `strip`: paths removed from what `keep` kept;
+- `overlay` (a second backend's family): files and directories copied from the working tree over the archive, before
+  anything else in the family's block is applied;
 - `scene_exclude`: entries of the scene directory not linked (outputs/scene_discovery is then a directory of links to
   the scene's other entries and its physics copy, instead of one link).
 
@@ -44,7 +46,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-sys.path[:0] = [str(REPO / "src")]
+sys.path[:0] = [str(HERE), str(REPO / "src")]
+
+import backend  # noqa: E402
 
 from locomani import paths  # noqa: E402
 
@@ -75,14 +79,35 @@ def closure(dest: Path, entries: list[str]) -> set[str]:
     return {n for n in names if n == "locomani" or n.startswith("locomani.")}
 
 
+def apply_overlay(dest: Path, family: str) -> list[str]:
+    """The family file's `sandbox.overlay`: files and directories copied from the working tree over the archive (git
+    archive HEAD holds only what is committed; a second backend's new files and the loop files modified for it exist
+    only in the working tree). An explicit list, no globs; the paths are read from the working tree's family file,
+    since the archive may not have it. Returns the paths copied."""
+    spec = json.loads((HERE / "families" / f"{family}.json").read_text()).get("sandbox") or {}
+    done = []
+    for rel in spec.get("overlay", []):
+        src, dst = REPO / rel, dest / rel
+        if not src.exists():
+            raise SystemExit(f"sandbox.overlay names {rel}, which is not in the working tree")
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"), dirs_exist_ok=True)
+        else:
+            shutil.copy2(src, dst)
+        done.append(rel)
+    return done
+
+
 def apply_spec(dest: Path, family: str) -> dict:
     """The family file's `sandbox` block (module docstring) applied to the extracted archive; returns the block."""
     spec = json.loads((dest / "scripts" / "rsi" / "families" / f"{family}.json").read_text()).get("sandbox") or {}
     if not spec:
         return spec
     skills = dest / "src" / "locomani" / "tasks" / "scene" / "skills"
-    shutil.rmtree(skills)
-    shutil.copytree(dest / spec["seed"], skills, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if "seed" in spec:  # a second backend's family has no scene skills to replace: its package is the backend's copy
+        shutil.rmtree(skills)
+        shutil.copytree(dest / spec["seed"], skills, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     mods = closure(dest, spec["closure"])
     src = dest / "src"
     kept_py = {src / (m.replace(".", "/") + ".py") for m in mods} | {
@@ -110,7 +135,7 @@ def apply_spec(dest: Path, family: str) -> dict:
     for d in sorted((p for p in dest.rglob("*") if p.is_dir()), key=lambda p: -len(p.parts)):
         if not any(d.iterdir()):
             d.rmdir()
-    print(f"sandbox spec: seed {spec['seed']}, {len(kept_py)} src modules kept")
+    print(f"sandbox spec: seed {spec.get('seed')}, {len(kept_py)} src modules kept")
     return spec
 
 
@@ -130,12 +155,16 @@ def hide_seeds(dest: Path, family: str) -> dict:
     f = dest / "scripts" / "rsi" / "families" / f"{family}.json"
     fam = json.loads(f.read_text())
     hidden = {k: v["seed"] for k, v in fam.get("pools", {}).items() if k != "diag" and v.get("seed") is not None}
+    # A second backend's pools are named by episode ids, not seeds: a non-diagnostic pool's `ids` go to the same file
+    # as {"ids": [...]} (family.hidden_seeds returns it whole; the backend's load puts them back) and are blanked here.
+    ids = {k: {"ids": v["ids"]} for k, v in fam.get("pools", {}).items() if k != "diag" and v.get("ids")}
+    hidden.update(ids)
     if hidden:
         out = dest / HIDDEN / family / "seeds.json"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(hidden, indent=1))
         for k in hidden:
-            fam["pools"][k]["seed"] = None
+            fam["pools"][k]["ids" if k in ids else "seed"] = None
         f.write_text(json.dumps(fam, indent=1, ensure_ascii=False) + "\n")
     return hidden
 
@@ -171,6 +200,7 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     dest.mkdir(parents=True)
     archive = subprocess.run(["git", "archive", ref], cwd=REPO, check=True, capture_output=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True)
+    apply_overlay(dest, family)
     spec = apply_spec(dest, family)
     default_strip(dest)
     library_without(dest, family)
@@ -186,6 +216,8 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     for rel, target in links:
         (dest / rel).parent.mkdir(parents=True, exist_ok=True)
         (dest / rel).symlink_to(target)
+    if be := backend.of(family):  # a second backend adds what its Engineer needs and removes what it must not see
+        be.sandbox(dest, family)
     git(dest, "init", "-q")
     files = git(dest, "ls-files", "-o", "--exclude-standard", "-z").stdout
     if any(f.startswith(("third_party", "outputs")) for f in files.split("\0")):

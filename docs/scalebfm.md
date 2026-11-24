@@ -358,6 +358,8 @@ flowchart TD
 学生**不接收**物体位置、桌面真值、任务阶段、接触或成功标志;expert 的本体跟踪补偿已含在动作标签里,部署不再重复
 应用。`ActionExecutor` 保留上一腕命令,限制每 tick 腕位移与旋转,采集和部署走同一段代码。
 
+下面的 `python` 指 `third_party/Isaac-GR00T/.venv/bin/python`,在仓库根目录加 `PYTHONPATH=src` 运行(同上文采集命令)。
+
 ```bash
 # 导出 LeRobot v2.1(观测键 observation.proprio / action.visual_command;每集 ≥ 40 帧,形状 (n,91)/(n,29))
 python -m locomani.tasks.bottle_visual.pipeline.export --inputs <split>_inputs.json --out <ds> [--baseline-control]

@@ -636,3 +636,29 @@ MUJOCO_GL=egl third_party/GR00T-WholeBodyControl/.venv_sim/bin/python $D/warehou
   outputs/controller_compare_20261013/l2/warehouse/bfm_nominal/bfm_s47000_11.npz --align handoff --before 6 --after 18 \
   --out outputs/controller_compare_20261013/l2/videos/warehouse_s47000_11.mp4
 ```
+
+## 26. 25.9 最终判定（2026-10-27 写，按冻结的 §2；结论交用户）
+
+| §2 的条目 | 结果 | 出处 |
+|---|---|---|
+| a 否决（摔倒） | 不否决：W0 和 a 套用的项 10 次里都没有摔到 3 次 | 25.1、25.6 |
+| h 否决（推理 p99） | 本机不超过 20 ms，不否决；机载电脑上的复测没做（型号未知） | 25.1；25.11.1 |
+| 真机组合档否决 | 仿真的组合档里 ScaleBFM 两个场景都高于 SONIC（bottle 35 对 2，warehouse 4 对 1），不否决；真机组合档没跑 | §25；25.11 |
+| 主判据：bottle 标称 | 39 对 40，McNemar p 1.0，点估计低 1 局 | §25 |
+| 主判据：warehouse 标称（专家原样） | 6 对 20，p 0.003，显著差 | §25 |
+| 主判据：warehouse（专家按 ScaleBFM 重标，25.9.1） | 封存集 80 局：final 48 对 SONIC 30，p 0.013；冷启动 RSI 臂 A 68 对 30（42 / 4）；带 CuRobo 路线 48 → 68 | scalebfm-warehouse-rsi-20261014.md §16、§19 |
+| 护栏 | warehouse 重标后全过；bottle 标称的掉物 6 对 2，超过 SONIC + 1，不过 | §25 |
+
+**判定**（§2 写着“两个场景结论不同就分开报告”）：
+
+- **warehouse：可以替换。** 前提是专家按 ScaleBFM 重标——10-14 用户定由 RSI 闭环来重标（25.9.1）。重标后主判据（显著更好）和护栏都满足。专家原样时输掉，是因为这个专家是和 SONIC 一起调出来的：它让手下蹲、前倾到 SONIC 实际做不到的程度，ScaleBFM 照做就伸手停滞。
+- **bottle：按冻结判据还不能替换。** 成功率和 SONIC 持平（39 对 40），掉物护栏不过（6 对 2：ScaleBFM 掉的 6 局都是“抬起时没把瓶子抬上去”）。bottle 专家还没按 ScaleBFM 重标（25.9.3 待用户）。照 warehouse 的经验，该先重标再比。
+- **合起来：两个场景同时满足主判据这一条，现在还不成立。** 差的是 bottle 的重标。
+- **真机：没法判。** 两件事都待用户：ScaleBFM 的世界位姿来源（25.9.2，腿运动学 + IMU 在它滑脚时漂 15–40%），以及机载电脑和外部定位（25.11.1）。
+
+**和后来的主线的关系**：场景 RSI 从 10-16 起就用 mars + ScaleBFM（用户定），没有再回到 SONIC。这份判定说的是 VLA 采集线（bottle、warehouse）要不要换控制器，不影响场景 RSI。
+
+**等用户定的**：
+1. bottle 专家要不要按 ScaleBFM 重标（25.9.3）。重标后补比 bottle 标称，就能给出两个场景合起来的结论。
+2. 真机的世界位姿来源（25.9.2）。
+3. 机载电脑型号、实验室有没有外部定位（25.11.1）。

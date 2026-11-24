@@ -226,7 +226,7 @@ class LoopProcedure(unittest.TestCase):
         self.assertEqual(self.lp.prompt_vars()["CANDIDATES_NOTE"], "")
         self.lp.CANDIDATES = 3
         note = self.lp.prompt_vars()["CANDIDATES_NOTE"]
-        self.assertIn("up to 3 hypothesis ids", note)
+        self.assertIn("up to 3 distinct hypothesis ids", note)
         self.assertNotIn("{K}", note)
         self.lp.CANDIDATES = 1
         lib = (HERE / "experience" / "INDEX.md").exists()
@@ -280,7 +280,7 @@ class RunFlags(unittest.TestCase):
                 max_wall_h=6.0,
                 stop_rate=0.70,
                 engineer_late_min=10.0,
-                second_shot=True,
+                second_shot=False,
                 diag_min_fails=10,
                 diag_target_fails=15,
                 diag_draw_max=90,
@@ -299,7 +299,7 @@ class RunFlags(unittest.TestCase):
                     max_wall_h=5.0,
                     stop_rate=0.70,
                     engineer_late_min=10.0,
-                    second_shot=True,
+                    second_shot=False,
                     diag_min_fails=10,
                     diag_target_fails=15,
                     diag_draw_max=90,
@@ -414,16 +414,24 @@ class GateVerdict(unittest.TestCase):
             self.addCleanup(p.stop)
 
     def gate_run(self, line, rc=1):
-        from types import SimpleNamespace
         from unittest import mock
 
-        def run(*a, **k):
-            if line is not None:
-                with (self.gate / "ledger.jsonl").open("a") as fh:
-                    fh.write(json.dumps(line) + "\n")
-            return SimpleNamespace(returncode=rc, stdout="", stderr="")
+        class Proc:  # gate.py as gate_candidate starts it (TODO 48.17: Popen, output to gate.log)
+            def __init__(s, *a, **k):
+                if line is not None:
+                    with (self.gate / "ledger.jsonl").open("a") as fh:
+                        fh.write(json.dumps(line) + "\n")
 
-        with mock.patch.object(self.lp.subprocess, "run", run):
+            def poll(s):
+                return rc
+
+            def wait(s):
+                return rc
+
+            def kill(s):
+                pass
+
+        with mock.patch.object(self.lp.subprocess, "Popen", Proc):
             return self.lp.gate_candidate(3, self.root / "it", self.cand, True)
 
     def test_a_crashed_gate_stops_the_run_and_keeps_no_stale_verdict(self):

@@ -121,6 +121,14 @@ def layout_reminder(cfg: dict, config, scene_dir: Path) -> list[str]:
     return [*lines, f"  {other} (docs/warehouse.md §2)"]
 
 
+def announce(reminder: list[str], interactive: bool, sleep=time.sleep) -> None:
+    """Print the reminder; at a terminal, give the reader REMINDER_SECONDS to stop before the first round (TODO 10.2)."""
+    print("\n".join(reminder), flush=True)
+    if reminder and interactive:
+        print(f"collect: first round in {REMINDER_SECONDS} s; Ctrl-C stops here, stacks and all", flush=True)
+        sleep(REMINDER_SECONDS)
+
+
 def run_batch(cfg: dict, run_dir: Path, stack: Stack, batch: int) -> Path:
     """One claimed batch on this process's stack; returns its manifest. The exporter session was opened for it."""
     from locomani.pipeline.stages import Stage
@@ -330,10 +338,7 @@ def main(argv: list[str] | None = None) -> int:
             if plan
             else [f"collect: 1 lane -- the stack on instance {lane_list[0].instance} and this process"]
         )
-        print("\n".join(reminder), flush=True)
-        if reminder and sys.stdin.isatty():
-            print(f"collect: first round in {REMINDER_SECONDS} s; Ctrl-C stops here, stacks and all", flush=True)
-            time.sleep(REMINDER_SECONDS)
+        announce(reminder, sys.stdin.isatty())
         # Each lane's first batch is claimed here, in lane order, so lane k starts with batch k on a fresh run --
         # the batch its stack's exporter session was opened for.
         first = [

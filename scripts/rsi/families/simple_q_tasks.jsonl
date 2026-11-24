@@ -1,0 +1,5 @@
+{"id": "XMovePickTeleop", "goal": "move forward to pick up the {object}"}
+{"id": "HandoverTeleop", "goal": "Hand over {object} from right hand to left hand and place it on the container."}
+{"id": "BendPickMP", "goal": "bend to pick up the cracker box"}
+{"id": "LocomotionPickBetweenTablesTeleop", "goal": "pick up the {object} from table1, locomotion to table2, and place on table2."}
+{"id": "TabletopGraspMP", "goal": "grasp the object on the tabletop."}

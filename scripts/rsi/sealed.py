@@ -5,6 +5,11 @@ the growth curve. Rounds land in <hidden>/sealed/<name>/ (a rerun skips rounds a
 per-version and per-task wins with their 95% Wilson intervals, falls and drops, the final against the seed paired by
 start -- goes to
 <hidden>/sealed/summary.json. D8: a family whose final incumbent wins >= 50% of the sealed pool enters bucket 1.
+`confirm` (TODO 48.19.2, user 2026-11-23): the final incumbent is confirmed when, paired by start against the seed, it
+wins more than it loses, the one-sided sign test p is at most the family's p_max (0.05 without one), and no task loses
+caps["task_regress"] or more net (when the family has that cap). Every run appends one line (final, confirmed, counts)
+to <hidden>/sealed/history.jsonl, so a second evaluation of a later final is visible as such. The loop runs this file
+by itself when a stop rule ends a run of a family with caps sealed_at_stop (loop.run_sealed).
 
 Run it in the loop's sandbox checkout, detached (nohup setsid), like the gate:
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
@@ -24,9 +29,10 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+import backend as BK  # noqa: E402
 import batch as B  # noqa: E402
 import family as F  # noqa: E402
-from gate import mcnemar_one_sided, overrides, wilson  # noqa: E402
+from gate import mcnemar_one_sided, overrides, per_task, wilson  # noqa: E402
 
 from locomani.tasks.scene import body  # noqa: E402
 
@@ -55,6 +61,23 @@ def tally(rounds: dict) -> dict:
                 per_task_ci={k: wilson(a, n) for k, (a, n) in sorted(per.items())})  # fmt: skip
 
 
+def confirm(final: dict, seed: dict, p_max: float | None, task_regress: int | None) -> dict:
+    """The final incumbent against the seed, paired by start: confirmed, the reasons it is not, and per-task counts."""
+    keys = sorted(set(final) & set(seed))
+    b = sum(bool(final[k]["ok"] and not seed[k]["ok"]) for k in keys)
+    c = sum(bool(seed[k]["ok"] and not final[k]["ok"]) for k in keys)
+    p = mcnemar_one_sided(b, c)
+    tasks = per_task(final, seed, keys)
+    why = []
+    if b - c <= 0:
+        why.append(f"net wins {b - c} <= 0")
+    if p > (p_max if p_max is not None else 0.05):
+        why.append(f"sign test p {round(p, 5)} > {p_max if p_max is not None else 0.05}")
+    if task_regress:
+        why += [f"task {t} loses {v['c'] - v['b']} net" for t, v in tasks.items() if v["c"] - v["b"] >= task_regress]
+    return dict(confirmed=not why, why=why, n=len(keys), b=b, c=c, p_one_sided=round(p, 5), per_task=tasks)
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("family")
@@ -71,11 +94,13 @@ def main(argv=None) -> int:
     # TODO 36 (review 2026-10-22): nothing accepted -> vs[-1] is the seed; it ran twice as [seed, seed]
     order = list(dict.fromkeys([vs[-1], vs[0]] + (vs[1:-1] if a.all else [])))
     jobs = [B.Job(d / "skills", out / name, overrides(d)) for name, d in order]
-    missing = B.run_jobs(jobs, a.family, pool, a.procs, out / "run.log", a.gpus)
+    # where="gate": the sealed starts are hidden rows (the full practice files) and the final evaluation runs in the
+    # gate's environment (bed_env_gate: cameras rendered every step, user 2026-11-23)
+    missing = B.run_jobs(jobs, a.family, pool, a.procs, out / "run.log", a.gpus, where="gate")
     summary = dict(pool=str(pool), versions={name: tally(B.outcomes(out / name)) for name, _ in order},
                    missing={order[k][0]: v for k, v in missing.items() if v},
                    # TODO 33.1.2: the body model's predictions against the delivered reaches, beside the success rate
-                   prediction={name: body.score(B.outcomes(out / name).values()) for name, _ in order})  # fmt: skip
+                   prediction={name: _score(B.outcomes(out / name).values()) for name, _ in order})  # fmt: skip
     final, seed = B.outcomes(out / order[0][0]), B.outcomes(out / "seed")
     keys = sorted(set(final) & set(seed))
     b = sum(final[k]["ok"] and not seed[k]["ok"] for k in keys)
@@ -84,9 +109,24 @@ def main(argv=None) -> int:
     k_ok = sum(final[k]["ok"] for k in keys)
     summary.update(final=order[0][0], final_vs_seed=dict(n=len(keys), b=b, c=c, p_one_sided=mcnemar_one_sided(b, c)),
                    final_rate=round(rate, 3), final_rate_ci=wilson(k_ok, len(keys)), bucket1=rate >= BUCKET1_RATE)  # fmt: skip
+    caps = BK.caps(a.family)
+    summary["confirm"] = confirm(final, seed, caps.get("p_max"), caps.get("task_regress"))
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
+    hist = out / "history.jsonl"
+    before = len(hist.read_text().splitlines()) if hist.exists() else 0
+    with hist.open("a") as fh:
+        fh.write(json.dumps(dict(final=order[0][0], evaluation=before + 1, confirmed=summary["confirm"]["confirmed"],
+                                 why=summary["confirm"]["why"], b=b, c=c, final_rate=summary["final_rate"])) + "\n")  # fmt: skip
     print(json.dumps(summary, indent=1))
     return 0
+
+
+def _score(rounds):
+    """body.score for the scene backend's rounds; None where the records have no reach predictions (other backends)."""
+    try:
+        return body.score(rounds)
+    except Exception:
+        return None
 
 
 if __name__ == "__main__":

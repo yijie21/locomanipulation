@@ -32,7 +32,7 @@ bash scripts/single_arm/run_agent_server.sh configs/experiments/bottle_simple_sm
 ```
 
 做什么：第一条起仿真栈（MuJoCo 仿真、SONIC 控制器、数据录制），起好就返回，栈留在后台。第二条运行专家：一局接一局让机器人走近、抓瓶，保留成功的局；保留够 2 条后结束，并关掉仿真栈。
-得到什么：运行目录 `outputs/runs/bottle_simple_smoke/`，里面有实验文件的副本 `config.yaml`、每局成败 `collect/manifest_00.jsonl`、每局录像 `collect/videos/`。起栈约 45 秒（deploy 第一次启动还要多约 10 分钟构建 TensorRT engine）；采集约 1.5 分钟，日志 `collect_00.log` 里每局以 `EPISODE OK` 结尾。
+得到什么：运行目录 `outputs/runs/bottle_simple_smoke/`，里面有实验文件的副本 `config.yaml`、每局成败 `collect/manifest_00.jsonl`、每局录像 `collect/videos/`。起栈约 45 秒（deploy 第一次启动还要多约 10 分钟构建 TensorRT engine）；采集约 1.5 分钟，日志 `collect_00.log` 里每局以 `EPISODE OK` 结尾；开局站起时骨盆离出生点超过 0.35 m（`stand drift` 行）的局记成 `[stand] walked … off the spawn`，不算专家失败。
 
 ## 3. 转换
 
@@ -85,7 +85,7 @@ bash scripts/open_loop_eval.sh --model-path outputs/runs/bottle_simple_smoke/mod
 | 采集每局的成败和原因 | `collect/manifest_NN.jsonl`；日志 `collect_NN.log` 里每局以 `EPISODE OK` 或失败原因结尾 |
 | 采集录像 | `collect/videos/` |
 | 闭环每局的成败、失败阶段 | `eval/closed_loop.manifest.jsonl`；录像在 `eval/videos/` |
-| 产物是否齐全 | `python scripts/artifact_contract.py check outputs/runs/<名字> bottle_eval` |
+| 产物是否齐全 | `python3 scripts/artifact_contract.py check outputs/runs/<名字> bottle_eval`（采集、转换阶段的契约名见 `tests/contracts/`） |
 
 ## 7. 常见报错
 

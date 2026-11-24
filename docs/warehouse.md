@@ -202,6 +202,7 @@ bash scripts/stop_stack.sh --instance N # 中途被打断而还挂着
 | 报错 | 处理 |
 |---|---|
 | `not enough headroom` | 机器上的 CPU、进程数或显存不够，脚本拒绝启动。等别的任务结束（[运行机制](running.md#6-并行)） |
+| 训练报 `REFUSING TO START: a GPU already has ... MiB in use` | 有别的进程占着显卡（采集栈、别的项目）。`nvidia-smi` 看是谁；是自己的栈就 `bash scripts/stop_stack.sh --instance N`，确认那点占用无害才在实验文件里调高 `train.squat_max` |
 | 第二条命令刚开第一局就退出，终端只有一个 `Killed` | 内存不够，通道开多了。先 `bash scripts/stop_stack.sh --instance N` 收掉还挂着的栈（N 是起栈时打印的实例号），再用 `--lanes 1` 重来 |
 | 转换报 `still hold black placeholder frames` | 漏了第 3 步补渲 |
 | 评测每局报 `mirror: no reply from the mirror` 或 `camera/state streams never became ready` | 镜像还没起好。等终端 2 打印 `unreal mirror listening on`（Isaac 是 `isaac mirror listening on`）再起终端 3 |

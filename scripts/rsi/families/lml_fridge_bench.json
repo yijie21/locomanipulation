@@ -1,0 +1,165 @@
+{
+ "name": "lml_fridge_bench",
+ "backend": "bench",
+ "about": "LocoManiLab, the three fridge-door tasks of iTHOR kitchen scene 13 (seen tasks, camera track): open the door, close it, walk up from afar and open it. The first family with articulated objects; the seed package walks and looks but does not move doors (the loop writes that flow). Practice episodes <Task>/Q/<line> (levels 0-2, 50 each) from practice_lml_fridge (its own hidden master seed); diagnostic pool = the first 10 lines of each level (30 per task, 90 in all); the other 120 per task are hidden and split by a hidden seed into two halves of 20 per level: the acceptance pool takes 10 per level of its half (30 per task, 90 in all), the sealed pool 10 per level of the other (90). Bed: the articulation fork lml_bed2_20261121 (slots 3 and 4; the lml_q loop keeps slots 1 and 2). Bench variant (TODO 49.6b): runs on the bench adapter locomani.bench.locomanilab through the generic backend (backend_bench.py); the package is the adapter's seed (skill.py, pick.py, flows.py, camera_view.py, frozen __init__.py).",
+ "tasks_file": "scripts/rsi/families/lml_fridge_tasks.jsonl",
+ "tasks": [
+  "IThorKitchenOpenFridge_scene13",
+  "IThorKitchenCloseFridge_scene13",
+  "IThorKitchenApproachOpenFridge_scene13"
+ ],
+ "pools": {
+  "diag": {
+   "seed": 0,
+   "n": 90
+  },
+  "accept": {
+   "seed": 86350988,
+   "n": 90,
+   "per_level": 10
+  },
+  "sealed": {
+   "seed": 86350988,
+   "n": 90,
+   "per_level": 10
+  }
+ },
+ "track": "official",
+ "practice_dir": "/workspace/code/locomanipulation-esc/outputs/escalation_20261116/practice_lml_fridge",
+ "rules": "scripts/rsi/rules_lml_bench.md",
+ "prompts": "scripts/rsi/prompts_lml_bench",
+ "plan": null,
+ "caps": {
+  "claims": false,
+  "design_probes": false,
+  "diag_redraw": false,
+  "sentinel_exact": false,
+  "min_net": 3,
+  "repeat": 1,
+  "p_max": 0.05,
+  "sentinel_flips": 1,
+  "probe_scope": true,
+  "sweep_rounds": 180,
+  "spec_review": true,
+  "draft_sentinels": 3
+ },
+ "bed_keys": [],
+ "sandbox": {
+  "dir": "bed_readonly_copy",
+  "task_files": [],
+  "keep": [
+   "Makefile",
+   "pyproject.toml",
+   ".gitignore",
+   ".gitattributes",
+   "assets",
+   "configs",
+   "scripts/paths.sh",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/backend.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/cards.py",
+   "scripts/rsi/digest.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/scene_round.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/claim_check.py",
+   "scripts/rsi/failure_class.py",
+   "scripts/rsi/graspability.py",
+   "scripts/rsi/body.py",
+   "scripts/rsi/choose.py",
+   "scripts/rsi/keypoints.py",
+   "scripts/rsi/diag_pool.py",
+   "scripts/rsi/records.py",
+   "scripts/rsi/segments.py",
+   "scripts/rsi/hit_rate.py",
+   "scripts/rsi/isolate.py",
+   "scripts/rsi/design.py",
+   "scripts/rsi/capability_probe.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/prep.py",
+   "tests/conftest.py",
+   "tests/test_scene_task_runner.py",
+   "scripts/rsi/rules_lml_bench.md",
+   "scripts/rsi/prompts_lml_bench",
+   "scripts/rsi/families/lml_fridge_bench.json",
+   "scripts/rsi/families/lml_fridge_tasks.jsonl",
+   "scripts/rsi/backend_bench.py",
+   "scripts/rsi/backend_simple.py",
+   "scripts/rsi/backend_lml.py"
+  ],
+  "closure": [
+   "loop",
+   "gate",
+   "cards",
+   "digest",
+   "sealed",
+   "claim_check",
+   "family",
+   "batch",
+   "scene_round",
+   "locomani.tasks.scene.world",
+   "locomani.tasks.scene.episode",
+   "locomani.tasks.scene.navigate",
+   "locomani.tasks.scene.start",
+   "locomani.backends.scalebfm.runtime",
+   "locomani.backends.scalebfm.motor",
+   "locomani.tasks.scene.graspability",
+   "locomani.tasks.scene.body",
+   "locomani.tasks.scene.choose",
+   "locomani.tasks.scene.keypoints",
+   "locomani.tasks.scene.stage",
+   "locomani.tasks.scene.prep"
+  ],
+  "strip": [
+   "configs/experiments",
+   "configs/collection",
+   "configs/deployment",
+   "configs/eval",
+   "configs/sweeps",
+   "configs/injections",
+   "configs/cases",
+   "configs/plans",
+   "configs/scene_discovery"
+  ],
+  "overlay": [
+   "scripts/rsi/backend.py",
+   "scripts/rsi/rules_lml_bench.md",
+   "scripts/rsi/prompts_lml_bench",
+   "scripts/rsi/families/lml_fridge_bench.json",
+   "scripts/rsi/families/lml_fridge_tasks.jsonl",
+   "scripts/rsi/loop.py",
+   "scripts/rsi/batch.py",
+   "scripts/rsi/family.py",
+   "scripts/rsi/gate.py",
+   "scripts/rsi/sandbox.py",
+   "scripts/rsi/try.py",
+   "scripts/rsi/cards.py",
+   "scripts/rsi/calibrate.py",
+   "scripts/rsi/backend_bench.py",
+   "scripts/rsi/backend_simple.py",
+   "scripts/rsi/backend_lml.py",
+   "scripts/rsi/sealed.py",
+   "scripts/rsi/hit_rate.py",
+   "scripts/rsi/segments.py"
+  ]
+ },
+ "bed_fixed": {
+  "_about": "rule 46, 2026-11-23: interface correction found in the hand phase (docs/handoff/escalation-a-l-20261117.md, camera track round 7), missing from the 11-20 / 11-21 loops. feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and a foot that moves during a reach is read as half a pelvis move (brush: hand estimate error 8 -> 1.5 cm).",
+  "feed_torque": true
+ },
+ "bench": {
+  "name": "locomanilab",
+  "root": "/workspace/code/locomanipulation-bench",
+  "options": {},
+  "config": {
+   "slots": [
+    3,
+    4
+   ]
+  },
+  "about_root": "the bench worktree; pin a detached worktree at the adapter's commit (b96d3aa7 or later) before a real loop so ongoing work there never reaches it, as simple_art does"
+ },
+ "probe_bed": "official"
+}

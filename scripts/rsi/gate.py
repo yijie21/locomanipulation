@@ -17,6 +17,9 @@ Steps, stopping at the first rejection:
 5. verdict (`verdict_fails`): accept iff b - c >= MIN_NET and c <= b / 3 (LOSS_SHARE), falls <= incumbent + 1,
    drops <= incumbent + 1 -- or, against an incumbent with no success on the pool, drops <= half the candidate's
    successes when that is more (`drop_limit`; user 2026-10-18: a family starting from zero has no drops to compare).
+   With caps["task_regress"] k (the SIMPLE and LML backends, user 2026-11-23 "三条都加上"): no task may lose k or more
+   net on the pool (its losses minus its wins >= k rejects), so a gain on one task cannot pay for a loss on another;
+   `per_task` in the tally gives each task's wins and losses. A scene family has no such cap.
    The one-sided exact McNemar p is still computed and reported, no longer required (TODO 33.8, gate rule 2, user
    2026-10-22: early research; until then p <= 0.05 was required, which alone needs 5:0, so MIN_NET never bound and a
    change that fixes one object of a 4-start-per-object pool could never pass). Every verdict line records the gate
@@ -50,6 +53,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
+import backend as BK  # noqa: E402
 import batch as B  # noqa: E402
 from scene_round import load_skills, skills_hash  # noqa: E402
 
@@ -131,18 +135,60 @@ def drop_limit(t: dict) -> int:
     return max(limit, t["candidate_ok"] // 2) if t["incumbent_ok"] == 0 else limit
 
 
-def verdict_fails(t: dict) -> list[str]:
-    """Why a full-pool tally `t` is rejected (verdict step 5); empty when it is accepted."""
+def verdict_fails(
+    t: dict, min_net: int = MIN_NET, p_max: float | None = None, task_regress: int | None = None
+) -> list[str]:
+    """Why a full-pool tally `t` is rejected (verdict step 5); empty when it is accepted. `min_net`: a second backend's
+    caps["min_net"] (its pool is smaller and its reruns noisier); a scene family keeps MIN_NET. `p_max` (a backend
+    whose reruns flip outcomes both ways, caps["p_max"]): the paired sign test's one-sided p must not exceed it, in
+    place of the loss-share condition, which the bed's own flips would fail for a real gain. `task_regress` k (caps):
+    a task whose losses exceed its wins by k or more rejects the candidate, whatever the other tasks gained."""
     fails = []
-    if t["b"] - t["c"] < MIN_NET:
-        fails.append(f"net wins {t['b'] - t['c']} < {MIN_NET}")
-    if t["c"] * LOSS_SHARE > t["b"]:
+    if t["b"] - t["c"] < min_net:
+        fails.append(f"net wins {t['b'] - t['c']} < {min_net}")
+    if p_max is not None:
+        if t["p_one_sided"] > p_max:
+            fails.append(f"sign test p {t['p_one_sided']} > {p_max} (wins {t['b']}, losses {t['c']})")
+    elif t["c"] * LOSS_SHARE > t["b"]:
         fails.append(f"losses {t['c']} > wins {t['b']} / {LOSS_SHARE}")
     if t["candidate_fell"] > t["incumbent_fell"] + 1:
         fails.append(f"falls {t['candidate_fell']} > {t['incumbent_fell']} + 1")
     if t["candidate_dropped"] > drop_limit(t):
         fails.append(f"drops {t['candidate_dropped']} > {drop_limit(t)}")
+    if task_regress:
+        for task, v in (t.get("per_task") or {}).items():
+            if v["c"] - v["b"] >= task_regress:
+                fails.append(
+                    f"task {task} loses {v['c'] - v['b']} net (wins {v['b']}, losses {v['c']}) >= {task_regress}"
+                )
     return fails
+
+
+def task_of(label: str, rnd: dict | None = None) -> str:
+    """A round's task: the record's `task`, else the label's part before `_s<n>`."""
+    return (rnd or {}).get("task") or label.rsplit("_s", 1)[0]
+
+
+def per_task(cand: dict, inc: dict, keys: list[str]) -> dict:
+    """Wins (b) and losses (c) of the candidate against the incumbent, by task (verdict_fails' task_regress)."""
+    out: dict[str, dict] = {}
+    for k in keys:
+        v = out.setdefault(task_of(k, inc[k]), dict(n=0, b=0, c=0))
+        v["n"] += 1
+        v["b"] += bool(cand[k]["ok"] and not inc[k]["ok"])
+        v["c"] += bool(inc[k]["ok"] and not cand[k]["ok"])
+    return dict(sorted(out.items()))
+
+
+def sentinel_drift(again: dict, inc_out: dict, exact: bool = True) -> list[str]:
+    """The sentinel labels whose re-run no longer reproduces the stored round: `ok` and `t_end` for a scene family;
+    `ok` alone when the backend's caps say sentinel_exact is False (official reruns do not always repeat their end
+    time)."""
+    if exact:
+        return [
+            k for k in again if (again[k]["ok"], again[k].get("t_end")) != (inc_out[k]["ok"], inc_out[k].get("t_end"))
+        ]
+    return [k for k in again if again[k]["ok"] != inc_out[k]["ok"]]
 
 
 def overrides(cand: Path) -> dict:
@@ -188,7 +234,7 @@ def tally(cand: dict, inc: dict) -> dict:
                 candidate_dropped=sum(cand[k]["dropped"] for k in keys),
                 incumbent_dropped=sum(inc[k]["dropped"] for k in keys),
                 candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])),
-                per_class=per_class(cand, inc, keys))  # fmt: skip
+                per_class=per_class(cand, inc, keys), per_task=per_task(cand, inc, keys))  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -205,15 +251,16 @@ def main(argv=None) -> int:
     gate.mkdir(parents=True, exist_ok=True)
     ledger = gate / "ledger.jsonl"
     history = [json.loads(x) for x in ledger.read_text().splitlines()] if ledger.exists() else []
+    caps = BK.caps(a.family)  # a scene family: today's values (backend.SCENE_CAPS)
     inc_state = gate / "incumbent.json"
     if not inc_state.exists():  # the seed: the repository's skills, no overrides
         seed = gate / "incumbent_seed"
-        snapshot(_seed_dir(gate), seed)
+        snapshot(_seed_dir(gate, BK.layout(a.family)["skills"]), seed)
         inc_state.write_text(json.dumps(dict(dir=str(seed), rounds=str(gate / "incumbent_seed_rounds"), since=0)))
     inc = json.loads(inc_state.read_text())
     labels = B.pool_labels(a.pool)
     h = candidate_hash(a.candidate)
-    verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE,
+    verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE, task_regress=caps.get("task_regress"),
                    started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))  # fmt: skip
     verdict["call"] = len([x for x in history if not x.get("dry_run")]) + 1
 
@@ -233,7 +280,9 @@ def main(argv=None) -> int:
 
     # 1. static
     try:
-        pkg = load_skills(a.candidate / "skills", "gate_static_skills")
+        be = BK.of(a.family)  # a second backend loads its own package (no import of the bed tree here)
+        pkg = (be.load_skills(a.candidate / "skills", "gate_static_skills", a.family) if be
+               else load_skills(a.candidate / "skills", "gate_static_skills"))  # fmt: skip
         pkg.apply_set(pkg, overrides(a.candidate))
     except Exception as e:
         return finish(False, f"the candidate does not load: {type(e).__name__}: {e}")
@@ -255,14 +304,16 @@ def main(argv=None) -> int:
         B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(sentinel_labels(labels))),
         B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(stage1_labels(labels))),
     ]
-    B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus)
+    # caps["repeat"] k > 1 (a backend whose official reruns differ): the sentinel and each candidate round would run k
+    # times here and `ok` would be their majority; not implemented, k is 1 for every family so far.
+    B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus, where="gate")
     inc_out = B.outcomes(inc_rounds)
     again = B.outcomes(work / "sentinel")
     miss = incomplete(sentinel_labels(labels), inc_out, again)
     if miss:
         return void("sentinel or incumbent", miss)
-    drift = [k for k in again if (again[k]["ok"], again[k].get("t_end")) != (inc_out[k]["ok"], inc_out[k].get("t_end"))]
-    if drift:
+    drift = sentinel_drift(again, inc_out, caps["sentinel_exact"])
+    if len(drift) > caps.get("sentinel_flips", 0):  # a noisy bed's caps tolerate that many flips of the sentinel
         return finish(False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void")
     s1 = stage1_labels(labels)
     miss = incomplete(s1, inc_out, B.outcomes(work / "candidate"))
@@ -271,13 +322,16 @@ def main(argv=None) -> int:
     t1 = tally(B.outcomes(work / "candidate"), inc_out)
     if t1["b"] - t1["c"] <= 0:
         return finish(False, f"stage 1: net wins {t1['b'] - t1['c']} <= 0 on {t1['n']} pairs", stage1=t1)
+    # loop.gate_candidate (caps stage1_first, 2026-11-23) starts the candidate's diagnostic rounds and the early review
+    # only once this file exists: a call stage 1 rejects costs only stage 1
+    (work / "stage1_passed.json").write_text(json.dumps(t1))
     B.run_jobs([B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"))], a.family, a.pool,
-               a.procs, log, a.gpus)  # fmt: skip
+               a.procs, log, a.gpus, where="gate")  # fmt: skip
     miss = incomplete(labels, inc_out, B.outcomes(work / "candidate"))
     if miss:
         return void("final", miss, stage1=t1)
     t = tally(B.outcomes(work / "candidate"), inc_out)
-    fails = verdict_fails(t)
+    fails = verdict_fails(t, caps["min_net"], caps.get("p_max"), caps.get("task_regress"))
     if fails:
         return finish(False, "; ".join(fails), stage1=t1, result=t)
     inc_state.write_text(
@@ -286,12 +340,12 @@ def main(argv=None) -> int:
     return finish(True, "accepted", stage1=t1, result=t)
 
 
-def _seed_dir(gate: Path) -> Path:
-    """The repository's skills as a candidate directory (no overrides)."""
+def _seed_dir(gate: Path, skills: Path = SEED_SKILLS) -> Path:
+    """The repository's skills (a second backend's package: `skills`) as a candidate directory (no overrides)."""
     d = gate / "_seed_src"
     if d.exists():
         shutil.rmtree(d)
-    shutil.copytree(SEED_SKILLS, d / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(skills, d / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     (d / "candidate.json").write_text('{"set": {}}')
     return d
 
