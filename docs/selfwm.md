@@ -465,6 +465,23 @@ $PY $V/via_point.py eval $MS $I/data_via_fresh_sonic && $PY $V/via_comp_eval.py 
 
 得到什么：2026-11-23 的结果，停止线降 49 %（线是 25 %）；留出的随机路线 14.75 → 7.63 cm；21 条测试绕行路线 8.55 → 4.08 cm；补偿后手掌 6.40 → 3.09 cm，整条手臂 8.55 → 5.17 cm，0 摔倒。AMO 用 `REACH_CONTROLLER=amo`；它的高度命令默认封顶在标称值 0.75 m（`REACH_AMO_HEIGHT_MAX`），不封顶时站着伸手有一半会自己走开，经过见 TODO 38.8.2。
 
+**把多路点模型放回 SIMPLE 的抓取任务（2026-11-23 到 11-24）。**
+
+```bash
+E=scripts/experiments/simple_eval_20261112; B=outputs/simple_eval_20261112/bench_via_20261123
+$E/bench_via.sh $PWD/$B/scalebfm scalebfm $I/via_point_20261121 all        # A 直线、规划、B 路线原样发、C 路线先挪命令
+$E/bench_via.sh $PWD/$B/scalebfm scalebfm $I/via_point_20261121 D          # 对照：固定后撤 6 cm、上抬 2 cm
+$E/bench_via.sh $PWD/$B/scalebfm scalebfm $I/via_point_20261121 E          # 对照：模型文件里存的平均偏差
+python3 -I $E/bench_via_table.py $B/scalebfm $I/data_via2                   # 逐任务的表，C 对 B 的配对比较，起始状态是否在训练范围里
+python3 -I $E/bench_via_controls.py $B/scalebfm                             # B、C、D、E 两两比较
+python3 -I $E/bench_via_clips.py pick $B/scalebfm scalebfm $B/film_stage    # 按事先定的规则挑四局，三种做法的录像各抄一份
+python3 -I $E/bench_via_clips.py grid $B/film_stage $B/film_clips $B/film_grid   # isaac_film.py 渲染之后，三种做法并排
+```
+
+做什么：`bench_via.sh` 对四个抓取任务各 30 局跑感知栏。第一遍直线伸手，同时录下每局伸手开始时的状态；然后用开局那一眼的点云当障碍物让 cuRobo 规划右臂的路线；第二遍沿路线原样发，第三遍把路点和目标先用多路点模型挪过再发。SONIC 把第二个参数换成 `sonic`，模型换成 `via_point_sonic_20261123`。换机器时用 `BENCH_REPO`、`SIMPLE_ROOT`、`BENCH_GPU` 三个环境变量指路径和卡。`simple_bench.py` 新增的三个选项是 `--comp <模型目录>`、`--shift x,y,z`（厘米，对照用）和每行里的 `hits`（伸手途中机器人哪个连杆穿进了桌子或别的物体，多深）。
+
+得到什么：每个输出目录下 `rows/<做法>_<任务>.jsonl` 每局一行，`films_<做法>/` 是录下的状态，`via/` 是路线，`table.out` 和 `controls.out` 是两张汇总表的原始输出。2026-11-24 的结果：ScaleBFM 120 局 45 秒内抓起，直线 80、路线原样发 92、先挪命令 103、固定后撤 104；模型对终点偏差的预期和实际差 11 cm，增益来自后撤而不是模型。SONIC 是 21、25、25，分不出。全文在[方案条目](handoff/notebook-20261120/selfmodel_bench_20261123.md)，接下来的任务在 TODO 38.10。
+
 ## 8. 常见错误
 
 - 视觉那几步报找不到 `sam3`：`sam3d` 环境里的安装指向一个已经不存在的目录，要像上面那样把 `third_party/sam3` 加进 `PYTHONPATH`。

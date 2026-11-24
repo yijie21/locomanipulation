@@ -147,6 +147,23 @@ W0s = s0[:, :3] @ Rp.T + pp
 # drop the voxels whose cube is within --free of a start sphere: the body is there now, so what the look put there is the
 # body's own points (the robot mask's edge) or depth fill; cuRobo refuses a start in collision
 V = ob["vox"]
+
+
+def seen(X):
+    """2026-11-23 (selfmodel_bench_20261123): the look's points where the robot believes they lie from its pelvis at the
+    stance (leg odometry; prep2.py's bel_*), as simple_bench.py keeps the grasp (grasp_now) -- not where the simulator has
+    them, which would use the walk's true displacement. A prep without bel_*: unchanged, as the 2026-11-20 runs."""
+    X = np.asarray(X, float)
+    if "bel_pb" not in pr.files:
+        return X
+    dy = float(pr["bel_yt"]) - float(pr["bel_yb"])
+    c_, s_ = np.cos(dy), np.sin(dy)
+    out = X.copy()
+    out[:, :2] = pr["bel_pt"][:2] + (X[:, :2] - pr["bel_pb"][:2]) @ np.array([[c_, s_], [-s_, c_]])
+    return out
+
+
+V = seen(V)
 near = cKDTree(V).query_ball_point(W0s, s0[:, 3] + a.free + vs)
 drop = np.zeros(len(V), bool)
 for i, js in enumerate(near):
@@ -155,7 +172,7 @@ for i, js in enumerate(near):
             drop[j] = True
 n_tgt = 0
 if a.tgt > 0:
-    tc = np.load(Path(a.cloud_dir) / f"{name}.npz")["pts"] if a.cloud_dir else np.asarray(ob["cloud"], float)
+    tc = seen(np.load(Path(a.cloud_dir) / f"{name}.npz")["pts"] if a.cloud_dir else np.asarray(ob["cloud"], float))
     dt_ = cKDTree(np.asarray(tc, float)).query(V)[0]
     n_tgt = int(((dt_ < a.tgt + 0.5 * vs) & ~drop).sum())
     drop |= dt_ < a.tgt + 0.5 * vs

@@ -68,11 +68,18 @@ tb = min(
     info["tables"].values(), key=lambda v: float(np.linalg.norm(np.asarray(v["pos"])[:2] - goal_jaw[:2]))
 )  # the table under the grasp
 links = {n: d.xpos[m.body(n).id].copy() for n in LINKS if mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, n) >= 0}
+bel = row.get("bel")  # 2026-11-23: the believed and the true pelvis at the stance (simple_bench's row), for plan2.py
+extra = (
+    {}
+    if bel is None
+    else dict(bel_pb=np.array(bel["pb"]), bel_yb=bel["yb"], bel_pt=np.array(bel["pt"]), bel_yt=bel["yt"])
+)
 np.savez_compressed(
     OUT / f"prep_{name}.npz", names=np.array(names), q=np.array(vals), pelvis_p=d.xpos[pel].copy(), pelvis_R=d.xmat[pel].reshape(3, 3).copy(),
     wrist_p=d.xpos[wr].copy(), wrist_R=Rw.copy(), jaw_p=d.xpos[wr] + Rw @ OFF, goal_jaw=goal_jaw, goal_R=R_want,
     goal_wrist=goal_wrist, path=path, pre_err_cm=pre["err_cm"], link_names=np.array(list(links)), link_p=np.array(list(links.values())),
     table_pos=np.asarray(tb["pos"], float), table_size=np.asarray(tb["size"], float), t_frame=float(z["t"][k]), OFF=OFF,
+    **extra,
 )  # fmt: skip
 print(name, "frame", k, "t", round(float(z["t"][k]), 2), "joints", len(names), "pelvis", d.xpos[pel].round(3), "wrist->goal cm",
       round(100 * float(np.linalg.norm(goal_wrist - d.xpos[wr])), 1), "pregrasp err", pre["err_cm"], "path ticks", len(path))  # fmt: skip

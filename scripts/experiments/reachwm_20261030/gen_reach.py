@@ -213,6 +213,10 @@ if SLOTS is not None:
 # palm geom is on the latter, hand_*), the right arm (shoulder to hand), any robot body: gap_touch a penetration (distance
 # < 0), gap_t the first one's time from the command (s, -1 none), gap_pen the deepest (m), gap_force the largest normal force
 # (N); gap_t0 a contact in the first step after placement. A scene with the two bodies but this off keeps them parked.
+# A path may bring one box or two, each no larger than its body's geom as compiled (2026-11-23, the sixth step: fresh_routes.py's
+# board alone, or the board and a thin box of the path's own height): the geom's size is set to the path's at placement and back
+# at parking (its bounding volumes stay the compiled, larger ones, so the broad phase only gets more candidates); a body the path
+# has no box for stays parked. gap_box (2, 10): where each stood, world position, quaternion wxyz, half sizes; NaN: not used.
 GAP_OBST = os.environ.get("REACH_GAP_OBST", "0") == "1"
 _GAP: list = []
 
@@ -233,7 +237,10 @@ class GapObstacles:
         self.mocap = [int(sm.body_mocapid[b]) for b in self.bodies]
         assert min(self.mocap) >= 0, "gap_board / gap_bar are not mocap bodies"
         self.geoms = np.where(np.isin(sm.geom_bodyid, self.bodies))[0]
-        self.half = [sm.geom_size[sm.geom_bodyid == b][0].copy() for b in self.bodies]
+        assert len(self.geoms) == len(self.bodies), "gap_board / gap_bar hold one geom each"
+        self.geom = [int(np.where(sm.geom_bodyid == b)[0][0]) for b in self.bodies]
+        self.half = [sm.geom_size[g].copy() for g in self.geom]
+        self.size = sm.geom_size
         names = [mujoco.mj_id2name(sm, mujoco.mjtObj.mjOBJ_BODY, b) or "" for b in range(sm.nbody)]
         pelvis = body("pelvis")
         robot = np.array([sm.body_rootid[b] == sm.body_rootid[pelvis] and b > 0 for b in range(sm.nbody)])
@@ -249,18 +256,20 @@ class GapObstacles:
         for k, i in enumerate(self.mocap):
             self.d.mocap_pos[i] = self.PARK + np.array([0.0, 3.0 * k, 0.0])
             self.d.mocap_quat[i] = [1.0, 0.0, 0.0, 0.0]
+            self.size[self.geom[k]] = self.half[k]
         self.on = False
         self.mj.set_mjcb_control(None)
 
     def place(self, boxes_h: np.ndarray, boxes_R: np.ndarray, p, Rh) -> None:
-        """boxes_h (2, 6): [centre, half] in the path's heading frame, axes boxes_R (path heading frame); p, Rh: now."""
-        assert len(boxes_h) == 2, "the gap scene holds a board and a bar"
+        """boxes_h (1 or 2, 6): [centre, half] in the path's heading frame, axes boxes_R (path heading frame); p, Rh: now."""
+        assert 1 <= len(boxes_h) <= len(self.mocap), f"{len(boxes_h)} boxes for the scene's {len(self.mocap)} bodies"
+        self.box = np.full((len(self.mocap), 10), np.nan, np.float32)
         for k, (b, i) in enumerate(zip(boxes_h, self.mocap)):
-            assert np.allclose(b[3:], self.half[k], atol=1e-6), (
-                f"box {k} half sizes {b[3:]} != the scene's {self.half[k]}"
-            )
+            assert (b[3:] <= self.half[k] + 1e-6).all(), f"box {k} half sizes {b[3:]} over the scene's {self.half[k]}"
+            self.size[self.geom[k]] = b[3:]
             self.d.mocap_pos[i] = VG.from_h(b[:3], p, Rh)[0]
             self.d.mocap_quat[i] = _quat_wxyz(Rh @ boxes_R)
+            self.box[k] = np.r_[self.d.mocap_pos[i], self.d.mocap_quat[i], b[3:]]
         self.touch = np.zeros(3, bool)
         self.t = np.full(3, -1.0)
         self.pen, self.force = np.zeros(3), np.zeros(3)
@@ -296,7 +305,7 @@ class GapObstacles:
 
     def record(self) -> dict:
         out = dict(gap_touch=self.touch.copy(), gap_t=self.t.astype(np.float32), gap_pen=self.pen.astype(np.float32),
-                   gap_force=self.force.astype(np.float32), gap_t0=bool(self.at_place))  # fmt: skip
+                   gap_force=self.force.astype(np.float32), gap_t0=bool(self.at_place), gap_box=self.box.copy())  # fmt: skip
         self.park()
         return out
 
@@ -976,7 +985,7 @@ def save(segs: list[dict], path: Path) -> None:
             pack[k] = np.stack([s.get(k, np.zeros_like(proto[k])) for s in segs])
         pack["comp_refused"] = np.array([s.get("comp_refused", -1) for s in segs])
     if "gap_touch" in segs[0]:  # REACH_GAP_OBST
-        for k in ("gap_touch", "gap_t", "gap_pen", "gap_force"):
+        for k in ("gap_touch", "gap_t", "gap_pen", "gap_force", "gap_box"):
             pack[k] = np.stack([s[k] for s in segs])
         pack["gap_t0"] = np.array([s["gap_t0"] for s in segs])
     if "walk" in segs[0]:  # REACH_APPROACH

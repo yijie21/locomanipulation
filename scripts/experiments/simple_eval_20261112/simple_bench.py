@@ -43,6 +43,15 @@ Motor kept where it lies from that believed pelvis (place.Belief.to_sim), height
 images (blind.py look --eyes, 2026-11-20; docs/handoff/simple-isaac-eyes-20261120.md). An episode without a grasp there
 fails ("no grasp"); the table's edge stays the MuJoCo look's (blind_f1) with either.
 
+--avoid with --comp <model dir> (2026-11-23, selfmodel_bench_20261123): the planned path's via points and the pregrasp goal
+are moved by the controller's multi-waypoint self model before they are sent (via_comp.Comp.compensate, as gen_reach.py's
+REACH_VIA_COMP; REACH_VIA_COMP_MODE, default position only); the entry is sent as it is. A row's "hits": between a reach's
+command and the end of its settle, every (stage, robot link, table or other object) pair in penetration and its deepest
+penetration (cm); "bel": the believed and the true pelvis at the stance (perception column).
+
+--avoid with --shift x,y,z (cm; 2026-11-24, the entry's control arm D): every via point and the pregrasp goal are moved by
+this one vector in the heading frame at the command; no model, the episode is not looked at.
+
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
 
@@ -65,6 +74,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "reachwm_20261030"))
 sys.path.insert(0, str(HERE.parent / "selfwm_20261029"))
+sys.path.insert(0, str(HERE.parent / "selfmodel_via_20261120"))
 import env as E  # noqa: E402
 import episodes as EP  # noqa: E402
 import gen_reach as GR  # noqa: E402
@@ -156,6 +166,20 @@ def contacts(sim, body: int) -> list:
     return sorted(out)
 
 
+_COMP: dict = {}
+
+
+def comp_model(model: str):
+    """--comp: the multi-waypoint self model, loaded once a process. Its arm kinematics come from the robot alone on an open
+    floor (REACH_COMP_SCENE): the episodes' scenes hold the same robot."""
+    if model not in _COMP:
+        import via_comp as VC
+
+        scene = os.environ.get("REACH_COMP_SCENE", "outputs/reachwm_20261030/scene/simple_g1_sonic")
+        _COMP[model] = VC.Comp(Path(model), Path(scene))
+    return _COMP[model]
+
+
 def angle_deg(Ra: np.ndarray, Rb: np.ndarray) -> float:
     return float(np.degrees(np.arccos(np.clip((np.trace(Ra.T @ Rb) - 1) / 2, -1, 1))))
 
@@ -200,6 +224,8 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             trace.append([round(float(m.t - t0), 3), look["phase"], (1000 * m.jaw_centre(side)[0]).round(1).tolist(),
                           (1000 * sim.d.xpos[b]).round(1).tolist(), [n for n in contacts(sim, b) if robot[sim.m.body(n).id]],
                           on_t])  # fmt: skip
+        if live[0]:
+            hit_scan()
         if film is not None and m.t - t0 >= len(film) * FILM_DT - 1e-9:  # the whole state, for isaac_film.py
             film.append((float(m.t - t0), look["phase"], sim.d.qpos.copy()))
         return ok
@@ -215,6 +241,25 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         return out
 
     tables = {sim.m.body(n).id for n in info["tables"]} if a.trace else set()
+    # 2026-11-23: what a reach's arm runs into. Bodies that are neither the robot, the world (the floor) nor the target
+    scenery = np.array([k > 0 and not robot[k] and k != b for k in range(sim.m.nbody)])
+    hits, live = {}, [False]
+
+    def hit_scan():
+        gb = sim.m.geom_bodyid
+        for i in range(sim.d.ncon):
+            c = sim.d.contact[i]
+            if c.dist >= 0:
+                continue
+            x, y = int(gb[c.geom1]), int(gb[c.geom2])
+            if robot[x] and scenery[y]:
+                key = (look["phase"], sim.m.body(x).name, sim.m.body(y).name)
+            elif robot[y] and scenery[x]:
+                key = (look["phase"], sim.m.body(y).name, sim.m.body(x).name)
+            else:
+                continue
+            hits[key] = max(hits.get(key, 0.0), -float(c.dist))
+
     trace = [] if a.trace else None
     film = [] if a.film else None
 
@@ -284,6 +329,8 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         bel.update(pb=p0 + R0 @ np.r_[dx, dy, 0.0], yb=yaw0 + float(dth), pt=p1, yt=E.yaw_of(Rp1))
         row["odo_cm"] = round(100 * float(np.linalg.norm((bel["pb"] - bel["pt"])[:2])), 2)
         row["odo_deg"] = round(math.degrees(bel["yb"] - bel["yt"]), 2)
+        row["bel"] = dict(pb=np.round(bel["pb"], 5).tolist(), yb=round(float(bel["yb"]), 6),
+                          pt=np.round(bel["pt"], 5).tolist(), yt=round(float(bel["yt"]), 6))  # fmt: skip
     Tg = grasp_now()  # truth: the second look, from the stance; perception: the start's look, by odometry
     o_look = look["at"] = sim.d.xpos[b].copy()
     gw = Tg[:3, 3]
@@ -314,7 +361,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         if entry:  # as gen_reach records the entry: REACH_GRASP_SPEED, _CONT (from the measured palm), _IKREF
             j = m.jaw_centre(side)[0]
             kw = dict(speed=ENTRY_SPEED, start=j + ENTRY_CONT * (last_cmd[0] - j), ik_from_ref=True)
-        s = dict(stage=stage)
+        s = dict(stage=stage, S0=np.round(np.asarray(rec.S[-1], float)[:29], 4).tolist())  # the joints at the command
         target, rot_cmd = goal_w, rot_w
         if invert and method in ("lookup", "model", "model_pose", "inverse"):
             st_ = RGP.state_now(env, rec, side, goal_w, rot_w, chain)
@@ -350,6 +397,28 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
             kw = dict(kw, via=list(via["p"]), via_rot=list(via["R"]))
             if "speed" in via:  # the legs' speed (curobo_attrib_20261120: a straight line timed as a planned path)
                 kw["speed"] = float(via["speed"])
+            if a.shift:  # a control: one fixed displacement of the whole path, no model
+                dv = E.rot_z(E.yaw_of(env.pelvis()[1])) @ (np.array([float(v) for v in a.shift.split(",")]) / 100)
+                kw["via"] = [np.asarray(q, float) + dv for q in via["p"]]
+                target = np.asarray(target, float) + dv
+                s["fixed_shift_cm"] = [float(v) for v in a.shift.split(",")]
+            if a.comp:  # the path's points and goal moved by the multi-waypoint self model (via_comp.py)
+                p_c, Rp_c = env.pelvis()
+                cp, cR, target, rot_cmd, ci = comp_model(a.comp).compensate(
+                    m, rec, side, np.asarray(target, float), rot_cmd, None if pz < 0 else float(pz), via["p"], via["R"],
+                    kw.get("speed"), p_c, E.rot_z(E.yaw_of(Rp_c)), GR.hand_q(m, side),
+                )  # fmt: skip
+                kw.update(via=list(cp), via_rot=list(cR))
+                sh = np.linalg.norm(ci["shift"], axis=1)
+                cm_ = comp_model(a.comp)
+                wr_ = [k for k, n in enumerate(cm_.fk.links) if "wrist" in n]
+                # what the model expected of the original command: the palm's end offset (heading frame, cm), and how high
+                # the wanted sweep takes the wrist (m; over about 1.10 m the controller does not follow)
+                s.update(comp_goal_cm=round(100 * float(sh[-1]), 2), comp_via_cm=round(100 * float(sh[:-1].max()), 2),
+                         comp_refused=int(ci["refused"]), comp_pred0=(100 * ci["off0"][-1, cm_.palm]).round(2).tolist(),
+                         comp_shift_goal=(100 * ci["shift"][-1]).round(2).tolist(),
+                         comp_wrist_top=round(float((ci["ref0"][:, wr_, 2] + cm_.fk.radius[wr_]).max()), 3))  # fmt: skip
+        live[0] = True
         out = m.reach(
             side, np.asarray(target, float), rot_cmd, pelvis_z=None if pz < 0 else float(pz), servo=servo, **kw
         )
@@ -359,6 +428,7 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
         last_cmd[0] = np.asarray(target, float)
         if m.fell_at is None:
             m.hold(GR.POST_S)
+        live[0] = False
         p, Rm = m.jaw_centre(side)
         s.update(err_cm=round(100 * float(np.linalg.norm(p - goal_w)), 3), err_deg=round(angle_deg(rot_w, Rm), 2),
                  miss=(100 * (p - goal_w)).round(2).tolist(), obj_cm=moved())  # fmt: skip
@@ -402,7 +472,9 @@ def episode(ep: dict, method: str, a, models: dict) -> dict:
     e = stages[-1] if stages and stages[-1]["stage"] == "entry" else {}
     row.update(stages=stages, palm_cm=e.get("err_cm"), palm_deg=e.get("err_deg"), rise_cm=round(100 * (z - z0), 2),
                success_end=bool(EP.lifted(task, z0, z)), t_success=first[0], fell=m.fell_at, t=round(float(m.t - t0), 2),
-               touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"])  # fmt: skip
+               touch=P.touching(sim, b), obj_cm_end=moved(), knocked=look["knocked"], touched=look["touched"],
+               hits=[[*k, round(100 * v, 2)] for k, v in sorted(hits.items())], comp=a.comp or None,
+               controller=os.environ.get("REACH_CONTROLLER", "scalebfm"))  # fmt: skip
     if trace is not None:
         row["trace"] = trace
     row["success_official"] = first[0] is not None and first[0] <= LIMIT_S[task]
@@ -427,6 +499,10 @@ def main() -> None:
     ap.add_argument("--clear", action="store_true", help="a waypoint outside the table's edge before the pregrasp")
     ap.add_argument("--avoid", default="", help="dir of via_<task>_L<l>_e<i>.npz: the pregrasp reach goes through a planned "
                     "path's points (curobo_avoid_20261120); an episode without one reaches straight")  # fmt: skip
+    ap.add_argument("--comp", default="", help="with --avoid: a multi-waypoint self model's dir (via_point.pt); the path's via "
+                    "points and goal are moved by it before they are sent")  # fmt: skip
+    ap.add_argument("--shift", default="", help="with --avoid: 'x,y,z' cm in the heading frame at the command; every via point "
+                    "and the pregrasp goal are moved by it (a control without a model)")  # fmt: skip
     ap.add_argument("--episodes", default="0-29", help="indices into the task's 30 episodes, 'a-b' or 'i,j,k'")
     ap.add_argument("--side", default="right")
     ap.add_argument("--stand", type=float, default=0.30, help="m, the grasp ahead of the pelvis at the stance")
@@ -457,6 +533,7 @@ def main() -> None:
     ap.add_argument("--film", help="a folder for each episode's whole MuJoCo state at 25 Hz (isaac_film.py renders it)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
+    assert not (a.comp and a.shift), "--comp or --shift, not both"
     a.edges = {}
     if a.column == "perception":  # the table's edge as blind.py's look saw it
         for r in json.load(open(EP.OUT / f"blind_f1_{a.task}.json")):

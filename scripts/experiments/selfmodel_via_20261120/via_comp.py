@@ -20,6 +20,8 @@ the original command, ref / off the same for the command sent, shift (17, 3) wha
 
 REACH_VIA_COMP_MODE=const moves every path by the training paths' mean offset instead (one round): the constant
 correction, an opponent in the narrow-gap test.
+REACH_VIA_COMP_MODE=goal is the default mode with the via points left where they are: only the goal is moved (same
+rounds, same cap). An opponent that tells what the correction buys along the way from what it buys at the end.
 
 REACH_VIA_COMP_MODE=pose also turns the wrist commands. The palm and the fingers are one rigid body during a reach (15
 spheres). At each via point's moment and at the settled end, the rotation that takes the wanted hand onto the predicted hand
@@ -236,6 +238,8 @@ class Comp:
             new_shift = shift - gain[:, None] * (np.array(now) - np.array(want))
             n = np.linalg.norm(new_shift, axis=1, keepdims=True)
             new_shift *= np.minimum(1.0, CAP / np.maximum(n, 1e-9))
+            if self.mode == "goal":  # the via points stay; only the goal (last row) is moved
+                new_shift[:-1] = 0.0
             new_turn = list(turn)
             if pose:
                 now_hand = [at(pred[:Q, self.hand], x) for x in u[:-1]] + [pred[Q, self.hand]]

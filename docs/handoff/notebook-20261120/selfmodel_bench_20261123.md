@@ -122,4 +122,155 @@ C 和 B 的差别，可能来自模型对每一局的预测，也可能只来自
 
 ## 结果（贴原始输出，不转述）
 
-（跑完之后填。）
+### 跑的经过
+
+- **试跑**（每个任务第 0 局，ScaleBFM，11-23 16:01 UTC，80 秒）：四局里只有 TabletopGrasp 那一局规划出路线。试跑之后只加了几个记录用的字段（模型对原命令的预期 `comp_pred0`、目标挪了多少 `comp_shift_goal`、想要的路线里手腕最高到哪 `comp_wrist_top`、发命令时的 29 个关节 `S0`），没有改任何设置。
+- **ScaleBFM**：11-23 16:06–16:41 UTC，`bench_via.sh ... all`，输出在 `outputs/simple_eval_20261112/bench_via_20261123/scalebfm`，跑的脚本抄在它的 `asrun/`。
+- **SONIC**：
+  - 第一次 11-23 16:41 UTC 启动，机器过载后重启，只跑了 A 的 25 局。这些行留在 `sonic_aborted_20261123`，没有用。
+  - 第二次 11-24 01:07–01:48 UTC，输出在 `.../sonic`。A 里 XMovePickTeleop 的进程在第 13 局之后无报错退出，单独重跑第 14 局正常。第 14–29 局补跑了 A（两个进程），补做了规划（8 局出了路线），这 8 局的 B 和 C 也重跑并替换。没带路线时的旧行留作 `*.straight_eps14-29.jsonl`。
+- **对照**（提交 `97ad6aa6`）：ScaleBFM 的 D、E 11-24 02:03–02:10 UTC 跑完。SONIC 的 D 跑到 46 / 120 局时机器又重启，E 没开始，**SONIC 的对照没有结果**，没有重跑。
+- **对照的预测是什么时候写的**：正文写于 11-24 01:09 UTC 前后，那时 SONIC 的结果还没出来。提交是 01:49:30，在那之前一分钟我已经读了 SONIC 的表。预测一个字没改，但提交时间证明不了这一点。
+- **独立复核没做。** 说明写好了（`.../bench_via_20261123/review/BRIEF.md`），数据只在 vastgpu 上。
+
+### ScaleBFM 的 A、B、C（`scalebfm/table.out`）
+
+```
+scalebfm: rows A 120, B 120, C 120
+task                   arm   n  paths  official  45 s   pregrasp cm   entry cm   falls  knocked  no grasp
+XMovePickTeleop         A   30      0        23    23          3.08       2.86       0       30         0
+XMovePickTeleop         B   30      7        25    25          3.08       2.84       0       30         0
+XMovePickTeleop         C   30      7        29    29          3.08       2.75       0       30         0
+XMoveBendPickTeleop     A   30      0        25    25          3.32       3.30       0       30         0
+XMoveBendPickTeleop     B   30      0        25    25          3.32       3.30       0       30         0
+XMoveBendPickTeleop     C   30      0        25    25          3.32       3.30       0       30         0
+BendPickMP              A   30      0         0    30          1.40       2.29       0       30         0
+BendPickMP              B   30      0         0    30          1.40       2.29       0       30         0
+BendPickMP              C   30      0         0    30          1.40       2.29       0       30         0
+TabletopGraspMP         A   30      0         2     2         26.74      27.72       0       13         1
+TabletopGraspMP         B   30     28         7    12          3.45       2.37       0       28         1
+TabletopGraspMP         C   30     28         0    19          9.92       2.93       0       27         1
+
+episodes with a planned path: 35; of them B and C both reached the planned start (goal within 1 cm): 35; by task: XMovePickTeleop 7, XMoveBendPickTeleop 0, BendPickMP 0, TabletopGraspMP 28
+  pregrasp error, 35 pairs: B 3.63 cm, C 10.65 cm; paired difference C - B median +6.85 cm (+6.33 to +7.65); C worse in 34, better in 1
+  entry error, 35 pairs: B 2.46 cm, C 2.66 cm; paired difference C - B median +0.50 cm (-0.15 to +0.84); C worse in 23, better in 12
+  right arm in penetration with a table or another object during the pregrasp reach: B 0.771, C 0.314; difference -0.457 (-0.629 to -0.286); only B 16, only C 0
+  deepest such penetration, median over the episodes that have one: B 0.09 cm, C 0.03 cm
+  success_45 on these episodes: B 14, C 25; only B 3, only C 14
+  success_official on these episodes: B 9, C 6; only B 7, only C 4
+  the correction: goal moved median 8.00 cm, at the 8 cm limit in 0.54 of the episodes; largest via move median 8.00 cm, at the limit in 0.69; wanted wrist top median 1.018 m, over 1.10 m in 0.00
+  the model's expected end offset of the original command against B's: error median 11.15 cm (expected size 6.91 cm, B's 3.63 cm)
+
+45 s successes over 120 episodes: B 92, C 103; C - B +11 (+3 to +19); only B 3, only C 14; A 80
+falls: A 0, B 0, C 0
+joints (of 29) outside the model's training range at the pregrasp command, routed episodes: XMovePickTeleop median 2 (none outside in 2 of 7); TabletopGraspMP median 11 (none outside in 0 of 28)
+the same over every episode of arm A: XMovePickTeleop median 0 (none outside in 24 of 30); XMoveBendPickTeleop median 0 (none outside in 22 of 30); BendPickMP median 5 (none outside in 0 of 30); TabletopGraspMP median 11 (none outside in 0 of 29)
+```
+
+规划（`plan_rows.jsonl`、`plan_rows_act02.jsonl`）：TabletopGrasp 3 cm 规划出 27 局，2 cm 重试多出 1 局，1 局没有抓取所以没有起点，1 局够不到；XMovePick 7 局；XMoveBendPick 和 BendPick 各 30 局都是够不到目标（腰锁着）。
+
+### ScaleBFM 的对照 D、E（`scalebfm/controls.out`）
+
+```
+scalebfm: arms B C D E; episodes where every arm ran the planned path: 35 (XMovePickTeleop 7, XMoveBendPickTeleop 0, BendPickMP 0, TabletopGraspMP 28)
+arm  45 s  official  pregrasp cm  entry cm  arm contact  goal moved cm (median)
+ B     14         9         3.63      2.46        0.771  0.00
+ C     25         6        10.65      2.66        0.314  8.00
+ D     26         7         9.93      2.72        0.200  6.32
+ E     11         8         3.48      2.56        0.800  1.42
+C against D: 45 s successes 25 and 26, difference -1 (-6 to +4), only C 3, only D 4; arm contact 0.314 and 0.200, difference +0.114 (+0.000 to +0.257); pregrasp error paired difference median +0.44 cm (-0.49 to +0.97)
+C against E: 45 s successes 25 and 11, difference +14 (+7 to +20), only C 15, only E 1; arm contact 0.314 and 0.800, difference -0.486 (-0.657 to -0.314); pregrasp error paired difference median +6.96 cm (+6.24 to +7.64)
+D against B: 45 s successes 26 and 14, difference +12 (+5 to +19), only D 14, only B 2; arm contact 0.200 and 0.771, difference -0.571 (-0.743 to -0.400); pregrasp error paired difference median +6.50 cm (+6.29 to +6.92)
+E against B: 45 s successes 11 and 14, difference -3 (-6 to +0), only E 0, only B 3; arm contact 0.800 and 0.771, difference +0.029 (+0.000 to +0.086); pregrasp error paired difference median +0.09 cm (-0.18 to +0.12)
+C against B: 45 s successes 25 and 14, difference +11 (+4 to +18), only C 14, only B 3; arm contact 0.314 and 0.771, difference -0.457 (-0.629 to -0.286); pregrasp error paired difference median +6.85 cm (+6.33 to +7.65)
+45 s successes over all 120 episodes: B 92, C 103, D 104, E 89; falls: B 0, C 0, D 0, E 0
+by task, 45 s: XMovePickTeleop B 25 C 29 D 30 E 24; XMoveBendPickTeleop B 25 C 25 D 25 E 25; BendPickMP B 30 C 30 D 30 E 30; TabletopGraspMP B 12 C 19 D 19 E 10
+```
+
+### SONIC 的 A、B、C（`sonic/table.out`，补齐之后）
+
+```
+sonic: rows A 120, B 120, C 120
+task                   arm   n  paths  official  45 s   pregrasp cm   entry cm   falls  knocked  no grasp
+XMovePickTeleop         A   30      0         7     7          4.01       5.93       0       28         0
+XMovePickTeleop         B   30      9         8     8          3.93       5.93       0       28         0
+XMovePickTeleop         C   30      9         8     8          3.82       5.81       0       28         0
+XMoveBendPickTeleop     A   30      0         3     3          6.59       7.23       0       20         0
+XMoveBendPickTeleop     B   30      5         3     3          6.59       7.23       0       21         0
+XMoveBendPickTeleop     C   30      5         2     2          7.29       7.23       0       21         0
+BendPickMP              A   30      0         0     6          4.49       6.73       0       19         0
+BendPickMP              B   30      0         0     6          4.49       6.73       0       19         0
+BendPickMP              C   30      0         0     6          4.49       6.73       0       19         0
+TabletopGraspMP         A   30      0         5     5         14.28       8.49       0       14         1
+TabletopGraspMP         B   30     28         5     8          2.92       3.51       0       24         1
+TabletopGraspMP         C   30     28         6     9          4.08       3.69       0       26         1
+
+episodes with a planned path: 42; of them B and C both reached the planned start (goal within 1 cm): 42; by task: XMovePickTeleop 9, XMoveBendPickTeleop 5, BendPickMP 0, TabletopGraspMP 28
+  pregrasp error, 42 pairs: B 2.48 cm, C 3.35 cm; paired difference C - B median +0.35 cm (-0.09 to +0.86); C worse in 25, better in 17
+  entry error, 42 pairs: B 3.10 cm, C 3.41 cm; paired difference C - B median -0.02 cm (-0.31 to +0.32); C worse in 21, better in 21
+  right arm in penetration with a table or another object during the pregrasp reach: B 0.429, C 0.452; difference +0.024 (-0.048 to +0.119); only B 1, only C 2
+  deepest such penetration, median over the episodes that have one: B 0.10 cm, C 0.07 cm
+  success_45 on these episodes: B 12, C 12; only B 4, only C 4
+  success_official on these episodes: B 9, C 9; only B 3, only C 3
+  the correction: goal moved median 2.82 cm, at the 8 cm limit in 0.00 of the episodes; largest via move median 3.50 cm, at the limit in 0.00; wanted wrist top median 1.015 m, over 1.10 m in 0.00
+  the model's expected end offset of the original command against B's: error median 3.39 cm (expected size 2.79 cm, B's 2.48 cm)
+
+45 s successes over 120 episodes: B 25, C 25; C - B +0 (-5 to +6); only B 4, only C 4; A 21
+falls: A 0, B 0, C 0
+joints (of 29) outside the model's training range at the pregrasp command, routed episodes: XMovePickTeleop median 4 (none outside in 0 of 9); XMoveBendPickTeleop median 4 (none outside in 1 of 5); TabletopGraspMP median 9 (none outside in 0 of 28)
+the same over every episode of arm A: XMovePickTeleop median 3 (none outside in 0 of 30); XMoveBendPickTeleop median 3 (none outside in 1 of 30); BendPickMP median 2 (none outside in 1 of 30); TabletopGraspMP median 9 (none outside in 0 of 29)
+```
+
+### 对照判据
+
+| 判据 | ScaleBFM | SONIC |
+|---|---|---|
+| 到得准：C 减 B 的预抓取偏差为负，区间不含 0 | +6.85 cm（+6.33 到 +7.65），**不成立，方向反了** | +0.35 cm（−0.09 到 +0.86），不成立 |
+| 碰得少：伸手途中右臂真接触 C 低于 B | 77.1 % 和 31.4 %，差 −0.457（−0.629 到 −0.286），成立 | 42.9 % 和 45.2 %，差 +0.024（−0.048 到 +0.119），分不出 |
+| 任务成功：120 局 45 秒成功 C 减 B | 92 和 103，+11（+3 到 +19），成立 | 25 和 25，0（−5 到 +6），分不出 |
+| 有效性：到达规划的起点 | 35 / 35 | 42 / 42 |
+| 有效性：C 的摔倒不比 B 多 3 局以上 | 0 和 0 | 0 和 0 |
+| 对照。模型的功劳：C 的成功局数多于 D，区间不含 0 | 25 和 26，−1（−6 到 +4），**不成立** | 没跑完 |
+| 对照。D 对 B | 26 和 14，+12（+5 到 +19） | 没跑完 |
+| 对照。E 对 B | 11 和 14，−3（−6 到 0） | 没跑 |
+
+### 对照预测
+
+| 量 | 预测 | 实际 | 在范围里吗 |
+|---|---|---|---|
+| ScaleBFM 有路线的局，TabletopGrasp / 另外三个任务 | 26–29 / 3–12 | 28 / 7 | 在 |
+| SONIC 有路线的局，TabletopGrasp / 另外三个任务 | 20–29 / 0–15 | 28 / 14 | 在 |
+| ScaleBFM 预抓取偏差，B | 2.5–4.5 cm | 3.63 | 在 |
+| ScaleBFM 预抓取偏差，C | 0.6–1.6 cm | 10.65 | **差得远** |
+| ScaleBFM 进入偏差，B 和 C | 都在 2–4 cm，C 比 B 小不超过 1 cm | 2.46 和 2.66 | 范围在，方向不对 |
+| ScaleBFM 右臂真接触，B | 80–100 % | 77 % | 略低 |
+| ScaleBFM 右臂真接触，C | 45–90 % | 31 % | 低于范围 |
+| ScaleBFM TabletopGrasp 45 秒成功，A / B / C | 1–4 / 9–15 / 10–18 | 2 / 12 / 19 | C 多 1 局 |
+| ScaleBFM 另外三个任务三遍相差不超过 2 局 | | XMovePick 23 / 25 / 29 | 不在 |
+| SONIC 直线伸手 45 秒成功，四个任务 | 3–15、2–15、5–25、0–3 | 7、3、6、5 | TabletopGrasp 高于范围 |
+| SONIC 预抓取偏差，B / C | 4–7 / 1.2–3 cm | 2.48 / 3.35 | 都不在 |
+| SONIC 右臂真接触，C 不比 B 低 | | 43 % 和 45 % | 对 |
+| SONIC TabletopGrasp 45 秒成功，B / C | 0–6 / 0–8 | 8 / 9 | 都高于范围 |
+| 摔倒每遍不超过 3 局 | | 全是 0 | 对 |
+| 对照：D 和 C 的成功局数相差不超过 3 局 | | 26 和 25 | 对 |
+| 对照：D 和 C 的接触比例相差不超过 0.15 | | 0.200 和 0.314 | 对 |
+| 对照：D 和 C 的预抓取偏差相差不超过 2.5 cm | | 9.93 和 10.65 | 对 |
+| 对照：E 的成功局数和 B 相差不超过 3 局 | | 11 和 14 | 对 |
+
+我写的三句总预测：“C 的预抓取偏差明显小于 B”两个控制器上都错了；“成功局数分不出”在 ScaleBFM 上错了，在 SONIC 上对；“ScaleBFM 上真接触会不会减少没有把握”，实际减少了，但对照说明原因不是模型。
+
+### 读法
+
+- **多路点模型在基准里预测不准。** 它对原命令终点偏差的预期和 B 实际的偏差相比，ScaleBFM 上差 11.15 cm（预期 6.91 cm，实际只偏 3.63 cm），SONIC 上差 3.39 cm（预期 2.79，实际 2.48）。预期和实际的大小相当，方向对不上。
+- **原因是起始状态超出了训练范围。** 发预抓取命令时，29 个关节里超出训练集 0.5–99.5 % 范围的个数：TabletopGrasp 上 ScaleBFM 中位数 11 个、SONIC 9 个，没有一局全在范围里。机器人侧跨一步后贴着桌子站，躯干后仰，右臂被桌沿顶着。模型只见过空地上的站姿。接法查过，和 `gen_reach.py` 里的调用一致。
+- **ScaleBFM 上的增益来自后撤，不是来自模型。** C 把目标往回拉了 6 到 8 cm（54 % 的局顶到上限），手停得更靠后，慢速进入那一段变长。不用模型的固定后撤 D 抓起 26 局，C 是 25 局。XMovePick 有路线的 7 局里，B 有 5 局在伸手途中把目标碰走，C 只有 1 局。
+- **代价是时间。** TabletopGrasp 成功时刻的中位数从 15.9 秒到 16.9 秒，官方 16 秒内抓起从 7 局降到 0 局。
+- **接触大多很浅。** 有接触的局里最深穿透的中位数是 0.09 cm 和 0.03 cm，是手指擦过桌面这一类。
+- **这个基准分不出规划方法。** 11-20 的归因实验已经得到过同一个结论（B46）：固定模板“后撤 8 cm、抬到预抓取高度、再伸过去”和 cuRobo 路线一样不卡。30 局是同一张桌子，障碍物永远在目标下方。
+- **规划器锁着腰**，XMoveBendPick 和 BendPick 一条路线都没有，这两个任务上三遍是同一条命令。
+
+### 结论
+
+1. 在 SIMPLE 的抓取任务上，多路点自身模型没有被证明有用。空地上的结论（第四批测试）没有迁移过来。
+2. 让机器人绕过桌沿的是 cuRobo 的路线；再加一条固定后撤，TabletopGrasp 的 45 秒成功是 2、12、19（直线、路线、路线加后撤）。
+3. 用户 2026-11-24 定的下一步见 TODO 38.10：贡献集中在自身模型上，把控制接口里的 IK 换成 cuRobo 的关节轨迹，SIMPLE 的成功局数作主指标，交给 4090 执行。
