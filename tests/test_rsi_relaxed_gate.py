@@ -162,7 +162,7 @@ class PoolBase(_LoopCase):
         inc = dict(dir=str(_cand(self.root / "incdir")), hash="inc0", set={})
         it = self.root / "state" / "iter_03"
         it.mkdir(parents=True)
-        hyps = dict(hypotheses=[dict(id="H1", claim="c", delta={"set": {}})])
+        hyps = dict(hypotheses=[dict(id=h, claim="c", delta={"set": {}}) for h in ("H1", "H2", "H3")])
         sent = []
 
         def fake_claude(role, prompt, schema, it_dir, tools, stub=None, stop=None):  # stop: TODO 37.3
@@ -183,7 +183,7 @@ class PoolBase(_LoopCase):
                                  gate_candidate=lambda n, it_dir, cand, stub, reopen=None: sent.append(cand)),\
              mock.patch.object(lp.B, "run_jobs", lambda *a, **k: {}),\
              mock.patch.object(lp, "object_names", lambda: {"Mug_2", "Mug"}):  # fmt: skip
-            lp.multi_engineer_step(3, it, inc, hyps, [], dict(decision="engineer", hypotheses=["H1"], base="p1"),
+            lp.multi_engineer_step(3, it, inc, hyps, [], dict(decision="engineer", hypotheses=["H1", "H2", "H3"], base="p1"),
                                    {}, [], False)  # fmt: skip
         return sent
 

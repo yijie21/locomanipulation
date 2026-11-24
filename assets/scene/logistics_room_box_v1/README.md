@@ -37,12 +37,13 @@ the actual reconstructed cardboard geometry.
 
 ## Install and validate
 
-Pull Git LFS content and install the repository's SONIC dependency first; the
-scene deliberately does not duplicate upstream robot meshes.
+Pull Git LFS content and install the repository's SONIC dependency first (steps 1-2 of
+`docs/setup.md`: the upstream clone and its `.venv_sim`); the scene deliberately does not
+duplicate upstream robot meshes. `scripts/setup_sonic.sh` is setup step 6 (Isaac Sim), optional
+and not needed here.
 
 ```bash
 git lfs pull
-bash scripts/setup_sonic.sh
 . scripts/paths.sh
 "$VENV_SIM_PY" assets/scene/logistics_room_box_v1/check_assets.py \
   --load-mujoco --load-usd
@@ -50,7 +51,8 @@ bash scripts/setup_sonic.sh
 
 The checker verifies both payload tree hashes, rejects absolute or missing
 references, measures the box OBJ, compiles the MJCF on CPU, and opens the USDC
-through Blender's bundled USD API. It also checks the USD box's world bounds:
+through Blender's bundled USD API (`--load-usd` needs Blender 5.x on the PATH, see
+`docs/blender_scenes.md`; drop the flag to skip the USD check). It also checks the USD box's world bounds:
 `(-0.225, -0.550, 0.371)` to `(0.225, -0.230, 0.701)`.
 
 The source MJCF is directly loadable for inspection. Box execution additionally

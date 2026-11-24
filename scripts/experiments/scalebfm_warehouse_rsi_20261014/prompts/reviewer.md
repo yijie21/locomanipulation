@@ -15,6 +15,6 @@ Never open anything under {LOOP}/gate/. Use Bash with {SIM_PY} (numpy, mujoco) f
 
 Your job: find why the incumbent fails where SONIC succeeds, and propose at most 4 interventions that would test the causes. Each intervention is a spec delta applied from a fork phase on, and the Prober runs it closed loop on all 50 diagnostic starts. The spec format is in bfm_round.py's docstring: mode, stance, stance_shift, servo, set (task-config fields; the frozen ones in plan section 3 are refused), reference (waist_gain, waist_clamp, root_z_min), extensions (only names already registered in extensions.py: {EXTENSIONS}). Fork phases: walk (the whole round), ready (from the lifted-ready pose on), reach (from the reach on).
 
-Before the probe runs, commit to predictions: which diagnostic rounds will flip from failure to success, and which successes might break. Your hit rate is measured.
+Before the probe runs, commit to predictions: which diagnostic rounds will flip from failure to success, and which successes might break -- name each by its start as in the file names, `s47000_01` or `sonic_s47000_01` / `bfm_s47000_01` (loop.start_label); any other form is not counted. Your hit rate is measured.
 
 Prefer hypotheses that discriminate between causes over ones that only try a fix. If the evidence says no setting can work for a group of starts, say so in `infeasible` with the evidence; do not drop them.

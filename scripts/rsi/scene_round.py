@@ -38,6 +38,7 @@ import family as F  # noqa: E402
 
 from locomani.backends.scalebfm import runtime as R  # noqa: E402
 from locomani.backends.scalebfm.config import ScaleBfmBackendConfig  # noqa: E402
+from locomani.tasks.scene import grip_guard  # noqa: E402
 from locomani.tasks.scene.episode import HOLD_S, run_episode  # noqa: E402
 from locomani.tasks.scene.start import Start  # noqa: E402
 from locomani.tasks.scene.world import SceneWorld  # noqa: E402
@@ -96,6 +97,8 @@ def make_world(fam: dict, controller: str) -> SceneWorld:
     if cfg.reach_route:  # TODO 40: RSI_REACH_ROUTE=1; the route cache and failed-request dump directories
         world.route_reaches(os.environ.get("RSI_ROUTE_CACHE") or None, os.environ.get("RSI_ROUTE_DUMP") or None,
                             cfg.reach_route_scope, cfg.reach_route_pose_goal)  # fmt: skip
+    if grip_guard.enabled():  # TODO 41.2: RSI_GRIP_GUARD=1
+        grip_guard.install(world)
     return world
 
 
@@ -148,6 +151,8 @@ def run_round(
             rec["judge"] = ex["judge"]
         if npz:
             np.savez_compressed(out / f"{label}.npz", **arrays)
+    if getattr(world, "grip_guard_log", None):  # TODO 41.2: what the check before each jaw close saw and did
+        rec["grip_guard"] = list(world.grip_guard_log)
     try:  # TODO 33.15: the round's failure class and events (failure_class.py); a classifier bug never costs a round
         rec["failure_class"], rec["events"] = FC.classify(rec, arrays, world, task.objects[0] if task.objects else None)
     except Exception as e:

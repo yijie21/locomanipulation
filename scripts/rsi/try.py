@@ -34,7 +34,7 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import batch as B  # noqa: E402
 
-MAX_PER_CALL = 40
+MAX_PER_CALL = int(os.environ.get("RSI_TRY_MAX", "40"))  # a slow bed (minutes per round): the loop's launcher sets less
 BUDGET = int(os.environ.get("RSI_TRY_BUDGET", "240"))  # rounds per role per iteration
 HIDDEN_NAME = "scene_rsi_20261016_hidden"
 SCRATCH_ROOT = Path("/workspace/tmp")
@@ -115,7 +115,7 @@ def table(out: Path, ref: Path | None, steps: bool, fam: dict | None = None) -> 
         r = rows[k]
         if steps:
             tr = {}
-            if fam is not None and (out / f"{k}.npz").exists() and r["task"] in fam["rows"]:
+            if fam is not None and fam.get("meta") and (out / f"{k}.npz").exists() and r["task"] in fam["rows"]:
                 import family as F
 
                 tr = D.trace(out / f"{k}.npz", r, list(F.task(fam, r["task"]).objects), fam["meta"])
@@ -160,7 +160,7 @@ def main(argv=None) -> int:
     labels = pick_labels(pool, a.labels, a.task, a.all)
     overrides = parse_set(a.set)
     out = a.out or Path(os.environ.get("TMPDIR") or SCRATCH_ROOT) / "try" / time.strftime("%H%M%S")
-    motor = B.motor_signature(motor_cfg=B.family_motor(a.family))
+    motor = B.signature(a.family)  # the scene's motor signature (its family's motor block), or a second backend's own
     missing = [x for x in labels if not B.done(out / f"{x}.json", motor)]
     ledger = ledger_path()
     spent = used(ledger)

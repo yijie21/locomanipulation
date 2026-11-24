@@ -60,8 +60,8 @@ def measured_goals(name: str = "") -> set:
     out = set()
     for f in sorted((HERE / "families").glob("*.json")):
         fam = json.loads(f.read_text())
-        if fam["name"] == name:
-            continue
+        if fam["name"] == name or fam.get("backend") or not fam.get("tasks_file"):
+            continue  # a second backend's goals are not scene goals (norm() would not parse them)
         rows = {json.loads(x)["id"]: json.loads(x) for x in (REPO / fam["tasks_file"]).read_text().splitlines() if x.strip()}  # fmt: skip
         out |= {norm(rows[t]["goal"]) for t in fam["tasks"] if t in rows}
     return out

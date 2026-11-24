@@ -113,7 +113,9 @@ class ForcedBuild(_LoopCase):
             out = lp.force_build(6, dec, hyps, lp.STATE / "iter_06")
         self.assertEqual(out["hypotheses"], ["H1", "H2", "H3"])
         row = lp.entries()[-1]
-        self.assertEqual((row["step"], row["hypothesis"], row["replaced"]), ("forced", "H3", "H1"))
+        self.assertEqual(
+            (row["step"], row["hypothesis"], row["replaced"]), ("forced", "H3", None)
+        )  # a free slot: nothing is replaced
         self.assertEqual(row["mechanism"], ["03:H2", "05:H1", "06:H3"])
         self.assertEqual(dec["hypotheses"], ["H1", "H2", "H1"])  # the Manager's own decision is kept as it was
         self.assertTrue((lp.STATE / "iter_06" / "manager_forced.json").exists())
@@ -123,7 +125,9 @@ class ForcedBuild(_LoopCase):
         hyps = self.history()
         with mock.patch.object(lp, "CANDIDATES", 3):
             out = lp.force_build(6, dict(decision="engineer", hypotheses=["H1"]), hyps, lp.STATE / "iter_06")
-        self.assertEqual(out["hypotheses"], ["H1", "H1", "H3"])
+        self.assertEqual(
+            out["hypotheses"], ["H1", "H2", "H3"]
+        )  # no id twice: the short list is topped up, then H3 takes the last slot
 
     def test_one_engineer_gets_the_forced_hypothesis(self):
         lp = self.lp

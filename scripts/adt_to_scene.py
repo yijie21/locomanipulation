@@ -729,6 +729,10 @@ def mujoco(args) -> None:
             env_world.append(el)
     ET.ElementTree(env_root).write(out / "env_only.xml")
     path.write_text(json.dumps(meta, indent=1))
+    from scene_mesh_budget import over_budget  # TODO 4.7.8: a drawn mesh over the renderer's fast-path limit
+
+    if bad := over_budget(out / "scene_locomani.xml"):
+        raise SystemExit(f"[mujoco] drawn meshes over the render limit, split them: {bad}")
     print(
         f"[mujoco] {out / 'scene_locomani.xml'}: {len(meta['surfaces'])} slabs, {n_free} free bodies, {n_hull} furniture "
         "hulls (robot only); env_only.xml for the drop test"

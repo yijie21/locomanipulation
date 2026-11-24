@@ -1,0 +1,20 @@
+{"id": "HolodeckApproachDesk_scene117", "goal": "walk to the desk"}
+{"id": "IThorBathroomApproachToilet_scene401", "goal": "walk over to the toilet and stand next to it"}
+{"id": "IThorBedroomApproachBed_scene329", "goal": "walk to the bed"}
+{"id": "IThorKitchenApproachFridge_scene13", "goal": "walk over to the fridge and stand next to it"}
+{"id": "IThorLivingRoomApproachSofa_scene209", "goal": "walk over to the sofa and stand next to it"}
+{"id": "IThorBathroomLiftSoapBottle_scene401", "goal": "pick up the soap bottle"}
+{"id": "HolodeckPickBookFromDresser_scene117", "goal": "pick up the closed book from the side table by the window and lift it"}
+{"id": "IThorBedroomLiftBasketFromFloor_scene329", "goal": "pick up the basket from the low bedroom stool"}
+{"id": "IThorBathroomLiftScrubBrush_scene401", "goal": "pick up the scrub brush"}
+{"id": "HolodeckMoveCupToCenter_scene117", "goal": "move the glass cup to the center"}
+{"id": "HolodeckMoveCupToCorner_scene117", "goal": "move the glass cup to either robot-side desk corner"}
+{"id": "IThorBathroomPutSpongeInBathtub_scene401", "goal": "pick up the sponge from the bathtub rim and put it in the bathtub"}
+{"id": "IThorBedroomBoxedFoodIntoBasket_scene329", "goal": "put the boxed food in the basket"}
+{"id": "IThorBedroomCanIntoBasket_scene329", "goal": "put the can in the basket"}
+{"id": "IThorKitchenAppleIntoBox_scene13", "goal": "put the apple into the box"}
+{"id": "IThorKitchenBendAndPutAppleOnPlate_scene13", "goal": "bend down and put the apple on the plate on the low table"}
+{"id": "IThorKitchenBreadOnPlate_scene13", "goal": "put the bread on the plate on the table"}
+{"id": "IThorKitchenCupToSink_scene13", "goal": "pick up the cup beside the sink and put it into the sink"}
+{"id": "IThorLivingRoomBookIntoBasket_scene209", "goal": "pick up the book and place it in the basket"}
+{"id": "IThorLivingRoomCandleToBasket_scene209", "goal": "pick up the candle and place it in the basket"}

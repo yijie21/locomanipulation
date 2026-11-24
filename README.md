@@ -15,6 +15,8 @@ Unitree G1 人形机器人的移动操作仿真。现在的主线是**场景 RSI
 | [进展报告](docs/handoff/scene-rsi-report-20261019.md) | 进化到哪一步：每次被接受的改动、做成了哪些任务、穿模和接触问题的修正与重测 |
 | [场景文件格式](docs/handoff/scene-file-format-20261003.md) | 场景文件的每个字段，建场景后的面板、碰撞盒、沉降、检查几步各做什么 |
 | [方案与开发记录](docs/handoff/scene-rsi-plan-20261016.md) | 按天记的决策、实测和改动，D1–D13 的取舍 |
+| [三级升级机制的实验计划](docs/handoff/escalation-plan-20261116.md) | 参数 → 站位 → 控制器能力，在 SIMPLE 和 LocoManiLab 两个基准上做：现有流程缺什么接头、分阶段任务和判定、对照、要用户定的事；SIMPLE 这一半（阶段 A-S）2026-11-17 已做，见[阶段 A-S 记录](docs/handoff/escalation-a-s-20261117.md)；LocoManiLab 这一半进行中，见[阶段 A-L 记录](docs/handoff/escalation-a-l-20261117.md)；失败地图见[阶段 B 记录](docs/handoff/escalation-b-20261117.md) |
+| [四个人形基准的对照](docs/handoff/benchmarks-20261116.md) | SIMPLE、LocoManiLab、HumanoidArena、Isaac Lab-Arena 各做什么任务、怎样才算可比的数、有什么限制 |
 | [从原子技能开始的抓取进化](docs/handoff/grasp-atomic-line-20261023.md) | 10-20 起的那条线：任务族、四次运行的结果、每版改了什么、还败在哪、从空种子跑和续跑的命令、做好还没跑的部件 |
 | [物流间线的方案与记录](docs/handoff/box-bimanual-rsi-plan-20261023.md) | 物流间那条线的决策与理由（第 9 个原子动作、严格判据），被否决的方案，探针和每次运行的结果，任务在 TODO 38 |
 

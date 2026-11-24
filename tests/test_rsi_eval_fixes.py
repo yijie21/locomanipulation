@@ -72,7 +72,7 @@ class GateVoidTest(unittest.TestCase):
         (cand / "skills" / "__init__.py").write_text("def apply_set(pkg, ov):\n    return []\n")
         (cand / "candidate.json").write_text('{"set": {}}')
 
-        def fake(jobs, family, pool_, procs, log, gpus="1", stop=None):
+        def fake(jobs, family, pool_, procs, log, gpus="1", stop=None, where="probe"):
             for k, job in enumerate(jobs):
                 job.out.mkdir(parents=True, exist_ok=True)
                 for x in job.labels or B.pool_labels(pool_):
@@ -99,6 +99,12 @@ class GateVoidTest(unittest.TestCase):
         self.assertIn("a_s0", led[0]["reason"])
         self.assertIn("hash", led[0])
         self.assertIn("call", led[0])
+
+    def test_stage1_file_is_written_once_stage1_passes(self):  # TODO 48.17 stage1_first
+        rc, led = self._run({})
+        work = Path(led[0]["candidate"]).parent / "gate" / f"{led[0]['call']:02d}_{led[0]['hash']}"
+        self.assertTrue((work / "stage1_passed.json").exists())
+        self.assertEqual(json.loads((work / "stage1_passed.json").read_text())["n"], led[0]["stage1"]["n"])
 
     def test_missing_incumbent_round_is_void_not_keyerror(self):
         rc, led = self._run({0: ["b_s0"]})

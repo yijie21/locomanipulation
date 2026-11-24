@@ -1,0 +1,4 @@
+{"id": "OpenOvenTeleop", "goal": "move forward to the oven and open it"}
+{"id": "CloseDoorTeleop", "goal": "move forward to the door and close it"}
+{"id": "OpenFaucetTeleop", "goal": "turn the faucet"}
+{"id": "OpenTrashCanTeleop", "goal": "move forward to the trash can and open it"}

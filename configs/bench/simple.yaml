@@ -1,0 +1,11 @@
+# bench/simple: the switches SIMPLE runs with unless a run overrides them (TODO 49.1): the loops so far (stereo depth; leg odometry for the skill's belief and for the pelvis ScaleBFM is told)
+defaults:
+- _schema
+- _self_
+bench: simple
+target: perception
+sensor: stereo
+depth_noise: none
+self_pose: odometry
+controller_root: odometry
+controller: scalebfm

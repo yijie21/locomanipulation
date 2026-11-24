@@ -14,6 +14,10 @@ SURFACE_MARGIN_M = 0.02  # object footprint kept this far inside the surface's f
 OBJECT_GAP_M = 0.02  # between footprints of objects on one surface
 SPAWN_DISTANCE_M = (1.0, 3.0)  # robot pelvis to the first task object
 APPROACH_RING_M = (0.35, 0.80)  # where the robot must be able to stand near the object (reachability check)
+# the scene file's spawn rule (adt_to_scene: navigator body radius 0.26 + spawn margin 0.15) on the occupancy map: the
+# spawn regions are outer contours with the furniture inside them, and `occ.is_free` asks only for the walking radius,
+# counted cell to cell (5 cm) -- a start 0.28 m from a kitchen chair's footprint passed and fell (TODO 42.2)
+SPAWN_CLEAR_M = 0.41
 TRIES = 2000  # a crowded top (the utility cart: a tray across most of it) leaves a ~10 cm strip
 
 
@@ -185,6 +189,11 @@ def _inside(poly, xy) -> bool:
     return inside
 
 
+def _clearance(occ, xy) -> float:
+    c = occ.cell_of(xy)
+    return float(occ.clearance[c[0], c[1]])
+
+
 def spawn_polygons(meta: dict, room: str | None) -> list:
     spawn = (meta.get("room") or {}).get("spawn") or {}
     if room is not None and room in spawn:
@@ -258,7 +267,7 @@ def sample_start(
         nav.set_goal_ring(anchor, *APPROACH_RING_M)
     for _ in range(TRIES):
         xy = rng.uniform(lo, hi)
-        if not any(_inside(p, xy) for p in polys) or not occ.is_free(xy):
+        if not any(_inside(p, xy) for p in polys) or not occ.is_free(xy) or _clearance(occ, xy) < SPAWN_CLEAR_M:
             continue
         if anchor is not None:
             d = float(np.linalg.norm(xy - anchor))

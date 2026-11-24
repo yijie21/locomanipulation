@@ -141,8 +141,8 @@ class SecondShot(unittest.TestCase):
             (inc_dir / "skills" / "__init__.py").write_text("X = 1\n")
             (inc_dir / "candidate.json").write_text('{"set": {}}')
             inc = dict(dir=str(inc_dir), hash=lp.candidate_hash(inc_dir), set={})
-            hyps = dict(hypotheses=[dict(id="H1", claim="c", instead="i", delta={"set": {}})])
-            dec = dict(decision="engineer", hypotheses=["H1", "H1", "H1"], reason="r")
+            hyps = dict(hypotheses=[dict(id=h, claim="c", instead="i", delta={"set": {}}) for h in ("H1", "H2", "H3")])
+            dec = dict(decision="engineer", hypotheses=["H1", "H2", "H3"], reason="r")
             rows, runs, gated = [], [], []
             gate_of_2 = threading.Event()
 
@@ -199,8 +199,8 @@ class SecondShot(unittest.TestCase):
             lp.main(["run", "fam"])
             self.assertIsNone(seen["second_shot"])
         none = Namespace(second_shot=None)
-        self.assertIs(lp.resolve_settings(none, {}, False)["second_shot"], True)
-        self.assertIs(lp.resolve_settings(none, dict(started="x", second_shot=False), True)["second_shot"], False)
+        self.assertIs(lp.resolve_settings(none, {}, False)["second_shot"], False)  # off by default since 2026-11-20
+        self.assertIs(lp.resolve_settings(none, dict(started="x", second_shot=True), True)["second_shot"], True)
 
 
 if __name__ == "__main__":

@@ -269,13 +269,18 @@ class Motor:
         self.jacobian = jacobian
         self.track = {n: sim.m.body(n).id for n in track}
         self.foot_bodies = {sim.m.body(ANKLE[s]).id for s in SIDES}
-        self.fingers = {s: tuple(sim.m.body(n).id for n in FINGERS[s]) for s in SIDES}
+        fingers = (
+            FINGERS if sim.hand == "dex1" else {s: (f"{s}_hand_thumb_2_link", f"{s}_hand_index_1_link") for s in SIDES}
+        )
+        self.fingers = {s: tuple(sim.m.body(n).id for n in fingers[s]) for s in SIDES}
         self.k = 0
         self.mode: int | None = None  # set (and sent to the policy) by the first primitive
         self.ref = None  # callable t -> Pose
         self.jaw = np.full(2, JAW_OPEN)
         self.pinned: dict | None = None
         self.servo: dict = {}
+        # walk_to's stop servo: a callable giving the pelvis xy it steers on (None: the simulator's)
+        self.stop_xy = None
         self.servo_on = {s: False for s in SIDES}
         self.servo_target: dict = {}
         self.squeeze_offset: dict = {}  # side -> jaw-centre offset in the pelvis (yaw) frame: `squeeze`
@@ -323,6 +328,15 @@ class Motor:
         i = SIDES.index(side)
         return float(2 * (np.mean(self.sim.d.qpos[self.sim.gq[2 * i : 2 * i + 2]]) + 0.023))
 
+    def wrist(self, side: str):
+        """(position, quat) of `side`'s wrist body, measured."""
+        return self.sim.body(WRIST[side])
+
+    def finger_positions(self, side: str) -> list[np.ndarray]:
+        """World positions of `side`'s two finger bodies (finger 1 on the wrist's -y side first)."""
+        return [self.sim.d.xpos[f].copy() for f in self.fingers[side]]
+
+    # -- contacts: the simulator's ground truth; the episode judge and scene.view.TruthView read them, a skill does not
     def between_fingers(self, side: str) -> set[int]:
         """Bodies (ids) touched by both fingers of `side` -- the grasped object, if any."""
         m, d = self.sim.m, self.sim.d
@@ -435,7 +449,7 @@ class Motor:
             jaw_ref = self.servo_target.get(side, p_ref + R_ref @ R.OFF)
             if side in self.squeeze_offset:  # `squeeze`: the inward push rides on the reference, turned with the body
                 jaw_ref = jaw_ref + R.rot_z(self.yaw()) @ self.squeeze_offset[side]
-            p_meas, R_meas = self.jaw_centre(side)
+            p_meas, R_meas = (getattr(self, "jaw_source", None) or self.jaw_centre)(side)
             turn = self.servo.get(("turn", side), np.zeros(3)) + cfg.servo_ki_rot * R.DT * rotvec(R_ref @ R_meas.T)
             n = float(np.linalg.norm(turn))
             turn = turn * (cfg.servo_cap_rot / n) if n > cfg.servo_cap_rot else turn
@@ -466,7 +480,7 @@ class Motor:
         """One 50 Hz step on the current reference. False once the robot has fallen (the step is not taken)."""
         sim = self.sim
         fut = self._futures()
-        sim.grip_target[:] = np.repeat(self.jaw, 2)
+        sim.set_jaw(self.jaw)
         if sim.fallen():
             self.fell_at = self.t if self.fell_at is None else self.fell_at
             return False
@@ -564,7 +578,7 @@ class Motor:
             tt = t - t_start
             if tt < total:
                 return None
-            err = goal - self.sim.d.qpos[:2]
+            err = goal - (self.sim.d.qpos[:2] if self.stop_xy is None else np.asarray(self.stop_xy(), float))
             self.servo["walk_push"] = np.clip(
                 self.servo.get("walk_push", np.zeros(2)) + cfg.stop_ki * R.DT * err, -cfg.stop_cap, cfg.stop_cap
             )
@@ -601,11 +615,16 @@ class Motor:
         return self.walk_to(goal, yaw, face="fixed")
 
     # -- whole-body IK ----------------------------------------------------------------------------------------------
-    def _solver(self, pelvis_height_target=None) -> WholeBodyIK:
+    def _solver(self, pelvis_height_target=None, at: Pose | None = None) -> WholeBodyIK:
+        """The whole-body IK of the current state, or built on the reference pose `at` and seeded exactly there."""
         if self.ik is None:
             raise RuntimeError("Motor needs model_xml for whole-body IK (posture, reach)")
-        pos, quat = self.pelvis()
-        state = dict(joints=self.joints(), pelvis=dict(pos=pos, quat=quat))
+        if at is None:
+            pos, quat = self.pelvis()
+            joints = self.joints()
+        else:
+            pos, quat, joints = at.pos.copy(), at.quat.copy(), at.joints.copy()
+        state = dict(joints=joints, pelvis=dict(pos=pos, quat=quat))
         cfg = self.cfg
         solver = WholeBodyIK(
             self.ik,
@@ -621,6 +640,8 @@ class Motor:
             # WholeBodyIK bounds the pelvis at most 2 cm above where it stands (a crouch solver); a posture that rises
             # back needs the bound at its target (motor_check posture_low, 2026-10-16: 0.58 -> 0.74 stayed at 0.58)
             solver.hi[2] = max(solver.hi[2], pelvis_height_target + 0.01)
+        if at is not None:
+            solver.seed = np.clip(solver.initial, solver.lo, solver.hi)
         return solver
 
     def _solve(self, solver, positions, rotations, *, weights=None, torso=None, seed=None, rotation_weight=None):
@@ -806,17 +827,32 @@ class Motor:
         servo: bool = True,
         pelvis_z: float | None = None,
         keep_squeeze: bool = False,
+        start=None,
+        start_rot=None,
+        ik_from_ref: bool = False,
     ) -> Outcome:
         """Move `side`'s jaw centre to `pos` (world) with wrist rotation `rot` (3x3 world; None keeps the current one)
         through the points `via`, legs straight at `speed`, whole-body IK at waypoints reach_step_m apart, feet
         planted. side "both": `pos`, `rot` and each via point are pairs (left, right). The other jaw centre stays where it
         is in the world (IK weight 0.3). The servo integrates the jaw-centre
         error from the start and settles up to reach_settle_s at the end. A reach ends the moved hands' squeeze
-        unless `keep_squeeze` (a two-hand lift by the arms: both hands up, still pressing; TODO 38.4)."""
+        unless `keep_squeeze` (a two-hand lift by the arms: both hands up, still pressing; TODO 38.4).
+
+        `start` / `start_rot` (one side only): the path starts at this point / attitude instead of the measured ones.
+        ik_from_ref: the whole-body IK is built on the current reference pose and seeded there, not on the measured joints
+        with its waist-forward seed. The reference is what the first leg blends from, so the plan stays in its posture
+        family; from a measured posture far from the reference the IK can land in another family and the joint-space
+        blend swings the reference jaw tens of cm (grasp_exp.py, top shelf, 2026-11-08)."""
         cfg = self.cfg
         sides = SIDES if side == "both" else (side,)
-        solver = self._solver(pelvis_height_target=pelvis_z)
+        solver = self._solver(pelvis_height_target=pelvis_z, at=self.ref(self.t) if ik_from_ref else None)
         cur = {s: self.jaw_centre(s) for s in SIDES}
+        if start is not None or start_rot is not None:
+            assert side != "both", "reach: start / start_rot are for one side"
+            cur[side] = (
+                cur[side][0] if start is None else np.asarray(start, float),
+                cur[side][1] if start_rot is None else np.asarray(start_rot, float),
+            )
         if side == "both":
             goal_p = {s: np.asarray(pos[i], float) for i, s in enumerate(SIDES)}
             goal_R = {s: cur[s][1] if rot is None else np.asarray(rot[i], float) for i, s in enumerate(SIDES)}

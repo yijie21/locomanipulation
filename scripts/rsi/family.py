@@ -21,7 +21,9 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-sys.path[:0] = [str(REPO / "src")]
+sys.path[:0] = [str(HERE), str(REPO / "src")]  # HERE: backend.py
+
+import backend as BK  # noqa: E402
 
 from locomani.primitives.navigator import build  # noqa: E402
 from locomani.scene_discovery.lint import goal_holds  # noqa: E402
@@ -46,6 +48,8 @@ def hidden_seeds(name: str) -> dict:
 
 def load(name: str) -> dict:
     fam = json.loads((HERE / "families" / f"{name}.json").read_text())
+    if be := BK.of(fam):  # a second backend (backend.py): it loads its own family, the scene files below are not there
+        return be.load(name)
     for pool, spec in fam.get("pools", {}).items():  # TODO 36 (review 2026-10-22): blank seeds -> the hidden file's
         if spec.get("seed") is None and pool in (hid := hidden_seeds(name)):
             fam["pools"][pool] = dict(spec, seed=hid[pool])
@@ -97,6 +101,8 @@ def draw(fam: dict, pool: str, out: Path, seed=None, n=None, tasks=None, start_i
     `seed`, `n` and `tasks` override the family's pool spec and `start_i` is where the task rotation starts (TODO
     33.23: the diagnostic pool's redraw continues from the seed after the last one the pool used, over the unparked
     tasks only, so it never touches the hidden pools' seed ranges)."""
+    if be := BK.of(fam):  # the backend draws its own pools; its seed and start_i are the scene's, not passed on
+        return be.draw(fam, pool, out, n=n, tasks=tasks)
     spec = fam["pools"][pool]
     if seed is None and spec.get("seed") is None:
         raise SystemExit(f"{fam['name']}: the {pool} pool's seed is blank and the hidden seeds.json has none")

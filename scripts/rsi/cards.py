@@ -684,13 +684,13 @@ def pool_summary(rounds, anal, name):
 
 def build(diag: Path, scene_path: Path, out: Path, images: bool = True) -> int:
     """The cards of a diag round dir into out/ (cards.md, cards.jsonl, img/); returns the number of cards."""
-    scene = Scene(scene_path)
+    scene = Scene(scene_path) if scene_path else None  # no scene file (a second backend's family): text cards only
     goals = goal_lookup()
     rounds = sorted((json.loads(p.read_text()) for p in diag.glob("*.json") if not p.name.startswith("_")), key=lambda r: r["label"])  # fmt: skip
     anal = []
     for r in rounds:
         npz = diag / f"{r['label']}.npz"
-        z = np.load(npz, allow_pickle=True) if npz.exists() else None
+        z = np.load(npz, allow_pickle=True) if scene is not None and npz.exists() else None
         a = analyse(r, z, scene, goals.get(r["task"], {}))
         a["_steps"] = {s["step"]: s for s in r.get("steps") or []}
         anal.append(a)
@@ -716,7 +716,7 @@ def build(diag: Path, scene_path: Path, out: Path, images: bool = True) -> int:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("diag", type=Path)
-    ap.add_argument("scene", type=Path)
+    ap.add_argument("scene", type=Path, nargs="?")
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--no-images", action="store_true")
     a_ = ap.parse_args()

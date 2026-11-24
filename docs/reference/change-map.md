@@ -11,6 +11,7 @@ then only its relevant row; follow actual callers and dependencies as needed.
 | SONIC, stack lifecycle, dataset, training/evaluation, shared config, repository checks | [Runtime map](change-map-runtime.md) |
 | Scene assets, cameras, Isaac/MuJoCo rendering and job shutdown | [Rendering map](change-map-rendering.md) |
 | Scene tasks on ScaleBFM (scene RSI): motor layer, task runner, skills, ADT scene build | [Scene map](change-map-scene.md) |
+| Public benchmarks (SIMPLE, LocoManiLab, BiGym 2.0, HumanoidArena) and the run switches: truth or perception, stereo or RGB-D, self pose, controller | [Benchmark map](change-map-bench.md) |
 
 ## Making a change
 

@@ -1,0 +1,3 @@
+{"id": "IThorLivingRoomLowDrawerPnP_scene209", "goal": "pick up the apple from the top of the dresser, open its lower-left drawer, put the apple inside, and close the drawer"}
+{"id": "IThorLivingRoomWalkAndOpenLowDrawer_scene209", "goal": "walk to the lower-left drawer of the dresser, then crouch down and open it"}
+{"id": "IThorLivingRoomWalkAndCloseLowDrawer_scene209", "goal": "walk to the lower-left drawer of the dresser, then crouch down and close it"}

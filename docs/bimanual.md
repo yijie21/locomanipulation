@@ -95,7 +95,7 @@ MUJOCO_GL=egl "$VENV_SIM_PY" scripts/render_trace_videos.py outputs/runs/crate_s
 | 采集录像 | `videos/` |
 | 闭环每局的成败、失败阶段 | `eval/closed_loop.manifest.jsonl` |
 | 闭环录像 | `eval/videos/`（第 5 步最后那条命令） |
-| 产物是否齐全 | `python scripts/artifact_contract.py check outputs/runs/<名字> crate_eval` |
+| 产物是否齐全 | `python3 scripts/artifact_contract.py check outputs/runs/<名字> crate_eval`（采集、转换阶段的契约名见 `tests/contracts/`） |
 
 ## 7. 常见报错
 

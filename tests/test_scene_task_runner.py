@@ -99,6 +99,8 @@ class Placement(unittest.TestCase):
         xy = np.asarray(st.robot_xy)
         can = st.placements["Can"][0][:2]
         self.assertTrue(occ.is_free(xy))
+        c = occ.cell_of(xy)  # TODO 42.2: the spawn rule's clearance, not the walking radius
+        self.assertGreaterEqual(occ.clearance[c[0], c[1]], S.SPAWN_CLEAR_M)
         self.assertTrue(S.SPAWN_DISTANCE_M[0] <= np.linalg.norm(xy - can) <= S.SPAWN_DISTANCE_M[1])
         nav.set_goal_ring(can, *S.APPROACH_RING_M)
         self.assertTrue(nav.reachable(xy))
@@ -115,6 +117,7 @@ class Placement(unittest.TestCase):
             st = S.sample_start(m, occ, nav, ["Can"], np.random.default_rng(seed), seed=seed,
                                 spawn={"rooms": "all", "distance_m": [0.5, None]})  # fmt: skip
             xy, can = np.asarray(st.robot_xy), st.placements["Can"][0][:2]
+            self.assertGreaterEqual(occ.clearance[tuple(occ.cell_of(xy))], S.SPAWN_CLEAR_M)
             self.assertGreaterEqual(np.linalg.norm(xy - can), 0.5)
             nav.set_goal_ring(can, *S.APPROACH_RING_M)
             self.assertTrue(nav.reachable(xy))

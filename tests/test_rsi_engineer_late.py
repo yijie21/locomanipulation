@@ -90,8 +90,8 @@ class EngineerDeadline(unittest.TestCase):
             (inc_dir / "skills" / "__init__.py").write_text("X = 1\n")
             (inc_dir / "candidate.json").write_text('{"set": {}}')
             inc = dict(dir=str(inc_dir), hash=lp.candidate_hash(inc_dir), set={})
-            hyps = dict(hypotheses=[dict(id="H1", claim="c", instead="i", delta={"set": {}})])
-            dec = dict(decision="engineer", hypotheses=["H1", "H1", "H1"], reason="r")
+            hyps = dict(hypotheses=[dict(id=h, claim="c", instead="i", delta={"set": {}}) for h in ("H1", "H2", "H3")])
+            dec = dict(decision="engineer", hypotheses=["H1", "H2", "H3"], reason="r")
             rows, gated = [], []
 
             def fake_claude(role, prompt, schema, it_dir_, tools, stub=None, stop=None):
@@ -132,7 +132,7 @@ class EngineerDeadline(unittest.TestCase):
             self.assertEqual(len(gated), 1)
             self.assertTrue(gated[0].endswith("candidate_1"))
             line = lp.iteration_line(0, rows)
-            self.assertIn("engineer 3 H1: late (stopped)", line)
+            self.assertIn("engineer 3 H3: late (stopped)", line)
             self.assertIn("engineer 1 H1: ok", line)
 
     def test_the_flag_reaches_the_settings(self):

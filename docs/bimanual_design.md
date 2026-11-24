@@ -573,7 +573,7 @@ crate runbook 只写命令和结果；下面是它原来夹在命令之间的说
 - manifest 每行有 `task`、`produced`、`ok`；成功局还有 `execution.metrics.training_tail.end_seq`（进入直立持物验收的帧号），转换时按它裁掉验收尾段。
 - 训练用 `configs/gr00t_sonic_3cam_bimanual.py`：46 维状态（与官方相同，2026-10-07 起不再带两腕位姿）、66 维动作、三路相机。
 - 采集日志按专家命名（`visual_NN.log`），不是 `collect_NN.log`。开局是否站稳看 manifest 每行的 `placement.initial_stance_ready`；为 `false` 的局以 `initial_stance_unstable` 失败。
-- `collect.record: true` 时，每批一个 exporter session，写在 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`，记在 `collect/inputs.json` 的 `sessions` 里，和 `manifests` 一一对应。
+- `collect.record: true` 时，每批一个 exporter session，写在 `$LOCOMANI_TMP/p03_i<实例>/outputs/<时间戳>/`（实例 0 是 `p03/`，没有 `_i0`），记在 `collect/inputs.json` 的 `sessions` 里，和 `manifests` 一一对应。
 
 ### 数据检查必须带 `--run-dir`
 

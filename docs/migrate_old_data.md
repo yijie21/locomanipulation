@@ -22,7 +22,7 @@ awk '/^backend:/{b=1} b&&/^  render:/{print $2; exit}' "$OLD/config.yaml"
 ```
 
 做什么：打印旧运行的 `backend.render`。命令都在仓库根目录执行，`my_old_run` 换成你的运行名。
-得到什么：打印 `offline` 是离线出图（warehouse 线，采集时仿真不出图，图由 Unreal、Isaac 或 MuJoCo 事后补渲），按第 3 节做。什么都不打印或打印 `live` 是实时录制（bottle、crate 线，图是仿真采集时自己出的，约 33 Hz），按第 2 节做。
+得到什么：打印 `offline` 是离线出图（warehouse 线，采集时仿真不出图，图由 Unreal、Isaac 或 MuJoCo 事后补渲），按第 3 节做。什么都不打印或打印 `live` 是实时录制（bottle、crate 线，图是仿真采集时自己出的；50 fps 数据集里实测约 30 Hz 换一张新画面，按代码推算约 33 Hz，差别原因未查），按第 2 节做。
 
 两种都要先做下面这一步：从旧运行派生出一个 50 fps 的新运行。运行的 `config.yaml` 开跑后就不能改，所以要另建运行目录；旧运行和它已经转好的数据集保持不动。
 
