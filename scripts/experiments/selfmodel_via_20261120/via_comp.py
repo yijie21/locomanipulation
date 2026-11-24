@@ -47,6 +47,10 @@ original command and below `trust_abs` (m); a refused point keeps its last accep
 1.5 and 0.012 it refused corrections on 91 % of 200 random paths and cost the palm more than it saved; the ensemble's
 disagreement (1.0 cm) also understates the error where the model is wrong (3 cm).
 info then also has turn (17, 3), each point's wrist correction as a rotation vector in the heading frame.
+REACH_VIA_COMP_TURN_GATE (deg, default inf: off; 2026-11-23, the plan entry's "第五步补充之二"): with mode pose, the most the
+compensated command may turn the hand at the settled end -- the least-squares rotation of the 15 hand spheres from the
+original command's plan to the compensated one's at the last point, via_turn.py's "commanded" at table point 24. Above it
+the path is compensated as mode point would (position only, the same model, from the same state), so its comp_turn is zero.
 """
 
 from __future__ import annotations
@@ -66,6 +70,7 @@ from arm_fk import ArmFK  # noqa: E402
 
 Q, ITERS = VM.Q, 2
 CAP = float(os.environ.get("REACH_VIA_COMP_CAP", "0.08"))  # m: the most a point (or the body's point) is moved
+TURN_GATE = float(os.environ.get("REACH_VIA_COMP_TURN_GATE", "inf"))
 # REACH_VIA_COMP_MODE=pose: rounds, the share of the remaining correction taken a round, the most a wrist command is turned
 # (deg), and the trust rule's two numbers (see the docstring). Overridable for development runs.
 POSE = dict(iters=int(os.environ.get("REACH_VIA_COMP_ITERS", "6")), gain=float(os.environ.get("REACH_VIA_COMP_GAIN", "0.5")),
@@ -181,6 +186,21 @@ class Comp:
         return ref, off, t / t[-1], spread
 
     def compensate(self, m, rec, side: str, goal_w, rot_w, pelvis_z, via_p, via_R, speed, p, Rh, fingers):
+        args = (m, rec, side, goal_w, rot_w, pelvis_z, via_p, via_R, speed, p, Rh, fingers)
+        out = self._compensate(*args)
+        if self.mode != "pose" or not np.isfinite(TURN_GATE):
+            return out
+        info = out[4]
+        turn_end = np.degrees(np.linalg.norm(VG.logm(kabsch(info["ref0"][-1, self.hand], info["ref"][-1, self.hand]))))
+        if turn_end <= TURN_GATE:
+            return out
+        self.mode = "point"  # REACH_VIA_COMP_TURN_GATE: position only for this path
+        try:
+            return self._compensate(*args)
+        finally:
+            self.mode = "pose"
+
+    def _compensate(self, m, rec, side: str, goal_w, rot_w, pelvis_z, via_p, via_R, speed, p, Rh, fingers):
         sd = 1.0 if side == "right" else -1.0
         r6 = np.asarray(rec.J[-1], float)
         R0 = Rh.T @ np.c_[r6[:3], r6[3:6], np.cross(r6[:3], r6[3:6])]
