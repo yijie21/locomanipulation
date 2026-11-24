@@ -3,6 +3,10 @@
     $PY gap_real.py calib <out dir> <routes dir> <direct> <const> <comp> <radius.pt>
     $PY gap_real.py score <out dir> <routes dir> <calib dir> <direct obst> <const obst> <comp obst> \
         <direct open> <const open> <comp open> [--part1 <part one's direct replay dir>]
+    either with [--radius <gap_cover.py's json>] anywhere: the scoring spheres' radii grown to cover the real hand
+    score with [--fail-any] anywhere: a contact of any robot body with the obstacles is a collision (default: wrist + palm +
+    fingers only); and [--monotone]: f*, the best opponent and the ratio by the monotone definition (below), the registered
+    one printed too (default the other way round). Both 2026-11-23, the user's choices for the test after the dev rehearsal.
 
 Every run is gap_replay.sh's: one reset per (slot, pass), slot = (base scene s, level f, margin m) of <routes dir>/slots.json;
 direct / const / comp: the planned command sent as is / moved by the training paths' mean offset / compensated (position and
@@ -31,8 +35,8 @@ obstacle run: success (went, no wrist / palm / finger penetration, no fall), col
   ours         first m with clearance(predicted, through) >= mu, compensated
   rule_a       first m with clearance(predicted, through) >= the residual radius for this command, compensated (secondary)
   comp_fixed   fixed at the ablation's margin, compensated (ablation, not an opponent)
-The narrowest gap passed safely f*: the smallest level with success >= 0.90 and collisions <= 0.05; intervals by resampling base
-scenes. The best opponent: the smallest f* of fixed_cal, the best fixed m after the fact (the m with the smallest f* on these
+The narrowest gap passed safely f*: the smallest level with success >= 0.90 and collisions <= 0.05 (registered); monotone: the
+smallest level such that it and every wider level pass that bar; intervals by resampling base scenes. The best opponent: the smallest f* of fixed_cal, the best fixed m after the fact (the m with the smallest f* on these
 very scenes, chosen again in every resample), radius and const. Also: the arm's (24 spheres) collisions, falls, the open-floor
 spheres' verdict (actual sweep within the real obstacles) against MuJoCo's contact, and the fixed margins' collision rate
 against part one's at the same half-width (--part1: its direct replays, the detour routes).
@@ -53,6 +57,16 @@ sys.path.insert(0, str(HERE))
 import via_model as VM  # noqa: E402
 import via_point as VP  # noqa: E402
 
+# --radius <cover.json> (2026-11-23, gap_cover.py; anywhere on the line): the scoring spheres' radii grown to cover the arm's
+# real collision bodies, used for every distance to the obstacles. Without it, arm.npz's radii (cuRobo's), which the
+# independent review found leave the palm out by up to 3.4 cm. Centres, errors, mu and the margins are not affected.
+RADIUS = None
+if "--radius" in sys.argv:
+    _k = sys.argv.index("--radius")
+    RADIUS = json.load(open(sys.argv[_k + 1]))
+    del sys.argv[_k : _k + 2]
+FAIL_ANY, MONO = "--fail-any" in sys.argv, "--monotone" in sys.argv
+sys.argv = [a for a in sys.argv if a not in ("--fail-any", "--monotone")]
 WHAT, OUT, RT = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
 OUT.mkdir(parents=True, exist_ok=True)
 SL = json.load(open(RT / "slots.json"))
@@ -121,6 +135,9 @@ def run(D: Path, with_table: bool = True) -> dict:
     T = VP.load([D])
     A = np.load(D / "arm.npz")
     X, rad, link = A["X"], A["radius"], [str(x) for x in A["link"]]
+    if RADIUS is not None:
+        assert RADIUS["link"] == link, f"{D}: the cover's spheres are not arm.npz's"
+        rad = np.asarray(RADIUS["radius"], np.float32)
     thr = np.array([x == "wrist_pitch_link" or x.startswith("hand_") for x in link])
     row = np.full(R["n"], -1)
     row[T["seg"]] = np.arange(len(T["seg"]))
@@ -151,6 +168,7 @@ def run(D: Path, with_table: bool = True) -> dict:
             Dp = dense(Pp)
             R["c_pred"][k] = clearance(Dp[:, thr], rad[thr], bx), clearance(Dp, rad, bx)
     log(f"{D.name}: {n} reaches, fell {int(R['fell'].sum())}, in the table {int((row >= 0).sum())}"
+        + (", radii from the cover" if RADIUS is not None else ", cuRobo's radii")
         + (f", touched (through / arm / any) {R['touch'].sum(0).tolist()}" if "touch" in R else ""))  # fmt: skip
     return R
 
@@ -240,7 +258,7 @@ def outcome(w: str, key: tuple):
     if k is None:
         return True, False, False, True
     R = O[w]
-    return True, bool(R["touch"][k, 0]), bool(R["touch"][k, 1]), bool(R["fell"][k])
+    return True, bool(R["touch"][k, 2 if FAIL_ANY else 0]), bool(R["touch"][k, 1]), bool(R["fell"][k])
 
 
 def radius_r(w: str, k: int, nets_key: str, scale: float) -> float:
@@ -304,13 +322,18 @@ def rates(r: dict, sel: np.ndarray):
     )
 
 
-def fstar(r: dict, rows: np.ndarray) -> float:
+def fstar(r: dict, rows: np.ndarray, mono: bool = False) -> float:
+    ok = []  # (level, passes) over the levels present in rows
     for f in LEVELS:
         sel = rows[CS[rows, 1] == f]
         if not len(sel):
             continue
         su, co, _, _ = rates(r, sel)
-        if su >= 0.90 and co <= 0.05:
+        ok.append((f, su >= 0.90 and co <= 0.05))
+    if not mono:
+        return next((float(f) for f, g in ok if g), float("nan"))
+    for i, (f, g) in enumerate(ok):  # monotone: this level and every wider one pass
+        if all(gg for _, gg in ok[i:]):
             return float(f)
     return float("nan")
 
@@ -328,6 +351,10 @@ def best_opp(st: dict):
     return b, st[b], bf
 
 
+log(
+    f"\nscored: collisions = {'any robot body' if FAIL_ANY else 'wrist + palm + fingers'} touching the obstacles; "
+    f"main f*: {'monotone' if MONO else 'registered'}"
+)
 log(f"\ntest scenes: {len(S_ALL)} base scenes x {len(LEVELS)} levels x 4 passes = {len(CASES)} cases; "
     f"planned (s, f, m): {len(planned)} of {NSLOT}")  # fmt: skip
 log("per level, success / collision / abstention (falls in brackets when any):")
@@ -338,33 +365,44 @@ for way in WAYS:
         su, co, ab, fa = rates(RES[way], ALL[CS[:, 1] == f])
         cells.append(f"{su:.2f}/{co:.2f}/{ab:.2f}" + (f"[{fa:.2f}]" if fa > 0 else ""))
     log(f"  {way:12s} " + "".join(f"{c:>16s}" for c in cells))
-STAR = {w: fstar(RES[w], ALL) for w in WAYS}
-b, bstar, bf = best_opp(STAR)
 groups = [np.where(CS[:, 0] == s)[0] for s in S_ALL]
-rng = np.random.default_rng(0)
-BS, RAT = {w: [] for w in WAYS}, []
-for _ in range(1000):
-    rows = np.concatenate([groups[k] for k in rng.integers(len(groups), size=len(groups))])
-    st = {w: fstar(RES[w], rows) for w in WAYS}
+DEFS = [MONO, not MONO]  # the main definition first
+for d_i, mono in enumerate(DEFS):
+    st0 = {w: fstar(RES[w], ALL, mono) for w in WAYS}
+    b_, bstar_, bf_ = best_opp(st0)
+    rng = np.random.default_rng(0)
+    BS, RAT_ = {w: [] for w in WAYS}, []
+    for _ in range(1000):
+        rows = np.concatenate([groups[k] for k in rng.integers(len(groups), size=len(groups))])
+        st = {w: fstar(RES[w], rows, mono) for w in WAYS}
+        for w in WAYS:
+            BS[w].append(st[w])
+        RAT_.append(st["ours"] / best_opp(st)[1])
+    name = "monotone: this level and every wider one" if mono else "registered: the smallest level"
+    log(f"\nnarrowest gap passed safely f*, {'MAIN' if d_i == 0 else 'also'} -- {name} with success >= 0.90 and collisions <= 0.05 "
+        f"(cm over the hand's thickness), 95 % interval:")  # fmt: skip
     for w in WAYS:
-        BS[w].append(st[w])
-    RAT.append(st["ours"] / best_opp(st)[1])
-log(
-    "\nnarrowest gap passed safely f* (cm over the hand's thickness; success >= 0.90, collisions <= 0.05), 95 % interval:"
-)
-for w in WAYS:
-    v = np.array(BS[w])
-    lo, hi = np.nanpercentile(v, [2.5, 97.5]) if (~np.isnan(v)).any() else (np.nan, np.nan)
-    log(f"  {w:12s} {STAR[w]:6.1f}  ({lo:.1f} to {hi:.1f}); not reached in {np.isnan(v).mean():.2f} of the resamples")
-RAT = np.array(RAT)
-ratio = STAR["ours"] / bstar
-lo, hi = np.nanpercentile(RAT, [2.5, 97.5]) if (~np.isnan(RAT)).any() else (np.nan, np.nan)
-log(f"  best opponent: {b} (best fixed after the fact: {bf}); ours / best: {ratio:.2f} ({lo:.2f} to {hi:.2f}); "
-    f"undefined in {np.isnan(RAT).mean():.2f} of the resamples")  # fmt: skip
-if math.isnan(bstar):
-    win = [f for f in LEVELS if (lambda r: r[0] >= 0.9 and r[1] <= 0.05)(rates(RES["ours"], ALL[CS[:, 1] == f]))
-           and all(not (lambda r: r[0] >= 0.9 and r[1] <= 0.05)(rates(RES[w], ALL[CS[:, 1] == f])) for w in OPP + FIX)]  # fmt: skip
-    log(f"  no opponent reaches the bar; levels where ours does and none of them does: {win}")
+        v = np.array(BS[w])
+        lo_, hi_ = np.nanpercentile(v, [2.5, 97.5]) if (~np.isnan(v)).any() else (np.nan, np.nan)
+        log(
+            f"  {w:12s} {st0[w]:6.1f}  ({lo_:.1f} to {hi_:.1f}); not reached in {np.isnan(v).mean():.2f} of the resamples"
+        )
+    RAT_ = np.array(RAT_)
+    ratio_ = st0["ours"] / bstar_
+    lo_, hi_ = np.nanpercentile(RAT_, [2.5, 97.5]) if (~np.isnan(RAT_)).any() else (np.nan, np.nan)
+    log(f"  best opponent: {b_} (best fixed after the fact: {bf_}); ours / best: {ratio_:.2f} ({lo_:.2f} to {hi_:.2f}); "
+        f"undefined in {np.isnan(RAT_).mean():.2f} of the resamples")  # fmt: skip
+    if math.isnan(bstar_):
+        pas = lambda r: r[0] >= 0.9 and r[1] <= 0.05  # noqa: E731
+        win = [f for f in LEVELS if pas(rates(RES["ours"], ALL[CS[:, 1] == f]))
+               and all(not pas(rates(RES[w], ALL[CS[:, 1] == f])) for w in OPP + FIX)]  # fmt: skip
+        log(f"  no opponent reaches the bar; levels where ours does and none of them does: {win}")
+    if d_i == 0:
+        STAR, b, bstar, bf, ratio, lo, hi = st0, b_, bstar_, bf_, ratio_, lo_, hi_
+    else:
+        STAR_ALSO = dict(
+            star=st0, best=b_, best_fixed=bf_, ratio=ratio_, ratio_ci=[float(lo_), float(hi_)], monotone=mono
+        )
 log("\nmargin picked (median over the cases that went), arm collisions (24 spheres) and falls among them:")
 for w in WAYS:
     r = RES[w]
@@ -386,7 +424,7 @@ for w in DO:
         log(f"  {w:6s} {part:7s} {len(rows)} reaches: agree {(mj == sp).mean():.3f}; MuJoCo touch {mj.mean():.3f}, spheres "
             f"inside {sp.mean():.3f}; touch but not inside {(mj & ~sp).mean():.3f}, inside but no touch {(sp & ~mj).mean():.3f}")  # fmt: skip
 
-out = dict(star=STAR, best=b, best_fixed=bf, ratio=ratio, ratio_ci=[float(lo), float(hi)], agree={f"{a}|{b_}": v for (a, b_), v in agree.items()},
+out = dict(fail_any=FAIL_ANY, monotone=MONO, also=STAR_ALSO, star=STAR, best=b, best_fixed=bf, ratio=ratio, ratio_ci=[float(lo), float(hi)], agree={f"{a}|{b_}": v for (a, b_), v in agree.items()},
            rates={w: {str(f): rates(RES[w], ALL[CS[:, 1] == f]) for f in LEVELS} for w in WAYS}, calib=C)  # fmt: skip
 
 # ---- the fixed margins against part one at the same half-width
