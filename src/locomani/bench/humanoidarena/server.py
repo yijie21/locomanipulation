@@ -474,9 +474,18 @@ def main(argv=None) -> int:
                 conn.send(dict(ok=True))
                 os._exit(0)  # Kit's own shutdown can hang; the bed has what it needs
             try:
-                conn.send(srv.handle(msg))
+                rep = srv.handle(msg)
             except Exception as e:  # noqa: BLE001 - the client re-raises it
-                conn.send(dict(error=f"{type(e).__name__}: {e}", trace=traceback.format_exc()[-2000:]))
+                rep = dict(error=f"{type(e).__name__}: {e}", trace=traceback.format_exc()[-2000:])
+            try:
+                conn.send(rep)
+            except (
+                BrokenPipeError,
+                ConnectionResetError,
+            ):  # the client died mid-call (development: --keep waits for the next one)
+                if not a.keep:
+                    return 0
+                conn = lis.accept()
 
 
 if __name__ == "__main__":
