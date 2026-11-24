@@ -96,10 +96,15 @@ class Session:
         forward: list[str] | None = None,
         slot_timeout_s: float | None = None,
         sleep=time.sleep,
+        stereo: bool = True,
+        look: bool = True,
     ):
+        # stereo: the stereo depth service is needed (sensor=stereo); False under sensor=rgbd and target=truth. look: the look + GraspGen-X
+        # pass is needed (target=perception); False under target=truth.
         self.cfg, self.task, self.ids_file, self.out = cfg, task, Path(ids_file).resolve(), Path(out).resolve()
         self.setting, self.stance, self.forward = setting, stance, list(forward or [])
         self.slot_timeout_s, self.sleep = slot_timeout_s, sleep
+        self.stereo, self.look = stereo, look
         self.ids = [s.strip() for s in open(self.ids_file) if s.strip()]
         self.run = Path(cfg.run_dir)
         self.run.mkdir(parents=True, exist_ok=True)
@@ -262,7 +267,7 @@ class Session:
 
     def look_pass(self, cache: Path, miss_file: Path) -> None:
         """Depth service and server up, the look of the missing ids (tries), both stopped, then GraspGen-X on the cache folder."""
-        self.start_depth()
+        self.ensure_depth()
         self.start_server()
         t = time.time()
         for _ in range(self.cfg.look_tries):
@@ -273,8 +278,7 @@ class Session:
                 break
             self.stop(self.server)
             self.sleep(5)
-            if not self.alive(self.depth):
-                self.start_depth()
+            self.ensure_depth()
             self.start_server()
         self.tim(f"looks_{len(open(miss_file).read().split())}_ids", t)
         self.stop_all()
@@ -282,9 +286,13 @@ class Session:
         self.graspgen(cache)
         self.tim("graspgen", t)
 
-    def batch_pass(self) -> None:
-        if not self.alive(self.depth):
+    def ensure_depth(self) -> None:
+        """The stereo depth service up, when this run uses it (sensor=stereo); under sensor=rgbd and target=truth it is neither started nor waited for."""
+        if self.stereo and not self.alive(self.depth):
             self.start_depth()
+
+    def batch_pass(self) -> None:
+        self.ensure_depth()
         if not self.alive(self.server):
             self.start_server()
         t = time.time()
@@ -292,14 +300,12 @@ class Session:
         for _ in range(self.cfg.batch_tries):
             if not self.alive(self.server):
                 self.start_server()
-            if not self.alive(self.depth):
-                self.start_depth()
+            self.ensure_depth()
             if self.bed("batch", "--ids", str(self.ids_file), "--out", str(self.out), *extra) == 0:
                 break
             self.stop(self.server)
             self.sleep(5)
-            if not self.alive(self.depth):
-                self.start_depth()
+            self.ensure_depth()
             self.start_server()
         self.tim("batch", t)
 
@@ -318,12 +324,12 @@ class Session:
                 print("no cache folder", file=sys.stderr)
                 return EXIT_NO_CACHE
             miss_file = self.run / f"missing_{self.task}.{os.getpid()}.txt"
-            miss = missing_ids(self.ids, self.task, cache)
+            miss = missing_ids(self.ids, self.task, cache) if self.look else []  # target=truth has no look pass
             miss_file.write_text("".join(i + "\n" for i in miss))
             if miss:
                 with self.lock_cache() as cl:
-                    miss = missing_ids(
-                        self.ids, self.task, cache
+                    miss = (
+                        missing_ids(self.ids, self.task, cache) if self.look else []
                     )  # (another instance may have made them while we waited)
                     miss_file.write_text("".join(i + "\n" for i in miss))
                     if miss:

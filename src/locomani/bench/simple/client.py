@@ -18,6 +18,7 @@ import numpy as np
 from locomani.backends.scalebfm import runtime as R
 from locomani.backends.scalebfm.motor import Motor
 from locomani.bench.simple import judge
+from locomani.perception import head
 
 DT, CAP_S = 0.02, 60.0
 LIMIT = dict(BendPickMP=400, TabletopGraspMP=800, XMovePickTeleop=800, XMoveBendPickTeleop=800, HandoverTeleop=800,
@@ -53,9 +54,14 @@ class EpisodeOver(Exception):
 
 
 class OffSim(R.Sim):
+    rgbd = None  # sensor=rgbd: a perception.rgbd.RgbdSensor (see `use_rgbd`); None = the stereo pair through the depth service
+
     def __init__(self, meta, backend, link, depth_link, film: bool = False):
         super().__init__(meta, backend=backend)
-        self.link, self.depth_link = link, depth_link  # multiprocessing connections, shared by the run's episodes
+        self.link, self.depth_link = (
+            link,
+            depth_link,
+        )  # multiprocessing connections, shared by the run's episodes (depth_link: None under sensor=rgbd)
         self.counted, self.over, self.film, self.first, self.steps = False, None, film, None, 0
 
     def pull(self, st: dict | None = None) -> None:
@@ -64,6 +70,14 @@ class OffSim(R.Sim):
         d.qpos[:7], d.qpos[self.oq] = st["qpos"][:7], st["qpos"][7:]
         d.qvel[:6], d.qvel[self.ov] = st["qvel"][:6], st["qvel"][6:]
         mujoco.mj_forward(self.m, d)
+
+    def reset(self, spawn_xy, spawn_yaw, crate_dy):
+        """Motor.reset calls this before its start hold: the local model's default pose (runtime.Sim.reset), then the
+        environment's reset state on top, so the hold starts from the episode's real pose. Without the pull the hold
+        ran on the default pose (pelvis 0.762 m instead of 0.797 m): dropped in the TODO 49.2 port, found by the oven
+        follow-up of the parity run (old 46/50, new 29/40), restored from simple_eval_20261112/official.py."""
+        super().reset(spawn_xy, spawn_yaw, crate_dy)
+        self.pull()
 
     def step(self, tgt):
         if self.over is not None:
@@ -77,7 +91,52 @@ class OffSim(R.Sim):
             self.over = dict(success=st["success"], steps=st["steps"], truncated=st["truncated"])
         self.steps = st["steps"]
 
+    def use_rgbd(self, depth_noise: str, seed: int) -> None:
+        """sensor=rgbd: the camera view's depth is the LEFT head camera's rendered depth (the monocular RGB-D input), as is
+        (depth_noise=none) or through the RealSense-like noise model, whose occlusion shadows use the RIGHT camera's rendered
+        depth (one baseline to the right). `seed` makes a rerun of an episode see the same noise. The server attaches
+        Isaac's distance_to_image_plane annotator to the two head cameras on this message only."""
+        from locomani.perception.rgbd import RgbdSensor
+
+        self.link.send(("rgbd_setup",))
+        self.link.recv()
+        self._right = None
+        self.rgbd = RgbdSensor(self._exact_rgbd, depth_noise, seed, depth_right=lambda: self._right)
+
+    def _exact_rgbd(self):
+        """One render of both head cameras: the left image and the left / right rendered depth (m along the optical axis,
+        NaN where nothing is hit), as a Frame. The camera pose is the robot's own forward kinematics."""
+        from locomani.perception.sensor import Frame
+
+        self.link.send(("eyes_d",))
+        e = self.link.recv()
+        dl, dr = (
+            np.where(np.isfinite(e[k]) & (e[k] > 0), e[k], np.nan).astype(np.float32)
+            for k in ("depth_left", "depth_right")
+        )
+        self._right = dr
+        if getattr(self, "_kin", None) is None:
+            self._kin = head.HeadKin(self.m, self.qadr)
+        p, Rc = self._kin(self.d.qpos[self.qadr])
+        T = np.eye(4)
+        T[:3, :3], T[:3, 3] = Rc, p
+        self._last_raw = dict(left=e["left"], right=e["right"], depth_left=dl, depth_right=dr)
+        return Frame(
+            rgb=np.asarray(e["left"]),
+            depth=dl,
+            K=head.intrinsics(),
+            T_body_cam=T,
+            source="rgbd",
+            t=float(self.steps) * 0.02,
+        )
+
     def eyes(self):
+        if self.rgbd is not None:
+            f = self.rgbd.frame()
+            self.last_eyes = dict(
+                self._last_raw, depth=f.depth, sg=f.depth, lb=f.depth
+            )  # lb: what the see_self rules read as depth
+            return f.rgb, f.depth
         self.link.send(("eyes",))
         e = self.link.recv()
         self.depth_link.send((e["left"], e["right"]))

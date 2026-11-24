@@ -47,6 +47,7 @@
 - [场景 RSI 进化记录](handoff/scene-rsi-report-20261019.md)：给导师和合作者看的进度报告，通俗写法：系统怎么找任务、写技能，15 次被采纳的改动各自根据什么、和上一版差在哪（网页版带前后对比视频），做成的 62 个任务和偶尔成的 12 个，没成的、人插手的、判错的（2026-10-19）
 - [从原子技能开始的抓取进化：记录与复现](handoff/grasp-atomic-line-20261023.md)：`grasp_atomic` 四次运行（空种子 → 封存集 38 / 50）、每版改了什么、现任还败在哪、从空种子跑和续跑的命令、已做好没跑的部件（2026-10-23）
 - [NVIDIA ASPIRE v1.0 审读](handoff/aspire-v1-review-20261019.md)：拉下来的代码和流程哪些能补我们的场景 RSI（经验库、打分与验证、错误码），哪些不能照搬（无统计、BEHAVIOR 多次尝试计分、靠自觉的隔离）；核实过的缺陷与建议（2026-10-19）
+- [公开基准的运行开关与 SIMPLE 搬迁](handoff/bench-options-20261124.md)：TODO 49；基准、真值或感知目标、双目或 RGB-D 等开关，SIMPLE 环境搬进 `bench/simple`，新旧对照查出并修好 `OffSim.reset` 漏搬，固定感知后逐步逐位相同
 - [ScaleBFM warehouse 专家自主重标定方案](handoff/scalebfm-warehouse-rsi-20261014.md)：TODO 25.9.1，借 RoboRSI 的骨架，补控制器包络、干预归因和配对统计验收三环；三个起点池（诊断 / 验收 / 封存）；待用户定 D1–D7
 - [ScaleBFM bottle 专家自主重标定](handoff/scalebfm-bottle-rsi-20261015.md)：TODO 26.3，warehouse 那套 RSI 闭环换到 bottle 任务的第二个实例；适配层、起点池、停止线（比 SONIC 多成 ≥ 3）和视频导出
 - [SONIC → ScaleBFM 替换评测计划](handoff/controller-compare-20261013.md)：用户逐轮定的 35 个决定与开跑前冻结的判据；范围是仿真采集、仿真评测和真机；L1 原语层（bottle B1–B8、warehouse W0–W8、复杂动作 C1–C7、mode 扫描与切换、真机扰动 a–h、估计位姿）是关口，过了才移植专家跑 L2 配对（每场景 ≥ 40 局）；最后是部署程序和真机冒烟

@@ -102,14 +102,28 @@ def main(argv: list[str] | None = None) -> int:
             print(f"error: {e}", file=sys.stderr)
             return EXIT_ARGS
         return Session(
-            cfg, a.task, Path(a.ids), Path(a.out), a.setting, a.stance, forwarded(a), a.slot_timeout
+            cfg,
+            a.task,
+            Path(a.ids),
+            Path(a.out),
+            a.setting,
+            a.stance,
+            forwarded(a),
+            a.slot_timeout,
+            stereo=resolved.options.target == "perception" and resolved.options.sensor == "stereo",
+            look=resolved.options.target == "perception",
         ).run_round()
     from locomani.bench.simple import run as bed_run  # the heavy imports (mujoco, torch) are the bed's own
 
     pkg_dir = a.skills or cfg.seed_skills or str(cfgmod.SEED_DIR)
     bed = bed_run.Bed(
-        cfg, bed_run.load_package(pkg_dir), a.slot, dict(bench=resolved.record(), simple_config=cfg.to_dict())
+        cfg,
+        bed_run.load_package(pkg_dir),
+        a.slot,
+        dict(bench=resolved.record(), simple_config=cfg.to_dict()),
+        resolved.options,
     )
+    bed.record.update(view="truth" if resolved.options.target == "truth" else "camera", depth_source=bed.depth_source)
     setting = json.loads(a.setting)
     stance = json.loads(a.stance) if a.stance else None
     from locomani.bench.simple import episodes as EP

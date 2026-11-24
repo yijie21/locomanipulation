@@ -39,8 +39,18 @@ def head_frame(sim):
     return rgb, depth
 
 
+def intrinsics() -> np.ndarray:
+    """The head camera's pinhole intrinsics (pixels): the calibration cam_points uses, as the K a Frame carries."""
+    W, H = HEAD_CAM_WH
+    f = 0.5 * H / np.tan(np.radians(HEAD_CAM_FOVY) / 2)
+    return np.array([[f, 0.0, W / 2 - 0.5], [0.0, f, H / 2 - 0.5], [0.0, 0.0, 1.0]])
+
+
 def cam_points(depth: np.ndarray) -> np.ndarray:
-    """Each pixel's point in the camera's frame (x right, y up, -z forward), H x W x 3, by the camera's calibration."""
+    """Each pixel's point in the camera's frame (x right, y up, -z forward), H x W x 3, by the camera's calibration. A pixel with
+    no depth (NaN or infinite: a RealSense-like hole, the renderer's sky) is depth 0, like the stereo model's invalid pixels:
+    its point is the camera's origin and callers mask it by `depth > 0.2`."""
+    depth = np.where(np.isfinite(depth), depth, 0.0)
     H, W = depth.shape
     f = 0.5 * H / np.tan(np.radians(HEAD_CAM_FOVY) / 2)
     v, u = np.mgrid[0:H, 0:W]

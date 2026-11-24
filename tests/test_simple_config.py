@@ -61,18 +61,13 @@ class Cli(unittest.TestCase):
 
     ids = "XMovePickTeleop/Q/0\n"
 
-    def test_switch_values_outside_the_loops_are_refused_with_a_pointer(self):
+    def test_switch_values_outside_the_beds_set_are_refused_with_a_pointer(self):
         for kv, pointer in (
-            ("target=truth", "49.2 step 6"),
-            ("sensor=rgbd", "49.2 step 6"),
-            ("depth_noise=realsense", "49.2 step 6"),
             ("self_pose=truth", "49.3"),
             ("controller_root=truth", "49.3"),
+            ("controller=native", "does not support"),
         ):
-            sets = ["--bench-set", kv]
-            if kv.startswith("depth_noise"):
-                sets += ["--bench-set", "sensor=rgbd"]
-            rc, err = self.run_cli(*sets)
+            rc, err = self.run_cli("--bench-set", kv)
             self.assertEqual(rc, 2, kv)
             self.assertIn(pointer, err, kv)
 

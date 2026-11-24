@@ -260,6 +260,66 @@ class Episode:
                                                   mass=float(m.body_mass[b])))  # fmt: skip
         return out
 
+    def geom_points(self, g):
+        """World vertices of one collision geom: a mesh's vertices, any other shape the corners of its local bounding box."""
+        m, d = self.u.mujoco.mjModel, self.u.mujoco.mjData
+        Rg = d.geom_xmat[g].reshape(3, 3)
+        k = int(m.geom_dataid[g])
+        if int(m.geom_type[g]) == 7 and k >= 0:  # mjGEOM_MESH
+            v = m.mesh_vert[m.mesh_vertadr[k] : m.mesh_vertadr[k] + m.mesh_vertnum[k]]
+        else:
+            c, h = m.geom_aabb[g][:3], m.geom_aabb[g][3:]
+            v = c + h * np.array([[sx, sy, sz] for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
+        return (d.geom_xpos[g] + v @ Rg.T).astype(np.float64)
+
+    def body_geoms(self, b, subtree=False):
+        """The collision geoms (contype or conaffinity set) of body `b` (and its descendants), each as an (N, 3) array of world
+        vertices. Privileged: target=truth only (messages "verts", "art_verts")."""
+        m = self.u.mujoco.mjModel
+        ids = {int(b)}
+        if subtree:
+            par = m.body_parentid
+            ids = {x for x in range(m.nbody) if any(y == int(b) for y in self._chain(par, x))}
+        return [self.geom_points(g) for g in range(m.ngeom)
+                if int(m.geom_bodyid[g]) in ids and (int(m.geom_contype[g]) or int(m.geom_conaffinity[g]))]  # fmt: skip
+
+    @staticmethod
+    def _chain(par, x):
+        while x > 0:
+            yield int(x)
+            x = int(par[x])
+        yield 0
+
+    def verts(self, names):
+        """{name: [per-geom world vertices]} for scene objects (keys of mj_objects: "target", "container", ...) or bodies by name."""
+        mj = self.u.mujoco
+        out = {}
+        for n in names:
+            b = mj.mj_objects[n].id if n in mj.mj_objects else mj.mjModel.body(n).id
+            out[n] = self.body_geoms(b)
+        return out
+
+    def art_verts(self):
+        """The articulated asset: {"obj": per-geom world vertices of the whole asset (static frame and moving parts),
+        "moving": {body name: per-geom vertices}} (the moving bodies are art_move's)."""
+        m = self.u.mujoco.mjModel
+        if not self.art_move:
+            return dict(obj=[], moving={})
+        first = sorted(self.art_move)[0]
+        root = first
+        for x in self._chain(m.body_parentid, first):  # the asset's root: the highest ancestor below the world
+            if x > 0:
+                root = x
+        depth = {
+            m.body(b).name: sum(int(x) in self.art_move for x in self._chain(m.body_parentid, b)) - 1
+            for b in self.art_move
+        }
+        return dict(
+            obj=self.body_geoms(root, subtree=True),
+            moving={m.body(b).name: self.body_geoms(b) for b in sorted(self.art_move)},
+            depth=depth,  # moving ancestors of each moving body: a hinged knob on a hinged leaf is 1
+        )
+
     def feet(self):
         """Which ankle links touch what (contact counts), and the pelvis, for the walk trace."""
         mj = self.u.mujoco
@@ -734,6 +794,75 @@ with Listener(sock, family="AF_UNIX") as lis:
                         c.send(ep.truth())
                     elif k == "step":
                         c.send(ep.step(*msg[1:]))
+                    elif (
+                        k == "rgbd_setup"
+                    ):  # sensor=rgbd only: Isaac's depth annotator on the two head cameras (cli/render.py's call)
+                        if not getattr(
+                            ep, "rgbd", False
+                        ):  # once per Episode object: the annotator stays attached over resets
+                            for n in (
+                                "head_stereo_left",
+                                "head_stereo_right",
+                            ):  # SIMPLE's engines/isaacsim.py keeps its cameras in u.isaac.cameras, by these names
+                                ep.u.isaac.cameras[n].add_distance_to_image_plane_to_frame()
+                            ep.rgbd = True
+                        c.send(True)
+                    elif (
+                        k == "eyes_d"
+                    ):  # sensor=rgbd: both head images and both rendered depths from the SAME render, lazy render as "eyes"
+
+                        def _depths():
+                            """The annotator's own data, not Camera.get_depth(): that reads the camera's frame dict, which the
+                            camera updates only when its sim-time throttle passes, and after a reset (sim time restarts) it stays
+                            on the previous episode's last frame (found on the 2nd episode of a server)."""
+                            out = []
+                            for n in ("head_stereo_left", "head_stereo_right"):
+                                ann = ep.u.isaac.cameras[n]._custom_annotators["distance_to_image_plane"]
+                                d = ann.get_data()
+                                out.append(
+                                    None if d is None else np.asarray(d, np.float32).reshape(d.shape[0], d.shape[1])
+                                )
+                            return out
+
+                        import omni.replicator.core as rep
+
+                        step = getattr(ep, "_orch0", None) or rep.orchestrator.step
+                        if getattr(ep, "lazy", False):
+                            ep.force = True
+                            try:
+                                step(rt_subframes=1, pause_timeline=False)
+                                fr = ep._render0()
+                            finally:
+                                ep.force = False
+                        else:
+                            fr = dict(
+                                head_stereo_left=ep.obs["head_stereo_left"],
+                                head_stereo_right=ep.obs["head_stereo_right"],
+                            )
+                        dl, dr = _depths()
+                        for _ in range(3):
+                            if dl is not None and dr is not None:
+                                break
+                            step(
+                                rt_subframes=1, pause_timeline=False
+                            )  # the annotator holds nothing until a render has run
+                            dl, dr = _depths()
+                        if dl is None or dr is None:
+                            raise RuntimeError("eyes_d: the head cameras' depth annotator returned nothing")
+                        c.send(
+                            dict(
+                                left=np.asarray(fr["head_stereo_left"]),
+                                right=np.asarray(fr["head_stereo_right"]),
+                                depth_left=np.asarray(dl, np.float32).copy(),
+                                depth_right=np.asarray(dr, np.float32).copy(),
+                            )
+                        )
+                    elif k == "verts":  # target=truth only: world vertices of scene bodies, per collision geom
+                        c.send(ep.verts(msg[1]))
+                    elif (
+                        k == "art_verts"
+                    ):  # target=truth only: the articulated asset's vertices (whole, and per moving body)
+                        c.send(ep.art_verts())
                     elif k == "eyes" and getattr(ep, "lazy", False):
                         ep.force = True  # one render of the state now (the steps in between rendered nothing)
                         try:

@@ -98,10 +98,18 @@ class CapabilityTables(unittest.TestCase):
 
     def test_a_planned_value_stops_a_run_unless_allowed(self):
         with self.assertRaisesRegex(ValueError, "planned, not implemented yet"):
-            resolve("simple")
-        r = resolve("simple", allow_planned=True)
-        self.assertIn("sensor=stereo", r.planned)
-        self.assertNotIn("depth_noise=none", r.planned)  # no depth noise without rgbd
+            resolve("locomanilab")
+        r = resolve("locomanilab", allow_planned=True)
+        self.assertIn("sensor=rgbd", r.planned)
+        with self.assertRaisesRegex(ValueError, "self_pose=truth is planned"):
+            resolve("simple", ["self_pose=truth"])  # TODO 49.3
+
+    def test_simple_runs_the_switches_49_2_verified(self):
+        # TODO 49.2: the loops' switches, truth targets, RGB-D with and without noise are ready on SIMPLE
+        for over in ([], ["target=truth"], ["sensor=rgbd"], ["sensor=rgbd", "depth_noise=realsense"]):
+            r = resolve("simple", over)
+            self.assertEqual(r.planned, (), over)
+        self.assertNotIn("depth_noise=none", resolve("simple", allow_planned=True).planned)  # no noise without rgbd
 
     def test_every_table_covers_every_axis_and_every_value_is_a_known_choice(self):
         choices = {f: BenchOptions.__dataclass_fields__[f].metadata["choices"] for f in AXES}

@@ -47,9 +47,18 @@ from locomani.bench.simple import client as C
 from locomani.bench.simple import episodes as EP
 from locomani.bench.simple import feed as FL
 from locomani.bench.simple import judge
-from locomani.bench.simple.config import SCOPE, SEED_DIR, ScopeError, SimpleConfig, check_scope  # noqa: F401
+from locomani.bench.simple.config import (  # noqa: F401
+    DEFAULT_VIEW,
+    SCOPE,
+    SEED_DIR,
+    ScopeError,
+    SimpleConfig,
+    check_scope,
+)
 from locomani.bench.simple.judge import loss_of
+from locomani.bench.simple.privileged import SimplePrivileged
 from locomani.perception import head
+from locomani.perception.truth import TruthView
 
 DT, CAP_S, LIMIT = C.DT, C.CAP_S, C.LIMIT
 PACKAGE_FILES = ("__init__.py", "skill.py", "pick.py", "camera_view.py")
@@ -123,6 +132,7 @@ class Bed:
     pkg: ModuleType
     slot: int = 1
     record: dict = dataclasses.field(default_factory=dict)  # the `bench` and `simple_config` fields of every row
+    options: object = None  # the run's resolved BenchOptions (None: the loops' defaults)
     _links: dict = dataclasses.field(default_factory=dict)
     _pol: object = None
 
@@ -130,9 +140,25 @@ class Bed:
     def S(self):
         return self.pkg.skill
 
+    def switch(self, axis: str) -> str:
+        """A run switch's value: the resolved options', else the loops' default."""
+        o = self.options
+        return getattr(o, axis) if o is not None else dict(zip(("target", "sensor", "depth_noise"), DEFAULT_VIEW))[axis]
+
+    @property
+    def depth_source(self) -> str:
+        """What the camera view's depth comes from, for the row: "stereo" (the stereo model), "rgbd" / "rgbd:realsense", or "none" (truth)."""
+        if self.switch("target") == "truth":
+            return "none"
+        if self.switch("sensor") == "rgbd":
+            return "rgbd" if self.switch("depth_noise") == "none" else f"rgbd:{self.switch('depth_noise')}"
+        return "stereo"
+
     def links(self):
         """The two connections of this slot (environment server, depth service), opened on first use, kept for the process."""
         for k in ("isaac", "depth"):
+            if k == "depth" and self.depth_source != "stereo":
+                self._links[k] = None  # rgbd and truth runs have no stereo depth service
             if k not in self._links:
                 self._links[k] = Client(str(Path(self.cfg.slots_dir) / f"s{self.slot}_{k}.sock"), family="AF_UNIX")
         return self._links["isaac"], self._links["depth"]
@@ -146,7 +172,10 @@ class Bed:
 
     def cache_dir(self, task: str, setting: dict | None) -> Path:
         """The look + GraspGen-X cache of this package and these parameters: <cache_dir>/<key>."""
-        return Path(self.cfg.cache_dir) / cache_key(self.pkg, task, setting)
+        return Path(self.cfg.cache_dir) / cache_key(self.pkg, task, setting, self.switches())
+
+    def switches(self) -> tuple:
+        return tuple(self.switch(a) for a in ("target", "sensor", "depth_noise"))
 
 
 def resolved(S, task: str, setting: dict | None) -> dict:
@@ -154,14 +183,19 @@ def resolved(S, task: str, setting: dict | None) -> dict:
     return {**S.defaults(task, S.K_CUT), **(setting or {})}
 
 
-def cache_key(pkg: ModuleType, task: str, setting: dict | None) -> str:
+def cache_key(pkg: ModuleType, task: str, setting: dict | None, switches: tuple = DEFAULT_VIEW) -> str:
     """First 10 hex of sha1 over the package's camera_view.py and the sorted JSON of the look's parameters. (Not in the key:
-    the fixed perception code, the depth service, SAM 3's weights: as before.)"""
+    the fixed perception code, the depth service, SAM 3's weights: as before.) `switches` = (target, sensor, depth_noise): a
+    look made from the stereo depth must never be read by an rgbd run or the other way round, so they are hashed too, but
+    only when they differ from the loops' defaults: with the default switches the key is what it always was (the esc bed's
+    folders and the parity runs' caches stay valid)."""
     S = pkg.skill
     K = resolved(S, task, setting)
     h = hashlib.sha1((Path(pkg.path) / "camera_view.py").read_bytes())
     keys = tuple(LOOK_KEYS) + tuple(S.MOTOR_KEYS)
     h.update(json.dumps({k: K.get(k) for k in sorted(keys)}, sort_keys=True, default=str).encode())
+    if tuple(switches) != DEFAULT_VIEW:
+        h.update(json.dumps(dict(target=switches[0], sensor=switches[1], depth_noise=switches[2])).encode())
     return h.hexdigest()[:10]
 
 
@@ -306,6 +340,11 @@ def setup(bed: Bed, episode_id: str, K: dict, stance: dict | None, cloud_dir: Pa
             link.send(("lazy_render", True))
             link.recv()
         if (
+            bed.switch("sensor") == "rgbd" and bed.switch("target") == "perception"
+        ):  # the annotator is attached on this message only
+            seed = int(hashlib.sha1(episode_id.encode()).hexdigest()[:8], 16)  # a rerun of an id sees the same noise
+            sim.use_rgbd(bed.switch("depth_noise"), seed)
+        if (
             ep["cfg"]["robot_cfg"]["uid"] != "g1_sonic"
         ):  # AMO tasks: the root starts low, the pelvis 0.785 m over the ground
             sim.zoff = float(EP.AMO_PELVIS - st["qpos"][2])
@@ -343,7 +382,11 @@ def setup(bed: Bed, episode_id: str, K: dict, stance: dict | None, cloud_dir: Pa
     if K.get("see_self"):
         env.self_filter = SelfFilter(env, int(K.get("self_band", 6)))
         env.mask_post = env.self_filter.post
-    env.view = bed.pkg.camera_view.CameraView(env, episode_id, ep["instruction"])
+    if bed.switch("target") == "truth":  # the view from the simulator; the skill package's camera view is not built
+        priv = SimplePrivileged(sim, info, task, ep["instruction"])
+        env.view = TruthView(priv, bel, S.choose_grasp, cfg.grasp_lib_dir, K, task)
+    else:
+        env.view = bed.pkg.camera_view.CameraView(env, episode_id, ep["instruction"])
     mo.reset(info["start"]["xy"], info["start"]["yaw"])
     EP.pull_objects(sim.m, sim.d, info)
     sim.pull()  # the robot stands where SIMPLE put it; the hold is SIMPLE's stabilising phase, outside the step count
@@ -386,6 +429,8 @@ def layout_check(bed: Bed, episode_id: str) -> dict:
 def look(bed: Bed, episode_id: str, setting: dict | None = None) -> dict:
     """The look pass: the target's points seen by the official camera to <cache>/<name>.npz for GraspGen-X."""
     S, task = bed.S, episode_id.split("/")[0]
+    if bed.switch("target") == "truth":
+        raise ValueError("target=truth has no look pass: the simulator is read when asked")
     K = resolved(S, task, setting)
     out = bed.cache_dir(task, setting)
     env = setup(bed, episode_id, K, None, out)

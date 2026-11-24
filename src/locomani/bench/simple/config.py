@@ -102,36 +102,38 @@ class SimpleConfig:
 
 SEED_DIR = Path(__file__).resolve().parent / "seed"  # the seed skill package
 SCOPE = dict(
-    target="perception",
-    sensor="stereo",
-    depth_noise="none",
-    self_pose="odometry",
-    controller_root="odometry",
-    controller="scalebfm",
-)  # the switch values this bed implements (the loops ran with these)
+    target=("perception", "truth"),
+    sensor=("stereo", "rgbd", "none"),
+    depth_noise=("none", "realsense"),
+    self_pose=("odometry",),
+    controller_root=("odometry",),
+    controller=("scalebfm",),
+)  # the switch values this bed implements: the loops' (perception, stereo, none, odometry, odometry, scalebfm) and TODO 49.2 step 6's
+DEFAULT_VIEW = (
+    "perception",
+    "stereo",
+    "none",
+)  # target, sensor, depth_noise of the loops: the look cache key is unchanged for these
 
 
 class ScopeError(ValueError):
-    """A switch value outside what the SIMPLE bed implements so far."""
+    """A switch value outside what the SIMPLE bed implements."""
 
 
 def check_scope(options) -> None:
-    """Refuse the switch values this step does not port, naming where they come from."""
+    """Refuse the switch values this bed does not implement, naming where they come from."""
     later = {
-        ("target", "truth"): "TODO 49.2 step 6 (truth target on the official bed)",
-        ("sensor", "rgbd"): "TODO 49.2 step 6 (rgbd: the head camera's rendered depth)",
-        ("depth_noise", "realsense"): "TODO 49.2 step 6 (realsense depth noise)",
         ("self_pose", "truth"): "TODO 49.3 (self_pose=truth: Belief without odometry)",
         ("controller_root", "truth"): "TODO 49.3 (controller_root=truth: root_source=None)",
         ("controller", "native"): "TODO 49.2 step 6 (SIMPLE's own whole-body controller)",
     }
     bad = []
-    for axis, want in SCOPE.items():
+    for axis, ok in SCOPE.items():
         got = getattr(options, axis)
-        if got != want:
+        if got not in ok:
             bad.append(f"{axis}={got} -> {later.get((axis, got), 'not implemented')}")
     if bad:
         raise ScopeError(
-            "the SIMPLE bed runs target=perception sensor=stereo self_pose=odometry controller_root=odometry only for now: "
-            + "; ".join(bad)
+            "the SIMPLE bed runs target=perception|truth sensor=stereo|rgbd depth_noise=none|realsense self_pose=odometry "
+            "controller_root=odometry controller=scalebfm: " + "; ".join(bad)
         )
