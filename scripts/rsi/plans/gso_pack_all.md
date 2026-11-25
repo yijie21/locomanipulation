@@ -64,7 +64,7 @@ One inner loop on one family (no outer loop in this run); the user picks the ins
    starts from the pick to the put-in is accepted before any start completes the chain. The verdict reports the
    stages behind b and c (`stage`: wins, losses, ties, each arm's mean stage, per task) beside the per-class tally.
 
-Pools (D7): 3 diagnostic, 4 acceptance and 5 sealed starts per task (30 / 40 / 50 on 10 tasks; the sealed pool is
+Pools (D7): 3 diagnostic, 10 acceptance and 10 sealed starts per task (30 / 100 / 100 on 10 tasks; user 2026-11-24, 3 / 4 / 5 before; the sealed pool is
 drawn only after the loop ends), rotated over the tasks in the order of the table in section 0; seeds 490000 / 590000
 / 690000, disjoint from every other family's. The roles see only the diagnostic pool. The stops (D8) and the sealed
 pool count stage 4 alone: the run's success rate is the share of starts that finished the whole chain.
@@ -92,7 +92,7 @@ releases): `gso_pack.md` section 3.
 | D4 | The motor actions stay atomic, the two-hand ones included; where to stand, where to put the hands, how hard to squeeze, how high to carry and where to let go are the skills' (the loop's). |
 | D6 | The Engineer may add and change skills in the skills package (code, tests, parameters). The motor layer takes only default-off switches; the controller, simulator, scene, predicates, success rule, stage and gate are frozen. |
 | D7 | One family = the pack task of every object of one instance; pools as in section 2, from the tasks' random placements and spawns; disjoint seeds; the sealed pool is drawn after the loop. |
-| D8 | The loop stops at the first of: the incumbent wins 80 % of the acceptance pool (stage 4), the run has been going 5 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-06); or at a hard stop: 12 gate calls, the Manager's stop. |
+| D8 | The loop stops at the first of: the incumbent wins 95 % of the acceptance pool (stage 4), the run has been going 15 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 80 % and 5 h before; user 2026-11-06); or at a hard stop: 12 gate calls, the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
 | D12 | The success rule is `gso_pack.md`'s: `in`, `held` and `lifted` of the carton over the last 5 s. |
 | D13 | Infeasibility is handled as in section 8. The task object always starts within 0.35 m of an approach edge and the carton on the hug's band (the `placement` option). |
@@ -115,6 +115,6 @@ reached the opening, so the put-in and the carton's lift after a put-in are unme
 | D13.1 | Three kinds: physically impossible (out of reach, over the payload, inside something that cannot open) -- only the user confirms this; cannot with the present actions -- a skill gap with an exit; not done yet -- the loop keeps working. |
 | D13.2 | A claim names the actions it assumed, a hard constraint code can recompute (a check file), at least one exit ("if the robot could first ..., it could") or why no action could, and what would refute it. Code refuses a claim missing any part. |
 | D13.3 | Two pieces of evidence, run by the driver: the check holds on every claimed start, and the strongest present attempts (1-3, closed loop) all fail. A narrative alone does not park anything. |
-| D13.4 | A park only removes those starts as repair targets; they still count as failures in every pool. The 80 % stop also counts on the unparked starts when they are at least half the acceptance pool. |
+| D13.4 | A park only removes those starts as repair targets; they still count as failures in every pool. The 95 % stop also counts on the unparked starts when they are at least half the acceptance pool. |
 | D13.5 | Any incumbent that finishes a parked start lifts the park, and the claim is recorded as wrong. |
 | D13.6 | A new skill that fits one Engineer call stays in the loop (for a park's exit: the Manager's `reopen`); one that does not becomes a gap proposal. |

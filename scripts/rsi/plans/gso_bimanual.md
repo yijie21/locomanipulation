@@ -54,7 +54,7 @@ One inner loop on one family (no outer loop in this run). One iteration:
    each; the **Composer** (Claude) makes one candidate of them.
 5. **Gate** (program) compares candidate and incumbent start by start on the hidden acceptance pool.
 
-Pools (D7, sized as box_bimanual's): diagnostic 30 starts, acceptance 40, sealed 50 (drawn only after the loop
+Pools (D7): 3 diagnostic, 10 acceptance and 10 sealed starts per task (15 / 50 / 50 on 5 tasks; user 2026-11-24, a fixed 30 / 40 / 50 before; the sealed pool is drawn only after the loop
 ends), rotated over the family's tasks. The roles see only the diagnostic pool.
 
 ## 3. What exists below the skills
@@ -94,7 +94,7 @@ seconds)` pushes the two jaw centres towards each other and keeps pressing until
 | D4 | The two-hand actions stay atomic: `grip` / `release` take `"both"`, `squeeze` presses the two jaw centres together and keeps pressing. Where to stand, where to put the hands, how hard to squeeze and how to lift are the skills' (the loop's). |
 | D6 | The Engineer may add and change skills in the skills package (code, tests, parameters). The motor layer takes only default-off switches; the controller, simulator, scene, predicates, success rule and gate are frozen. |
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random task-object placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
-| D8 | The loop stops when the incumbent wins 70 % of the acceptance pool, or at a hard stop: 12 gate calls, the wall-clock cap, or the Manager's stop. |
+| D8 | The loop stops at the first of: the incumbent wins 95 % of the acceptance pool, the run has been going 15 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 80 % and 5 h before), 12 gate calls, or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
 | D12 | The success rule (user Q23, 2026-11-03): `held(X)` and `lifted(X, 0.20, 60)` at every 0.1 s check over the round's last 5 s. |
 | D13 | Infeasibility is handled as in section 8. The task object always starts within 0.35 m of an approach edge (the `placement` option); a distractor may sit in the unreachable middle. |
@@ -142,6 +142,6 @@ every instance passes `scripts/scene_lint.py` (0 errors) after `scripts/scene_se
 | D13.1 | Three kinds: physically impossible (out of reach, over the payload, inside something that cannot open) -- only the user confirms this; cannot with the present actions -- a skill gap with an exit; not done yet -- the loop keeps working. |
 | D13.2 | A claim names the actions it assumed, a hard constraint code can recompute (a check file), at least one exit ("if the robot could first ..., it could") or why no action could, and what would refute it. Code refuses a claim missing any part. |
 | D13.3 | Two pieces of evidence, run by the driver: the check holds on every claimed start, and the strongest present attempts (1-3, closed loop) all fail. A narrative alone does not park anything. |
-| D13.4 | A park only removes those starts as repair targets; they still count as failures in every pool. The 70 % stop also counts on the unparked starts when they are at least half the acceptance pool. |
+| D13.4 | A park only removes those starts as repair targets; they still count as failures in every pool. The 95 % stop also counts on the unparked starts when they are at least half the acceptance pool. |
 | D13.5 | Any incumbent that finishes a parked start lifts the park, and the claim is recorded as wrong. |
 | D13.6 | A new skill that fits one Engineer call stays in the loop (for a park's exit: the Manager's `reopen`); one that does not becomes a gap proposal. |

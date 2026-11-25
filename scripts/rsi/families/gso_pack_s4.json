@@ -21,21 +21,26 @@
  },
  "hold_s": 2.0,
  "judge_s": 5.0,
- "stop_rate": 0.8,
- "max_wall_h": 5.0,
+ "stop_rate": 0.95,
+ "max_wall_h": 15.0,
  "max_run_iters": 5,
+ "pool_per_task": {
+  "diag": 3,
+  "accept": 10,
+  "sealed": 10
+ },
  "pools": {
   "diag": {
    "seed": 460000,
-   "n": 30
+   "n": 18
   },
   "accept": {
    "seed": 560000,
-   "n": 40
+   "n": 60
   },
   "sealed": {
    "seed": 660000,
-   "n": 50
+   "n": 60
   }
  },
  "plan": "scripts/rsi/plans/gso_pack.md",

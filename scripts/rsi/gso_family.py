@@ -13,8 +13,12 @@
   episode stands alone (the carton starts empty); its start moves X and the carton only.
 - `gso_all_s<seed>` (user 2026-11-06): every task of the four families in one family, so one inner loop iteration
   diagnoses, changes and gates all the skills together on one instance (21 tasks on s0-s9); the main library as the
-  start, pools of ALL_PER_TASK starts per task. Each two-hand or pack row carries its own `hold_s` / `judge_s`
+  start, pools of PER_TASK starts per task. Each two-hand or pack row carries its own `hold_s` / `judge_s`
   (family.timing), so a one-hand pick is judged as in `gso_grasp` and the rest over the last 5 s.
+
+Every family's pools (user 2026-11-24, every logistics room family): PER_TASK starts per task, 3 diagnostic / 10
+acceptance / 10 sealed by default (`--per-task`; the acceptance pool at least gate.STAGE1 + 1), and the stops STOPS: the
+incumbent wins 95 % of the acceptance pool, 15 h, 5 iterations.
 
 Every task row carries a `placement`: the task object within REACH (the scene's `gso.reach_depth_m`) of an approach edge
 (D13: the middle of the platform is out of reach). The pack rows add per-object conditions (`objects`): the carton on
@@ -32,8 +36,7 @@ start.sample_start; user 2026-11-06: with the nine others fixed, 13 of s0's 21 t
 A hand-picked scene (`logistics_room_gso_single` / `_bimanual`, user 2026-11-17; prepare_logistics_scene.py --picks)
 gets one family instead: `gso_single_grasp` (every picked one-hand object) or `gso_bimanual_lift` (every picked
 two-hand object and the carton), goal `held(X)` + `lifted(X, 0.20, 60)` (`--lift` another height) judged over the
-last 5 s for both, the main skill library as the start, pools sized by the task count (`--per-task diag=3 accept=10
-sealed=10`, the default; the acceptance pool at least gate.STAGE1 + 1); files `gso_single_grasp.json` +
+last 5 s for both, the main skill library as the start, the same pools and stops; files `gso_single_grasp.json` +
 `gso_single_grasp_tasks.jsonl`.
 
 Writes `<families-dir>/gso_grasp_s<seed>.json`, `gso_bimanual_s<seed>.json`, `gso_pack_s<seed>.json`,
@@ -65,13 +68,9 @@ SEEDS = {"gso_grasp": "scripts/rsi/seeds/atomic", "gso_bimanual": None, "gso_pac
          "gso_all": None, "gso_pack_all": None}  # fmt: skip
 POOL_SEEDS = {"gso_grasp": 440_000, "gso_bimanual": 450_000, "gso_pack": 460_000, "gso_pack_bimanual": 470_000,
               "gso_all": 480_000, "gso_pack_all": 490_000}  # fmt: skip
-POOL_SIZES = {"diag": 30, "accept": 40, "sealed": 50}
+POOLS = ("diag", "accept", "sealed")  # pool seeds: POOL_SEEDS[family] + 0 / 100000 / 200000 in this order
 ALL = "gso_all"
-# gso_all's pools: starts per task (42 / 42 / 105 on 21 tasks; user 2026-11-06), so the task rotation gives every task the same share
-ALL_PER_TASK = {"diag": 2, "accept": 2, "sealed": 5}
 PACK_ALL = "gso_pack_all"
-# gso_pack_all's pools: starts per task (30 / 40 / 50 on the 10 pack tasks; user 2026-11-07), the gate's usual sizes
-PACK_ALL_PER_TASK = {"diag": 3, "accept": 4, "sealed": 5}
 PACK_KINDS = ("pack", "pack_bimanual")
 # the two-hand and pack families' success timing (box_bimanual's): the end of the plan, 2 s still, judged over 5 s
 TIMING = {"hold_s": 2.0, "judge_s": 5.0}
@@ -81,14 +80,16 @@ TILT_DEG = 60
 # lifted PICKED_LIFT_M and held, judged over the last 5 s, from the main skill library; 0.20 m since 2026-11-18 (user;
 # 0.30 m before), `--lift` another height
 PICKED_LIFT_M = 0.20
-# the picked families' pools: starts per task, the default of `--per-task` (user 2026-11-18: by the task count, as
-# gso_pack_all; with a fixed 30 / 40 / 50 the 20 one-hand tasks had 1-2 diagnostic and 2 acceptance starts each, so a
+# every family's pools: starts per task, the default of `--per-task` (user 2026-11-18 for the picked families: by the
+# task count; with a fixed 30 / 40 / 50 the 20 one-hand tasks had 1-2 diagnostic and 2 acceptance starts each, so a
 # change that helped one object could never win the gate's net 3). The family file records the numbers it was written
 # with (`pool_per_task`) and each pool's `n`; the sandbox, the loop and sealed.py read `n` from there.
-# 3 / 10 / 10 since 2026-11-24 (user; 3 / 4 / 5 before): the diagnostic pool only feeds the Reviewer failures and is
-# topped up by the redraw, so it stays small; the acceptance pool decides the gate, where a 32-start pool let two or
-# three chance flips of a contact round decide the verdict; the sealed pool is run once and sets the report's interval.
-PICKED_PER_TASK = {"diag": 3, "accept": 10, "sealed": 10}
+# 3 / 10 / 10 for every logistics room family since 2026-11-24 (user; the picked families 3 / 4 / 5, the drawn
+# instances a fixed 30 / 40 / 50, gso_all 2 / 2 / 5 and gso_pack_all 3 / 4 / 5 before): the diagnostic pool only feeds
+# the Reviewer failures and is topped up by the redraw, so it stays small; the acceptance pool decides the gate, where
+# a 32-start pool let two or three chance flips of a contact round decide the verdict; the sealed pool is run once and
+# sets the report's interval.
+PER_TASK = {"diag": 3, "accept": 10, "sealed": 10}
 
 
 def gate_stage1() -> int:
@@ -103,19 +104,20 @@ def gate_stage1() -> int:
     raise SystemExit("gate.py has no STAGE1")
 
 
-def picked_pools(pool_seed: int, n_tasks: int, per_task: dict[str, int]) -> dict:
-    """The pools of a picked family: `per_task[pool]` starts per task, the acceptance pool at least gate.STAGE1 + 1
-    starts; seeds `pool_seed` + 0 / 100000 / 200000."""
+def pools(pool_seed: int, n_tasks: int, per_task: dict[str, int] | None = None) -> dict:
+    """A family's pools: `per_task[pool]` (default PER_TASK) starts per task, the acceptance pool at least
+    gate.STAGE1 + 1 starts; seeds `pool_seed` + 0 / 100000 / 200000."""
+    per_task = per_task or PER_TASK
     floor = {"accept": gate_stage1() + 1}
     return {
         pool: {"seed": pool_seed + i * 100_000, "n": max(int(per_task[pool]) * n_tasks, floor.get(pool, 0))}
-        for i, pool in enumerate(POOL_SIZES)
+        for i, pool in enumerate(POOLS)
     }
 
 
 def parse_per_task(items: list[str] | None) -> dict[str, int]:
-    """`--per-task diag=3 accept=4 sealed=5` (any of them; the rest PICKED_PER_TASK) -> {pool: starts per task}."""
-    out = dict(PICKED_PER_TASK)
+    """`--per-task diag=3 accept=10 sealed=10` (any of them; the rest PER_TASK) -> {pool: starts per task}."""
+    out = dict(PER_TASK)
     for item in items or []:
         key, _, value = item.partition("=")
         if key not in out or not value.isdigit() or int(value) < 1:
@@ -144,13 +146,12 @@ ALONG_EDGE = {True: [85, 90], False: [0, 5]}  # the box x axis along the edge wh
 # FLANK + CLEAR + PRE_OUT = 0.13 m outside the wall (skills/bimanual.py, 2026-11-05) plus ~5 cm of hand; the 11-06
 # probe (s0, gso_0945 beside the carton) missed by 15 cm with neighbours there and by 1-2 cm with the platform clear
 HANDS_CLEAR_M = 0.18
-# when a family's inner loop stops (loop.py resolve_settings; user 2026-11-06): the incumbent wins 80 % of the acceptance
-# pool, the run has been going 5 h, or it has taken 5 iterations, whichever comes first
-STOPS = {"stop_rate": 0.80, "max_wall_h": 5.0, "max_run_iters": 5}
-# the hand-picked families (gso_single_grasp, gso_bimanual_lift; user 2026-11-24): the main library already wins 87 % of
-# their acceptance pools (the written-back incumbents of gso-alt-a), so the stop line is 95 %; 15 h, the same budget as
-# alternate.py's --max-hours
-PICKED_STOPS = {"stop_rate": 0.95, "max_wall_h": 15.0, "max_run_iters": 5}
+# when a family's inner loop stops (loop.py resolve_settings): the incumbent wins 95 % of the acceptance pool, the run
+# has been going 15 h, or it has taken 5 iterations, whichever comes first (user 2026-11-24, every logistics room
+# family; 80 % and 5 h before, user 2026-11-06: the main library already wins 87 % of the picked families' acceptance
+# pools, the written-back incumbents of gso-alt-a, so an 80 % line stopped a run at its first gate). 15 h is also
+# alternate.py's --max-hours.
+STOPS = {"stop_rate": 0.95, "max_wall_h": 15.0, "max_run_iters": 5}
 
 # the sandbox block every scene RSI family carries (box_bimanual.json, grasp_atomic.json): what the archive keeps,
 # the src import closure, what is stripped; only the family's own files differ
@@ -275,7 +276,9 @@ SKILLS_NOTE = {
 }  # fmt: skip
 
 
-def family(name: str, kind: str, scene_rel: str, seed: int, tasks_file: str, rows: list[dict], meta: dict) -> dict:
+def family(
+    name: str, kind: str, scene_rel: str, seed: int, tasks_file: str, rows: list[dict], meta: dict, per_task=None
+) -> dict:
     stem = KINDS[kind]
     names = {r["id"].split("_", 1)[1]: meta["objects"][r["id"].split("_", 1)[1]]["semantic"]["phrase"] for r in rows}
     return {
@@ -291,9 +294,8 @@ def family(name: str, kind: str, scene_rel: str, seed: int, tasks_file: str, row
         "spawn": {"rooms": "all", "distance_m": [0.5, None]},
         **(TIMING if kind != "single" else {}),
         **STOPS,
-        "pools": {
-            pool: {"seed": POOL_SEEDS[stem] + i * 100_000, "n": n} for i, (pool, n) in enumerate(POOL_SIZES.items())
-        },
+        "pool_per_task": dict(per_task or PER_TASK),
+        "pools": pools(POOL_SEEDS[stem], len(rows), per_task),
         "plan": PLANS[stem],
         "skills_note": SKILLS_NOTE[stem],
         "sandbox": {
@@ -306,7 +308,7 @@ def family(name: str, kind: str, scene_rel: str, seed: int, tasks_file: str, row
     }
 
 
-def family_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows: dict, meta: dict) -> dict:
+def family_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows: dict, meta: dict, per_task=None) -> dict:
     """gso_all: the four kinds' rows in one family, in KINDS order; no family-level timing (each row has its own)."""
     ids = [r["id"] for kind in KINDS for r in rows[kind]]
     counts = ", ".join(f"{len(rows[k])} {KINDS[k]}" for k in KINDS)
@@ -330,10 +332,8 @@ def family_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows: dict
         "tasks": ids,
         "spawn": {"rooms": "all", "distance_m": [0.5, None]},
         **STOPS,
-        "pools": {
-            pool: {"seed": POOL_SEEDS[ALL] + i * 100_000, "n": ALL_PER_TASK[pool] * len(ids)}
-            for i, pool in enumerate(POOL_SIZES)
-        },
+        "pool_per_task": dict(per_task or PER_TASK),
+        "pools": pools(POOL_SEEDS[ALL], len(ids), per_task),
         "plan": PLANS[ALL],
         "skills_note": SKILLS_NOTE[ALL],
         "sandbox": {
@@ -351,7 +351,9 @@ def kind_name(kind: str) -> str:
     return KINDS[kind]
 
 
-def family_pack_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows: dict, meta: dict) -> dict:
+def family_pack_all(
+    name: str, scene_rel: str, seed: int, tasks_file: str, rows: dict, meta: dict, per_task=None
+) -> dict:
     """gso_pack_all (user 2026-11-07): the two pack kinds' rows in one family -- every object but the carton goes into
     the carton, which is then lifted --, judged by the gate on the progress stage (gso_pack_all.md D15)."""
     ids = [r["id"] for kind in PACK_KINDS for r in rows[kind]]
@@ -378,10 +380,8 @@ def family_pack_all(name: str, scene_rel: str, seed: int, tasks_file: str, rows:
         "spawn": {"rooms": "all", "distance_m": [0.5, None]},
         **STOPS,
         **TIMING,
-        "pools": {
-            pool: {"seed": POOL_SEEDS[PACK_ALL] + i * 100_000, "n": PACK_ALL_PER_TASK[pool] * len(ids)}
-            for i, pool in enumerate(POOL_SIZES)
-        },
+        "pool_per_task": dict(per_task or PER_TASK),
+        "pools": pools(POOL_SEEDS[PACK_ALL], len(ids), per_task),
         "plan": PLANS[PACK_ALL],
         "skills_note": SKILLS_NOTE[PACK_ALL],
         "sandbox": {
@@ -444,9 +444,9 @@ def write_picked(
         "tasks": [r["id"] for r in rows],
         "spawn": PICKED_SPAWN,
         **TIMING,
-        **PICKED_STOPS,
-        "pool_per_task": per_task or dict(PICKED_PER_TASK),
-        "pools": picked_pools(spec["pool_seed"], len(rows), per_task or PICKED_PER_TASK),
+        **STOPS,
+        "pool_per_task": dict(per_task or PER_TASK),
+        "pools": pools(spec["pool_seed"], len(rows), per_task),
         "plan": spec["plan"],
         "skills_note": spec["skills_note"],
         "sandbox": {
@@ -475,10 +475,8 @@ def write(
         raise SystemExit(f"{scene_dir} is not a GSO scene (no `gso` block in scene_meta.json)")
     if gso.get("picks"):
         return write_picked(scene_dir, meta, families_dir, PICKED_LIFT_M if lift is None else lift, per_task)
-    if lift is not None or per_task is not None:
-        raise SystemExit(
-            "--lift and --per-task are for a hand-picked scene; the drawn instances keep LIFT_M and POOL_SIZES"
-        )
+    if lift is not None:
+        raise SystemExit("--lift is for a hand-picked scene; the drawn instances keep LIFT_M")
     seed, reach = int(gso["seed"]), float(gso["reach_depth_m"])
     scene_rel = (
         str(scene_dir.resolve().relative_to(REPO)) if scene_dir.resolve().is_relative_to(REPO) else str(scene_dir)
@@ -496,15 +494,15 @@ def write(
         if not rows[kind]:
             raise SystemExit(f"{scene_dir}: no {OBJECT_KIND[kind]} object for the {KINDS[kind]} family")
         name = f"{KINDS[kind]}_s{seed}"
-        fam = family(name, kind, scene_rel, seed, tasks_file, rows[kind], meta)
+        fam = family(name, kind, scene_rel, seed, tasks_file, rows[kind], meta, per_task)
         (families_dir / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
         out[name] = len(rows[kind])
     name = f"{ALL}_s{seed}"
-    fam = family_all(name, scene_rel, seed, tasks_file, rows, meta)
+    fam = family_all(name, scene_rel, seed, tasks_file, rows, meta, per_task)
     (families_dir / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
     out[name] = len(fam["tasks"])
     name = f"{PACK_ALL}_s{seed}"
-    fam = family_pack_all(name, scene_rel, seed, tasks_file, rows, meta)
+    fam = family_pack_all(name, scene_rel, seed, tasks_file, rows, meta, per_task)
     (families_dir / f"{name}.json").write_text(json.dumps(fam, indent=1) + "\n")
     out[name] = len(fam["tasks"])
     return out
@@ -516,9 +514,8 @@ def main(argv=None) -> int:
     ap.add_argument("--families-dir", type=Path, default=FAMILIES)
     ap.add_argument("--lift", type=float, default=None, help=f"m; a hand-picked scene's lift (default {PICKED_LIFT_M}; "
                     "user 2026-11-18: 0.20, 0.30 before)")  # fmt: skip
-    ap.add_argument("--per-task", nargs="+", metavar="POOL=N", default=None, help="a hand-picked scene's starts per "
-                    f"task, any of diag / accept / sealed (default {PICKED_PER_TASK}); the acceptance pool holds at "
-                    "least gate.STAGE1 + 1")  # fmt: skip
+    ap.add_argument("--per-task", nargs="+", metavar="POOL=N", default=None, help="starts per task, any of diag / "
+                    f"accept / sealed (default {PER_TASK}); the acceptance pool holds at least gate.STAGE1 + 1")  # fmt: skip
     a = ap.parse_args(argv)
     out = write(a.scene_dir, a.families_dir, a.lift, parse_per_task(a.per_task) if a.per_task else None)
     print(json.dumps({"families_dir": str(a.families_dir), "tasks": out}))

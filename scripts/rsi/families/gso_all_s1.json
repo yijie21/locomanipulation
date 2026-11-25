@@ -34,21 +34,26 @@
    null
   ]
  },
- "stop_rate": 0.8,
- "max_wall_h": 5.0,
+ "stop_rate": 0.95,
+ "max_wall_h": 15.0,
  "max_run_iters": 5,
+ "pool_per_task": {
+  "diag": 3,
+  "accept": 10,
+  "sealed": 10
+ },
  "pools": {
   "diag": {
    "seed": 480000,
-   "n": 42
+   "n": 63
   },
   "accept": {
    "seed": 580000,
-   "n": 42
+   "n": 210
   },
   "sealed": {
    "seed": 680000,
-   "n": 105
+   "n": 210
   }
  },
  "plan": "scripts/rsi/plans/gso_all.md",

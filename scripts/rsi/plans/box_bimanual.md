@@ -94,7 +94,7 @@ Measured ScaleBFM facts (controller comparison, 2026-10-13; the box line, TODO 2
 | D4 | The ninth motor action stays atomic: `grip` / `release` take `"both"`, `squeeze` presses the two jaw centres together and keeps pressing. Where to stand, where to put the hands, how hard to squeeze and how to lift are the skills' (the loop's). |
 | D6 | The Engineer may add and change skills in the skills package (code, tests, parameters). The motor layer takes only default-off switches; the controller, simulator, scene, predicates, success rule and gate are frozen. |
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random box placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
-| D8 | The loop stops when the incumbent wins 70 % of the acceptance pool, or at a hard stop: 12 gate calls, the wall-clock cap (6 h), or the Manager's stop. |
+| D8 | The loop stops when the incumbent wins 95 % of the acceptance pool, the run has been going 15 h or it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 70 % and 6 h before), or at a hard stop: 12 gate calls or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
 | D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 60)` at every 0.1 s check over the round's last 5 s. |
 | D13 | Infeasibility is handled as in section 8. |
@@ -151,6 +151,6 @@ than the closed fingers (1.9 cm), so a hug with closed jaws touches the box with
 | D13.1 | Three kinds: physically impossible (out of reach, over the payload, inside something that cannot open) -- only the user confirms this; cannot with the present actions -- a skill gap with an exit; not done yet -- the loop keeps working. |
 | D13.2 | A claim names the actions it assumed, a hard constraint code can recompute (a check file), at least one exit ("if the robot could first ..., it could") or why no action could, and what would refute it. Code refuses a claim missing any part. |
 | D13.3 | Two pieces of evidence, run by the driver: the check holds on every claimed start, and the strongest present attempts (1-3, closed loop) all fail. A narrative alone does not park anything. |
-| D13.4 | A park only removes those starts as repair targets; they still count as failures in every pool. The 70 % stop also counts on the unparked starts when they are at least half the acceptance pool. |
+| D13.4 | A park only removes those starts as repair targets; they still count as failures in every pool. The 95 % stop also counts on the unparked starts when they are at least half the acceptance pool. |
 | D13.5 | Any incumbent that finishes a parked start lifts the park, and the claim is recorded as wrong. |
 | D13.6 | A new skill that fits one Engineer call stays in the loop (for a park's exit: the Manager's `reopen`); one that does not becomes a gap proposal. |
