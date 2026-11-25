@@ -359,18 +359,55 @@ gso-alt-a（7.3 的第一次交替运行）跑完后看两边最终现任的代�
 
 **7.6 跑完之后：一页 HTML 报告（`report/run_report.py`，11-25）**
 
-三种模式都能用。命令在主仓库根目录下跑；`$R` 是模式 3 的运行目录（7.3），`$S1` 是模式 1 / 2 的沙盒（7.1）。
+三种模式都能用。RSI 结束后按下面的顺序做，命令都在主仓库根目录下跑。下面按模式 3 写；模式 1 / 2 只有一个沙盒 `$S1`（7.1）：把 `$R/a`、`$R/b` 和报告命令里的 `$R` 都换成 `$S1`，只跑对应任务族的那一行。
+
+第 1 步，新终端先执行第 0 节，再指定运行目录：
 
 ```bash
-python3 scripts/rsi/report/run_report.py $R       # 模式 3：运行目录（有 alternate.json）
-python3 scripts/rsi/report/run_report.py $S1      # 模式 1 / 2：沙盒
+R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-seed     # 换成这次运行的目录
+H=outputs/scene_rsi_20261016_hidden
+```
+
+第 2 步，确认 RSI 已经结束，也没有进程还在跑：
+
+```bash
+$PY scripts/rsi/alternate.py status $R                         # 模式 3：最后一条事件是 "step": "end"，blocked: no
+(cd $S1 && $PY scripts/rsi/loop.py status gso_single_grasp)    # 模式 1 / 2：最后一行是 "step": "stop"
+pgrep -af 'rsi/(alternate|loop|sealed)\.py'                    # 应当没有输出
+```
+
+封存集要等内环结束才抽，所以还在跑时不要做第 3 步。`blocked: yes`，或 `run.log` 最后一行是错误，说明运行中途停了：按 7.3 查完原因，再跑同一条 `run` 命令接着跑完。
+
+第 3 步，跑封存集（7.4）。`--all` 让每一轮的现任都有封存集成绩，Table 2 才有每一列；两条可以同时跑：
+
+```bash
+(cd $R/a && nohup setsid $PY scripts/rsi/sealed.py gso_single_grasp --all > sealed.log 2>&1 &)
+(cd $R/b && nohup setsid $PY scripts/rsi/sealed.py gso_bimanual_lift --all > sealed.log 2>&1 &)
+```
+
+第 4 步，等封存集跑完。`sealed.log` 末尾打出 summary（最后一项是 `bucket1`）就跑完了；再确认每一版都有局数，`missing` 为空：
+
+```bash
+tail -n 2 $R/a/sealed.log $R/b/sealed.log
+python3 -c "import json;d=json.load(open('$R/a/$H/gso_single_grasp/sealed/summary.json'));print(d['final'],{k:'%d/%d'%(v['ok'],v['n']) for k,v in d['versions'].items()},'missing',d['missing'])"
+python3 -c "import json;d=json.load(open('$R/b/$H/gso_bimanual_lift/sealed/summary.json'));print(d['final'],{k:'%d/%d'%(v['ok'],v['n']) for k,v in d['versions'].items()},'missing',d['missing'])"
+```
+
+gso-alt-seed 上两条同时跑约 40 分钟：单手 5 版各 200 局，双手 4 版各 80 局。单手的检查打出最终版 `04_3e4e900359bb`，以及 `seed`、`01_…` 到 `04_…` 每一版的成功局数和 `missing {}`。
+
+第 5 步，出报告并打开：
+
+```bash
+python3 scripts/rsi/report/run_report.py $R
 xdg-open $R/rsi_report.html
 ```
 
-做什么：
+知识发布（7.3 的 `publish`）和视频（7.4）与报告无关，前后都可以做。没跑封存集也能出报告，只是 Table 2 的位置只写着要跑的命令；之后补跑第 3、4 步，再跑一次第 5 步，页面会被覆盖成完整的。
+
+报告里有什么：
 - 只读运行自己的记录：不跑仿真，不调用模型，几秒钟出页面，页面是英文。运行目录按 `alternate.json` 找单手的 `a/` 和双手的 `b/`；沙盒按 `outputs/scene_rsi_20261016/*/loop/ledger.jsonl` 找任务族。`--family F` 只出某个任务族（可重复），`--out FILE` 换输出位置。
 - **Table 1.n**（每个任务族一张）：每一列是一轮结束时的现任在验收池上的成绩。每件物体一行，给成功局数 / 局数和成功率；最后一行 Total 是整个池。第一列 Seed 是起点技能。某一轮没接受任何候选，那一列标 kept，沿用上一轮的现任；模式 3 里从另一方同步过来的版本标 synced。表下逐轮写验收门的结论：接受时成功局数的变化，在第一阶段（30 局）就被拒时第一阶段的局数，作废的轮，同步的结果，最后是停下的原因。
-- **Table 2.n**：同样的表，换成封存集。要先跑 7.4 的 `sealed.py --all`。不加 `--all` 只有种子和最终版的局，其余列略去，表上方写明缺哪几列；一局都没跑时，页面给出要跑的命令。
+- **Table 2.n**：同样的表，换成封存集（第 3 步）。不加 `--all` 只有种子和最终版的局，其余列略去，表上方写明缺哪几列。
 - **Table 3**：每一轮每一步的墙钟分钟数、模型调用次数、token（input、cache write、cache read、output、合计）和费用。步骤依次是 Diagnosis（诊断池、补抽、知识查找）、Reviewer、Probe、Manager、Engineers（3 个并行，记最慢那个的时间）、Composer、Gate；模式 3 每半轮再加 Knowledge build 和 Sync gate。每轮一行小计，附这一轮现任的验收和封存成功率；最后一行 Run total 是整个运行的时间、调用次数、token 和费用，附最终成功率。
 - **数据来源**：token 和费用取各角色的 `*_raw.json`（`modelUsage`）。账本里的 `usage` 有时少记，只在没有 raw 文件时才用。知识建库的 token 只记在 `~/.claude/projects/` 下的会话记录里；在别的机器上出报告，或这些记录已删，这一行只剩费用。
 
