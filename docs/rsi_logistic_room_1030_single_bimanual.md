@@ -409,6 +409,7 @@ xdg-open $R/rsi_report.html
 - **Table 1.n**（每个任务族一张）：每一列是一轮结束时的现任在验收池上的成绩。每件物体一行，给成功局数 / 局数和成功率；最后一行 Total 是整个池。第一列 Seed 是起点技能。某一轮没接受任何候选，那一列标 kept，沿用上一轮的现任；模式 3 里从另一方同步过来的版本标 synced。表下逐轮写验收门的结论：接受时成功局数的变化，在第一阶段（30 局）就被拒时第一阶段的局数，作废的轮，同步的结果，最后是停下的原因。
 - **Table 2.n**：同样的表，换成封存集（第 3 步）。不加 `--all` 只有种子和最终版的局，其余列略去，表上方写明缺哪几列。
 - **Table 3**：每一轮每一步的墙钟分钟数、模型调用次数、token（input、cache write、cache read、output、合计）和费用。步骤依次是 Diagnosis（诊断池、补抽、知识查找）、Reviewer、Probe、Manager、Engineers（3 个并行，记最慢那个的时间）、Composer、Gate；模式 3 每半轮再加 Knowledge build 和 Sync gate。每轮一行小计，附这一轮现任的验收和封存成功率；最后一行 Run total 是整个运行的时间、调用次数、token 和费用，附最终成功率。
+- **Table 4**：只取 Table 3 每轮的小计，每一轮一行，每个任务族一组 Time (min)、Total tokens、Cost (USD) 并排，模式 3 再加一组 All families（两族相加；半轮是先后跑的，所以就是墙钟时间）。某个任务族没跑这一轮记 —。最后一行 Run total 和 Table 3 的相同。
 - **数据来源**：token 和费用取各角色的 `*_raw.json`（`modelUsage`）。账本里的 `usage` 有时少记，只在没有 raw 文件时才用。知识建库的 token 只记在 `~/.claude/projects/` 下的会话记录里；在别的机器上出报告，或这些记录已删，这一行只剩费用。
 
 得到什么：`$R/rsi_report.html`（模式 1 / 2 是 `$S1/rsi_report.html`），自包含，浏览器直接打开。2026-11-25 对 gso-alt-seed（7.3 从种子起跑的那次）出的页面：
@@ -418,7 +419,7 @@ xdg-open $R/rsi_report.html
 | `gso_single_grasp` | 5 | 164/200（82.0 %） | 157/200（78.5 %） |
 | `gso_bimanual_lift` | 4（第 5 轮开始前就到 95 %，停） | 78/80（97.5 %） | 78/80（97.5 %） |
 
-Table 3 的 Run total：538.5 分钟（8.97 h）、80 次模型调用、215.98 美元。测试在 `tests/test_rsi_run_report.py`。
+Table 3 的 Run total：538.5 分钟（8.97 h）、80 次模型调用、215.98 美元；Table 4 里单手 326.9 分钟、124.19 美元，双手 211.6 分钟、91.79 美元（第 5 轮没跑）。测试在 `tests/test_rsi_run_report.py`。
 
 ## 8. Unreal 关卡与预览图
 

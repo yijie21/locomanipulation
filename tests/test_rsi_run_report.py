@@ -1,4 +1,4 @@
-"""report/run_report.py (user 2026-11-25): the per-run HTML page's three tables, from synthetic run records."""
+"""report/run_report.py (user 2026-11-25): the per-run HTML page's four tables, from synthetic run records."""
 
 from __future__ import annotations
 
@@ -157,6 +157,17 @@ class SingleFamily(unittest.TestCase):
         self.assertIn("final acceptance 3/4 (75.0 %), sealed 5/6 (83.3 %)", page)
         self.assertIn("Stopped</b> after iteration 2", page)
 
+    def test_table_4_iteration_totals(self):
+        page = RR.render(self.data)
+        self.assertIn("Table 4: time, tokens and cost per iteration and family", page)
+        table = RR.family_table(self.data)
+        self.assertNotIn("All families", table)  # one family: no combined columns
+        # iteration 1: 5 + 10 + 4 + 1 + 12 + 3 + 15 min; the Reviewer's raw file 103 tokens, four more calls 10 each
+        self.assertIn('<tr><td class="l">1</td><td>50.0</td><td>143</td><td>7.25</td></tr>', table)
+        self.assertIn('<tr><td class="l">2</td><td>30.0</td><td>40</td><td>3.75</td></tr>', table)
+        self.assertIn('Run total</td><td>80.0<br><span class="muted">1.33 h</span></td><td>183</td><td>11.00</td>',
+                      table)  # fmt: skip
+
     def test_main_writes_the_page_next_to_the_run(self):
         with mock.patch("builtins.print"):
             self.assertEqual(RR.main([str(self.sb)]), 0)
@@ -299,6 +310,28 @@ class Alternating(unittest.TestCase):
         self.assertIn("fa: final acceptance 2/2 (100.0 %), sealed not run", page)
         self.assertIn("Iteration 2 total", page)
         self.assertIn("the families stopped", page)
+
+    def test_table_4_families_side_by_side(self):
+        table = RR.family_table(self.data)
+        self.assertIn('<th colspan="3"><code>fa</code></th><th colspan="3"><code>fb</code></th>'
+                      '<th colspan="3">All families</th>', table)  # fmt: skip
+        # iteration 1: fa 33 min with its build and sync, 40 + 26 build tokens; fb 18 min; then the two summed
+        self.assertIn('<tr><td class="l">1</td><td>33.0</td><td>66</td><td>4.25</td><td>18.0</td><td>40</td>'
+                      "<td>4.00</td><td>51.0</td><td>106</td><td>8.25</td></tr>", table)  # fmt: skip
+        self.assertIn('Run total</td><td>52.0<br><span class="muted">0.87 h</span></td><td>106</td><td>8.50</td>'
+                      '<td>33.0<br><span class="muted">0.55 h</span></td><td>80</td><td>7.75</td>'
+                      '<td>85.0<br><span class="muted">1.42 h</span></td><td>186</td><td>16.25</td></tr>', table)  # fmt: skip
+        # the same run total as Table 3's last row
+        t3 = RR.steps_table(self.data).split('<tr class="total">')[-1]
+        self.assertIn('<td>85.0<br><span class="muted">1.42 h</span></td>', t3)
+        self.assertIn("<td>186</td><td>16.25</td>", t3)
+        self.assertIn("run one after the other", RR.render(self.data))
+
+    def test_table_4_a_family_without_the_iteration(self):
+        short = dict(self.data, families=[self.fa, dict(self.fb, its=self.fb["its"][:1])])
+        dash = '<td class="muted">&mdash;</td>' * 3
+        self.assertIn(f'<tr><td class="l">2</td><td>19.0</td><td>40</td><td>4.25</td>{dash}<td>19.0</td><td>40</td>'
+                      "<td>4.25</td></tr>", RR.family_table(short))  # fmt: skip
 
 
 if __name__ == "__main__":

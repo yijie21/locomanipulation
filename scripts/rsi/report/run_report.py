@@ -6,6 +6,8 @@
   only the seed and the final version have rounds).
 * Table 3: every iteration's steps -- wall time and model tokens (input, cache write, cache read, output) and cost;
   a subtotal per iteration, the run's total in the last row.
+* Table 4: Table 3's subtotals alone -- per iteration each family's time, total tokens and cost side by side, then
+  all families together; the run total in the last row.
 
     python3 scripts/rsi/report/run_report.py <run dir | sandbox> [--family F ...] [--out FILE]
 
@@ -474,6 +476,45 @@ def steps_table(data: dict) -> str:
     return f'<div class="scroll"><table><thead>{head}</thead><tbody>{"".join(rows)}</tbody></table></div>'
 
 
+def it_total(it: dict) -> tuple[float, int, float]:
+    """(seconds, tokens, cost) of one iteration: Table 3's subtotal row of it."""
+    st = it["steps"]
+    return (sum(s["sec"] or 0.0 for s in st), sum(sum(s["tok"].values()) for s in st), sum(s["cost"] for s in st))
+
+
+def family_table(data: dict) -> str:
+    """Table 4 (user 2026-11-25): per iteration each family's time, total tokens and cost side by side, then all
+    families together; the run total in the last row (the same sums as Table 3's)."""
+    reps = data["families"]
+    multi = len(reps) > 1
+    by = [{it["label"]: it_total(it) for it in r["its"]} for r in reps]
+    labels = sorted({k for b in by for k in b})
+    groups = [*(f"<code>{e(r['family'])}</code>" for r in reps), *(["All families"] if multi else [])]
+
+    def cells(v, total=False) -> str:
+        if v is None:
+            return '<td class="muted">&mdash;</td>' * 3
+        sec, tok, cost = v
+        hours = f'<br><span class="muted">{sec / 3600:.2f} h</span>' if total else ""
+        return f"<td>{sec / 60:.1f}{hours}</td><td>{fmt_tok(tok)}</td><td>{cost:.2f}</td>"
+
+    def both(vs):
+        got = [v for v in vs if v is not None]
+        return tuple(sum(x) for x in zip(*got)) if got else None
+
+    rows = []
+    for k in labels:
+        vs = [b.get(k) for b in by]
+        rows.append(f'<tr><td class="l">{k}</td>' + "".join(cells(v) for v in vs) + (cells(both(vs)) if multi else "")
+                    + "</tr>")  # fmt: skip
+    tot = [both(list(b.values())) or (0.0, 0, 0.0) for b in by]
+    rows.append('<tr class="total"><td class="l">Run total</td>' + "".join(cells(v, True) for v in tot)
+                + (cells(both(tot), True) if multi else "") + "</tr>")  # fmt: skip
+    head = ('<tr><th class="l" rowspan="2">Iteration</th>' + "".join(f'<th colspan="3">{g}</th>' for g in groups)
+            + "</tr><tr>" + "<th>Time (min)</th><th>Total tokens</th><th>Cost (USD)</th>" * len(groups) + "</tr>")  # fmt: skip
+    return f'<div class="scroll"><table><thead>{head}</thead><tbody>{"".join(rows)}</tbody></table></div>'
+
+
 def render(data: dict) -> str:
     target, alt = data["target"], data["alt"]
     m0 = data["families"][0]["meta"]
@@ -523,6 +564,11 @@ def render(data: dict) -> str:
                  "calls' usage; output includes thinking. Diagnosis, Probe and the gates are simulation only. Each "
                  "iteration's total row gives its incumbent's success rate, the last row the run's totals and the "
                  "final success rate.</p>" + steps_table(data) + "</section>")  # fmt: skip
+    both = (" The halves of mode 3 run one after the other, so All families is the run's wall time."
+            if len(data["families"]) > 1 and alt else "")  # fmt: skip
+    parts.append('<section><h2>Table 4: time, tokens and cost per iteration and family</h2><p class="muted">Each '
+                 "family's iteration total from Table 3: wall-clock minutes, total tokens and cost." + both
+                 + " The last row is the run total.</p>" + family_table(data) + "</section>")  # fmt: skip
     return (f"<title>RSI report {e(target.name)}</title><meta name=\"viewport\" content=\"width=device-width,"
             f'initial-scale=1"><style>{CSS}</style><main>{"".join(parts)}</main>')  # fmt: skip
 
