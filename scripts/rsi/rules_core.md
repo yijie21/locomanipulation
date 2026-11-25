@@ -183,11 +183,17 @@ at least `check_min_net` (4 on the benchmarks) and the per-task test ([gate], al
 `check` row gives counts only. Late candidates gained 17-35 visible starts net and nothing at the gate: what the visible
 half shows no longer carries to starts the roles have not seen.
 
+### [overlap] The previous candidate is still being judged (code)
+The check half and the gate run beside the next iteration: you start from the incumbent as it stood, the context's
+`pending` names the candidate in flight (its hash, never its result; no verdict is written or shown before the driver has
+it). If it is accepted your draft is rebased onto the new incumbent: dropped when its target starts are already won or
+its edits overlap the accepted change, else run again on its scope. Keep edits small and local.
+
 ### [stop] Stops (code)
 The run stops on the iteration limit, the wall clock, the cost cap, the gate-call budget, two voided iterations in a row, or
 `stop_no_progress` iterations in a row (2 on the benchmarks) without a candidate that passed the check half (an iteration
 whose Composer kept the incumbent counts; with no check half a candidate that passes the gate's stage 1 counts). Every way
-the run ends runs the sealed set once.
+the run ends runs the sealed set once; a stop with a gate call in flight waits for it, records it, then runs the sealed set.
 
 ### [sealed] The sealed check (code)
 At the end the driver runs the final incumbent and the seed once on the sealed pool, which no role and no gate call has

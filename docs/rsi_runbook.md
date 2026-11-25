@@ -55,3 +55,19 @@ from the tasks file, editable files and refused modules from the adapter's guard
 failure classes) and followed by the family's hand-written notes (`rules_notes/<benchmark>.md`, the family file's `rules` key);
 the scene line's appendix is `rules_scene.md`. Print one: `python scripts/rsi/rules_build.py <family> <role>`.
 A new rule goes into the core (every family) or into one notes file (one benchmark); the driver cites rules by id.
+
+## (f) The gate beside the next iteration (TODO 54 phase 4, cap `overlap`, on for the benchmark families)
+A candidate sent to the check half and the gate no longer holds up the loop: the next iteration starts at once against the same
+incumbent (Reviewer, program assignment, Engineers, screens) and meets the result between two role calls (`scripts/rsi/overlap.py`).
+At most one call is in flight. The ledger shows it: `overlap` rows (`sent`, `settled` with `call_s`, `waited_s`, `beside_s`,
+`abandoned`, `timeout`, `seed_rounds`, `orphan_removed`), and on an accept `rebase` (`kind` iteration or draft), `drop` (`kind`
+hypothesis or draft; `reason` stale, conflict, absorbed) and `rescreen` rows; the `check` and `gate` rows carry the iteration of the
+candidate they judge and `overlapped: true`. `hit_rate.json` has an `overlap` block.
+- The call reads a private copy of the hidden tree (`$TMPDIR/.rsi_private_<random>`, or `RSI_PRIVATE_ROOT`), made while no role runs and
+  removed once the driver has copied the call's new files back; its verdict files, log and ledger rows wait until then. A crashed driver
+  leaves the copy; the next `loop.py run` removes it (`overlap orphan_removed`) and the unjudged candidate is simply not judged.
+- Draft screens use one simulator process while a call runs (`state.procs_low`); the gate and the check half keep the rest.
+- A stop (rule, `--max-iters`, wall clock, a gate-call budget one call from used up) waits for the call in flight, records it, then runs the
+  wrap-up and the sealed set. A hung call is killed after `RSI_OVERLAP_WAIT_H` hours (default 8) and ends the run as a gate error.
+- `overlap: false` in the family's `caps` (or a scene family, K = 1 Engineer) gives the old sequential flow. The seed incumbent's rounds on
+  the acceptance pool start with the run at low priority and are copied in before the first call (`seed_rounds` row).

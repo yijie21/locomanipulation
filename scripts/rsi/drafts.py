@@ -244,7 +244,7 @@ def early_diag(k: int, w: Path, eng: dict, inc: dict, it_dir: Path) -> None:
             return
         labels, _ = draft_run(eng, inc)  # change 4: the draft's tasks and a few sentinels, or the whole pool
         B.run_jobs([B.Job(cand / "skills", S.LOOP / "diag" / f"candidate_{h}", overrides(cand), labels, True)], S.FAMILY,
-                   S.LOOP / "pool_diag", S.PROCS, it_dir / f"diag_{k}.log", S.GPUS)  # fmt: skip
+                   S.LOOP / "pool_diag", S.procs_low(), it_dir / f"diag_{k}.log", S.GPUS)  # fmt: skip
     except Exception as e:  # noqa: BLE001 -- the main step repeats the run
         print(f"early diag of draft {k}: {type(e).__name__}: {e}", flush=True)
 
@@ -362,7 +362,7 @@ def tune_draft(k: int, w: Path, eng: dict, inc: dict, it_dir: Path) -> dict:
         dirs = [it_dir / f"tune_{k}" / f"{ki}_{i}" for i in range(len(it["values"]))]
         try:
             B.run_jobs([B.Job(cand / "skills", d, {**cur_set, it["key"]: v}, tuple(sub))
-                        for d, v in zip(dirs, it["values"])], S.FAMILY, S.LOOP / "pool_diag", S.PROCS,
+                        for d, v in zip(dirs, it["values"])], S.FAMILY, S.LOOP / "pool_diag", S.procs_low(),
                        it_dir / f"tune_{k}.log", S.GPUS)  # fmt: skip
         except Exception as e:  # noqa: BLE001
             table.append(dict(key=it["key"], error=f"{type(e).__name__}: {e}"[:200]))
@@ -485,6 +485,9 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     wait_drafts(threads, stops, sessions=sess_end)
     stray = CS.revert_strays(base_changes)
     CS.put_skills(Path(inc["dir"]) / "skills")
+    draft_labels_of: dict[
+        int, tuple | None
+    ] = {}  # draft number -> the starts its screen ran on (a rebase runs them again)
     cands, jobs, first, leaked = [], [], {}, {}  # first: candidate hash -> the draft kept (identical drafts run once)
     for k, hid, w, _, _ in calls:
         res = out.get(k)
@@ -507,6 +510,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         void = bool(leaks) or bool(stray) or h == inc["hash"] or bool(named)
         dup = first.get(h) if not void else None  # TODO 36 (review 2026-10-22, L5): the first of identical drafts stays
         labels, ran = draft_run(eng, inc)  # change 4: where the draft's diagnostic rounds ran
+        draft_labels_of[k] = labels
         LG.ledger(dict(step="engineer", iter=n, candidate=k, hypothesis=hid, changed=sorted(set(PATCHED.findall(patch))),
                     stray=stray, mechanism=eng["mechanism"], set=eng["set"], scope=eng.get("scope"), void=void, leaks=leaks,
                     ran=ran, **({"tuned": eng["tuned"], "tunable_sweep": eng["tunable_sweep"],
@@ -533,7 +537,16 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
             AU.void_iteration(n, "engineers", sorted({x for v in leaked.values() for x in v}))
         return None
     if not stub:
-        B.run_jobs(jobs, S.FAMILY, S.LOOP / "pool_diag", S.PROCS, it_dir / "prober.log", S.GPUS)
+        B.run_jobs(jobs, S.FAMILY, S.LOOP / "pool_diag", S.procs_low(), it_dir / "prober.log", S.GPUS)
+    if (
+        S.OVERLAP is not None
+    ):  # [overlap]: the call in flight is waited for; an accept rebases the drafts onto its candidate
+        why, inc, src, ref, cands = S.OVERLAP.join(n, it_dir, inc, src, ref, cands, draft_labels_of, stub)
+        if why:
+            return why
+        if not cands:
+            LG.ledger(dict(step="compose", iter=n, decision="none", reason="every draft was dropped by the rebase"))
+            return None
     base = S.LOOP / "diag" / f"incumbent_{inc['hash']}"
     seg_table = SG.segment_table(B.outcomes(base).values())  # TODO 48.17.6 ([segments])
     for c in cands:
@@ -645,4 +658,4 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     if named:
         CS.named_void(n, named, "the composed candidate")
         return None
-    return CS.gate_candidate(n, it_dir, cand, stub)
+    return CS.send(n, it_dir, cand, stub)

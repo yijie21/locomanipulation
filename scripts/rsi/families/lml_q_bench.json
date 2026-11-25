@@ -112,6 +112,7 @@
    "scripts/rsi/roles.py",
    "scripts/rsi/drafts.py",
    "scripts/rsi/cascade.py",
+   "scripts/rsi/overlap.py",
    "scripts/rsi/stop.py",
    "scripts/rsi/plugin.py"
   ],
@@ -173,6 +174,7 @@
    "scripts/rsi/roles.py",
    "scripts/rsi/drafts.py",
    "scripts/rsi/cascade.py",
+   "scripts/rsi/overlap.py",
    "scripts/rsi/stop.py",
    "scripts/rsi/plugin.py"
   ]

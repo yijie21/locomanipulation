@@ -24,17 +24,47 @@ import state as S  # noqa: E402
 import verdict as V  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
 
+
+class View:
+    """overlap.py: what a gate or check half running beside the roles sees instead of the hidden tree -- `root`, a private
+    copy of what it reads and writes --, where its verdict files wait (`stash`), the work to do once the driver settles it
+    (`post`) and its gate process (`proc`, to kill on an abort). Thread-local: the driver's own thread has none."""
+
+    def __init__(self, root: Path, stash: Path):
+        self.root, self.stash, self.post, self.proc = root, stash, None, None
+
+
+_VIEW = threading.local()
+
+
+def hidden() -> Path:
+    """The hidden tree this thread reads: the private copy of an overlapped gate / check half, else S.HIDDEN."""
+    v = getattr(_VIEW, "v", None)
+    return v.root if v else S.HIDDEN
+
+
+def gate_dir() -> Path:
+    return hidden() / "gate"
+
+
+def out_file(it_dir: Path, name: str) -> Path:
+    """Where this call's verdict file `name` goes: the iteration directory, or -- overlapped -- the stash, which the
+    driver copies there when it settles the call (a role of the next iteration must not read it before)."""
+    v = getattr(_VIEW, "v", None)
+    return (v.stash if v else it_dir) / name
+
+
 POOL_KEEP = 2  # TODO 33.8 (D7, user 2026-10-22): rejected candidates kept for the Manager's `base` and the Composer
 
 
 def accept_pool() -> Path:
     """The acceptance pool the gate judges on: the family's, or (scene line) the one `redraw_accept` drew for the parks."""
-    return S.H.accept_pool() or S.HIDDEN / "pool_accept"
+    return S.H.accept_pool() or hidden() / "pool_accept"
 
 
 def incumbent() -> dict:
     """The gate's incumbent copied into the loop's tree (roles must not open the gate's files)."""
-    inc = LG.jload(S.GATE_DIR / "incumbent.json")
+    inc = LG.jload(gate_dir() / "incumbent.json")
     src = Path(inc["dir"]) if inc else None
     if src is None:  # before the first gate call: the sandbox's own skills
         src = S.STATE / "seed_candidate"
@@ -53,19 +83,19 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
     side = S.LOOP / "diag" / f"candidate_{inc['hash']}"
     if not d.exists() and side.exists():
         side.rename(d)
-    B.run_jobs([B.Job(Path(inc["dir"]) / "skills", d, inc["set"], None, True)], S.FAMILY, S.LOOP / "pool_diag", S.PROCS,
+    B.run_jobs([B.Job(Path(inc["dir"]) / "skills", d, inc["set"], None, True)], S.FAMILY, S.LOOP / "pool_diag", S.procs_low(),
                it_dir / "prober.log", S.GPUS)  # fmt: skip
     return d
 
 
 def check_pool() -> Path:
     """check_half: the diagnostic starts the roles do not see ([check-half]), in the hidden tree."""
-    return S.HIDDEN / "pool_check"
+    return hidden() / "pool_check"
 
 
 def check_rounds(kind: str, h: str) -> Path:
     """check_half: rounds on the check pool, `incumbent_<hash>` or `candidate_<hash>` as under LOOP/diag."""
-    return S.HIDDEN / "check" / f"{kind}_{h}"
+    return hidden() / "check" / f"{kind}_{h}"
 
 
 def check_labels_of(labels: list[str]) -> list[str]:
@@ -118,6 +148,7 @@ def check_candidate(n: int, it_dir: Path, cand: Path) -> dict:
     """check_half: the candidate and the incumbent on the check pool, start by start. The incumbent's rounds run once
     per incumbent (an accepted candidate's are taken over); the per-start lists stay in the hidden tree, the ledger
     row and the iteration directory get counts only."""
+    t_start = time.time()
     inc = incumbent()
     base = check_rounds("incumbent", inc["hash"])
     side = check_rounds("candidate", inc["hash"])
@@ -125,7 +156,7 @@ def check_candidate(n: int, it_dir: Path, cand: Path) -> dict:
         side.rename(base)
     h = candidate_hash(cand)
     d = check_rounds("candidate", h)
-    log = S.HIDDEN / "check" / "run.log"
+    log = hidden() / "check" / "run.log"
     B.run_jobs([B.Job(Path(inc["dir"]) / "skills", base, inc["set"], None, True),
                 B.Job(cand / "skills", d, overrides(cand), None, True)], S.FAMILY, check_pool(), S.PROCS, log, S.GPUS)  # fmt: skip
     f = flips(base, d)
@@ -137,8 +168,9 @@ def check_candidate(n: int, it_dir: Path, cand: Path) -> dict:
     )
     out = dict(n=f["n"], fixed=len(f["fixed"]), broken=len(f["broken"]), net=len(f["fixed"]) - len(f["broken"]),
                ok=f["ok"], incumbent_ok=f["incumbent_ok"], sent=v["decision"], reasons=v["reasons"],
-               task_regress={t_: x["net"] for t_, x in v["per_task"].items() if x["regress"]})  # fmt: skip
-    with (S.HIDDEN / "check" / "calls.jsonl").open("a") as fh:
+               task_regress={t_: x["net"] for t_, x in v["per_task"].items() if x["regress"]},
+               seconds=round(time.time() - t_start))  # fmt: skip
+    with (hidden() / "check" / "calls.jsonl").open("a") as fh:
         fh.write(
             json.dumps(dict(out, t=LG.now(), iter=n, hash=h, fixed_starts=f["fixed"], broken_starts=f["broken"])) + "\n"
         )
@@ -286,7 +318,7 @@ def after_engineer(
         return None
     if reopen and not S.H.reopen_test(n, it_dir, cand, reopen):
         return None
-    return gate_candidate(n, it_dir, cand, stub, reopen=(reopen, S.H.reopen_won(it_dir, reopen)) if reopen else None)
+    return send(n, it_dir, cand, stub, reopen=(reopen, S.H.reopen_won(it_dir, reopen)) if reopen else None)
 
 
 def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple | None = None) -> str | None:
@@ -301,25 +333,29 @@ def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple |
     if S.cap("check_half") and not stub and check_pool().exists():
         chk = check_candidate(n, it_dir, cand)
         sent = chk["sent"]  # verdict.decide, kind "check": net >= check_min_net and no task's loss significant
-        LG.jdump(it_dir / "check.json", chk)
+        LG.jdump(out_file(it_dir, "check.json"), chk)
         LG.ledger(dict(step="check", iter=n, hash=candidate_hash(cand), **chk))
         if not sent:
             print(f"iteration {n}: the candidate wins {chk['fixed']} and loses {chk['broken']} of the {chk['n']} hidden "
                   f"diagnostic starts ({'; '.join(chk['reasons'])}): not sent to the gate")  # fmt: skip
             return None
     S.H.redraw_accept()
-    before = len(LG.gate_lines())
+    t_gate = time.time()
+    before = len(LG.gate_lines(gate_dir()))
     pool = accept_pool()
     dry = stub and not (
         BK.of(S.FAMILY) and os.environ.get("RSI_STUB_REAL_GATE") == "1"
     )  # a fake bed can run the real gate
-    gate_dir, env = S.GATE_DIR, dict(os.environ, PYTHONPATH="src")
-    gate_args = [str(S.SIM_PY), str(S.HERE / "gate.py"), S.FAMILY, "--gate", str(gate_dir), "--pool", str(pool),
+    gate_d, env = gate_dir(), dict(os.environ, PYTHONPATH="src")
+    gate_args = [str(S.SIM_PY), str(S.HERE / "gate.py"), S.FAMILY, "--gate", str(gate_d), "--pool", str(pool),
                  "--candidate", str(cand), "--gpus", S.GPUS]  # fmt: skip
     if dry:
         gate_args += ["--dry-run"]
     share = max(1, S.PROCS * 5 // 12)
     gate_args += ["--procs", str(S.PROCS - share if not stub else S.PROCS)]
+    view = getattr(_VIEW, "v", None)
+    if view is not None:  # overlapped: the gate reads and writes the private copy, whose seeds and practice it names
+        env["RSI_HIDDEN_FAMILY"] = str(view.root)
     stop, side = threading.Event(), None
     pre = S.LOOP / "diag" / f"candidate_{candidate_hash(cand)}"
 
@@ -336,11 +372,13 @@ def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple |
     if not first:
         start_side()
     t0, proc = time.time(), None
-    with (it_dir / "gate.log").open("w") as glog:
+    with out_file(it_dir, "gate.log").open("w") as glog:
         try:
             proc = subprocess.Popen(gate_args, cwd=S.REPO, stdout=glog, stderr=subprocess.STDOUT, text=True, env=env)
+            if view is not None:
+                view.proc = proc
             if first:
-                while proc.poll() is None and not stage1_passed(gate_dir, candidate_hash(cand), t0):
+                while proc.poll() is None and not stage1_passed(gate_d, candidate_hash(cand), t0):
                     time.sleep(5.0)
                 if proc.poll() is None:  # stage 1 passed and the gate runs on
                     start_side()
@@ -351,7 +389,7 @@ def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple |
                 proc.kill()
                 proc.wait()
             raise
-    new = LG.gate_lines()[before:]
+    new = LG.gate_lines(gate_d)[before:]
     try:
         verdict = json.loads(new[-1]) if new else None
     except ValueError:
@@ -363,22 +401,39 @@ def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple |
         LG.ledger(dict(step="gate_error", iter=n, rc=rc, log=str(it_dir / "gate.log"),
                     new_lines=len(new)))  # fmt: skip
         return f"gate error at iteration {n} (see gate.log)"
-    LG.jdump(it_dir / "gate.json", verdict)
+    LG.jdump(out_file(it_dir, "gate.json"), verdict)
     void = bool(dry or verdict.get("void"))  # a void verdict (incomplete pairing) is no rejection and no gate call
     accepted = bool(verdict["accepted"]) and not void
     if side is not None:
         if not accepted:
             stop.set()
         side.join()
-    rounds = S.GATE_DIR / f"{verdict.get('call', 0):02d}_{verdict['hash']}" / "candidate"
+    rounds = gate_d / f"{verdict.get('call', 0):02d}_{verdict['hash']}" / "candidate"
     LG.ledger(dict(step="gate", iter=n, accepted=accepted, reason=verdict["reason"], hash=verdict["hash"],
                 result=verdict.get("result"), stage1=verdict.get("stage1"), unparked=S.H.unparked_view(rounds),
-                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1)))  # fmt: skip
-    if not stub:
-        pool_update(n, cand, verdict, accepted)
-    if reopen:
-        S.H.settle_reopen(n, reopen[0], reopen[1], accepted)
+                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1),
+                seconds=round(time.time() - t_gate)))  # fmt: skip
+
+    def after() -> None:  # in the driver's thread: the pool lives in the loop's visible tree
+        if not stub:
+            pool_update(n, cand, verdict, accepted)
+        if reopen:
+            S.H.settle_reopen(n, reopen[0], reopen[1], accepted)
+
+    if view is not None:
+        view.post = after
+    else:
+        after()
     return None
+
+
+def send(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple | None = None) -> str | None:
+    """The candidate to the check half and the gate: in this thread, or -- when the run overlaps them with the next
+    iteration (caps overlap, overlap.py) -- in the background, the result written when the driver settles it."""
+    ov = S.OVERLAP
+    if ov is not None and reopen is None and ov.on(stub):
+        return ov.send(n, it_dir, cand, stub)
+    return gate_candidate(n, it_dir, cand, stub, reopen=reopen)
 
 
 def revert_strays(base_changes: list) -> list[str]:

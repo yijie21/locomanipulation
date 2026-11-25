@@ -18,6 +18,8 @@ import backend as BK  # noqa: E402
 import ledger as LG  # noqa: E402
 import state as S  # noqa: E402
 
+PRIVATE_PREFIX = ".rsi_private_"  # overlap.py: the random dot directory of a gate's private copy of the hidden tree
+
 
 def role_tmp() -> Path:
     return S.SCRATCH_ROOT / f"rsi_scene_{S.REPO.name}"
@@ -130,6 +132,7 @@ BARE_END = (
 
 def leak_patterns() -> dict[str, str]:
     pats = {"gate": re.escape(S.HIDDEN.parent.name)}
+    pats["private"] = re.escape(PRIVATE_PREFIX)  # a gate running beside the roles reads a copy of the hidden tree there
     pats["kit"] = r"rsi_kit|scene_rsi_20261016/kit/"  # kit.py: every family's pools and outcomes (2026-10-20)
     if S.ORIGIN != S.REPO:
         # the origin checkout, except what the sandbox links into it: third_party, the scene's linked entries, and the

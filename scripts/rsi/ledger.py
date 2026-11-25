@@ -6,6 +6,7 @@ import collections
 import json
 import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -30,10 +31,28 @@ def jdump(p: Path, obj) -> None:
     p.write_text(json.dumps(obj, indent=1, ensure_ascii=False, default=str))
 
 
+_SINK = (
+    threading.local()
+)  # overlap.py: a background gate / check half collects its rows here until the driver settles it
+_LOCK = threading.Lock()
+
+
 def ledger(entry: dict) -> None:
+    """Append a row. In a thread with a sink (an overlapped gate or check half) the row waits there, `t` set now, and the
+    driver writes it (`write_rows`) when it settles that call, so no later role reads a verdict before the driver wrote it."""
+    row = {"t": now(), **entry}
+    sink = getattr(_SINK, "rows", None)
+    if sink is not None:
+        sink.append(row)
+        return
+    write_rows([row])
+
+
+def write_rows(rows: list[dict]) -> None:
     S.STATE.mkdir(parents=True, exist_ok=True)
-    with (S.STATE / "ledger.jsonl").open("a") as fh:
-        fh.write(json.dumps({"t": now(), **entry}, ensure_ascii=False, default=str) + "\n")
+    with _LOCK, (S.STATE / "ledger.jsonl").open("a") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
 
 
 def entries() -> list[dict]:
@@ -119,6 +138,7 @@ def context(inc: dict, extra: dict, compact: bool = True) -> dict:
             stop_rate=S.STOP_RATE,
             **wall,
         ),  # fmt: skip
+        pending=S.OVERLAP.note() if S.OVERLAP is not None else None,  # [overlap]: no verdict, only that one is pending
         history=compact_history(es) if compact else [{k: v for k, v in e.items() if k != "usage"} for e in es],
         mechanisms=mechanism_table(es),
         # TODO 33.8: rejections under the present gate rule; one an older rule rejected may be judged again
@@ -137,8 +157,8 @@ def context(inc: dict, extra: dict, compact: bool = True) -> dict:
     )
 
 
-def gate_lines() -> list[str]:
-    p = S.GATE_DIR / "ledger.jsonl"
+def gate_lines(gate_dir: Path | None = None) -> list[str]:
+    p = (gate_dir or S.GATE_DIR) / "ledger.jsonl"
     return p.read_text().splitlines() if p.exists() else []
 
 

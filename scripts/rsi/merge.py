@@ -64,13 +64,20 @@ def merge_sets(base: dict, current: dict, new: dict, touched: dict) -> list[str]
     return []
 
 
-def merge_drafts(base: Path, base_set: dict, drafts: list[tuple[int, Path, dict]], out: Path) -> dict:
+def merge_drafts(base: Path, base_set: dict, drafts: list[tuple[int, Path, dict]], out: Path,
+                 onto: Path | None = None, onto_set: dict | None = None) -> dict:  # fmt: skip
     """`drafts`: [(number, skills dir, set)] best first. Writes the merged package to `out` (a skills directory, made
-    from `base`) and returns {merged: [numbers], conflicts: {number: [why]}, set: merged set}."""
+    from `base`) and returns {merged: [numbers], conflicts: {number: [why]}, set: merged set}.
+    `onto` / `onto_set` (TODO 54 phase 4, rebase on accept): start from another package instead -- the new incumbent --
+    while the drafts are still changes against `base`, the old one; what `onto` changed against `base` counts as touched,
+    so a draft that edits the same lines or sets a key to another value is a conflict."""
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(base, out, ignore=IGNORE)
-    cur_set, touched = dict(base_set), {}
+    shutil.copytree(onto if onto is not None else base, out, ignore=IGNORE)
+    cur_set, touched = dict(base_set if onto is None else onto_set or {}), {}
+    if onto is not None:
+        d0 = set_delta(base_set, cur_set)
+        touched = {**d0["changed"], **{k: None for k in d0["gone"]}}
     merged: list[int] = []
     conflicts: dict[int, list[str]] = {}
     for k, d, dset in drafts:

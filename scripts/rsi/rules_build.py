@@ -28,8 +28,8 @@ ROLES = ("reviewer", "engineer", "composer", "manager", "reflector")
 # The core rules each role acts on (ids of rules_core.md). A rule appears where the role works, once.
 ROLE_CORE = {
     "reviewer": "frozen hidden win branch levels escalate envelope evidence noise pool regress layer try classes segments "
-    "mechanisms check-half",
-    "engineer": "frozen hidden candidate guard bed-fixed win branch levels escalate envelope noise pool regress try scope tunable",
+    "mechanisms check-half overlap",
+    "engineer": "frozen hidden candidate guard bed-fixed win branch levels escalate envelope noise pool regress try scope tunable overlap",
     "composer": "frozen hidden win levels noise pool regress gate check-half scope segments mechanisms",
     "manager": "hidden void levels escalate noise pool gate check-half stop sealed mechanisms scope tunable library",
     "reflector": "win noise regress levels",

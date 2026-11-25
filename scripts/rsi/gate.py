@@ -238,11 +238,7 @@ def main(argv=None) -> int:
     history = [json.loads(x) for x in ledger.read_text().splitlines()] if ledger.exists() else []
     caps = BK.caps(a.family)  # a scene family: today's values (backend.SCENE_CAPS)
     inc_state = gate / "incumbent.json"
-    if not inc_state.exists():  # the seed: the repository's skills, no overrides
-        seed = gate / "incumbent_seed"
-        snapshot(_seed_dir(gate, BK.layout(a.family)["skills"]), seed)
-        inc_state.write_text(json.dumps(dict(dir=str(seed), rounds=str(gate / "incumbent_seed_rounds"), since=0)))
-    inc = json.loads(inc_state.read_text())
+    inc = init_incumbent(gate, a.family)
     labels = B.pool_labels(a.pool)
     h = candidate_hash(a.candidate)
     verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE, alpha_task=caps.get("alpha_task"),
@@ -333,6 +329,18 @@ def main(argv=None) -> int:
         json.dumps(dict(dir=str(work / "cand"), rounds=str(work / "candidate"), since=verdict["call"]))
     )
     return finish(True, "accepted", stage1=t1, result=dict(t, task_tests=v["per_task"]))
+
+
+def init_incumbent(gate: Path, family: str) -> dict:
+    """The gate's incumbent record (`incumbent.json`); the first call makes it: the seed, the repository's skills with no
+    overrides. overlap.py calls it at the start of a run to run the seed's rounds on the acceptance pool in advance."""
+    gate.mkdir(parents=True, exist_ok=True)
+    inc_state = gate / "incumbent.json"
+    if not inc_state.exists():
+        seed = gate / "incumbent_seed"
+        snapshot(_seed_dir(gate, BK.layout(family)["skills"]), seed)
+        inc_state.write_text(json.dumps(dict(dir=str(seed), rounds=str(gate / "incumbent_seed_rounds"), since=0)))
+    return json.loads(inc_state.read_text())
 
 
 def _seed_dir(gate: Path, skills: Path = SEED_SKILLS) -> Path:

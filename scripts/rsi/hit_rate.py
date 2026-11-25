@@ -129,6 +129,26 @@ def compute(loop_dir: Path) -> dict:
         per_iter[r.get("iter")]["gate"] += 1
         per_iter[r.get("iter")]["accepted"] += bool(r.get("accepted"))
 
+    ov = collections.Counter()  # TODO 54 phase 4: the gate and the check half beside the next iteration (overlap.py)
+    for r in rows:
+        if r.get("step") == "overlap" and r.get("kind") == "settled":
+            ov["calls"] += 1
+            ov["call_s"] += int(r.get("call_s") or 0)
+            ov["waited_s"] += int(r.get("waited_s") or 0)
+            ov["beside_s"] += int(r.get("beside_s") or 0)
+            ov["accepted"] += bool(r.get("accepted"))
+        elif r.get("step") == "overlap" and r.get("kind") == "abandoned":
+            ov["abandoned"] += 1
+        elif r.get("step") == "rebase" and r.get("kind") == "draft":
+            ov["rebased_drafts"] += 1
+        elif r.get("step") == "drop":
+            ov[f"dropped_{r.get('kind')}s"] += 1
+            ov[f"dropped_{r.get('reason')}"] += r.get("kind") == "draft"
+        elif r.get("step") == "rescreen":
+            ov["rescreens"] += 1
+        if r.get("step") in ("rebase", "drop", "rescreen") and isinstance(r.get("iter"), int):
+            per_iter[r["iter"]][r["step"]] += 1
+
     def rate(a: int, b: int) -> float | None:
         return round(a / b, 3) if b else None
 
@@ -139,6 +159,7 @@ def compute(loop_dir: Path) -> dict:
         composer=dict(decisions=dict(comp)),
         check=dict(chk, pass_rate=rate(chk["sent"], chk["n"])),
         gate=dict(gate, accept_rate=rate(gate["accepted"], gate["calls"])),
+        overlap=dict(ov, rebased_drafts=ov["rebased_drafts"], beside_share=rate(ov["beside_s"], ov["call_s"])),
         per_iter={str(k): dict(v) for k, v in sorted(per_iter.items(), key=lambda kv: (kv[0] is None, kv[0] or 0))},
     )  # fmt: skip
 
@@ -150,7 +171,9 @@ def line(d: dict) -> str:
             f"drafts with the program's tuned ones (visible better {e.get('visible_better', 0)}, broke a start "
             f"{e.get('visible_broke_any', 0)}); "
             f"check {c.get('sent', 0)}/{c.get('n', 0)} sent on; gate {g.get('accepted', 0)}/{g.get('calls', 0)} accepted "
-            f"({g.get('rejected_net_negative', 0)} rejected below the incumbent)")  # fmt: skip
+            f"({g.get('rejected_net_negative', 0)} rejected below the incumbent)"
+            + (f"; overlap {d['overlap']['calls']} calls, {d['overlap']['beside_s']} of {d['overlap']['call_s']} s beside "
+               f"the next iteration, {d['overlap']['rebased_drafts']} drafts rebased" if d.get("overlap", {}).get("calls") else ""))  # fmt: skip
 
 
 def main(argv: list[str]) -> int:

@@ -40,6 +40,7 @@ import audit as AU  # noqa: E402
 import cascade as CS  # noqa: E402
 import drafts as DR  # noqa: E402
 import ledger as LG  # noqa: E402
+import overlap as OV  # noqa: E402
 import roles as RL  # noqa: E402
 import state as S  # noqa: E402
 import stop as ST  # noqa: E402
@@ -72,6 +73,13 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     if leaks:
         AU.void_iteration(n, "reviewer", leaks)
         return None
+    if (
+        S.OVERLAP is not None
+    ):  # [overlap]: the call in flight is settled if it has finished; an accept moves this iteration on
+        why, inc, base, hyps, c2, e2 = S.OVERLAP.after_review(n, it_dir, inc, base, hyps, cards, attribution, stub)
+        if why:
+            return why
+        common, extra = (c2, e2) if c2 is not None else (common, extra)
     step = (
         program_step if S.cap("manager", "llm") == "program" else S.H.after_review
     )  # the scene line keeps the Manager
@@ -181,6 +189,7 @@ def cmd_run(a) -> int:
     efforts = parse_effort(getattr(a, "effort", None) or [])
     AU.unlock_hidden()
     AU.unlock_rounds()
+    OV.cleanup_orphans()  # a private copy of the hidden tree a dead driver left
 
     def on_term(*_):
         raise Terminated()
@@ -203,6 +212,9 @@ def cmd_run(a) -> int:
     finally:
         if old is not None:
             signal.signal(signal.SIGTERM, old)
+        if S.OVERLAP is not None:
+            S.OVERLAP.abort()
+            S.OVERLAP = None
         AU.unlock_hidden()
 
 
@@ -234,11 +246,17 @@ def _run(a, efforts: dict) -> int:
     iters = a.max_iters
     S.STOP_AFTER = getattr(a, "stop_after", None)
     S.EFFORT.update(efforts)
+    S.OVERLAP = OV.make(meta, a.stub) if getattr(a, "engineer_from", None) is None and a.reprobe is None else None
+    if S.OVERLAP is not None:
+        S.OVERLAP.start_warmup()  # the seed incumbent's gate rounds, at low priority, before the first role call
 
     def finish(why: str, sealed: bool = True) -> int:
         """The one wrap-up of every way a run ends (--max-iters, the wall clock, a stop rule, a failed role, a gate
         error): the stop row, the hit rates, and the sealed set when the family's caps ask for it (TODO 54, review
         verify.md 1: --max-iters used to return without it, so no run's final incumbent was ever confirmed)."""
+        if S.OVERLAP is not None:  # a stop waits for the call in flight, records it, then the wrap-up runs
+            late = S.OVERLAP.drain()
+            why = late if late and not ST.is_abnormal(why) else why
         LG.ledger(dict(step="stop", reason=why))
         print("stop:", why)
         ST.write_hit_rate()
@@ -261,7 +279,7 @@ def _run(a, efforts: dict) -> int:
             return finish(why, sealed=False)
         iters -= 1
     for _ in range(iters):
-        why = ST.stop_reason(meta)
+        why = S.OVERLAP.stop_probe() if S.OVERLAP is not None else ST.stop_reason(meta)
         if why is None:
             try:
                 why = iterate(n, meta, a.stub)

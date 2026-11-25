@@ -20,6 +20,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 CALLS: list = []
+JOBS: list = []  # (where, procs, [out dir names]) per run_jobs call: what ran in which order, with how many processes
+RAN: list = []  # (out dir name, label) for every round actually run (not found done)
+BEFORE_JOB = (
+    None  # tests/test_rsi_overlap.py: called as BEFORE_JOB(where, jobs, procs) at the start of run_jobs (may block)
+)
+SLOTS = None  # a threading.Semaphore: a round holds a simulator slot while it runs
 BASE_RATE = 35
 RULE = 2  # batch.SUCCESS_RULE
 CAPS = {
@@ -27,7 +33,7 @@ CAPS = {
     "p_max": 0.05, "sentinel_flips": 1, "probe_scope": True, "sweep_rounds": 300, "check_half": True,
     "check_min_net": 2, "stage1_first": True, "role_rerun": False, "sealed_at_stop": True, "alpha_task": 0.05,
     "alpha_task_check": 0.10, "manager": "program", "prober": False, "compose": "program", "measure_claims": False,
-    "stop_no_progress": 2,
+    "stop_no_progress": 2, "overlap": False,
 }  # fmt: skip
 
 
@@ -71,13 +77,23 @@ def draw(fam, pool, out, n=None, tasks=None):
 
 def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where="probe"):
     labels_all = sorted(p.stem for p in Path(pool).glob("*.json") if not p.name.startswith("_"))
+    JOBS.append((where, procs, [j.out.name for j in jobs]))
+    if BEFORE_JOB is not None:
+        BEFORE_JOB(where, jobs, procs)
     for j in jobs:
         j.out.mkdir(parents=True, exist_ok=True)
         for x in j.labels or labels_all:
             f = j.out / f"{x}.json"
             if f.exists():
                 continue
-            ok = outcome(j.skills, j.overrides, x)
+            if SLOTS is not None:
+                SLOTS.acquire()
+            try:
+                ok = outcome(j.skills, j.overrides, x)
+            finally:
+                if SLOTS is not None:
+                    SLOTS.release()
+            RAN.append((j.out.name, x))
             if os.environ.get("E2E_DRIFT") == "1" and j.out.name == "sentinel":
                 ok = not ok  # the environment moved: the incumbent's own rounds no longer reproduce
             rec = dict(label=x, task=task_of(x), ok=ok, why="" if ok else "[goal] not done", fell=False, dropped=False,

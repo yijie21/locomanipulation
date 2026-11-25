@@ -1,7 +1,7 @@
 """Load the RSI loop (scripts/rsi/loop.py and the modules it is split into) fresh, for a test.
 
 The loop used to be one module that tests patched as `lp.NAME`. It is now `state` (the run's paths, caps and limits),
-`ledger`, `audit`, `roles`, `drafts`, `cascade`, `stop`, `plugin` and `loop`, plus the scene plug-in's `loop_scene` for a
+`ledger`, `audit`, `roles`, `drafts`, `cascade`, `overlap`, `stop`, `plugin` and `loop`, plus the scene plug-in's `loop_scene` for a
 family without a backend. `LoopNS` is the old `lp`: a name read from it comes from the module that defines it, a name set
 on it (monkeypatch.setattr, mock.patch.object) is set there, so a test that patches `lp.transcript` or `lp.STATE` still
 patches what the other modules call.
@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
 SCENE = HERE / "scene"
-CORE = ("state", "ledger", "audit", "roles", "drafts", "cascade", "stop", "plugin", "loop")
+CORE = ("state", "ledger", "audit", "roles", "drafts", "cascade", "overlap", "stop", "plugin", "loop")
 # every module of the scene plug-in a loop test may load (they import the core by name too)
 SCENE_MODULES = tuple(sorted(p.stem for p in SCENE.glob("*.py"))) if SCENE.is_dir() else ()
 CLASH = (
@@ -36,7 +36,7 @@ CLASH = (
     "hit_rate",
     "sandbox",
 )
-OWNERS = ("state", "cascade", "drafts", "roles", "audit", "ledger", "stop", "loop")
+OWNERS = ("state", "cascade", "overlap", "drafts", "roles", "audit", "ledger", "stop", "loop")
 MODULE_ALIASES = {"S", "LG", "AU", "RL", "DR", "CS", "ST", "SC", "BK", "B", "V", "MG", "RB", "SG"}
 
 

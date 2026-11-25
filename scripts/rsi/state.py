@@ -97,6 +97,7 @@ ISOLATION = (
     "2026-10-20): no other checkout of this project, nothing under ~/.claude, no path through third_party/.. "
     "A role call that does is void.\n"
 )
+OVERLAP = None  # overlap.Overlap while a run overlaps the gate with the next iteration (loop._run), else None
 H = plugin.NULL  # the plug-in hooks (plugin.py): the scene line's part of the loop, or no-ops for a benchmark family
 FAMILY = ""
 LOOP = HIDDEN = STATE = GATE_DIR = Path()
@@ -158,6 +159,12 @@ def family_spec() -> dict:
 SCENE_NOTE = (
     "in a simulated apartment"  # the prompts' opening line; a family on another scene sets `scene_note` (TODO 38.10)
 )
+
+
+def procs_low() -> int:
+    """Simulator processes for work that must not hold up the gate (draft screens, re-screens, the seed's warm-up): one
+    while an overlapped gate or check half runs, all of PROCS otherwise ([overlap])."""
+    return 1 if S.OVERLAP is not None and S.OVERLAP.busy() else S.PROCS
 
 
 def cap(key: str, default=False):

@@ -47,6 +47,7 @@ SCENE_CAPS = {
     "prober": True,  # True: the Prober phase and the Manager's `tune`; False: only the Engineers' `tunable` keys, swept by the program
     "compose": "llm",  # "llm": the Composer always merges; "program": a 3-way merge by the program, the Composer only on a conflict
     "stop_no_progress": 0,  # N > 0: this many iterations in a row without a candidate that passes the check half end the run
+    "overlap": False,  # True: the gate and the check half run beside the next iteration's roles (overlap.py; benchmark families)
     "sealed_at_stop": False,  # True: a run that stops by a stop rule runs sealed.py once (loop.run_sealed)
 }
 

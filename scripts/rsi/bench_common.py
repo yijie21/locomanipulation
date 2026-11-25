@@ -53,6 +53,7 @@ DEFAULT_CAPS = {
     "measure_claims": False,
     "compose": "program",
     "stop_no_progress": 2,
+    "overlap": True,  # TODO 54 phase 4: the gate and the check half run beside the next iteration (overlap.py)
 }
 
 
@@ -86,8 +87,10 @@ def bed_fixed(fam: dict) -> dict:
 
 # ------------------------------------------------------------------------------------------------ the family file
 def hidden_family_dir(name: str) -> Path:
-    """The family's hidden directory (seeds.json, practice/)."""
-    return REPO / HIDDEN / name
+    """The family's hidden directory (seeds.json, practice/). RSI_HIDDEN_FAMILY names a private copy of the two (overlap.py:
+    a gate or check half that runs while the hidden tree is locked for the roles reads that copy)."""
+    private = os.environ.get("RSI_HIDDEN_FAMILY")
+    return Path(private) if private else REPO / HIDDEN / name
 
 
 def hidden_seeds(name: str) -> dict:
