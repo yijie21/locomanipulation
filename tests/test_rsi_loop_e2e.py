@@ -276,7 +276,7 @@ def test_every_role_prompt_is_filled_and_names_no_missing_plan(world):
         assert not re.findall(r"\{[A-Z_]{3,}\}", text), p.name
         assert "scene-rsi-plan" not in text
     rev = (world.lp.STATE / "iter_00" / "reviewer_prompt.md").read_text()
-    assert "episodes per task visible to you" in rev and "(30 episodes per task)" not in rev
+    assert "episodes per task that you see" in rev and "(30 episodes per task)" not in rev
     assert "Prober" not in rev
 
 

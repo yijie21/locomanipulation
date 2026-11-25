@@ -143,7 +143,7 @@ bash scripts/stop_unreal.sh
 - `scripts/rsi/families/box_bimanual_tasks.jsonl` 每个任务的 `goal`：现在是 `held(nor_cal_box)` 加 `lifted(nor_cal_box, 0.20, 60)`；`lifted` 的两个数是最低角高出平台多少米、底面倾斜上限多少度。
 - `scripts/rsi/families/box_bimanual.json` 的 `judge_s`（最后几秒要一直成立，5）和 `hold_s`（技能结束后原地保持几秒，2）。
 
-角色读的规则在 `scripts/rsi/rules.md` 第 35、36 条，读的方案在 `scripts/rsi/plans/box_bimanual.md`；判据改了这两处也要改，改一次算一次人工干预。
+角色读的规则在 `scripts/rsi/rules_scene.md` 的 `[scene-prep]`、`[scene-keypoints]`，读的方案在 `scripts/rsi/plans/box_bimanual.md`；判据改了这两处也要改，改一次算一次人工干预。
 
 ## 9. 2026-10-24 严格判据下的探针
 

@@ -1,0 +1,2 @@
+- The directory `bed_readonly_copy/` in your checkout is a read-only copy of the adapter's files, the seed package and the task files, for reading only: nothing runs from it and an edit there changes nothing, because the loop's rounds run on the real adapter with your package under {SKILLS}.
+- Match the level to the evidence ([levels]): level 1 is yours by default; do not turn a level 1 hypothesis into a stance change because it is easier.

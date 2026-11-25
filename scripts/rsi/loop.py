@@ -20,17 +20,17 @@ calls >= 12, wall clock >= MAX_WALL_H, a Manager `stop` (model cost has no cap s
 RSI_COST_CAP_USD sets one), MAX_VOID_STREAK iterations in a row voided by the audit (an abnormal stop); and
 (D13.4) the incumbent wins >= STOP_RATE of the acceptance starts that no task-wide park covers, when those are at
 least UNPARKED_MIN of the pool. Below that share the gate judges on an acceptance pool drawn afresh from the unparked
-tasks (`accept_pool`, rule 26).
+tasks (`accept_pool`, [scene-redraw]).
 
-The candidate pool (TODO 33.8, D7, user 2026-10-22): the gate (rule 2: b - c >= 3 and c <= b / 3, no p) leaves the
+The candidate pool (TODO 33.8, D7, user 2026-10-22): the gate (scene rule: b - c >= 3 and c <= b / 3, no p) leaves the
 best POOL_KEEP rejected candidates with b > c in loop/candidates_pool.json, cleared when the incumbent changes. The
 Manager may give `base: <hash>` (the Engineers start from that candidate, the gate still compares with the incumbent);
 the Composer may merge a pool candidate's edits or adopt one as it stands (`adopted_pool`), e.g. one an older gate rule
 rejected. TODO 33.14 (D11): the Manager context leads with `recurring` (mechanisms proposed in two or more iterations,
 never built, from its `repeats` links), and `reopen` is not offered after MAX_REOPEN_RUN reopens in a row. TODO 33.13
-(rules.md 30): a draft whose skills package holds a string constant equal to an object's name is void.
+([branch]): a draft whose skills package holds a string constant equal to an object's name is void.
 
-TODO 33.15-33.17 (user 2026-10-22: "把 33.15 到 33.18 先做了吧，开始下一轮的 RSI"; rules.md 31-33, version 15): round
+TODO 33.15-33.17 (user 2026-10-22: "把 33.15 到 33.18 先做了吧，开始下一轮的 RSI"; [scene-stage]): round
 records carry a failure class (scene_round.py, failure_class.py); the gate reports its tally per class; the failure cards
 lead with the classes. After the probe each hypothesis gets a `status` (probe_status). A mechanism proposed in two or more
 iterations, never built and not refuted takes one Engineer slot (force_build, a `forced` ledger row) unless the
@@ -86,6 +86,7 @@ import diag_pool as DP  # noqa: E402
 import family as F  # noqa: E402
 import merge as MG  # noqa: E402
 import records as RC  # noqa: E402
+import rules_build as RB  # noqa: E402
 import segments as SG  # noqa: E402
 import verdict as V  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
@@ -95,7 +96,7 @@ from locomani import paths  # noqa: E402
 SIM_PY = REPO / "third_party" / "GR00T-WholeBodyControl" / ".venv_sim" / "bin" / "python"
 SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 PLAN = REPO / "docs" / "handoff" / "scene-rsi-plan-20261016.md"
-RULES = HERE / "rules.md"
+RULES = HERE / "rules_scene.md"  # the scene appendix; a benchmark family's is its notes file (rules_notes/)
 PROMPTS = HERE / "prompts"  # configure() resets SKILLS, RULES, PLAN, PROMPTS and CAPS from backend.layout(family)
 CAPS = dict(BK.SCENE_CAPS)
 STUB_FILE = (
@@ -131,14 +132,14 @@ STATUSES = ("hypothesis", "verified", "refuted", "mixed", "untested")  # TODO 33
 CLASS_SUGGEST = {
     "too_wide": "the object does not fit the open jaw on the side presented: scripts/rsi/graspability.py (rotate the "
     "approach to a side that fits, a rim pinch, a top pinch)",
-    "side_reach": "the hand did not get to the grasp: a nearer stance, or re-approach through stage() (rules.md 31)",
+    "side_reach": "the hand did not get to the grasp: a nearer stance, or re-approach through stage() ([scene-stage])",
     "pinch_reach": "the top pinch's wrist attitude was not delivered: a twist the arm delivers, a lower pre-grasp",
     "walk_off": "the walk stopped off the stance: re-walk through stage() with stance_check, or a stance with more "
     "clearance",
     "knocked": "the object moved before the grip: a raised-hand approach, a path clear of it",
     "slip": "gripped, then lost: grip_check / lift_check and a re-grip through stage()",
-    "fell": "the robot fell: a controller or motor-layer limit, an escalation (rules.md 20), not a skill fix",
-    # the two-hand classes (TODO 38.11, rules.md 35): side_reach, knocked, slip and fell read as above
+    "fell": "the robot fell: a controller or motor-layer limit, an escalation ([escalate]), not a skill fix",
+    # the two-hand classes (TODO 38.11, [scene-probe]): side_reach, knocked, slip and fell read as above
     "one_hand_short": "one hand did not get to the box: the stance is off-centre or too far for that arm, or the two "
     "targets are not symmetric about the body; a re-approach of that hand through stage() (bimanual_grip_check)",
     "no_lift": "both hands on the box, it never rose: not enough squeeze (motor.squeeze inward_m), the lift too small "
@@ -155,7 +156,9 @@ SCENE_CLASS_SUGGEST = CLASS_SUGGEST  # configure() swaps in a second backend's o
 ATTRIBUTE_CLASSES = ("fell_walk",)  # TODO 33.20: failure classes the driver attributes to a layer (isolate.CLASSES)
 ATTRIBUTE_MIN = 2  # ... once the incumbent fails at least this many diagnostic rounds of the class
 UNPARKED_MIN = 0.5  # D13.4's line counts only when the starts outside the parked tasks are this share of the pool
-REDRAW_SEED = 5000  # a redrawn acceptance pool (rule 26, redraw_accept) takes the family's acceptance seed + this
+REDRAW_SEED = (
+    5000  # a redrawn acceptance pool ([scene-redraw], redraw_accept) takes the family's acceptance seed + this
+)
 # (user 2026-10-18: r1_in_single stopped at 14/16 on the acceptance pool and was 9/20 on the sealed one)
 PROCS = int(os.environ.get("RSI_PROCS", "12"))  # simulation processes; the runbook's machine: 12 over 2 GPUs
 GPUS = os.environ.get("RSI_GPUS", "0,1")  # CUDA devices the shards rotate over (one GPU: RSI_GPUS=0 RSI_PROCS=6)
@@ -406,7 +409,7 @@ ENGINEER_SCHEMA = {
                 },
             },
         },
-        "scope": {  # rule 38: what the draft says it changes; the driver measures what it did change (footprint)
+        "scope": {  # [scope]: what the draft says it changes; the driver measures what it did change (footprint)
             "type": "object",
             "required": ["when", "starts"],
             "properties": {
@@ -456,6 +459,12 @@ def pool_shape(pool: Path, fallback: int = 0) -> tuple[int, str]:
     return len(labels), str(lo) if lo == hi else f"{lo}-{hi}"
 
 
+def role_template(role: str) -> str:
+    """TODO 54 phase 2: a role's prompt with its fragments and its rules (the core rules it acts on by id, the family's
+    appendix) inserted; `fill` sets the run's values after."""
+    return RB.role_prompt(role, PROMPTS, family_spec(), CAPS, RULES, CLASS_SUGGEST)
+
+
 def prompt_vars() -> dict:
     """What a family sets in the role prompts (TODO 31): the plan the roles read (empty when the family has none in
     the sandbox, TODO 54: three benchmark prompt sets pointed every role at a file the sandbox did not hold), a note
@@ -474,6 +483,9 @@ def prompt_vars() -> dict:
         PLAN=PLAN if PLAN and Path(PLAN).exists() else "",
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         SCENE_NOTE=spec.get("scene_note") or SCENE_NOTE,
+        WHAT=(spec.get("scene_note") or SCENE_NOTE)
+        if RULES.name == "rules_scene.md"
+        else "on " + RB.BENCH_NAME.get(RULES.stem, FAMILY),
         N_DIAG=seen,
         N_DIAG_TASK=seen_task,
         N_DIAG_FULL=full,
@@ -964,7 +976,7 @@ def claude(
     # TODO 36 (review 2026-10-22): no memory file from the sandbox's ancestors (the 23 KB machine guide in /workspace)
     # or the operator's home reaches a role; tested with one session
     env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", CLAUDE_CODE_DISABLE_CLAUDE_MDS="1", TMPDIR=str(role_dir(role)),
-               # TODO 37.1: try.py's round budget is per role and iteration (rules.md 18)
+               # TODO 37.1: try.py's round budget is per role and iteration ([try])
                RSI_TRY_LEDGER=str(role_dir(role) / f"try_{it_dir.name}.jsonl"))  # fmt: skip
     cmd = [
         "claude", "-p", "--model", MODEL, "--output-format", "json", "--json-schema", json.dumps(schema),
@@ -1011,7 +1023,7 @@ def run_role(
     2, 2026-10-16: the driver stalled until a human killed it). So once the transcript shows the structured answer,
     the role's leftover processes get `grace` seconds, then the driver kills them (listed in the ledger). `stop` set
     (TODO 37.3): the session and everything under it are killed and RoleLate is raised. `seen`: the answers already in
-    the transcript when a finished session takes another turn (rule 38)."""
+    the transcript when a finished session takes another turn ([scope])."""
     proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                             cwd=REPO, env=env)  # fmt: skip
     t0, answered, killed, feed = time.time(), None, [], prompt
@@ -1329,7 +1341,7 @@ def cap(key: str, default=False):
 
 
 def check_pool() -> Path:
-    """check_half: the diagnostic starts the roles do not see (rules 47), in the hidden tree."""
+    """check_half: the diagnostic starts the roles do not see ([check-half]), in the hidden tree."""
     return HIDDEN / "pool_check"
 
 
@@ -1433,7 +1445,7 @@ def no_progress_stop(es: list[dict], meta: dict | None) -> str | None:
                   and str(e.get("t", "")) >= t0})  # fmt: skip
     if k and len(ran) >= k and not any(progressed(es, i) for i in ran[-k:]):
         what = "the check half" if cap("check_half") else "the gate's stage 1"
-        return f"no progress: iterations {', '.join(map(str, ran[-k:]))} produced no candidate that passed {what} (rules 47)"
+        return f"no progress: iterations {', '.join(map(str, ran[-k:]))} produced no candidate that passed {what} ([check-half])"
     return None
 
 
@@ -1467,7 +1479,7 @@ def attribute(inc: dict, base: Path, n: int, it_dir: Path, stub: bool) -> dict |
     diagnostic rounds of a class in ATTRIBUTE_CLASSES, each one's failing command is run again alone from its start
     (scripts/rsi/isolate.py; cached per incumbent in diag/attribution_<hash>, which the roles may read). `motor` -- the
     command alone fails the same way -- is the motor layer's or the controller's limit: an escalation row
-    (loop/escalations.jsonl, rules.md 20) and a body-model constraint (body/constraints.jsonl); a skill may route around
+    (loop/escalations.jsonl, [escalate]) and a body-model constraint (body/constraints.jsonl); a skill may route around
     it, not fix it. `skill` -- alone it does not fail -- is the skill's. The summary goes to the Reviewer and the
     Manager."""
     if stub or BK.of(FAMILY):  # isolate.py replays a scene round command by command; a backend has no such replay
@@ -1503,7 +1515,7 @@ def attribute(inc: dict, base: Path, n: int, it_dir: Path, stub: bool) -> dict |
             for r in rows
         ],  # fmt: skip
         note="motor: the command alone, from the round's start, fails the same way -- the motor layer's or the "
-        "controller's limit (rules.md 20): route around it (another first move, another stance), do not try to fix the "
+        "controller's limit ([escalate]): route around it (another first move, another stance), do not try to fix the "
         "layer below; skill: alone it does not fail, the skill's earlier steps cause it",
         dir=str(out),
     )
@@ -1514,7 +1526,7 @@ def attribute(inc: dict, base: Path, n: int, it_dir: Path, stub: bool) -> dict |
 
 def record_escalations(inc: dict, n: int, motor: list[dict]) -> None:
     """TODO 33.20: each `motor` attribution once per incumbent, as an escalation row (loop/escalations.jsonl, for the
-    people, rules.md 20) and a body-model constraint (body/constraints.jsonl, for the roles)."""
+    people, [escalate]) and a body-model constraint (body/constraints.jsonl, for the roles)."""
     esc_f, con_f = STATE / "escalations.jsonl", LOOP.parent / "body" / "constraints.jsonl"
     old = [json.loads(x) for x in esc_f.read_text().splitlines() if x.strip()] if esc_f.exists() else []
     known = {(e.get("incumbent"), e.get("label")) for e in old}
@@ -1920,25 +1932,39 @@ def iteration_line(n: int, rows: list[dict]) -> str:
     return " | ".join(parts)
 
 
+ROW_CHARS = 1500  # TODO 54 phase 2: the longest string a ledger row keeps in a role's history
+
+
+def _cap_row(v, n: int = ROW_CHARS):
+    """A ledger row with every string longer than `n` characters cut (the full row stays in the ledger file)."""
+    if isinstance(v, str):
+        return v if len(v) <= n else v[:n] + f"... [{len(v) - n} more characters]"
+    if isinstance(v, list):
+        return [_cap_row(x, n) for x in v]
+    if isinstance(v, dict):
+        return {k: _cap_row(x, n) for k, x in v.items()}
+    return v
+
+
 def compact_history(es: list[dict], full: int = HISTORY_FULL) -> list:
-    """TODO 36.7 (user 2026-10-22): the ledger for the Manager -- the rows from the last `full` iterations' first row on
-    as they are (without `usage`), everything before as one line per iteration (iteration_line) and one per row
-    outside an iteration (a stop, a resume). 32.12's iteration 5 Manager read 96 KB, 70% of it history."""
+    """TODO 54 phase 2 (review rules_prompts.md F12: the history was 60-75 % of every context and grew by an iteration's
+    line each round): the ledger rows of the last `full` iterations as they are (without `usage`, long strings cut) and
+    nothing older; one line says how many iterations are left out, because `mechanisms` carries what each earlier
+    hypothesis came to. The size stays flat however long the run is. Rows outside an iteration (a stop, a resume) count
+    when they come after the first kept row."""
     rows = [{k: v for k, v in e.items() if k != "usage"} for e in es]
     iters = sorted({e["iter"] for e in rows if isinstance(e.get("iter"), int)})
     keep = set(iters[-full:]) if full > 0 else set()
     cut = next((i for i, e in enumerate(rows) if e.get("iter") in keep), len(rows))
-    out, seen = [], {}
-    for e in rows[:cut]:
-        n = e.get("iter")
-        if isinstance(n, int):
-            seen.setdefault(n, []).append(e)
-            if len(seen[n]) == 1:
-                out.append(n)  # placeholder: the line goes where the iteration's first row was
-        else:
-            out.append(_cut(f"{e.get('t', '')} {e.get('step')}: " + json.dumps(
-                {k: v for k, v in e.items() if k not in ("t", "step")}, ensure_ascii=False), 240))  # fmt: skip
-    return [iteration_line(x, seen[x]) if isinstance(x, int) else x for x in out] + rows[cut:]
+    older = [x for x in iters if x not in keep]
+    head = (
+        [
+            f"{len(older)} earlier iteration(s) ({older[0]}-{older[-1]}) are not listed: `mechanisms` holds what each hypothesis came to"
+        ]
+        if older
+        else []
+    )
+    return head + [_cap_row(e) for e in rows[cut:]]
 
 
 def context(inc: dict, extra: dict, compact: bool = True) -> dict:
@@ -2015,7 +2041,7 @@ def snapshot(n: int) -> None:
 
 
 def reviewer_cards(n: int, base: Path, it_dir: Path, log: bool = True) -> Path:
-    """The failure cards of the incumbent's diagnostic rounds (cards.py, rule 37), in iter_NN/cards."""
+    """The failure cards of the incumbent's diagnostic rounds (cards.py, [cards]), in iter_NN/cards."""
     out = it_dir / "cards"
     if be := BK.of(FAMILY):  # the backend writes its own failure cards (cards.py needs a scene file)
         out.mkdir(parents=True, exist_ok=True)
@@ -2109,12 +2135,12 @@ def cards_row(n: int, out: Path) -> dict:
 
 def review_common(n: int, inc: dict, base: Path, cards: Path, attribution: dict | None) -> tuple[dict, dict]:
     """What the Reviewer's prompt and the later roles' prompts are filled from: (`common` variables, context `extra`)."""
-    common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+    common = dict(**prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp(), CARDS=cards)  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}),
-                 segments=SG.segment_table(B.outcomes(base).values()))  # fmt: skip  # TODO 48.17.6 (rules 48)
+                 segments=SG.segment_table(B.outcomes(base).values()))  # fmt: skip  # TODO 48.17.6 ([segments])
     if attribution:
         extra["attribution"] = attribution
     prev = STATE / f"iter_{n - 1:02d}" / "designs.json"  # TODO 33.19: last iteration's design probes
@@ -2128,7 +2154,7 @@ def run_review(n: int, it_dir: Path, inc: dict, base: Path, common: dict, extra:
     Writes hypotheses.json and review_notes; the ledger row is the caller's. `note`: appended to the prompt (a rerun)."""
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
-    prompt = fill((PROMPTS / "reviewer.md").read_text(), CONTEXT=ctx, **common) + note
+    prompt = fill(role_template("reviewer"), CONTEXT=ctx, **common) + note
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", instead="stub", evidence="stub",
                   delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},
                   predicted_fixed=[], predicted_broken=[])])  # fmt: skip
@@ -2223,7 +2249,7 @@ def assign_program(hyps: list[dict], k: int) -> tuple[list[str], dict[str, str]]
 
 
 def forward_escalations(n: int, hyps: dict) -> None:
-    """The Manager used to forward the Reviewer's `LEVEL 3` and `BED` paragraphs (rules 39, 45) to people; with the
+    """The Manager used to forward the Reviewer's `LEVEL 3` and `BED` paragraphs ([levels]) to people; with the
     program as Manager they go to loop/escalations.jsonl as they are."""
     for para in str(hyps.get("notes") or "").split("\n\n"):
         head = para.strip().split(" ", 1)[0].strip(":.").upper() if para.strip() else ""
@@ -2291,13 +2317,13 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if notes:
         lead["repair_notes"] = notes
     if not may_reopen:
-        lead["reopen_blocked"] = (f"the last {MAX_REOPEN_RUN} iterations were reopens (rules.md 28, version 14): build a "
+        lead["reopen_blocked"] = (f"the last {MAX_REOPEN_RUN} iterations were reopens ([scene-candidates]): build a "
                                   "hypothesis this iteration")  # fmt: skip
     body = context(inc, dict(extra, hypotheses=hyps, probe=pr, claims=cr,
                              parked=jload(STATE / "parked.json", {}),
                              gap_candidates=gaps, candidate_pool=pool_view(inc, base)), compact=True)  # fmt: skip
     jdump(ctx, dict(lead, **body))
-    prompt = fill((PROMPTS / "manager.md").read_text(), CONTEXT=ctx, **common)
+    prompt = fill(role_template("manager"), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
     ids = [h["id"] for h in hyps["hypotheses"]]
     dec, acct = claude("manager", prompt, manager_schema(may_reopen, ids), it_dir, "Edit,Write,NotebookEdit,Agent,Bash",
@@ -2337,7 +2363,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if dec["decision"] == "review":
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
         return None
-    dec = force_build(n, dec, hyps, it_dir)  # TODO 33.17 (rules.md 33)
+    dec = force_build(n, dec, hyps, it_dir)  # TODO 33.17 ([scene-status])
     return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
 
 
@@ -2382,7 +2408,7 @@ def engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> 
                                  probe=[] if reopen else [p for p in pr if p.get("id") == dec.get("hypothesis")],
                                  park=dict(park_, id=reopen, checked=tried) if reopen else None,
                                  base=base_brief(bentry))))  # fmt: skip
-    prompt = fill((PROMPTS / "engineer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **common)
+    prompt = fill(role_template("engineer"), CONTEXT=ctx, ITER=it_dir, **common)
     start_set = overrides(Path(bentry["dir"])) if bentry else inc["set"]
     stub_e = dict(mechanism="stub", files_changed=[], set={**start_set, **(chosen or {}).get("delta", {}).get("set", {})},
                   tests="none", scope=dict(when="stub", starts=["all"]))  # fmt: skip
@@ -2433,7 +2459,7 @@ def after_engineer(
             )
         )
         return None
-    named = named_objects(cand / "skills")  # TODO 33.13 (rules.md 30)
+    named = named_objects(cand / "skills")  # TODO 33.13 ([branch])
     if named:
         named_void(n, named, "the candidate")
         return None
@@ -2881,7 +2907,7 @@ def records_statuses(hyps: dict, pr: list[dict], base: Path) -> None:
 
 def run_designs(hyps: dict, inc: dict, it_dir: Path, n: int) -> list[dict]:
     """TODO 33.19 (plan section 1.3, D16): the hypotheses' design probes (design.py), at most DS.MAX_PROBES an
-    iteration and DS.MAX_ROUNDS rounds each, under the incumbent on the diagnostic pool's starts. Not evidence (rule 7):
+    iteration and DS.MAX_ROUNDS rounds each, under the incumbent on the diagnostic pool's starts. Not evidence ([evidence]):
     the per-level outcome goes to this iteration's Manager (`lead`), the next Reviewer (`designs_last`), the ledger, and
     this run's measured curves (body/curves_run.jsonl), each tagged with the machine, the controller and its scope --
     `skill` for a parameter of the incumbent, `start` for a start factor (TODO 33.1.7). Not body/curves.jsonl: that is
@@ -3067,7 +3093,7 @@ _NAMES: dict = {}
 
 
 def object_names() -> set[str]:
-    """Names a skills package may not branch on (rules.md 30, TODO 33.13, D10): every scene object's key, body and ADT
+    """Names a skills package may not branch on ([branch], TODO 33.13, D10): every scene object's key, body and ADT
     instance name, and the key's stem (Mug_2 -> Mug) unless the stem is also a semantic name (prototype, category:
     Orange_A -> Orange stays allowed). Semantic fields (category, prototype) are features a flow may use."""
     scene = family_spec().get("scene")
@@ -3087,7 +3113,7 @@ def object_names() -> set[str]:
 
 def named_objects(skills: Path, names: set[str] | None = None) -> list[str]:
     """String constants in the skills package (docstrings aside, f-string parts included) equal to an object name
-    (object_names): `file:line 'name'`. A hit voids the draft (rules.md 30): a flow chosen by name cannot be reused for
+    (object_names): `file:line 'name'`. A hit voids the draft ([branch]): a flow chosen by name cannot be reused for
     a similar object."""
     import ast
 
@@ -3116,7 +3142,7 @@ def named_objects(skills: Path, names: set[str] | None = None) -> list[str]:
 
 def named_void(n: int, named: list[str], what: str) -> None:
     ledger(dict(step="gate", iter=n, accepted=False, void=True, named_objects=named,
-                reason=f"{what} branches on object names (rules.md 30): {', '.join(named[:6])}"))  # fmt: skip
+                reason=f"{what} branches on object names ([branch]): {', '.join(named[:6])}"))  # fmt: skip
 
 
 def early_diag(k: int, w: Path, eng: dict, inc: dict, it_dir: Path) -> None:
@@ -3165,7 +3191,7 @@ def footprint(ref: Path, cand: Path, scope: dict | None) -> dict:
 
 
 def segments_touched(ref: Path, cand: Path, changed: list[str], table: dict) -> dict:
-    """TODO 48.17.6 (rules 48): where each round a draft changed first left the rounds it started from, by the kind
+    """TODO 48.17.6 ([segments]): where each round a draft changed first left the rounds it started from, by the kind
     of that step in its task (segments.touched): a change that starts in a stable step is a risk the Composer weighs."""
     a, b = B.outcomes(ref), B.outcomes(cand)
     where = {}
@@ -3343,9 +3369,9 @@ def wait_drafts(threads: dict, stops: dict, poll: float = 2.0, sessions: dict | 
     (run_role kills the session, RoleLate) and the iteration goes on with the drafts it has. `sessions` ({k: time the
     Engineer's session ended}, filled by the callers' threads) keeps the draft's own diagnostic rounds and knob sweep, which
     a thread also runs after its session, out of the deadline; a thread that ends without an entry counts from its end.
-    The late hypothesis counts as not built, so rule 33 builds it first next time. A straggler is stopped rather than left
+    The late hypothesis counts as not built, so [scene-status] builds it first next time. A straggler is stopped rather than left
     running: the Engineers share the sandbox, and a file it changed outside its copy later could not be told from the
-    Composer's (rule 28). Returns the Engineers stopped."""
+    Composer's ([scene-candidates]). Returns the Engineers stopped."""
     need = (len(threads) + 1) // 2
     sessions = {} if sessions is None else sessions
     late: list = []
@@ -3389,7 +3415,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                                      probe=[p for p in pr if p.get("id") == hid],
                                      park=None, draft=dict(number=k, of=len(ids)), base=base_brief(bentry))))  # fmt: skip
         prompt = fill(
-            (PROMPTS / "engineer.md").read_text(),
+            role_template("engineer"),
             CONTEXT=ctx,
             ITER=w,
             **dict(common, SKILLS=w / "skills", TMP=role_dir(f"engineer_{k}")),
@@ -3448,7 +3474,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                                 str(cand / "skills")], capture_output=True, text=True).stdout  # fmt: skip
         (it_dir / f"code_{k}.patch").write_text(patch)
         h = candidate_hash(cand)
-        named = named_objects(cand / "skills")  # TODO 33.13 (rules.md 30): a draft that branches on names is void
+        named = named_objects(cand / "skills")  # TODO 33.13 ([branch]): a draft that branches on names is void
         void = bool(leaks) or bool(stray) or h == inc["hash"] or bool(named)
         dup = first.get(h) if not void else None  # TODO 36 (review 2026-10-22, L5): the first of identical drafts stays
         labels, ran = draft_run(eng, inc)  # change 4: where the draft's diagnostic rounds ran
@@ -3480,7 +3506,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     if not stub:
         B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
     base = LOOP / "diag" / f"incumbent_{inc['hash']}"
-    seg_table = SG.segment_table(B.outcomes(base).values())  # TODO 48.17.6 (rules 48)
+    seg_table = SG.segment_table(B.outcomes(base).values())  # TODO 48.17.6 ([segments])
     for c in cands:
         c.update(flips(base, Path(c["diag"])), footprint=footprint(ref, Path(c["diag"]), c["scope"]))
         c["segments_touched"] = segments_touched(ref, Path(c["diag"]), c["footprint"]["changed"], seg_table)
@@ -3520,7 +3546,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                                      incumbent_diag=str(base), manager=dec, base=base_brief(bentry),
                                      candidate_pool=pool_view(inc, base),
                                      **({"compose_mode": mode, **comp_extra} if mode else {}))))  # fmt: skip
-        prompt = fill((PROMPTS / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
+        prompt = fill(role_template("composer"), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
         stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
         comp, acct = claude("composer", prompt, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_c if stub else None)
         leaks = transcript_leaks(acct["session"])
@@ -3584,7 +3610,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                 dict(step="gate", iter=n, accepted=False, void=True, reason="the composed candidate is the incumbent")
             )
             return None
-    named = named_objects(cand / "skills")  # TODO 33.13 (rules.md 30)
+    named = named_objects(cand / "skills")  # TODO 33.13 ([branch])
     if named:
         named_void(n, named, "the composed candidate")
         return None
@@ -3617,7 +3643,7 @@ def engineer_again(n: int, src: Path, stub: bool) -> str | None:
     base = diag_incumbent(inc, it_dir)
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"), reason=dec["reason"],
                 summary_zh=dec.get("summary_zh", ""), replayed_from=str(src), cost_usd=0.0, seconds=0))  # fmt: skip
-    common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+    common = dict(**prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp(), REVIEW_NOTES=review_notes_dir(it_dir))  # fmt: skip
     return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
@@ -3650,12 +3676,12 @@ def reprobe(n: int, stub: bool) -> str | None:
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
     attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
-    common = dict(RULES=RULES, **prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
+    common = dict(**prompt_vars(), LOOP=LOOP, SIM_PY=SIM_PY, DIAG_INC=base, SKILLS=SKILLS, FAMILY=FAMILY,
                   FAMILY_FILE=HERE / "families" / f"{FAMILY}.json", POOL=LOOP / "pool_diag", INC_DIR=inc["dir"],
                   TMP=role_tmp(), REVIEW_NOTES=review_notes_dir(it_dir))  # fmt: skip
     extra = dict(diag_summary=summarize(base), parameters=parameters_of(inc), focus=jload(STATE / "focus.json", {}),
                  parked=jload(STATE / "parked.json", {}),
-                 segments=SG.segment_table(B.outcomes(base).values()))  # fmt: skip  # TODO 48.17.6 (rules 48)
+                 segments=SG.segment_table(B.outcomes(base).values()))  # fmt: skip  # TODO 48.17.6 ([segments])
     if attribution:
         extra["attribution"] = attribution
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
@@ -3872,7 +3898,7 @@ def write_hit_rate() -> None:
 
 
 def run_sealed(why: str, stub: bool) -> None:
-    """TODO 48.19.2 (user 2026-11-23, "三条都加上"; rules 49), TODO 54: every run that ends through finish() (a stop
+    """TODO 48.19.2 (user 2026-11-23, "三条都加上"; [sealed]), TODO 54: every run that ends through finish() (a stop
     rule, --max-iters, the wall clock, a failed role or gate) runs the sealed evaluation once for its final incumbent (sealed.py: the final incumbent and the seed on the sealed pool, in the gate's environment, and
     its confirmation against the seed). Its numbers stay in the hidden tree (<hidden>/sealed/summary.json, history.jsonl);
     the ledger records only that it ran. Off for a stub run, a family without caps sealed_at_stop,

@@ -20,7 +20,7 @@ earlier skill catalog, the scene RSI records or the earlier grasp programs) chan
 The experience library (scripts/rsi/experience, TODO 32.10) goes in without the family's own entry, and its index is
 rebuilt: a re-run does not read how its family's earlier run ended (leave-one-out, as TODO 32.12 ran; the default
 since TODO 32.15, user 2026-10-22). For a family with a `sandbox` block it also goes in without any entry's
-final.patch (the old grasp code; rule 27 -- in TODO 32.12 an Engineer read experience/pick_single/final.patch) and
+final.patch (the old grasp code; the empty-seed rule -- in TODO 32.12 an Engineer read experience/pick_single/final.patch) and
 without the entries of the family file's `library_exclude` (a list of family names). TODO 36 (review 2026-10-22).
 
 Every sandbox, block or not, is built without CLAUDE.md, AGENTS.md and scripts/rsi/report: the role sessions load the

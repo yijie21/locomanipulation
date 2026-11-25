@@ -7,7 +7,7 @@ in the transcripts), while the 12 queue workers stood idle. This command is the 
 starts it names, in parallel through batch.py's workers and machine-wide slots, a table back (the outcome, the failure
 class, the first failing step, and against `--ref` the starts that flip). Bounded: at most MAX_PER_CALL starts per
 call and BUDGET rounds per role per iteration (the ledger file RSI_TRY_LEDGER, which the driver sets per role and
-iteration). The Prober's probes and the gate stay the evidence (rules.md 3, 7); this is for looking.
+iteration). The Prober's probes and the gate stay the evidence ([hidden]); this is for looking.
 
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/try.py <family> --skills <package dir> [--set '<JSON>'] \\
@@ -64,7 +64,7 @@ def pool_allowed(pool: Path, repo: Path = REPO, scratch: Path = SCRATCH_ROOT) ->
     """Why `pool` may not be used: under the hidden tree, or outside the sandbox and the scratch directory."""
     p = pool.resolve()
     if HIDDEN_NAME in p.parts or HIDDEN_NAME in pool.parts:
-        return f"{pool} is under the hidden tree (rules.md 3)"
+        return f"{pool} is under the hidden tree ([hidden])"
     if not (p.is_relative_to(repo.resolve()) or p.is_relative_to(scratch.resolve())):
         return f"{pool} is outside the sandbox and the scratch directory"
     return None
@@ -165,7 +165,7 @@ def main(argv=None) -> int:
     ledger = ledger_path()
     spent = used(ledger)
     if missing and spent + len(missing) > BUDGET:  # reading rounds already run costs nothing
-        raise SystemExit(f"budget: {spent} of {BUDGET} rounds used this iteration (rules.md 18), {len(missing)} more "
+        raise SystemExit(f"budget: {spent} of {BUDGET} rounds used this iteration ([try]), {len(missing)} more "
                          f"asked; {BUDGET - spent} left -- pick fewer starts, or read the rounds you have")  # fmt: skip
     if missing:
         charge(ledger, len(missing), missing, out, overrides)

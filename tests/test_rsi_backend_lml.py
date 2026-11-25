@@ -59,7 +59,7 @@ def make_fam(tmp: Path, **kw) -> dict:
         runner="bed/run.sh",
         official_slots=2,
         practice_dir=str(practice),
-        rules="rules.md",
+        rules="rules_scene.md",
         prompts="prompts",
         plan=None,
         caps={"min_net": 3},
@@ -358,7 +358,7 @@ def test_layout_and_the_skill_package(tmp_path, monkeypatch):
 def test_real_family_layout_points_at_the_lml_rules_and_prompts(tmp_path, monkeypatch):
     monkeypatch.setenv("RSI_PACKAGE_ROOT", str(tmp_path / "state"))
     lay = L.layout(L.load("lml_q"))
-    assert lay["rules"].name == "rules_lml.md" and lay["prompts"].name == "prompts_lml" and lay["plan"] is None
+    assert lay["rules"].name == "lml.md" and lay["prompts"].name == "prompts" and lay["plan"] is None
 
 
 # -------------------------------------------------------------------------------------------- signature

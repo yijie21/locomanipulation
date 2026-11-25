@@ -3,7 +3,7 @@ recurs gets its suspect primitive run again alone: the round's start (robot pose
 then only the one command that was running when the round failed, with the arguments it was given (the motor's call
 log, `calls` in the round record since 33.20); none of the skill's other steps. It fails the same way alone: the
 motor layer or the controller cannot carry out that command from there -- a constraint for the body model and an
-escalation (rules.md 20); a skill may route around it, not change the layer below. It does not: the failure needs
+escalation ([escalate]); a skill may route around it, not change the layer below. It does not: the failure needs
 what the skill did first.
 
     python3 scripts/rsi/isolate.py <family> --pool <starts> --rounds <round records> --out <dir> [--labels a,b] \\

@@ -7,7 +7,7 @@ implements.
 
 `--start` is a pool's start file (placements and robot_xy); `--skills` a skills package directory whose modules register
 actions (`prep.register`), so the listing says which plans are implemented. A plan is a prediction for choosing what
-to try; only a closed-loop round is evidence (rules.md 7)."""
+to try; only a closed-loop round is evidence ([evidence])."""
 
 from __future__ import annotations
 

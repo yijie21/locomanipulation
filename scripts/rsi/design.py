@@ -1,6 +1,6 @@
 """TODO 33.19 (plan section 1.3, D16): design probes -- one factor, a few levels, the same starts at every level, the
 condition forced by the driver. A probe answers how the factor changes the outcome; it is never evidence that a change
-should be accepted (the gate decides that, rule 7). A Reviewer's hypothesis may carry a `design` {factor, levels,
+should be accepted (the gate decides that, [evidence]). A Reviewer's hypothesis may carry a `design` {factor, levels,
 starts, tasks?, name?}; the driver runs at most MAX_PROBES per iteration, each at most MAX_ROUNDS rounds, under the
 incumbent, on the diagnostic pool's starts (the same base starts at every level, so the levels pair up).
 

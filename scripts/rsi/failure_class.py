@@ -340,7 +340,7 @@ def _classify_bimanual(ev: dict, rec: dict | None = None) -> str:
 
 def classify(rec: dict, arrays, world, key: str) -> tuple[str, dict]:
     """(failure class, events) of one round; see the module docstring. A bimanual object (`bimanual()`) takes the
-    two-hand classes after the common ones (TODO 38.11, rules.md 35)."""
+    two-hand classes after the common ones (TODO 38.11, [scene-probe])."""
     steps = rec.get("steps") or []
     z = _arrays(arrays)
     two = bimanual(world, key)

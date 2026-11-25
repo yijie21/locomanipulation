@@ -85,4 +85,4 @@ def test_the_manager_can_name_only_this_iterations_hypotheses(lp):
 def test_an_engineer_must_declare_its_scope(lp):
     assert "scope" in lp.ENGINEER_SCHEMA["required"]
     text = (HERE / "prompts" / "engineer.md").read_text()
-    assert "`scope`" in text and "rules.md 38" in text
+    assert "`scope`" in text and "[scope]" in text

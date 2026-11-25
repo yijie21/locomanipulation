@@ -1,5 +1,5 @@
-{"id": "XMovePickTeleop", "goal": "move forward to pick up the {object}"}
-{"id": "HandoverTeleop", "goal": "Hand over {object} from right hand to left hand and place it on the container."}
-{"id": "BendPickMP", "goal": "bend to pick up the cracker box"}
+{"id": "XMovePickTeleop", "goal": "move forward to pick up the {object}", "limit_s": 16}
+{"id": "HandoverTeleop", "goal": "Hand over {object} from right hand to left hand and place it on the container.", "limit_s": 16}
+{"id": "BendPickMP", "goal": "bend to pick up the cracker box", "limit_s": 8}
 {"id": "LocomotionPickBetweenTablesTeleop", "goal": "pick up the {object} from table1, locomotion to table2, and place on table2."}
-{"id": "TabletopGraspMP", "goal": "grasp the object on the tabletop."}
+{"id": "TabletopGraspMP", "goal": "grasp the object on the tabletop.", "limit_s": 16}

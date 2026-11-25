@@ -2,7 +2,7 @@
 saturates it. Run C's incumbent (iteration 11) passed all 30 diagnostic starts while 19 of its 90 hidden-pool starts
 failed, so the roles saw no failure at all: iteration 12's Reviewer read 30 successes for 33 minutes, the Manager had
 only the gate's per-class counts, the Engineers made up their own starts. A pool without failing starts cannot measure
-direction (rules.md 8): a candidate can fix at most 0 of them.
+direction ([pool]): a candidate can fix at most 0 of them.
 
 The driver, and only the driver, does this after it has run the new incumbent on the pool (loop.refresh_diag_pool):
 when the incumbent fails fewer than `min_fails` starts, it draws fresh starts from the family's diagnostic seed range
@@ -10,11 +10,11 @@ when the incumbent fails fewer than `min_fails` starts, it draws fresh starts fr
 are never touched), runs the incumbent on them, and swaps the failing ones in for passing starts until `target` starts
 fail or `draw_max` fresh starts have been drawn. The pool keeps its size; every task keeps PER_TASK_MIN starts and one
 passing start (a pool of failures only could not measure "broken"), no task grows past PER_TASK_MAX, and parked starts
-and parked tasks are left alone (rule 26). Retired starts are not deleted: their start files move to
+and parked tasks are left alone ([scene-redraw]). Retired starts are not deleted: their start files move to
 `pool_diag_retired/` and their round files in every diag/* directory become `_retired_<label>.*` (batch.outcomes,
 batch.pool_labels and digest skip names starting with "_"); the added starts come in with the incumbent's rounds on
 them, so nothing is run twice. `_pool.json` records every redraw and the ledger gets a `diag_pool` row. This is the one
-exception, besides rule 26's acceptance-pool redraw, to rule 2 "a start is never removed from a pool" (version 17).
+exception, besides [scene-redraw]'s acceptance-pool redraw, to [frozen] "a start is never removed from a pool" (version 17).
 """
 
 from __future__ import annotations

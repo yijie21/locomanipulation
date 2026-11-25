@@ -182,7 +182,7 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 | 7 | 接着跑：`replay.py setup` 从第 6 轮起（放宽的验收门和候补池），再从第 10 轮起（失败类型和 `stage()`，`--stop-rate 0.9`） | 36 / 50，再 38 / 50 |
 
 和原来的差别要心里有数：
-- 原来边跑边改了场景（6 次）和规则（`rules.md` 第 1 到 6 版；grasp_atomic 那条线上到第 19 版），复现时一开始就是最终的场景和规则，所以各族的数字会不同，量级应相近。
+- 原来边跑边改了场景（6 次）和规则（旧的 `rules.md` 第 1 到 6 版，现为 `rules_core.md` 加 `rules_scene.md`；grasp_atomic 那条线上到第 19 版），复现时一开始就是最终的场景和规则，所以各族的数字会不同，量级应相近。 角色读什么（TODO 54 第 2 阶段）：核心规则 `rules_core.md`（稳定 id）加按族生成的附录，直接写进提示，不再读规则文件；历史只给最近两轮加 `mechanisms`。说明和命令见[基准族 runbook](rsi_runbook.md)。
 - 原来人插手的地方（修驱动、改规则、写回时手工合并 6 处）列在[详解](rsi_design.md)第 8 节；复现时写回如果冲突，`writeback.py` 什么都不写并打印冲突的文件，手工合并后再提交。
 - 能力表在仓库里，是第 1 阶段探针加各族封存集写回的结果；重测探针要 `scripts/rsi/capability_probe.py`，它用的空地场景先 `bash scripts/build_scene.sh walk_mars` 建。
 

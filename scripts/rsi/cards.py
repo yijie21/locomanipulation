@@ -1,4 +1,4 @@
-"""Failure cards: what the Reviewer gets of the incumbent's diagnostic rounds (TODO 43; rules.md 32).
+"""Failure cards: what the Reviewer gets of the incumbent's diagnostic rounds (TODO 43; [scene-classes]).
 
     python scripts/rsi/cards.py <diag round dir> <scene file or dir> --out <dir>    # cards.md, cards.jsonl, img/<label>.png
 

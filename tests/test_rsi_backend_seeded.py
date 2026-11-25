@@ -72,8 +72,8 @@ def test_the_family_files(name):
     assert (REPO / f["rules"]).exists() and (REPO / f["prompts"]).is_dir() and (REPO / f["tasks_file"]).exists()
     assert set(f["pools"]) == {"diag", "accept", "sealed"}
     assert f["pools"]["accept"]["seed"] == f["pools"]["sealed"]["seed"]
-    assert f["rules"].endswith(f"rules_{FAMILIES[name]}.md") and f["prompts"].endswith(f"prompts_{FAMILIES[name]}")
-    assert (REPO / f["rules"]).read_text().startswith("# Rules for the RSI loop on the")
+    assert f["rules"].endswith(f"rules_notes/{FAMILIES[name]}.md") and f["prompts"] == "scripts/rsi/prompts"
+    assert (REPO / f["rules"]).read_text().startswith("## ")
     BB.check_bench(f)
 
 

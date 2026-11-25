@@ -46,8 +46,8 @@
  "guard": "guard_simple.py",
  "official_runner": "scripts/experiments/escalation_20261116/run_official_q.sh",
  "practice_dir": "/workspace/code/locomanipulation-esc/outputs/escalation_20261116/practice2",
- "rules": "scripts/rsi/rules_simple.md",
- "prompts": "scripts/rsi/prompts_simple",
+ "rules": "scripts/rsi/rules_notes/simple_pick.md",
+ "prompts": "scripts/rsi/prompts",
  "plan": null,
  "caps": {
   "claims": false,
@@ -128,8 +128,10 @@
    "tests/conftest.py",
    "tests/test_scene_task_runner.py",
    "scripts/rsi/backend_simple.py",
-   "scripts/rsi/rules_simple.md",
-   "scripts/rsi/prompts_simple",
+   "scripts/rsi/rules_core.md",
+   "scripts/rsi/rules_build.py",
+   "scripts/rsi/rules_notes/simple_pick.md",
+   "scripts/rsi/prompts",
    "scripts/rsi/families/simple_q.json",
    "scripts/rsi/families/simple_q_tasks.jsonl"
   ],
@@ -170,8 +172,10 @@
   "overlay": [
    "scripts/rsi/backend.py",
    "scripts/rsi/backend_simple.py",
-   "scripts/rsi/rules_simple.md",
-   "scripts/rsi/prompts_simple",
+   "scripts/rsi/rules_core.md",
+   "scripts/rsi/rules_build.py",
+   "scripts/rsi/rules_notes/simple_pick.md",
+   "scripts/rsi/prompts",
    "scripts/rsi/families/simple_q.json",
    "scripts/rsi/families/simple_q_tasks.jsonl",
    "scripts/rsi/loop.py",
@@ -190,7 +194,7 @@
   "SIMPLE_LAZY_RENDER": "1"
  },
  "bed_fixed": {
-  "_about": "rule 46, 2026-11-23: interface corrections found in the hand phase (docs/handoff/escalation-a-s-20261117.md), on in the 11-19 exam, missing from the 11-20 loop. amo_arm_pos: the AMO robot's arm actuators (BendPickMP, TabletopGraspMP) are position servos and get the target angle, not a torque (BendPick 0 -> 6 / 10 by hand). feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and the pelvis estimate drifts when a foot moves (PickBetweenTables release error 20 -> 1 cm by hand).",
+  "_about": "interface corrections found in the hand phase (docs/handoff/escalation-a-s-20261117.md), on in the 11-19 exam, missing from the 11-20 loop. amo_arm_pos: the AMO robot's arm actuators (BendPickMP, TabletopGraspMP) are position servos and get the target angle, not a torque (BendPick 0 -> 6 / 10 by hand). feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and the pelvis estimate drifts when a foot moves (PickBetweenTables release error 20 -> 1 cm by hand).",
   "amo_arm_pos": true,
   "feed_torque": true
  },

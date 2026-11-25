@@ -1,7 +1,7 @@
 """TODO 33.13.1 / 33.13.2 (plan section 2.3, D10, D15): does a flow under recipes/ serve similar objects, and may it be
 promoted to them?
 
-A recipe (rules.md 30) declares the features it is for (`SIGNATURE`) and scores an object by them (`match`); nothing
+A recipe ([branch]) declares the features it is for (`SIGNATURE`) and scores an object by them (`match`); nothing
 names its object. This check, run by a person (or the driver) over a skills package after a run:
 
 1. Similar objects (`similar`): every free one-hand object of the scene on a support gets the package's own features

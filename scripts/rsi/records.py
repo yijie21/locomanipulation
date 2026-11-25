@@ -7,12 +7,12 @@ measured number flattened into a column: the start (`start.spawn_dist_m`, `start
 A Reviewer's hypothesis may carry a `measure` {feature, op, value, expect, tasks?, scope?}: "rounds where FEATURE OP
 VALUE fail more" (expect "fails") or "succeed more" (expect "succeeds"). When the probe could not decide it (its test
 needs code), the driver splits the library's rows by the condition and writes the verdict into the hypothesis's
-`status` (rules.md 33): verified -- both groups have at least MIN_GROUP rounds, Fisher's exact p <= 0.05, and the
+`status` ([scene-status]): verified -- both groups have at least MIN_GROUP rounds, Fisher's exact p <= 0.05, and the
 difference points the way the hypothesis says; refuted -- both groups have at least MIN_REFUTE rounds and the success
 rates differ by less than NO_EFFECT or the other way at p <= 0.05; otherwise it stays a hypothesis (too few rounds). By
 default (`scope` "incumbent") only the incumbent's own version counts, because rounds of different skills differ for
 other reasons; `scope` "all" takes every version with the same motor signature on this machine. A correlation is not
-evidence a change works (rule 7): it decides what to build first (33.17), the gate decides what stays.
+evidence a change works ([evidence]): it decides what to build first (33.17), the gate decides what stays.
 
 Only rounds the roles may see go in: in a sandbox its outputs outside the hidden tree and the roles' scratch directory;
 the origin's library file (`build`, run by a person over finished sandboxes) leaves out every start drawn from a

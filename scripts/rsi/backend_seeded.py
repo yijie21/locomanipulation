@@ -217,7 +217,7 @@ def card_text(r: dict) -> list[str]:
 
 def cards(rounds: list[dict], out) -> Path:
     """Failure cards for the Reviewer: <out>/cards.md (or `out` itself when it ends in .md): the wins per task, the segment
-    table (rules 48), then one card per failed round."""
+    table ([segments]), then one card per failed round."""
     out = Path(out)
     f = out if out.suffix == ".md" else out / "cards.md"
     f.parent.mkdir(parents=True, exist_ok=True)

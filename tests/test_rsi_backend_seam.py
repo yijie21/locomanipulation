@@ -73,7 +73,7 @@ def test_an_unknown_backend_name_stops_with_the_known_ones(fam_dir):
 def test_layout_is_todays_constants_for_scene_and_the_backends_for_fake(fam_dir):
     scene = BK.layout("plain")
     assert scene["skills"] == REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
-    assert scene["rules"].name == "rules.md" and scene["prompts"].name == "prompts"
+    assert scene["rules"].name == "rules_scene.md" and scene["prompts"].name == "prompts"
     assert scene["plan"] == REPO / "docs/p.md"
     assert scene["caps"] == BK.SCENE_CAPS and scene["caps"]["min_net"] == 3
     fake = BK.layout("fake")

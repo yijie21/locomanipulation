@@ -767,20 +767,11 @@ class ManagerHistory(unittest.TestCase):
                     es.append(dict(t="t", step="stop", reason="wall clock >= 5 h"))
             with mock.patch.object(lp, "STATE", st):
                 h = lp.compact_history(es)
-        self.assertEqual(len(h), 3 + 2 * 7)  # iteration 0, the stop, iteration 1 as lines; 2 and 3 row by row
-        line0, stop, line1 = h[:3]
-        self.assertTrue(line0.startswith("iteration 0 | review: 1 hypotheses"))
-        self.assertIn("H1 claim of iteration 0", line0)
-        self.assertIn("probe H1 10->12/30 (predicted fixed 1/2)", line0)
-        self.assertIn("manager engineer H1,H1", line0)
-        self.assertIn("engineer 2 H1: void", line0)
-        self.assertIn("composer adopt 1", line0)
-        self.assertIn("gate rejected b 5 c 1 p 0.109 h0", line0)
-        self.assertLess(len(line0), 1200)
-        self.assertIn("stop", stop)
-        self.assertTrue(line1.startswith("iteration 1 |"))
-        self.assertEqual([e["iter"] for e in h[3:]], [2] * 7 + [3] * 7)
-        self.assertNotIn("usage", h[3])
+        # TODO 54 phase 2: the last two iterations row by row and one line about the rest; nothing grows with the run
+        self.assertEqual(len(h), 1 + 2 * 7)
+        self.assertIn("2 earlier iteration(s) (0-1) are not listed", h[0])
+        self.assertEqual([e["iter"] for e in h[1:]], [2] * 7 + [3] * 7)
+        self.assertNotIn("usage", h[1])
         self.assertEqual(lp.compact_history(es, full=10)[0]["step"], "review")  # nothing older: all rows
         # TODO 37.2 (user 2026-10-23): every role reads it compact (run C's Reviewer read 203-255 KB of history)
         self.assertIs(inspect.signature(lp.context).parameters["compact"].default, True)

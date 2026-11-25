@@ -10,7 +10,7 @@ chooser and the body model.
 pinch, centre, approach, closing, depth, z, twist); the answer lists the solved poses' count and the options best first
 (attitude, hand, facing, distance, posture, odds of a miss, fit margin, how far the jaw was raised off the support).
 `--start` is a pool's start file (its placements and robot_xy). The scene's physics model loads once (about 7 s). A
-prediction is for choosing what to try; only a closed-loop round is evidence (rules.md 7)."""
+prediction is for choosing what to try; only a closed-loop round is evidence ([evidence])."""
 
 from __future__ import annotations
 

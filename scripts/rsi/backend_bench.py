@@ -708,7 +708,7 @@ def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where: str = "prob
     with log.open("a") as fh:
         for k, job in enumerate(jobs):
             out, setting = Path(job.out), dict(job.overrides or {})
-            ran = {**setting, **fixed}  # what the bed runs: the fixed switches over the job's set (rule 46)
+            ran = {**setting, **fixed}  # what the bed runs: the fixed switches over the job's set ([bed-fixed])
             out.mkdir(parents=True, exist_ok=True)
             todo = [x for x in (job.labels or every) if not B._current(out / f"{x}.json", sig)]
             for x in todo:  # a round made under another signature is kept aside, not read again

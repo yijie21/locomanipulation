@@ -121,7 +121,7 @@ def test_lml_bench_family_files(name):
     } & set(fam)
     assert fam["tasks"] == old["tasks"] and fam["pools"] == old["pools"] and fam["bed_fixed"] == old["bed_fixed"]
     assert fam["tasks_file"] == old["tasks_file"] and fam["practice_dir"] == old["practice_dir"]
-    assert fam["rules"] == "scripts/rsi/rules_lml_bench.md" and (RSI.parents[1] / fam["rules"]).is_file()
+    assert fam["rules"] == "scripts/rsi/rules_notes/lml.md" and (RSI.parents[1] / fam["rules"]).is_file()
     assert (RSI.parents[1] / fam["prompts"] / "engineer.md").is_file()
     sb = fam["sandbox"]
     for k in ("keep", "overlay"):
@@ -136,19 +136,12 @@ def test_old_lml_family_files_are_untouched():
 
 
 def test_rules_and_prompts_name_the_new_package():
-    text = (RSI / "rules_lml_bench.md").read_text()
-    for gone in ("skill_simple.py", "skill_lml_cam.py", "view_lml.py", "seed_pkg_lml"):
+    text = (RSI / "rules_notes" / "lml.md").read_text()
+    for gone in ("skill_simple.py", "seed_pkg_lml"):
         assert gone not in text
-    assert "flows.py" in text and "camera_view.py" in text and "version 9" in text.splitlines()[0]
-    for f in (RSI / "prompts_lml_bench").glob("*.md"):
+    for f in (RSI / "prompts").rglob("*.md"):
         t = f.read_text()
-        assert (
-            "rules_lml.md" not in t
-            and "skill_lml_cam" not in t
-            and "view_lml" not in t
-            and "import backend_lml" not in t
-        ), f.name
-    assert "import backend_bench as B" in (RSI / "prompts_lml_bench" / "engineer.md").read_text()
+        assert "skill_lml_cam" not in t and "view_lml" not in t and "import backend_lml" not in t, f.name
 
 
 # --------------------------------------------------------- simple_art: the generic backend equals the old path
@@ -555,7 +548,7 @@ def test_layout_and_caps(tmp_path, monkeypatch):
     lay = BB.layout(fam)
     assert lay["stub_file"] == "pick.py" and lay["leak"] == BL.LEAK and lay["class_suggest"] == BL.CLASS_SUGGEST
     assert lay["caps"]["sweep_rounds"] == 180 and lay["caps"]["p_max"] == 0.05
-    assert Path(lay["skills"]).is_dir() and Path(lay["rules"]).name == "rules_lml_bench.md"
+    assert Path(lay["skills"]).is_dir() and Path(lay["rules"]).name == "lml.md"
     art = bench_fam(tmp_path, monkeypatch, "simple_art")
     assert BB.layout(art)["leak"] == B.LEAK and BB.layout(art)["class_suggest"] == B.CLASS_SUGGEST
 

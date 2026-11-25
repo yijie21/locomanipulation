@@ -26,8 +26,8 @@
  },
  "track": "official",
  "practice_dir": "/workspace/code/locomanipulation-esc/outputs/escalation_20261116/practice_lml_fridge",
- "rules": "scripts/rsi/rules_lml_bench.md",
- "prompts": "scripts/rsi/prompts_lml_bench",
+ "rules": "scripts/rsi/rules_notes/lml.md",
+ "prompts": "scripts/rsi/prompts",
  "plan": null,
  "caps": {
   "claims": false,
@@ -93,8 +93,10 @@
    "scripts/rsi/prep.py",
    "tests/conftest.py",
    "tests/test_scene_task_runner.py",
-   "scripts/rsi/rules_lml_bench.md",
-   "scripts/rsi/prompts_lml_bench",
+   "scripts/rsi/rules_core.md",
+   "scripts/rsi/rules_build.py",
+   "scripts/rsi/rules_notes/lml.md",
+   "scripts/rsi/prompts",
    "scripts/rsi/families/lml_fridge_bench.json",
    "scripts/rsi/families/lml_fridge_tasks.jsonl",
    "scripts/rsi/backend_bench.py",
@@ -137,8 +139,10 @@
   ],
   "overlay": [
    "scripts/rsi/backend.py",
-   "scripts/rsi/rules_lml_bench.md",
-   "scripts/rsi/prompts_lml_bench",
+   "scripts/rsi/rules_core.md",
+   "scripts/rsi/rules_build.py",
+   "scripts/rsi/rules_notes/lml.md",
+   "scripts/rsi/prompts",
    "scripts/rsi/families/lml_fridge_bench.json",
    "scripts/rsi/families/lml_fridge_tasks.jsonl",
    "scripts/rsi/loop.py",
@@ -160,7 +164,7 @@
   ]
  },
  "bed_fixed": {
-  "_about": "rule 46, 2026-11-23: interface correction found in the hand phase (docs/handoff/escalation-a-l-20261117.md, camera track round 7), missing from the 11-20 / 11-21 loops. feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and a foot that moves during a reach is read as half a pelvis move (brush: hand estimate error 8 -> 1.5 cm).",
+  "_about": "interface correction found in the hand phase (docs/handoff/escalation-a-l-20261117.md, camera track round 7), missing from the 11-20 / 11-21 loops. feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and a foot that moves during a reach is read as half a pelvis move (brush: hand estimate error 8 -> 1.5 cm).",
   "feed_torque": true
  },
  "bench": {

@@ -36,7 +36,13 @@ def src_file(mod: str) -> Path | None:
 
 
 def named_commands() -> set[str]:
-    text = "".join(f.read_text() for f in [RSI / "rules.md", *sorted((RSI / "prompts").glob("*.md"))])
+    files = [
+        RSI / "rules_core.md",
+        RSI / "rules_scene.md",
+        *sorted((RSI / "rules_notes").glob("*.md")),
+        *sorted((RSI / "prompts").rglob("*.md")),
+    ]
+    text = "".join(f.read_text() for f in files)
     return {m for m in re.findall(r"scripts/rsi/([a-z_]+)\.py", text) if (RSI / f"{m}.py").exists()}
 
 

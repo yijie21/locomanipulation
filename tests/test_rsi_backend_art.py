@@ -48,11 +48,14 @@ def test_real_family_loads_with_four_tasks(tmp_path, monkeypatch):
     assert fam["pools"]["accept"]["n"] == 120 and fam["pools"]["accept"]["per_level"] == 10
     assert fam["pools"]["sealed"]["n"] == 60 and fam["pools"]["diag"]["n"] == 30
     assert B.bed_fixed(fam) == {"feed_torque": True}
-    assert fam["rules"] == "scripts/rsi/rules_simple_art.md" and fam["prompts"] == "scripts/rsi/prompts_simple_art"
+    assert fam["rules"] == "scripts/rsi/rules_notes/simple_art.md" and fam["prompts"] == "scripts/rsi/prompts"
     assert [Path(t).name for t in fam["sandbox"]["task_files"]] == [
         f"g1_wholebody_{x}_teleop.py" for x in ("open_oven", "close_door", "open_faucet", "open_trash_can")
     ]
-    assert "scripts/rsi/rules_simple_art.md" in fam["sandbox"]["keep"]
+    assert (
+        "scripts/rsi/rules_notes/simple_art.md" in fam["sandbox"]["keep"]
+        and "scripts/rsi/rules_core.md" in fam["sandbox"]["keep"]
+    )
     assert "scripts/rsi/families/simple_art.json" in fam["sandbox"]["overlay"]
     assert fam["rows"]["OpenFaucetTeleop"]["goal"] == "turn the faucet"
 

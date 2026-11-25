@@ -140,7 +140,7 @@ class MechanismTable(unittest.TestCase):
                 mock.patch.object(lp, "run_cost", lambda es, meta: 0.0),
             ):
                 ctx = lp.context(dict(dir="x", hash="h", set={}), dict(extra=1))
-        self.assertEqual(len(ctx["history"]), 2 + 2 * 2)  # iterations 0 and 1 as lines, 2 and 3 row by row
+        self.assertEqual(len(ctx["history"]), 1 + 2 * 2)  # one note on iterations 0 and 1, 2 and 3 row by row
         self.assertIsInstance(ctx["history"][0], str)
         self.assertEqual([r["iter"] for r in ctx["mechanisms"]], [0, 1, 2, 3])
         self.assertEqual(ctx["extra"], 1)

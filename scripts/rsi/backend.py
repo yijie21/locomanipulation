@@ -85,13 +85,13 @@ def of(family):
 
 def layout(family) -> dict:
     """Where the family's editable package, rules, prompts and plan are, and its caps. A family without a backend gets
-    today's constants (the scene skills, rules.md, prompts/, the family file's `plan` or the scene plan), all caps on."""
+    today's constants (the scene skills, rules_scene.md, prompts/, the family file's `plan` or the scene plan), all caps on."""
     be = of(family)
     if be is None:
         spec = family if isinstance(family, dict) else _spec(family)
         return dict(
             skills=REPO / "src" / "locomani" / "tasks" / "scene" / "skills",
-            rules=HERE / "rules.md",
+            rules=HERE / "rules_scene.md",
             prompts=HERE / "prompts",
             plan=REPO / spec["plan"] if spec.get("plan") else REPO / "docs" / "handoff" / "scene-rsi-plan-20261016.md",
             leak=[],

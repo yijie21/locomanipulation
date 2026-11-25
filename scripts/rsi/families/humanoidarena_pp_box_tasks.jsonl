@@ -1,1 +1,1 @@
-{"id": "pp_box", "goal": "Pick up the box and place it on the shelf."}
+{"id": "pp_box", "goal": "Pick up the box and place it on the shelf.", "limit_steps": 1450}

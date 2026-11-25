@@ -47,7 +47,7 @@ def make_fam(tmp: Path, **kw) -> dict:
         base="pkg",
         guard="guard.py",
         practice_dir=str(practice),
-        rules="rules.md",
+        rules="rules_scene.md",
         prompts="prompts",
         plan=None,
         caps={"min_net": 3},
@@ -241,7 +241,7 @@ def test_load_real_family(tmp_path, monkeypatch):
     assert lay["caps"]["stop_no_progress"] == 2 and "probe_parallel" not in lay["caps"] and "min_net" not in fam["caps"]
     assert set(lay["class_suggest"]) == set(B.CLASSES) and lay["plan"] is None
     assert lay["skills"] == tmp_path / "simple_q" / "package" and (lay["skills"] / "__init__.py").exists()
-    assert B.base_dir(fam) != lay["skills"].resolve() and lay["prompts"].name == "prompts_simple"
+    assert B.base_dir(fam) != lay["skills"].resolve() and lay["prompts"].name == "prompts"
 
 
 # -------------------------------------------------------------------------------------------- signature

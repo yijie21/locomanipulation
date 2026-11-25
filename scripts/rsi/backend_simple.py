@@ -47,7 +47,7 @@ BLAME = {"deliver": "reach_grasp", "grasp": "lift", "place": "release", "collide
 BLAME_ART = {"deliver": "reach", "grasp": "close", "short": "move", "collide": "move"}
 FALLBACK_CAPS = {"claims": False, "design_probes": False, "diag_redraw": False, "sentinel_exact": False,
                  "min_net": 3, "repeat": 1, "p_max": 0.05, "sentinel_flips": 1, "probe_scope": True,
-                 # TODO 48.17 (2026-11-23, loop.py's block after diag_incumbent; rules 3, 25, 33, 47)
+                 # TODO 48.17 (2026-11-23, loop.py's block after diag_incumbent; [hidden])
                  "check_half": True, "check_min_net": 4, "stage1_first": True, "role_rerun": True,
                  "sealed_at_stop": True,
                  # TODO 54 (rsi-lean, review 2026-11-25): the lean iteration and the per-task sign test
@@ -686,7 +686,7 @@ def card_text(r: dict) -> list[str]:
     gd = raw.get("grasp_desc")
     if (
         isinstance(gd, list) and len(gd) >= 6
-    ):  # rule 17: where on the object the chosen grasp sits, as the camera saw it
+    ):  # [scene-robot]: where on the object the chosen grasp sits, as the camera saw it
         lines.append(
             f"grasp chosen: palm {_f(100 * gd[0])} cm ahead, {_f(100 * gd[1])} cm left, {_f(100 * gd[2])} cm up of the"
             f" middle of the seen points; palm normal ({_f(gd[3], 2)}, {_f(gd[4], 2)}, {_f(gd[5], 2)}) in the same axes"
@@ -721,7 +721,7 @@ def segments_module():
 
 
 def segment_header(rounds: list[dict]) -> list[str]:
-    """The cards' segment table (rules 48): per task with losses, its steps in order with the losses blamed on each
+    """The cards' segment table ([segments]): per task with losses, its steps in order with the losses blamed on each
     over the rounds that reached it, the hot step marked, the stable ones named."""
     sg = segments_module()
     body = sg.table_lines(sg.segment_table(rounds), rounds)
@@ -733,7 +733,7 @@ def segment_header(rounds: list[dict]) -> list[str]:
 
 def cards(rounds: list[dict], out) -> Path:
     """Failure cards for the Reviewer: <out>/cards.md (or `out` itself when it ends in .md). A two-line header with
-    the wins per task, the segment table (rules 48), then one card per failed round."""
+    the wins per task, the segment table ([segments]), then one card per failed round."""
     out = Path(out)
     f = out if out.suffix == ".md" else out / "cards.md"
     f.parent.mkdir(parents=True, exist_ok=True)
@@ -820,7 +820,7 @@ class SkillPackage:
         pinned = sorted(k for k in (overrides or {}) if k in self.fixed)
         if pinned:
             raise KeyError(
-                f"parameters {pinned} are fixed by the bed for every round (rule 46); a set may not name them"
+                f"parameters {pinned} are fixed by the bed for every round ([bed-fixed]); a set may not name them"
             )
         ok = set(self.defaults) | set(self.bed_keys)
         bad = sorted(k for k in (overrides or {}) if k not in ok and not k.startswith(STANCE))
@@ -841,7 +841,7 @@ def load_skills(root, name: str = "scene_skills", family=None) -> SkillPackage:
 
 
 def bed_fixed(fam: dict) -> dict:
-    """The family's fixed bed switches (`bed_fixed`, rule 46): corrections of the bed's interface to the benchmark,
+    """The family's fixed bed switches (`bed_fixed`, [bed-fixed]): corrections of the bed's interface to the benchmark,
     found by people, that every round of every role runs with (diagnostic rounds, probes, try.py, drafts, the gate,
     the sealed set). run_jobs lays them over each job's set; no set may name them. Keys starting with "_" are notes."""
     return {k: v for k, v in (fam.get("bed_fixed") or {}).items() if not k.startswith("_")}
@@ -1144,7 +1144,7 @@ def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where: str = "prob
     with log.open("a") as fh:
         for k, job in enumerate(jobs):
             out, setting = Path(job.out), dict(job.overrides or {})
-            ran = {**setting, **fixed}  # what the bed runs: the fixed switches over the job's set (rule 46)
+            ran = {**setting, **fixed}  # what the bed runs: the fixed switches over the job's set ([bed-fixed])
             out.mkdir(parents=True, exist_ok=True)
             todo = [x for x in (job.labels or every) if not _current(out / f"{x}.json", sig)]
             for x in todo:  # a round made under another signature is kept aside, not read again

@@ -8,7 +8,7 @@ the iterations' composer contexts only (nothing of the hidden tree):
                same, worse, and how many broke at least one start; its predicted fixes that the probe confirmed
     Engineer   drafts built (void and errored ones counted apart); for drafts a Composer saw, their visible flips
                against the incumbent: better, same, worse, broke at least one start
-    check      candidates run on the hidden half of the diagnostic pool, and how many it sent on (rules 47)
+    check      candidates run on the hidden half of the diagnostic pool, and how many it sent on ([check-half])
     gate       calls that judged (not void, not dry runs), how many passed stage 1, how many were accepted
 
 `compute(loop_dir) -> dict`, `line(dict) -> str` (one line for `loop.py status`). The loop writes compute()'s result to

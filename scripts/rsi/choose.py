@@ -7,7 +7,7 @@ for a role or a person asking where to stand, which hand and which grasp for an 
 where the walk starts); without it the scene file's poses are used and the walk is not scored. The scene's physics
 model loads once (about 7 s). The answer lists the options best first, the one `choose()` would take, and what it
 would say when none predicts a delivered reach. A prediction is for choosing what to try; only a closed-loop round is
-evidence (rules.md 7)."""
+evidence ([evidence])."""
 
 from __future__ import annotations
 

@@ -100,7 +100,7 @@ def cards(rounds, out):
 
 def layout(family):
     here = Path(__file__).resolve().parents[1] / "scripts" / "rsi"
-    return dict(skills=root() / "skills", rules=here / "rules_simple_art.md", prompts=here / "prompts_simple_art",
+    return dict(skills=root() / "skills", rules=here / "rules_notes" / "simple_art.md", prompts=here / "prompts",
                 plan=None, leak=[], class_suggest={}, stub_file="skill.py", caps=dict(CAPS))  # fmt: skip
 
 

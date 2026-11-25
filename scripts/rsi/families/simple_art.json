@@ -38,8 +38,8 @@
  "track": "official",
  "probe_bed": "official",
  "practice_dir": "/workspace/code/locomanipulation-esc/outputs/escalation_20261116/practice2",
- "rules": "scripts/rsi/rules_simple_art.md",
- "prompts": "scripts/rsi/prompts_simple_art",
+ "rules": "scripts/rsi/rules_notes/simple_art.md",
+ "prompts": "scripts/rsi/prompts",
  "plan": null,
  "caps": {
   "claims": false,
@@ -120,8 +120,10 @@
    "tests/test_scene_task_runner.py",
    "scripts/rsi/backend_bench.py",
    "scripts/rsi/backend_simple.py",
-   "scripts/rsi/rules_simple_art.md",
-   "scripts/rsi/prompts_simple_art",
+   "scripts/rsi/rules_core.md",
+   "scripts/rsi/rules_build.py",
+   "scripts/rsi/rules_notes/simple_art.md",
+   "scripts/rsi/prompts",
    "scripts/rsi/families/simple_art.json",
    "scripts/rsi/families/simple_art_tasks.jsonl"
   ],
@@ -163,8 +165,10 @@
    "scripts/rsi/backend.py",
    "scripts/rsi/backend_bench.py",
    "scripts/rsi/backend_simple.py",
-   "scripts/rsi/rules_simple_art.md",
-   "scripts/rsi/prompts_simple_art",
+   "scripts/rsi/rules_core.md",
+   "scripts/rsi/rules_build.py",
+   "scripts/rsi/rules_notes/simple_art.md",
+   "scripts/rsi/prompts",
    "scripts/rsi/families/simple_art.json",
    "scripts/rsi/families/simple_art_tasks.jsonl",
    "scripts/rsi/loop.py",
@@ -183,7 +187,7 @@
   ]
  },
  "bed_fixed": {
-  "_about": "feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and the pelvis estimate drifts when a foot moves (rule 46, same as simple_q). No AMO switches apply: the four articulated tasks run the g1_sonic robot.",
+  "_about": "feed_torque: leg odometry reads the foot loads from the robot's own torque command; without it the loads read 0 in the official environment and the pelvis estimate drifts when a foot moves . No AMO switches apply: the four articulated tasks run the g1_sonic robot.",
   "feed_torque": true
  }
 }
