@@ -823,6 +823,16 @@ class Wiring(unittest.TestCase):
         self.assertIn("skills/pick.py", note)
         self.assertIn("b_fam", note)
 
+    def test_the_grasp_common_sentence_follows_the_package(self):
+        """A run from a seed package without skills/grasp_common.py (user 2026-11-24) must not be told to improve it."""
+        with tempfile.TemporaryDirectory() as d:
+            skills = Path(d)
+            self.assertNotIn("grasp_common", LP.shared_skills_note(skills))
+            (skills / "grasp_common.py").write_text("")
+            self.assertIn("skills/grasp_common.py", LP.shared_skills_note(skills))
+            self.assertIn("skills/{own_skill}", LP.shared_skills_note(skills))
+        self.assertIn("grasp_common", LP.shared_skills_note())  # the main library has it
+
     def test_hits_md_is_gitignored_so_it_is_never_a_stray(self):
         """C1: changed_files() is `git status --porcelain -uall`; the role file written after the sandbox's commit
         must not show up there, or after_engineer / revert_strays void every draft."""

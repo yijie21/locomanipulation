@@ -2,13 +2,14 @@
 share one knowledge library and one skills package. Modes 1 and 2 are the loop as it is (`sandbox.py --fresh`, then
 `loop.py run`, then `knowledge.py build`).
 
-    python3 scripts/rsi/alternate.py init <run dir> <family A> <family B> [--ref HEAD]
+    python3 scripts/rsi/alternate.py init <run dir> <family A> <family B> [--ref HEAD] [--seed DIR]
     python3 scripts/rsi/alternate.py run <run dir> [--iters 5] [--max-hours 15] [--stop-rate 0.95] [--loop-args "..."]
     python3 scripts/rsi/alternate.py status <run dir>
     python3 scripts/rsi/alternate.py publish <run dir> [--out scripts/rsi/knowledge]
 
 `init` builds two sandboxes, `<run>/a` and `<run>/b` (sandbox.py --fresh: no earlier knowledge, no experience
-library; both start from the repository's skills package at `--ref`), the shared library `<run>/knowledge` (empty) and
+library; both start from the repository's skills package at `--ref`, or from the committed skills package directory
+`--seed`, e.g. scripts/rsi/seeds/gso_picked_start, the package gso-alt-a started from), the shared library `<run>/knowledge` (empty) and
 the merge base `<run>/sync/base/skills`. Each sandbox's family file gets `shares_skills_with` (the other family, its
 kind and skill file), which loop.py turns into a line of the Reviewer's and the Engineer's prompts.
 
@@ -374,8 +375,9 @@ def share_note(fam_file: Path, other: str, own_tag: str, other_tag: str) -> None
     fam_file.write_text(json.dumps(fam, indent=1, ensure_ascii=False) + "\n")
 
 
-def init(run: Path, fam_a: str, fam_b: str, ref: str = "HEAD") -> dict:
-    """The run directory: two fresh sandboxes, the empty shared library, the merge base, the state."""
+def init(run: Path, fam_a: str, fam_b: str, ref: str = "HEAD", seed: str | None = None) -> dict:
+    """The run directory: two fresh sandboxes (their skills package the one at `ref`, or `seed`, sandbox.seed_skills),
+    the empty shared library, the merge base, the state."""
     if run.exists():
         raise SystemExit(f"{run} exists")
     if fam_a == fam_b:
@@ -383,7 +385,7 @@ def init(run: Path, fam_a: str, fam_b: str, ref: str = "HEAD") -> dict:
     run.mkdir(parents=True)
     sha = subprocess.run(["git", "rev-parse", ref], cwd=REPO, capture_output=True, text=True, check=True).stdout.strip()
     for side, fam in zip(SIDES, (fam_a, fam_b), strict=True):
-        SB.build(run / side, fam, sha, fresh=True)
+        SB.build(run / side, fam, sha, fresh=True, seed=seed)
         if not (run / side / "scripts" / "rsi" / "knowledge.py").exists():
             raise SystemExit(f"{fam}: its sandbox has no scripts/rsi/knowledge.py (add it and scripts/rsi/knowledge "
                              "to the family file's sandbox.keep)")  # fmt: skip
@@ -397,7 +399,7 @@ def init(run: Path, fam_a: str, fam_b: str, ref: str = "HEAD") -> dict:
         commit(run / side, [str(fam_file.relative_to(run / side))], "alternate.py: shares_skills_with")
     (run / "knowledge").mkdir()
     copy_skills(a_skills, run / "sync" / "base" / "skills")
-    st = dict(families=[fam_a, fam_b], tags=tags, ref=sha, created=now(), iter=0, turn=0, phase="loop",
+    st = dict(families=[fam_a, fam_b], tags=tags, ref=sha, seed=seed, created=now(), iter=0, turn=0, phase="loop",
               loop_mark=None, stopped={}, blocked=None, events=[])  # fmt: skip
     jdump(run / STATE_FILE, st)
     return st
@@ -586,6 +588,8 @@ def main(argv=None) -> int:
     i.add_argument("family_a")
     i.add_argument("family_b")
     i.add_argument("--ref", default="HEAD", help="the commit both sandboxes are exported from")
+    i.add_argument("--seed", default=None, metavar="DIR", help="a committed skills package directory both sandboxes "
+                   "start from instead of the main library (e.g. scripts/rsi/seeds/gso_picked_start, gso-alt-a's start)")  # fmt: skip
     r = sub.add_parser("run")
     r.add_argument("run", type=Path)
     r.add_argument("--iters", type=int, default=5, help="iterations, each a half of both families")
@@ -604,8 +608,8 @@ def main(argv=None) -> int:
     a = ap.parse_args(glue_loop_args(sys.argv[1:] if argv is None else list(argv)))
     run = a.run.resolve()
     if a.cmd == "init":
-        st = init(run, a.family_a, a.family_b, a.ref)
-        print(json.dumps({k: st[k] for k in ("families", "tags", "ref")}))
+        st = init(run, a.family_a, a.family_b, a.ref, a.seed)
+        print(json.dumps({k: st[k] for k in ("families", "tags", "ref", "seed")}))
         return 0
     if not (run / STATE_FILE).exists():
         raise SystemExit(f"no {STATE_FILE} in {run}: alternate.py init first")

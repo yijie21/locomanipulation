@@ -91,6 +91,51 @@ class HiddenSeeds(unittest.TestCase):
                     F.draw(fam, "accept", root / "pool")
 
 
+class SeedOverride(unittest.TestCase):
+    """--seed (user 2026-11-24, a run from scratch): the archive's skills package replaced by a committed seed
+    directory, the sandbox's family file saying so; a family's own `sandbox.seed` still applies without it."""
+
+    def setUp(self):
+        self.sb = _fresh("rsi_sandbox_seed", "sandbox.py")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dest = Path(self.tmp.name)
+        _write(self.dest / "src/locomani/tasks/scene/skills/__init__.py", "library = 1\n")
+        _write(self.dest / "src/locomani/tasks/scene/skills/pick.py", "def pick(): return 'library'\n")
+        _write(self.dest / "scripts/rsi/seeds/start/__init__.py", "seed = 1\n")
+        _write(self.dest / "scripts/rsi/seeds/start/test_seed.py", "def test_x(): pass\n")
+        _write(self.dest / "scripts/rsi/seeds/start/__pycache__/x.pyc", "")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_the_seed_replaces_the_package_and_is_recorded(self):
+        _family_file(self.dest, "fam", sandbox=dict(seed=None, keep=[], closure=[], strip=[]))
+        self.sb.seed_skills(self.dest, "fam", "scripts/rsi/seeds/start")
+        skills = self.dest / "src/locomani/tasks/scene/skills"
+        self.assertEqual(sorted(p.name for p in skills.iterdir()), ["__init__.py", "test_seed.py"])
+        self.assertEqual((skills / "__init__.py").read_text(), "seed = 1\n")
+        fam = json.loads((self.dest / "scripts/rsi/families/fam.json").read_text())
+        self.assertEqual(fam["sandbox"]["seed"], "scripts/rsi/seeds/start")
+
+    def test_a_directory_that_is_no_package_is_refused_and_nothing_changes(self):
+        _family_file(self.dest, "fam", sandbox=dict(seed=None, keep=[], closure=[], strip=[]))
+        with self.assertRaises(SystemExit):
+            self.sb.seed_skills(self.dest, "fam", "scripts/rsi/seeds/missing")
+        self.assertTrue((self.dest / "src/locomani/tasks/scene/skills/pick.py").exists())
+        self.assertIsNone(json.loads((self.dest / "scripts/rsi/families/fam.json").read_text())["sandbox"]["seed"])
+
+    def test_apply_spec_takes_the_override_over_the_familys_own_seed(self):
+        _write(self.dest / "scripts/rsi/seeds/own/__init__.py", "own = 1\n")
+        _family_file(self.dest, "fam", sandbox=dict(seed="scripts/rsi/seeds/own", keep=[], closure=[], strip=[]))
+        with mock.patch.object(self.sb, "closure", return_value=set()):
+            spec = self.sb.apply_spec(self.dest, "fam", "scripts/rsi/seeds/start")
+        self.assertEqual(spec["seed"], "scripts/rsi/seeds/start")
+        self.assertEqual((self.dest / "src/locomani/tasks/scene/skills/__init__.py").read_text(), "seed = 1\n")
+        with self.assertRaises(SystemExit):  # a family without a sandbox block cannot take one
+            _family_file(self.dest, "bare")
+            self.sb.apply_spec(self.dest, "bare", "scripts/rsi/seeds/start")
+
+
 class SandboxLibrary(unittest.TestCase):
     """S2 / S3: no earlier grasp code in a sandbox with a `sandbox` block; no CLAUDE.md / AGENTS.md / tools anywhere."""
 

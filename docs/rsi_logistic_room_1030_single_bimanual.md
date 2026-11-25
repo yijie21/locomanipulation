@@ -238,6 +238,14 @@ CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 
 $PY scripts/rsi/alternate.py status $R                                  # 看进度
 ```
 
+从种子重新开始（用户 11-24，“从零开始重新跑 RSI，不用之前 RSI 学到的技能”）：`init` 加 `--seed scripts/rsi/seeds/gso_picked_start`，其余命令不变。这个目录就是 gso-alt-a 开跑时的技能包（11-19 的主库，提交 04f5b4c6，写回之前；封存集上种子 0/200 的前身 0/100、双手 0/40），两个沙盒的技能包都换成它，沙盒里任务族文件的 `sandbox.seed` 记下来源，`alternate.json` 的 `seed` 也记着；共享知识库本来就是空的。种子包里没有 `grasp_common.py`，提示词里关于它的那句会自动省去（`loop.py` 的 `shared_skills_note`）。模式 1 / 2 对应的是 `sandbox.py $S <任务族> --fresh --seed scripts/rsi/seeds/gso_picked_start`。不加 `--seed` 就从主库现状开始（下一条）。
+
+```bash
+R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-seed
+python3 scripts/rsi/alternate.py init $R gso_single_grasp gso_bimanual_lift --seed scripts/rsi/seeds/gso_picked_start
+CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 --max-hours 15 > $R/run.log 2>&1 &
+```
+
 做什么：
 - **先看停止线**：11-24 起主库的技能包就是上次的最终现任（7.5），两边在验收池上都赢 87.5 %，所以默认 `--stop-rate` 从 0.8 提到 0.95（用户 11-24）；还用 0.8 的话第一次验收门之后两边都会停，一个迭代就结束。
 - `init` 建两个 `--fresh` 沙盒 `$R/a`（单手）和 `$R/b`（双手）、一个空的共享知识目录 `$R/knowledge`，以及合并用的共同祖先 `$R/sync/base`。两个沙盒的任务族文件里写上 `shares_skills_with`，Reviewer 和 Engineer 的提示会说明技能包和另一个任务族共用：`pick.py` 归单手，`bimanual.py` 归双手，共用的模块改了会影响对方。

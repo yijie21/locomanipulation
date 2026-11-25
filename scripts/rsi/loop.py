@@ -217,12 +217,24 @@ SHARED_SKILLS_NOTE = (  # scripts/rsi/alternate.py (user 2026-11-18): two famili
     "family's own skill is skills/{own_skill}. After each iteration the driver merges this family's incumbent into "
     "{other}'s and keeps the merge there only if it loses no more of {other}'s acceptance starts than it wins, and "
     "the other way round. A change to a module both skills use reaches {other}: keep such a change correct for both, "
-    "and do not edit skills/{other_skill} for this family's tasks. What both skills compute alike lives in "
-    "skills/grasp_common.py (rules.md 41): the lift judged against the goal's lifted(X, c, t) with a top-up, and the "
-    "collision hull's cross-section; improve it there for both, keep it free of constants (every tolerance and margin "
-    "is a parameter set in the family's own module) and keep skills/test_*.py passing: the sync runs them before "
-    "{other}'s gate, and a sync where both families changed the same lines fails and is recorded in KNOWLEDGE.md.\n"
+    "and do not edit skills/{other_skill} for this family's tasks. Keep skills/test_*.py passing: the sync runs them "
+    "before {other}'s gate, and a sync where both families changed the same lines fails and is recorded in "
+    "KNOWLEDGE.md.\n"
 )
+# the shared module, when the package has it (a run from the seed `scripts/rsi/seeds/gso_picked_start` has not)
+SHARED_COMMON_NOTE = (
+    "What both skills compute alike lives in skills/grasp_common.py (rules.md 41): the lift judged against the goal's "
+    "lifted(X, c, t) with a top-up, and the collision hull's cross-section; improve it there for both and keep it free "
+    "of constants (every tolerance and margin is a parameter set in the family's own module).\n"
+)
+
+
+def shared_skills_note(skills: Path | None = None) -> str:
+    """The prompt line of a shared package: SHARED_SKILLS_NOTE, plus SHARED_COMMON_NOTE when the package has
+    skills/grasp_common.py (the main library since 2026-11-23; a seed package may not)."""
+    return SHARED_SKILLS_NOTE + (SHARED_COMMON_NOTE if ((skills or SKILLS) / "grasp_common.py").exists() else "")
+
+
 SCOPES = {  # TODO 32.11 (Harness2's scoped proposals): each scoped Reviewer gives at most two hypotheses in its scope
     "P": "YOUR SCOPE: HOW THE ROBOT DOES IT. You own the skill's procedure -- the order and timing of walk, stance, reach, "
     "grip, lift and hold, the tolerances and when a step counts as done, mode switches, approach paths, retries and "
@@ -435,7 +447,7 @@ def prompt_vars() -> dict:
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
         LIBRARY=(LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "")
         + (KNOWLEDGE_NOTE if (HERE / "knowledge" / "KNOWLEDGE.md").exists() else "")
-        + (SHARED_SKILLS_NOTE.format(**spec["shares_skills_with"]) if spec.get("shares_skills_with") else ""),
+        + (shared_skills_note().format(**spec["shares_skills_with"]) if spec.get("shares_skills_with") else ""),
     )
 
 

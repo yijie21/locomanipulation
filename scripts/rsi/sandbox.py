@@ -79,15 +79,35 @@ def closure(dest: Path, entries: list[str]) -> set[str]:
     return {n for n in names if n == "locomani" or n.startswith("locomani.")}
 
 
-def apply_spec(dest: Path, family: str) -> dict:
-    """The family file's `sandbox` block (module docstring) applied to the extracted archive; returns the block."""
+def seed_skills(dest: Path, family: str, seed: str) -> None:
+    """The skills package of the extracted archive replaced by the directory `seed` (repository-relative, committed at
+    the exported ref), and the sandbox's family file told (`sandbox.seed`), so the run's record says where its package
+    came from. `--seed` (user 2026-11-24: a run from scratch, not from what an earlier run wrote back) overrides the
+    family file's own `sandbox.seed`; null there means the main library as it is (the pack families, 2026-11-05)."""
+    skills = dest / "src" / "locomani" / "tasks" / "scene" / "skills"
+    if not (dest / seed / "__init__.py").is_file():
+        raise SystemExit(f"{seed}: not a skills package in the exported commit (no __init__.py)")
+    shutil.rmtree(skills)
+    shutil.copytree(dest / seed, skills, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    fam_file = dest / "scripts" / "rsi" / "families" / f"{family}.json"
+    fam = json.loads(fam_file.read_text())
+    if fam.get("sandbox", {}).get("seed") != seed:
+        fam.setdefault("sandbox", {})["seed"] = seed
+        fam_file.write_text(json.dumps(fam, indent=1) + "\n")
+
+
+def apply_spec(dest: Path, family: str, seed: str | None = None) -> dict:
+    """The family file's `sandbox` block (module docstring) applied to the extracted archive; returns the block.
+    `seed` overrides the block's `seed` (seed_skills)."""
     spec = json.loads((dest / "scripts" / "rsi" / "families" / f"{family}.json").read_text()).get("sandbox") or {}
     if not spec:
+        if seed:
+            raise SystemExit(f"{family} has no `sandbox` block in its family file: --seed needs one")
         return spec
     skills = dest / "src" / "locomani" / "tasks" / "scene" / "skills"
-    if spec.get("seed"):  # null: the family starts from the main library as it is (the pack families, 2026-11-05)
-        shutil.rmtree(skills)
-        shutil.copytree(dest / spec["seed"], skills, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if seed or spec.get("seed"):
+        seed_skills(dest, family, seed or spec["seed"])
+        spec = dict(spec, seed=seed or spec["seed"])
     mods = closure(dest, spec["closure"])
     src = dest / "src"
     kept_py = {src / (m.replace(".", "/") + ".py") for m in mods} | {
@@ -211,15 +231,16 @@ def physics_target(repo: Path, scene: str) -> Path:
     return target
 
 
-def build(dest: Path, family: str, ref: str = "HEAD", fresh: bool = False) -> None:
+def build(dest: Path, family: str, ref: str = "HEAD", fresh: bool = False, seed: str | None = None) -> None:
     """`ref`: the commit exported (replays launched over hours pin one, so later commits do not leak in). `fresh`:
-    no knowledge and no experience library (without_libraries)."""
+    no knowledge and no experience library (without_libraries). `seed`: a skills package directory that replaces the
+    family file's `sandbox.seed` (seed_skills)."""
     if dest.exists():
         raise SystemExit(f"{dest} exists")
     dest.mkdir(parents=True)
     archive = subprocess.run(["git", "archive", ref], cwd=REPO, check=True, capture_output=True).stdout
     subprocess.run(["tar", "-x", "-C", str(dest)], input=archive, check=True)
-    spec = apply_spec(dest, family)
+    spec = apply_spec(dest, family, seed)
     default_strip(dest)
     if fresh:
         without_libraries(dest)
@@ -284,11 +305,14 @@ def main(argv=None) -> int:
     ap.add_argument("dest", type=Path)
     ap.add_argument("family")
     ap.add_argument("--fresh", action="store_true", help="no knowledge and no experience library in the sandbox")
+    ap.add_argument("--seed", default=None, metavar="DIR", help="a skills package directory, repository-relative and "
+                    "committed (e.g. scripts/rsi/seeds/gso_picked_start), that replaces the family file's sandbox.seed: "
+                    "the run starts from it instead of the main library")  # fmt: skip
     a = ap.parse_args(argv)
     families = sorted(f.stem for f in (HERE / "families").glob("*.json"))
     if a.family not in families:  # before anything is written: a typo used to leave a half-extracted tree behind
         raise SystemExit(f"no family {a.family!r} in scripts/rsi/families; known: {', '.join(families)}")
-    build(a.dest.resolve(), a.family, fresh=a.fresh)
+    build(a.dest.resolve(), a.family, fresh=a.fresh, seed=a.seed)
     return 0
 
 
