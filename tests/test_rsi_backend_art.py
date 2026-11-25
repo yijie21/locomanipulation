@@ -186,6 +186,7 @@ def test_family_file_names_the_bench(tmp_path, monkeypatch):
     assert fam["bench"]["name"] == "simple" and fam["bench"]["root"] in (
         "/workspace/code/locomanipulation-bench",
         "/workspace/code/locomanipulation-bench-loop",
+        "/workspace/code/locomanipulation-bench-loop2",
     )
     assert fam["bench"]["options"] == {"target": "perception", "sensor": "stereo"} and fam["bench"]["config"] == {}
     assert not {"bed_env", "bed_env_gate", "official_runner", "bed_files"} & set(fam)  # the block replaces them

@@ -101,7 +101,9 @@ value with everything stored: 138 s, and its 15 rows equal the first run's in ev
 **On by default.** `bench.memo: true` in `scripts/rsi/families/simple_art.json` (diagnostic, probe and draft rounds). Its probe
 signature now differs from its gate signature (the memo rounds are their own pool, as before). Rules `rules_simple_art.md` version 5.
 
-**Open.** (1) The family's `bench.root` is the worktree pinned at 4bdbbe14, older than TODO 52 and 53: its `SimpleConfig` rejects `--set memo` (and `lazy_warm`) as unknown fields (checked), so the loop must move the pin to a commit that holds this branch before the family's `bench.memo: true` can run; until then keep the pin or set `memo` to false. (2) With the memo a round sees the perception that the first round of that state stored; it equals no every-run
+**Pin moved (2026-11-25).** `simple_art.json` now names `/workspace/code/locomanipulation-bench-loop2`, a detached worktree at 623d6cc9 that holds TODO 52 and 53; the old pin (4bdbbe14) stays for simple_art_r2's sandbox.
+
+**Open.** (1) Before the move, the family's `bench.root` was the worktree pinned at 4bdbbe14, older than TODO 52 and 53: its `SimpleConfig` rejects `--set memo` (and `lazy_warm`) as unknown fields (checked), so the loop must move the pin to a commit that holds this branch before the family's `bench.memo: true` can run; until then keep the pin or set `memo` to false. (2) With the memo a round sees the perception that the first round of that state stored; it equals no every-run
 render, so its numbers are comparable to other memo rounds, not bit for bit to non-memo ones (success agreed in 74 of 75 runs here).
 (3) Any edit of the code files above is a new store (whitespace included); a skill that changes `camera_view.py` shares nothing.
 (4) The state stores the MuJoCo data twice on the server (`u` and `mj` hold the same one): 20 % could be saved.

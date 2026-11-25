@@ -26,14 +26,14 @@
  },
  "bench": {
   "name": "simple",
-  "root": "/workspace/code/locomanipulation-bench-loop",
+  "root": "/workspace/code/locomanipulation-bench-loop2",
   "memo": true,
   "options": {
    "target": "perception",
    "sensor": "stereo"
   },
   "config": {},
-  "about_root": "a detached worktree pinned at 4bdbbe14 (TODO 49.3), so ongoing work in the bench worktree never reaches a running loop"
+  "about_root": "a detached worktree pinned at 623d6cc9 (TODO 53; was /workspace/code/locomanipulation-bench-loop at 4bdbbe14 for simple_art_r2), so ongoing work never reaches a running loop; it holds TODO 52 (lazy render with warm-up) and TODO 53 (memo on disk)"
  },
  "track": "official",
  "probe_bed": "official",
