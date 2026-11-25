@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import rsi_loop_ns as NS  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
@@ -31,7 +33,7 @@ def _scene_loop():
     saved = {k: sys.modules.pop(k, None) for k in names}
     sys.path.insert(0, str(HERE))
     try:
-        return _load("scene_rsi_loop_program_search", HERE / "loop.py")
+        return NS.fresh_loop()
     finally:
         sys.path.remove(str(HERE))
         for k, v in saved.items():

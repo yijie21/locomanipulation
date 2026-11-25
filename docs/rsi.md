@@ -1,6 +1,6 @@
 # 场景 RSI：让机器人自己学会新任务
 
-机器人在一套公寓场景里，由 Claude 提任务、写技能代码，再由验收测试决定留不留下改动，能做成的任务一轮比一轮多。整套机制和为什么这样设计见 [场景 RSI 详解](rsi_design.md)，现在做到哪一步见[进展报告](handoff/scene-rsi-report-20261019.md)，名词见[术语表](reference/glossary.md)。10-20 起从空技能目录长出抓取的那条线（任务族 `grasp_atomic`，四次运行到封存集 38 / 50）单独记在[记录与复现](handoff/grasp-atomic-line-20261023.md)。同一套流程在物流间的应用（双手抱起纸箱，任务族 `box_bimanual`，TODO 38）见[物流间 runbook](rsi_logistics_room.md)。
+机器人在一套公寓场景里，由 Claude 提任务、写技能代码，再由验收测试决定留不留下改动，能做成的任务一轮比一轮多。整套机制和为什么这样设计见 [场景 RSI 详解](rsi_design.md)，现在做到哪一步见[进展报告](handoff/scene-rsi-report-20261019.md)，名词见[术语表](reference/glossary.md)。10-20 起从空技能目录长出抓取的那条线（任务族 `grasp_atomic`，四次运行到封存集 38 / 50）单独记在[记录与复现](handoff/grasp-atomic-line-20261023.md)。同一套流程在物流间的应用（双手抱起纸箱，任务族 `box_bimanual`，TODO 38）见[物流间 runbook](rsi_logistics_room.md)。代码布局：小核心 `scripts/rsi/` 加场景插件 `scripts/rsi/scene/`（本文的工具命令都在其下），基准族只用 `backend_bench.py`；模块表见 [handoff](handoff/rsi-lean-20261125.md) 第 3 阶段。
 
 按规模分四级，每级都能单独跑，跑通上一级再跑下一级。耗时是 2026-10 在这台机器上（2 张卡、约 15 个 CPU 核）的实测；模型费按 Claude Opus 计。
 
@@ -26,7 +26,7 @@ PY=$VENV_SIM_PY
 ## 1. 恢复复现材料（每台机器一次）
 
 ```bash
-python3 scripts/rsi/kit.py restore
+python3 scripts/rsi/scene/kit.py restore
 ```
 
 做什么：把仓库里 `rsi_kit/` 的材料放到 `outputs/` 下对应的位置：场景文件、三次发现的任务清单、三个标定样本的任务清单、可站边覆盖文件、各任务族的起点池和最近一次的逐局结局，并写好回归用的登记表。这些都是大模型生成或在当时的场景上抽的，重新生成会不一样，所以随仓库提供。
@@ -54,7 +54,7 @@ $PY scripts/scene_lint.py --scene $SC
 
 ```bash
 P=outputs/scene_rsi_20261016/kit/pick_single/pool_sealed
-CUDA_VISIBLE_DEVICES=0 $PY scripts/rsi/scene_round.py pick_single --pool $P \
+CUDA_VISIBLE_DEVICES=0 $PY scripts/rsi/scene/scene_round.py pick_single --pool $P \
   --skills src/locomani/tasks/scene/skills --out outputs/rsi_smoke/one --labels tv_remote_pickup_s300005 --npz
 ```
 
@@ -75,14 +75,14 @@ cd $S && $PY scripts/rsi/loop.py run pick_single --stub --max-iters 1; cd -
 ## 4. 核对已记录的结果
 
 ```bash
-$PY scripts/rsi/regress.py run check_$(date +%Y%m%d) --families pick_single
+$PY scripts/rsi/scene/regress.py run check_$(date +%Y%m%d) --families pick_single
 ```
 
 做什么：用仓库里的技能目录，在 pick_single 的封存集（80 个起点）上重跑，和恢复出来的记录逐个起点配对比较。
 得到什么：一行结果，例如 `pick_single 49 -> 49 / 80 ... b 0 c 0`：箭头左边是记录，右边是这次；b 是这次成、记录败的起点数，c 反过来。同一台机器上总数应相近，但不保证逐局相同（实测见过 b 3 c 3、总数相同；原因没查，用户 10-22：研究初期不查）；换了 GPU 或驱动，少数局会不同，b 和 c 各在 5 以内算正常。没有任务族在 p ≤ 0.05 上变差时，登记表里每族的 `last` 前移到这次的标签，以后的核对和它比。注意：登记表和复现材料里的记录（标签 `sleep_20261021`）是走路 0.5 m/s + 休眠下测的，现在默认 0.25 m/s，所以会差得多些；`regress.py` 发现动作层设置不同时只作参照比较、不挡、登记表照样前移（TODO 36；用户 10-22：研究初期不按 0.25 m/s 重测）。约 10 分钟。去掉 `--families` 就核对全部 8 个任务族和 3 个标定样本（1488 局，约 2 小时）；记录里任务族合计 169 / 632（0.25 m/s 的上一批 `surfaces_20261020` 是 187 / 632）。
 
 ```bash
-$PY scripts/rsi/successes.py
+$PY scripts/rsi/scene/successes.py
 ```
 
 做什么：按任务把测过的局合起来，数做成（至少一半成功）、偶尔成、没成的任务。
@@ -96,7 +96,7 @@ $PY scripts/rsi/successes.py
 
 ```bash
 git switch -c rsi-repro
-python3 scripts/rsi/kit.py seed
+python3 scripts/rsi/scene/kit.py seed
 git commit -qam "scene RSI: seed skills catalog"
 ```
 
@@ -114,12 +114,12 @@ cd $S && nohup setsid $PY scripts/rsi/loop.py run pick_single > loop.log 2>&1 &
 做什么：建沙盒并抽池，然后在后台跑内环，直到满足停止条件（[详解](rsi_design.md)第 5 节）。每次迭代：Reviewer 读诊断池的记录提假设，Prober 试参数并给假设标状态，Manager 选至多 3 条（提过两轮以上、没做过、没被否定的机制会被驱动程序强制占一个名额），3 个 Engineer 并行写代码，Composer 合成一个候选，验收门判（`--candidates 1` 只用一个 Engineer、没有 Composer）。沙盒里带经验库，不含这个任务族自己的那条。每局记录带失败类型和关键事件，验收结论按类型给多赢少赢（TODO 33.15–33.17）。现任在验收池上已经超过 70% 时接着跑，要加 `--stop-rate`（比如 `--stop-rate 0.85`），否则一开跑就停；续跑沿用上次记下的值。
 角色在沙盒里能用的命令（规则第 18、32 条；都是人写的，循环只调用）：
 - `scripts/rsi/try.py`：点名几个起点、用一份技能目录跑，走 12 进程队列并行，返回逐局结果和对现任的翻转；每次至多 40 局、每个角色每轮至多 240 局（TODO 37.1）。
-- `PYTHONPATH=src $PY scripts/rsi/body.py reach --x 0.45 --y-out 0.05 --z 0.9 --att level --hand right`：身体模型——这个伸手目标（骨盆朝向系：前伸、朝手外侧、离地高度，加手腕姿态）控制器送不送得到、差多少。表在 `outputs/scene_rsi_20261016/body/`，建沙盒时复制进去（TODO 33.1.4）。`PYTHONPATH=src $PY scripts/rsi/body.py best --name pick.STANCE_MIN_D_M`：设计探针量过的参数哪一档最好，没有明显更好的一档就给 null，技能在运行时用 `body.best_level` 问同一件事（TODO 33.1.7）。
-- `PYTHONPATH=src $PY scripts/rsi/choose.py outputs/scene_discovery/adt_apartment_mars Mug_2 --start <起点文件>`：站位和抓法一起选——每种抓法、左右手、站位、姿态的预计送达概率，最好的在前，并说明兜底顺序（站着 → 降骨盆 → 准备动作，TODO 33.12）。加 `--two-hand` 列双手夹持的站位和两只手各自的送达概率（TODO 33.1.5）。`PYTHONPATH=src $PY scripts/rsi/keypoints.py outputs/scene_discovery/adt_apartment_mars Mug_2 --points` 和 `... --spec '{"pinch": ["hull:-y", "hull:+y"], "twist": 45}'`：关键点约束抓取——物体有哪些带名字的点（包围盒的面、外壳截面的两端），一组约束（两指尖贴哪两点、接近方向、夹持轴、扭转）解出哪些抓法，按挑选器和身体模型排好（TODO 33.9，规则第 36 条）；技能里用 `keypoints.pick()` 直接执行最好的那个。
-- `PYTHONPATH=src $PY scripts/rsi/records.py features --task pick_Mug_2` 和 `PYTHONPATH=src $PY scripts/rsi/records.py query events.reach_gap_cm ">=" 5 --task pick_Mug_2`：记录库——角色看得到的全部历史局，每局一行，起点、事件和每一步的数值展开成列；查一个量和成败的关系。假设里写了 `measure` 的，驱动程序在探针之后按它定状态（TODO 33.15.1）。原仓库的库文件由人汇总：`python3 scripts/rsi/records.py build <沙盒> ...`，写到 `outputs/scene_rsi_20261016/records/library.jsonl`，建沙盒时拷进去。
-- 假设里写 `design`，驱动程序在探针之后跑设计探针：一个因素分几档，强制在同一批诊断起点上（`scripts/rsi/design.py`；单独试可以 `PYTHONPATH=src $PY scripts/rsi/design.py grasp_atomic --pool <起点目录> --skills <技能目录> --out <目录> --factor spawn_bearing --levels 0 180 --starts 2`，TODO 33.19）。每档的结果记进这次运行的 `body/curves_run.jsonl`；技能运行时读的是建沙盒时那份 `body/curves.jsonl`，整次运行不变。一次运行结束后，人把它的曲线收回原仓库：`python3 scripts/rsi/body_curves.py build <沙盒> ...`（写 `outputs/scene_rsi_20261016/body/curves.jsonl` 和 `constraints.jsonl`，下一个沙盒带上），`python3 scripts/rsi/body_curves.py show` 列出已有的曲线（TODO 33.1.7）。
-- `PYTHONPATH=src $PY scripts/rsi/prep.py outputs/scene_discovery/adt_apartment_mars DishSoap_1 --start <起点文件> --skills <技能目录>`：挑选器没有站位时，转、拉、挪邻居哪种目标能换来站位，技能包里有没有实现（TODO 33.5；任务族 `grasp_prep` 用起点的 `placement` 选项专抽这类局面）。
-驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；同一类失败（走路摔倒）有 2 局以上时，驱动程序把每局失败那一刻的命令从同一起点单独再跑一遍，判是动作层还是技能的毛病，动作层的写进 `loop/escalations.jsonl`（`scripts/rsi/isolate.py`，TODO 33.20）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`；角色的推理档位 `--effort 角色=档位`（默认 Reviewer high，其余 xhigh，TODO 37.5）。
+- `PYTHONPATH=src $PY scripts/rsi/scene/body.py reach --x 0.45 --y-out 0.05 --z 0.9 --att level --hand right`：身体模型——这个伸手目标（骨盆朝向系：前伸、朝手外侧、离地高度，加手腕姿态）控制器送不送得到、差多少。表在 `outputs/scene_rsi_20261016/body/`，建沙盒时复制进去（TODO 33.1.4）。`PYTHONPATH=src $PY scripts/rsi/scene/body.py best --name pick.STANCE_MIN_D_M`：设计探针量过的参数哪一档最好，没有明显更好的一档就给 null，技能在运行时用 `body.best_level` 问同一件事（TODO 33.1.7）。
+- `PYTHONPATH=src $PY scripts/rsi/scene/choose.py outputs/scene_discovery/adt_apartment_mars Mug_2 --start <起点文件>`：站位和抓法一起选——每种抓法、左右手、站位、姿态的预计送达概率，最好的在前，并说明兜底顺序（站着 → 降骨盆 → 准备动作，TODO 33.12）。加 `--two-hand` 列双手夹持的站位和两只手各自的送达概率（TODO 33.1.5）。`PYTHONPATH=src $PY scripts/rsi/scene/keypoints.py outputs/scene_discovery/adt_apartment_mars Mug_2 --points` 和 `... --spec '{"pinch": ["hull:-y", "hull:+y"], "twist": 45}'`：关键点约束抓取——物体有哪些带名字的点（包围盒的面、外壳截面的两端），一组约束（两指尖贴哪两点、接近方向、夹持轴、扭转）解出哪些抓法，按挑选器和身体模型排好（TODO 33.9，规则第 36 条）；技能里用 `keypoints.pick()` 直接执行最好的那个。
+- `PYTHONPATH=src $PY scripts/rsi/scene/records.py features --task pick_Mug_2` 和 `PYTHONPATH=src $PY scripts/rsi/scene/records.py query events.reach_gap_cm ">=" 5 --task pick_Mug_2`：记录库——角色看得到的全部历史局，每局一行，起点、事件和每一步的数值展开成列；查一个量和成败的关系。假设里写了 `measure` 的，驱动程序在探针之后按它定状态（TODO 33.15.1）。原仓库的库文件由人汇总：`python3 scripts/rsi/scene/records.py build <沙盒> ...`，写到 `outputs/scene_rsi_20261016/records/library.jsonl`，建沙盒时拷进去。
+- 假设里写 `design`，驱动程序在探针之后跑设计探针：一个因素分几档，强制在同一批诊断起点上（`scripts/rsi/scene/design.py`；单独试可以 `PYTHONPATH=src $PY scripts/rsi/scene/design.py grasp_atomic --pool <起点目录> --skills <技能目录> --out <目录> --factor spawn_bearing --levels 0 180 --starts 2`，TODO 33.19）。每档的结果记进这次运行的 `body/curves_run.jsonl`；技能运行时读的是建沙盒时那份 `body/curves.jsonl`，整次运行不变。一次运行结束后，人把它的曲线收回原仓库：`python3 scripts/rsi/scene/body_curves.py build <沙盒> ...`（写 `outputs/scene_rsi_20261016/body/curves.jsonl` 和 `constraints.jsonl`，下一个沙盒带上），`python3 scripts/rsi/scene/body_curves.py show` 列出已有的曲线（TODO 33.1.7）。
+- `PYTHONPATH=src $PY scripts/rsi/scene/prep.py outputs/scene_discovery/adt_apartment_mars DishSoap_1 --start <起点文件> --skills <技能目录>`：挑选器没有站位时，转、拉、挪邻居哪种目标能换来站位，技能包里有没有实现（TODO 33.5；任务族 `grasp_prep` 用起点的 `placement` 选项专抽这类局面）。
+驱动程序的开关（都有默认值）：三份草稿里两份交了再过 10 分钟没交的停掉（`--engineer-late-min`，0 不停，TODO 37.3）；合成候选被拒时同一轮再送最好的那份草稿（`--second-shot`，默认开，算一次验收门调用，TODO 37.4）；同一类失败（走路摔倒）有 2 局以上时，驱动程序把每局失败那一刻的命令从同一起点单独再跑一遍，判是动作层还是技能的毛病，动作层的写进 `loop/escalations.jsonl`（`scripts/rsi/scene/isolate.py`，TODO 33.20）；现任在诊断池上失败少于 10 局时，下一轮开头重抽诊断池——按诊断种子段抽新起点、现任跑一遍、失败的换进来到 15 局（`--diag-min-fails` / `--diag-target-fails` / `--diag-draw-max`，0 关；`loop.py redraw <族>` 在续跑前单独做一次，TODO 33.23）；一张卡的机器见第 0 节的 `RSI_GPUS` / `RSI_PROCS`；角色的推理档位 `--effort 角色=档位`（默认 Reviewer high，其余 xhigh，TODO 37.5）。
 得到什么：账本在 `$S/outputs/scene_rsi_20261016/pick_single/loop/`。原来这一族跑了 6 次迭代、6 次验收（接受 4 次），约 10 小时，现任在验收池上从 0 到 26 / 60。
 
 ```bash
@@ -133,8 +133,8 @@ cd $S && $PY scripts/rsi/loop.py status pick_single; cd -
 ```bash
 cd $S && $PY scripts/rsi/sealed.py pick_single; cd -
 SUM=$S/outputs/scene_rsi_20261016_hidden/pick_single/sealed/summary.json
-python3 scripts/rsi/writeback.py $S pick_single
-$PY scripts/rsi/regress.py add pick_single $S pick --last $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['final'])" $SUM)
+python3 scripts/rsi/scene/writeback.py $S pick_single
+$PY scripts/rsi/scene/regress.py add pick_single $S pick --last $(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['final'])" $SUM)
 ```
 
 做什么：第一条在封存集上跑种子和最终的现任；第二条把最终现任合并进主仓库的技能目录；第三条把这个任务族登记进回归，记录取最终现任在封存集上的那一批，以后每次写回或改场景都和它比。
@@ -153,15 +153,15 @@ $PY scripts/scene_discover_tasks.py --scene outputs/scene_discovery/adt_apartmen
 得到什么：`$R/discovery/tasks.jsonl`，约 60 个任务。约 20 分钟、5 USD。
 
 ```bash
-$PY scripts/rsi/outer.py select $R --loops $LOCOMANI_WORKSPACE/code/rsi-scene/pick-repro
-$PY scripts/rsi/outer.py family $R on_single
+$PY scripts/rsi/scene/outer.py select $R --loops $LOCOMANI_WORKSPACE/code/rsi-scene/pick-repro
+$PY scripts/rsi/scene/outer.py family $R on_single
 ```
 
 做什么：第一条按“解锁的任务数 ÷ 估计花费”给缺口排序，最多取 6 个；第二条为一个缺口写任务族文件，每个选中的缺口各跑一次。
 得到什么：`$R/selection.json`（打印选中的缺口），`scripts/rsi/families/r1_on_single.json` 等。提交这些文件，沙盒才看得到。
 
 ```bash
-$PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --parallel 2 > $R/driver.log 2>&1 &
+$PY scripts/rsi/scene/outer_run.py $R r1_on_single r1_held_single r1_in_single --parallel 2 > $R/driver.log 2>&1 &
 ```
 
 做什么：对每个任务族依次建沙盒、检查任务、跑内环、跑封存集、给经验库写一条、写回、跑单元测试、回归、更新能力表；同时最多跑两个任务族。
@@ -184,7 +184,7 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 和原来的差别要心里有数：
 - 原来边跑边改了场景（6 次）和规则（旧的 `rules.md` 第 1 到 6 版，现为 `rules_core.md` 加 `rules_scene.md`；grasp_atomic 那条线上到第 19 版），复现时一开始就是最终的场景和规则，所以各族的数字会不同，量级应相近。 角色读什么（TODO 54 第 2 阶段）：核心规则 `rules_core.md`（稳定 id）加按族生成的附录，直接写进提示，不再读规则文件；历史只给最近两轮加 `mechanisms`。说明和命令见[基准族 runbook](rsi_runbook.md)。
 - 原来人插手的地方（修驱动、改规则、写回时手工合并 6 处）列在[详解](rsi_design.md)第 8 节；复现时写回如果冲突，`writeback.py` 什么都不写并打印冲突的文件，手工合并后再提交。
-- 能力表在仓库里，是第 1 阶段探针加各族封存集写回的结果；重测探针要 `scripts/rsi/capability_probe.py`，它用的空地场景先 `bash scripts/build_scene.sh walk_mars` 建。
+- 能力表在仓库里，是第 1 阶段探针加各族封存集写回的结果；重测探针要 `scripts/rsi/scene/capability_probe.py`，它用的空地场景先 `bash scripts/build_scene.sh walk_mars` 建。
 
 ## 8. 看过程：图和视频
 

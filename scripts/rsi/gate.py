@@ -59,7 +59,6 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 import backend as BK  # noqa: E402
 import batch as B  # noqa: E402
 import verdict as V  # noqa: E402
-from scene_round import load_skills, skills_hash  # noqa: E402
 
 STAGE1 = 30
 SENTINELS = 5
@@ -81,6 +80,15 @@ def wilson(k: int, n: int, z: float = 1.96) -> list[float]:
     c = (p + z * z / (2 * n)) / (1 + z * z / n)
     h = z * sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / (1 + z * z / n)
     return [round(max(0.0, c - h), 3), round(min(1.0, c + h), 3)]
+
+
+def skills_hash(root: Path) -> str:
+    """12 hex digits over the skills package's .py files (names and bytes); the same as scene_round / backend_*'s."""
+    h = hashlib.sha256()
+    for p in sorted(Path(root).rglob("*.py")):
+        h.update(p.relative_to(root).as_posix().encode())
+        h.update(p.read_bytes())
+    return h.hexdigest()[:12]
 
 
 def candidate_hash(cand: Path) -> str:
@@ -258,8 +266,13 @@ def main(argv=None) -> int:
     # 1. static
     try:
         be = BK.of(a.family)  # a second backend loads its own package (no import of the bed tree here)
-        pkg = (be.load_skills(a.candidate / "skills", "gate_static_skills", a.family) if be
-               else load_skills(a.candidate / "skills", "gate_static_skills"))  # fmt: skip
+        if be:
+            pkg = be.load_skills(a.candidate / "skills", "gate_static_skills", a.family)
+        else:  # a scene family: the scene plug-in's loader (the only import of it in this file)
+            sys.path.insert(0, str(HERE / "scene"))
+            from scene_round import load_skills
+
+            pkg = load_skills(a.candidate / "skills", "gate_static_skills")
         pkg.apply_set(pkg, overrides(a.candidate))
     except Exception as e:
         return finish(False, f"the candidate does not load: {type(e).__name__}: {e}")
@@ -281,8 +294,6 @@ def main(argv=None) -> int:
         B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(sentinel_labels(labels))),
         B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(stage1_labels(labels))),
     ]
-    # caps["repeat"] k > 1 (a backend whose official reruns differ): the sentinel and each candidate round would run k
-    # times here and `ok` would be their majority; not implemented, k is 1 for every family so far.
     B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus, where="gate")
     inc_out = B.outcomes(inc_rounds)
     again = B.outcomes(work / "sentinel")

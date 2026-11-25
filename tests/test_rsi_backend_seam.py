@@ -28,7 +28,9 @@ def _rsi(name: str):
     saved = {k: sys.modules.pop(k, None) for k in CLASH}
     sys.path.insert(0, str(HERE))
     try:
-        spec = importlib.util.spec_from_file_location(f"seam_{name}", HERE / f"{name}.py")
+        spec = importlib.util.spec_from_file_location(
+            f"seam_{name}", HERE / f"{name}.py" if (HERE / f"{name}.py").exists() else HERE / "scene" / f"{name}.py"
+        )
         mod = importlib.util.module_from_spec(spec)
         sys.modules[f"seam_{name}"] = mod
         spec.loader.exec_module(mod)
@@ -62,11 +64,11 @@ def test_of_is_none_without_the_key_and_the_module_with_it(fam_dir):
     assert BK.of("nonexistent") is None
     assert BK.of("fake") is fake_backend
     assert BK.of({"backend": "fake"}) is fake_backend
-    assert BK.table()["simple"] == "backend_simple"
+    assert BK.table()["bench"] == "backend_bench"
 
 
 def test_an_unknown_backend_name_stops_with_the_known_ones(fam_dir):
-    with pytest.raises(SystemExit, match="known: bench, fake, lml, simple"):
+    with pytest.raises(SystemExit, match="known: bench, fake"):
         BK.of({"backend": "nope"})
 
 
@@ -79,7 +81,7 @@ def test_layout_is_todays_constants_for_scene_and_the_backends_for_fake(fam_dir)
     fake = BK.layout("fake")
     assert fake["skills"].name == "fake_skills" and fake["prompts"].name == "fake_prompts"
     assert (
-        fake["caps"]["claims"] is False and fake["caps"]["repeat"] == 1
+        fake["caps"]["claims"] is False and "repeat" not in fake["caps"]
     )  # a missing key falls back to the scene value
     assert fake["caps"]["min_net"] == 2
 
@@ -96,14 +98,14 @@ def test_batch_delegates_run_jobs_and_signature(fam_dir):
 
 
 def test_family_load_and_draw_go_to_the_backend(fam_dir, tmp_path, monkeypatch):
-    pytest.importorskip("skfmm")
-    import family as F
-
-    monkeypatch.setattr(F, "HERE", tmp_path)
-    fam = F.load("fake")
+    fam = BK.load("fake")
     assert fam["backend"] == "fake" and "meta" not in fam
-    res = F.draw(fam, "diag", tmp_path / "pool", seed=5, n=3, tasks=["XTask"], start_i=1)
-    assert res["written"] == 3 and F.labels(tmp_path / "pool") == ["XTask_s0", "XTask_s1", "XTask_s2"]
+    res = BK.draw(fam, "diag", tmp_path / "pool", n=3, tasks=["XTask"])
+    assert res["written"] == 3 and sorted(p.stem for p in (tmp_path / "pool").glob("*.json")) == [
+        "XTask_s0",
+        "XTask_s1",
+        "XTask_s2",
+    ]
     assert ("draw", "diag", 3, ["XTask"]) in fake_backend.CALLS
 
 
@@ -121,23 +123,23 @@ def test_gate_reads_caps_for_min_net_and_sentinel(fam_dir):
 
 
 def test_loop_layout_caps_cards_and_leaks(fam_dir, tmp_path, monkeypatch):
-    pytest.importorskip("skfmm")
-    L = _rsi("loop")
+    import rsi_loop_ns as NS
 
+    L = NS.fresh_loop(scene=False)
+    monkeypatch.setattr(L.BK, "HERE", tmp_path)
     monkeypatch.setattr(L, "HERE", tmp_path)
     for name in ("SKILLS", "RULES", "PROMPTS", "CAPS", "PLAN", "FAMILY", "LOOP", "HIDDEN", "STATE", "GATE_DIR"):
         monkeypatch.setattr(L, name, getattr(L, name, None), raising=False)
     L.configure("fake")
     assert L.SKILLS.name == "fake_skills" and L.PROMPTS.name == "fake_prompts" and L.CAPS["claims"] is False
-    assert L.refresh_diag_pool({}, tmp_path, 1) is None  # diag_redraw off: before it reads anything
-    assert L.run_designs({"hypotheses": [{"id": "h", "design": {}}]}, {}, tmp_path, 1) == []
+    assert L.module("state").H.before_review({}, tmp_path, 1, tmp_path, False) is None  # no scene hooks for a backend
     monkeypatch.setattr(L, "STATE", tmp_path / "state")
     base = tmp_path / "base"
     base.mkdir()
     (base / "XTask_s0.json").write_text(json.dumps(dict(ok=False, label="XTask_s0", task="XTask")))
     out = L.reviewer_cards(1, base, tmp_path / "it")
     assert out.read_text() == "# fake cards\n" and ("cards", 1) in fake_backend.CALLS
-    assert "backend_0" in L.leak_patterns() and L.attribute({}, base, 1, tmp_path, False) is None
+    assert "backend_0" in L.leak_patterns()
 
 
 def test_sandbox_hides_ids_of_a_non_diagnostic_pool(tmp_path):
@@ -154,6 +156,7 @@ def test_sandbox_hides_ids_of_a_non_diagnostic_pool(tmp_path):
 
 def test_cards_and_calibrate_do_not_need_a_scene(tmp_path):
     pytest.importorskip("skfmm")
+    sys.path.insert(0, str(HERE / "scene"))
     C = _rsi("calibrate")
     assert isinstance(C.measured_goals("no-such-sample"), set)
 
@@ -170,8 +173,9 @@ def test_gate_sign_test_replaces_loss_share_for_a_noisy_bed():
 
 
 def test_probe_scope_takes_a_hypothesis_tasks_then_its_predicted_starts(tmp_path, monkeypatch):
-    pytest.importorskip("skfmm")
-    L = _rsi("loop")
+    import rsi_loop_ns as NS
+
+    L = NS.fresh_loop(scene=False)
     pool = tmp_path / "pool_diag"
     pool.mkdir()
     for t in ("A", "B", "C"):

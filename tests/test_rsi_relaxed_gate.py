@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import rsi_loop_ns as NS  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
@@ -101,7 +103,7 @@ class _LoopCase(unittest.TestCase):
     def setUp(self):
         from unittest import mock
 
-        self.lp = _isolated("rsi_relaxed_gate_loop", HERE / "loop.py")
+        self.lp = NS.fresh_loop()
         self.d = tempfile.TemporaryDirectory()
         self.addCleanup(self.d.cleanup)
         self.root = Path(self.d.name)

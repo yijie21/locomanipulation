@@ -23,7 +23,7 @@ CALLS: list = []
 BASE_RATE = 35
 RULE = 2  # batch.SUCCESS_RULE
 CAPS = {
-    "claims": False, "design_probes": False, "diag_redraw": False, "sentinel_exact": False, "repeat": 1,
+    "claims": False, "design_probes": False, "diag_redraw": False, "sentinel_exact": False,
     "p_max": 0.05, "sentinel_flips": 1, "probe_scope": True, "sweep_rounds": 300, "check_half": True,
     "check_min_net": 2, "stage1_first": True, "role_rerun": False, "sealed_at_stop": True, "alpha_task": 0.05,
     "alpha_task_check": 0.10, "manager": "program", "prober": False, "compose": "program", "measure_claims": False,

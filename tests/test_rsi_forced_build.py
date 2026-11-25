@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import rsi_loop_ns as NS  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
@@ -51,7 +53,7 @@ def _rec(label, ok, cls=None, **kw):
 
 class _LoopCase(unittest.TestCase):
     def setUp(self):
-        self.lp = _isolated("rsi_forced_build_loop", HERE / "loop.py")
+        self.lp = NS.fresh_loop()
         self.d = tempfile.TemporaryDirectory()
         self.addCleanup(self.d.cleanup)
         self.root = Path(self.d.name)
@@ -228,7 +230,7 @@ class GateAndDigest(unittest.TestCase):
         self.assertFalse(gate.verdict_fails(dict(t, b=4, c=0)))  # the class tally does not judge
 
     def test_digest_leads_with_classes_and_lists_the_unplaced(self):
-        dg = _isolated("rsi_forced_build_digest", HERE / "digest.py")
+        dg = _isolated("rsi_forced_build_digest", HERE / "scene" / "digest.py")
         rounds = [_rec("pick_A_s1", False, "too_wide"), _rec("pick_A_s2", False, "other"), _rec("pick_B_s1", True),
                   _rec("pick_B_s2", False)]  # fmt: skip
         lines = dg.class_lines(rounds)
@@ -244,7 +246,7 @@ class GateAndDigest(unittest.TestCase):
 
 class StopRate(unittest.TestCase):
     def setUp(self):
-        self.lp = _isolated("rsi_forced_build_loop_sr", HERE / "loop.py")
+        self.lp = NS.fresh_loop()
 
     def args(self, **kw):
         return types.SimpleNamespace(candidates=None, stop_rate=None, **kw)

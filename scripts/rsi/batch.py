@@ -61,6 +61,17 @@ OFF_SWITCHES = {  # MotorConfig switches left out of the signature while off: a 
 }
 
 
+def parse_set(text: str | None) -> dict:
+    """Inline JSON (what batch.py passes) or a JSON file. Inline first: a long override set is not a file name, and
+    asking the filesystem about one over 255 bytes raises ENAMETOOLONG (iteration 0's probes all died on it,
+    2026-10-16)."""
+    if not text:
+        return {}
+    if text.lstrip().startswith("{"):
+        return json.loads(text)
+    return json.loads(Path(text).read_text())
+
+
 def motor_config():
     """TODO 33.1.4 (2): the MotorConfig a batch's rounds run under -- the defaults, with the reach compensation on when
     RSI_REACH_COMPENSATION=1 and the pregrasp route on when RSI_REACH_ROUTE=1 (TODO 40; its variants RSI_ROUTE_SCOPE and
@@ -213,7 +224,7 @@ def run_jobs(
         for x in todo[k]:
             retire(job.out / f"{x}.json")
     q = make_queue(jobs, todo, Path(env["TMPDIR"]))
-    cmd = [str(SIM_PY), str(HERE / "scene_round.py"), family, "--pool", str(pool), "--queue", str(q)]
+    cmd = [str(SIM_PY), str(HERE / "scene" / "scene_round.py"), family, "--pool", str(pool), "--queue", str(q)]
     running: list[tuple[subprocess.Popen, str, object]] = []  # (worker, GPU, its slot)
     failed = 0  # workers that died: a worker that cannot start would otherwise be relaunched for ever
     log.parent.mkdir(parents=True, exist_ok=True)

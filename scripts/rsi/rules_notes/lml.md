@@ -1,6 +1,5 @@
 ## Robot, controller, objects
-A Unitree G1 with a three-finger Dex3 hand on each arm under the frozen ScaleBFM controller ([envelope]); LocoManiLab (`lml_q`: twenty walk/lift/put/move tasks; `lml_fridge`: three door tasks; `lml_drawer`: three drawer tasks; the `*_bench`
-versions use these notes too and differ only in the package's file names). How hard fingers hold is how far past the contact the joints go, and the hand's torque limit is low against a pinch: a palm
+A Unitree G1 with a three-finger Dex3 hand on each arm under the frozen ScaleBFM controller ([envelope]); LocoManiLab (`lml_q_bench`: twenty walk/lift/put/move tasks; `lml_fridge_bench`: three door tasks; `lml_drawer_bench`: three drawer tasks). How hard fingers hold is how far past the contact the joints go, and the hand's torque limit is low against a pinch: a palm
 under the object carries weight better than a pinch.
 The objects are light (friction 0.9): apple 10-15 g, cup 9 or 69 g, bread 26 g, candle 30 g, can 51 g, boxed food 54 g, sponge
 22 g, book 115 g, basket 306 g. Holding that is easy; keeping the object where

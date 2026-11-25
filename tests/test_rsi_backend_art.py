@@ -1,4 +1,4 @@
-"""The articulated-task side of the SIMPLE backend (family simple_art): pools, blame, steps and cards. No simulator."""
+"""The articulated-task side of the SIMPLE adapter (family simple_art; bench_simple.py): pools, blame, steps and cards. No simulator."""
 
 from __future__ import annotations
 
@@ -9,7 +9,39 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "rsi"))
-import backend_simple as B  # noqa: E402
+import backend_bench as BB  # noqa: E402
+import bench_common as C  # noqa: E402
+import bench_rows as R  # noqa: E402
+import bench_simple as S  # noqa: E402
+
+
+class B:  # the old backend_simple names over the modules they moved to
+    BENCH_SEED = BB.ADAPTERS["simple"]["seed"]
+    HIDDEN, REPO = C.HIDDEN, C.REPO
+    to_round = staticmethod(S.to_round)
+    card_text = staticmethod(S.card_text)
+    cards = staticmethod(lambda rounds, out: R.cards(rounds, out, S.card_text))
+    package_parameters = staticmethod(C.package_parameters)
+    memo_sets = staticmethod(C.memo_sets)
+    memo_store_dir = staticmethod(C.memo_store_dir)
+    render_sets = staticmethod(C.render_sets)
+    bed_fixed = staticmethod(C.bed_fixed)
+    load = staticmethod(BB.load)
+    draw = staticmethod(BB.draw)
+    bed_root = staticmethod(BB.bed_root)
+    base_dir = staticmethod(BB.base_dir)
+    bed_files = staticmethod(BB.bed_files)
+    bench_argv = staticmethod(BB.bench_argv)
+    check_bench = staticmethod(BB.check_bench)
+    load_skills = staticmethod(BB.load_skills)
+    practice_dir = staticmethod(BB.practice_dir)
+    run_guard = staticmethod(BB.run_guard)
+    run_jobs = staticmethod(BB.run_jobs)
+    sandbox = staticmethod(BB.sandbox)
+    audit = staticmethod(BB.audit)
+    signature = staticmethod(BB.signature)
+    official_runner = staticmethod(BB.run_unit)
+
 
 ART_TASKS = ["OpenOvenTeleop", "CloseDoorTeleop", "OpenFaucetTeleop", "OpenTrashCanTeleop"]
 PHASES = {"walk": 3.0, "reach": 2.0, "close": 1.0, "move": 4.0, "release": 1.0}
@@ -173,7 +205,7 @@ def bench_fam(tmp_path, monkeypatch, **bench_kw) -> dict:
     bench_kw.setdefault("memo", False)  # (the family ships with it on, TODO 53; the tests below choose)
     fam["bench"] = dict(fam["bench"], root=str(root), **bench_kw)
     monkeypatch.setattr(
-        B,
+        BB,
         "bench_record",
         lambda f: dict(
             signature="simple/" + "-".join(f"{k}:{v}" for k, v in sorted(f["bench"].get("options", {}).items()))
@@ -192,7 +224,7 @@ def test_family_file_names_the_bench(tmp_path, monkeypatch):
         "/workspace/code/locomanipulation-bench-loop2",
     )
     assert fam["bench"]["options"] == {"target": "perception", "sensor": "stereo"} and fam["bench"]["config"] == {}
-    assert not {"bed_env", "bed_env_gate", "official_runner", "bed_files"} & set(fam)  # the block replaces them
+    assert not {"bed_env", "bed_env_gate", "official_runner", "bed_files", "plan"} & set(fam)  # the block replaces them
     root = Path(fam["bench"]["root"])  # the bench worktree, or the detached pin the live loop uses
     assert B.bed_root(fam) == root and B.base_dir(fam) == (root / B.BENCH_SEED).resolve()
 
@@ -216,8 +248,6 @@ def test_bench_files_signature_and_switches(tmp_path, monkeypatch):
 
 def test_bench_requires_the_official_probe_bed_and_owns_four_keys(tmp_path, monkeypatch):
     fam = bench_fam(tmp_path, monkeypatch)
-    with pytest.raises(ValueError, match="no mirror bed"):
-        B.signature(dict(fam, probe_bed="mirror"), "probe")
     with pytest.raises(ValueError, match="lazy_render"):
         B.signature(dict(fam, bench=dict(fam["bench"], config={"lazy_render": True})), "probe")
 
@@ -231,10 +261,6 @@ def test_package_parameters_read_skill_py_with_the_art_keys(tmp_path, monkeypatc
     assert sk.apply_set(sk, {"art_pitch": 80.0}) == {"art_pitch": 80.0}
     with pytest.raises(KeyError):
         sk.apply_set(sk, {"nope": 1})
-    old = tmp_path / "old"
-    old.mkdir()
-    (old / "skill_simple.py").write_text("K_ORIG = dict(stand=0.27)\nK_ART = dict(art_obj='')\n")
-    assert B.package_parameters(old) == {"stand": 0.27}  # the esc layout is read as before
 
 
 def runner_call(fam, monkeypatch, tmp_path, full: bool, setting=None):
@@ -244,7 +270,7 @@ def runner_call(fam, monkeypatch, tmp_path, full: bool, setting=None):
         seen.update(argv=argv, env=env, cwd=cwd, tree=tree)
         return 0
 
-    monkeypatch.setattr(B, "_exec", fake)
+    monkeypatch.setattr(C, "run_command", fake)
     pkg = tmp_path / "pkg"
     pkg.mkdir(exist_ok=True)
     monkeypatch.setenv("SIMPLE_RUN_DIR", "inherited")
@@ -328,12 +354,12 @@ def test_bench_run_jobs_at_the_gate(tmp_path, monkeypatch):
         Path(out).write_text("".join(json.dumps(dict(rec, episode_id=e)) + "\n" for e in ids))
         return 0
 
-    monkeypatch.setattr(B, "official_runner", fake)
+    monkeypatch.setattr(BB, "run_unit", fake)
     pk = tmp_path / "pkgjob"
     pk.mkdir()
     (pk / "skill.py").write_text("K_ORIG = dict(stand=0.27)\n")
     (pk / "__init__.py").write_text("")
-    monkeypatch.setattr(B, "run_guard", lambda *a: None)
+    monkeypatch.setattr(BB, "run_guard", lambda *a: None)
     job = type("J", (), dict(skills=pk, out=tmp_path / "o", overrides={"art_gap": 0.1}, labels=None))()
     assert B.run_jobs([job], fam, pool, 1, tmp_path / "log.txt", "0", where="gate") == {0: []}
     assert got and all(g[1] is True and g[2]["feed_torque"] is True for g in got)
@@ -407,7 +433,7 @@ def test_bench_sandbox_copies_the_adapter_and_blanks_hidden_rows(tmp_path, monke
         )
     fam["practice_dir"] = str(pdir)
     fam["sandbox"] = dict(fam["sandbox"], task_files=[])
-    monkeypatch.setattr(B, "HIDDEN", "hid")
+    monkeypatch.setattr(C, "HIDDEN", "hid")
     dest = tmp_path / "sb"
     (dest / "scripts/rsi/families").mkdir(parents=True)
     (dest / "scripts/rsi/families/simple_art.json").write_text(json.dumps(fam))
@@ -425,21 +451,21 @@ def test_bench_sandbox_copies_the_adapter_and_blanks_hidden_rows(tmp_path, monke
 def test_render_mode_and_memo_switches_of_the_bench_family(tmp_path, monkeypatch):
     """TODO 52: bench.render is lazy (default) or every_step; bench.memo turns on saved-state replay outside the gate."""
     fam = bench_fam(tmp_path, monkeypatch)
-    assert B.render_sets(fam) == ["lazy_render=true", "lazy_warm=48"] and B.memo_sets(fam, False) == []
+    assert B.render_sets(fam) == ["lazy_render=true", "lazy_warm=48"] and B.memo_sets(fam, False, "x") == []
     every = dict(fam, bench=dict(fam["bench"], render="every_step"))
     assert B.render_sets(every) == ["lazy_render=false"]
     with pytest.raises(ValueError, match="render"):
         B.check_bench(dict(fam, bench=dict(fam["bench"], render="sometimes")))
     memo = dict(fam, bench=dict(fam["bench"], memo=True))
     monkeypatch.setenv("TMPDIR", str(tmp_path / "scratch"))
-    sets = B.memo_sets(memo, False)
+    sets = B.memo_sets(memo, False, B.signature(memo, "probe"))
     assert sets[0] == "memo=true" and sets[1:] == [
         f"memo_dir={tmp_path / 'scratch' / 'simple_simple_art_memo'}",
         f"memo_sig={B.signature(memo, 'probe')}",
         "memo_gb=20",
     ]
-    assert B.memo_sets(memo, True) == []  # never at the gate or the sealed set: neither read nor written
-    assert B.memo_sets(dict(fam, bench=dict(memo["bench"], memo_gb=5)), False)[-1] == "memo_gb=5"
+    assert B.memo_sets(memo, True, "x") == []  # never at the gate or the sealed set: neither read nor written
+    assert B.memo_sets(dict(fam, bench=dict(memo["bench"], memo_gb=5)), False, "x")[-1] == "memo_gb=5"
     assert B.signature(memo, "probe") != B.signature(fam, "probe") and B.signature(memo, "gate") == B.signature(
         fam, "gate"
     )

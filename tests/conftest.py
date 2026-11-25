@@ -10,6 +10,8 @@ import pytest
 # Every test imports `locomani.*` by its qualified package path (refactor step 4a);
 # this is the one place "src" goes on sys.path instead of each test file doing it.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+# the RSI loop's scene plug-in (scripts/rsi/scene) keeps flat module names like the core next to it; its tests import them
+sys.path.insert(1, str(Path(__file__).resolve().parent.parent / "scripts" / "rsi" / "scene"))
 
 SIM_TEST_FILES = {"test_ready_pilot.py"}
 # test_visual_training / test_visual_validation import gr00t + omegaconf + pandas (the GR00T venv), the

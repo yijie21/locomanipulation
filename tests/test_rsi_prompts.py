@@ -175,14 +175,9 @@ def test_sizes_before_and_after(capsys):
 
 
 def test_the_history_is_capped_and_flat():
-    import importlib.util
+    import rsi_loop_ns as NS
 
-    sys.modules.pop("gate", None)
-    sys.path.insert(0, str(RSI))
-    sp = importlib.util.spec_from_file_location("rsi_loop_for_prompts_test", RSI / "loop.py")
-    lp = importlib.util.module_from_spec(sp)
-    sys.modules[sp.name] = lp
-    sp.loader.exec_module(lp)
+    lp = NS.fresh_loop(scene=False)
 
     def rows(n_iter):
         es = []

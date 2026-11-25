@@ -31,7 +31,7 @@ def episode_of(label: str) -> str:
 
 
 def outcome(rec: dict) -> dict:
-    """The loop's ok / failure_class of a bed record (backend_simple.to_round, same rule)."""
+    """The loop's ok / failure_class of a bed record (bench_simple.to_round, same rule)."""
     comply = rec.get("comply")
     comply_ok = bool(comply.get("ok")) if isinstance(comply, dict) else False
     success = bool(rec.get("success"))

@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import rsi_loop_ns as NS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
@@ -34,7 +35,7 @@ def _isolated(name: str, path: Path, names: tuple[str, ...]):
                 sys.modules[k] = v
 
 
-RC = _isolated("scene_rsi_records_test", HERE / "records.py", ("records",))
+RC = _isolated("scene_rsi_records_test", HERE / "scene" / "records.py", ("records",))
 
 V = ("abc", "{}", "m1")
 
@@ -120,8 +121,7 @@ def test_build_leaves_out_the_hidden_seed_ranges(tmp_path, monkeypatch):
 
 
 def test_the_driver_asks_the_library_only_when_the_probe_could_not_decide(tmp_path, monkeypatch):
-    lp = _isolated("scene_rsi_loop_records_test", HERE / "loop.py",
-                   ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "records", "loop"))  # fmt: skip
+    lp = NS.fresh_loop()  # fmt: skip
     lib = rows([(8, 0, 9.0), (2, 1, 9.0), (2, 0, 1.0), (18, 1, 1.0)])
     monkeypatch.setattr(lp.RC, "load", lambda *a, **k: lib)
     monkeypatch.setattr(lp.RC, "version_of", lambda base: V)

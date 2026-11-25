@@ -12,6 +12,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import rsi_loop_ns as NS  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
@@ -31,7 +33,7 @@ def _scene_loop():
     saved = {k: sys.modules.pop(k, None) for k in names}
     sys.path.insert(0, str(HERE))
     try:
-        return _load("scene_rsi_loop_37_3", HERE / "loop.py")
+        return NS.fresh_loop()
     finally:
         sys.path.remove(str(HERE))
         for k, v in saved.items():
@@ -131,9 +133,6 @@ class EngineerDeadline(unittest.TestCase):
             self.assertEqual([r["decision"] for r in rows if r["step"] == "compose"], ["adopt"])
             self.assertEqual(len(gated), 1)
             self.assertTrue(gated[0].endswith("candidate_1"))
-            line = lp.iteration_line(0, rows)
-            self.assertIn("engineer 3 H3: late (stopped)", line)
-            self.assertIn("engineer 1 H1: ok", line)
 
     def test_the_flag_reaches_the_settings(self):
         from argparse import Namespace

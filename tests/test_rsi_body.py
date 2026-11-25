@@ -86,18 +86,6 @@ class Reach(unittest.TestCase):
         self.assertEqual(out["hand"], "left")
 
 
-class Fit(unittest.TestCase):
-    def test_auc_and_dedupe(self):
-        import body_fit as BF
-
-        self.assertAlmostEqual(BF.auc(np.array([0.1, 0.4, 0.35, 0.8]), np.array([0, 0, 1, 1])), 0.75)
-        self.assertAlmostEqual(BF.auc(np.array([1.0, 1.0, 1.0]), np.array([0, 1, 1])), 0.5)  # all tied: chance
-        self.assertTrue(math.isnan(BF.auc(np.array([0.2, 0.3]), np.array([1, 1]))))
-        rows = np.array([("a", "h1", "pre", 1.0), ("a", "h1", "pre", 1.0), ("a", "h2", "pre", 1.0), ("b", "h1", "pre", 2.0)],
-                        dtype=[("label", "U4"), ("skills", "U4"), ("step", "U4"), ("t0", "f4")])  # fmt: skip
-        self.assertEqual(len(BF.dedupe(rows)), 3)
-
-
 def _rot_y(a):
     c, s = math.cos(a), math.sin(a)
     return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])

@@ -32,8 +32,8 @@ _path = list(sys.path)
 sys.path.insert(0, str(HERE))
 try:
     gate = _load("rsi_fix_gate", HERE / "gate.py")
-    regress = _load("rsi_fix_regress", HERE / "regress.py")
-    writeback = _load("rsi_fix_writeback", HERE / "writeback.py")
+    regress = _load("rsi_fix_regress", HERE / "scene" / "regress.py")
+    writeback = _load("rsi_fix_writeback", HERE / "scene" / "writeback.py")
     B = gate.B
 finally:
     sys.path[:] = _path

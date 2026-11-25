@@ -11,7 +11,6 @@ joints are told to go.
 Every target object weighs 0.1 kg whatever its size (the mass is split over the object's convex parts; friction 0.8, stiff
 contact). Holding that is easy; keeping the object still while the hand arrives and closes is not: the first finger or palm to touch
 pushes or turns it, a fast close flicks it, a tall box tips from a touch high up.
-`simple_fake` is simple_q on a fake bed (no simulator): its numbers mean nothing about the robot.
 
 ## Perception and the grasp model
 Head stereo colour images (depth from them), a segmentation of the target, joint readings, leg odometry. The grasp comes from a grasp model (GraspGen, Dex3 palm poses with a score) on the target's visible points inside the

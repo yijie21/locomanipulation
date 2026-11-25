@@ -91,12 +91,18 @@ def pick_labels(pool: Path, labels: str, task: str | None, all_: bool) -> list[s
     return out
 
 
+def first_fail(r: dict) -> tuple[str, str]:
+    """The first step of a round that failed and its reason."""
+    for s in r.get("steps") or []:
+        if not s.get("ok"):
+            return s["step"], s.get("why", "")
+    return "", r.get("plan_why") or r.get("why") or ""
+
+
 def table(out: Path, ref: Path | None, steps: bool, fam: dict | None = None) -> str:
     """The rounds' outcomes, per task and per round; the flips against `ref` where both ran a start. `steps`: every
     step's numbers per round (digest.round_line), with the trace's lift / knock / slip when the round has an .npz and
     `fam` (family.load) is given."""
-    import digest as D
-
     rows = B.outcomes(out)
     per = collections.defaultdict(lambda: [0, 0])
     for r in rows.values():
@@ -114,6 +120,9 @@ def table(out: Path, ref: Path | None, steps: bool, fam: dict | None = None) -> 
     for k in sorted(rows):
         r = rows[k]
         if steps:
+            sys.path.insert(0, str(HERE / "scene"))  # --steps prints a scene round's steps: the scene plug-in's digest
+            import digest as D
+
             tr = {}
             if fam is not None and fam.get("meta") and (out / f"{k}.npz").exists() and r["task"] in fam["rows"]:
                 import family as F
@@ -122,7 +131,7 @@ def table(out: Path, ref: Path | None, steps: bool, fam: dict | None = None) -> 
             lines.append(D.round_line(r, tr))
             continue
         cls = f" [{r['failure_class']}]" if not r["ok"] and r.get("failure_class") else ""
-        step, why = D.first_fail(r) if not r["ok"] else ("", "")
+        step, why = first_fail(r) if not r["ok"] else ("", "")
         tail = (
             f" | first fail {step}: {why[:90]}" if step else (f" | {(r.get('why') or '')[:90]}" if not r["ok"] else "")
         )
@@ -149,8 +158,6 @@ def main(argv=None) -> int:
     ap.add_argument("--procs", type=int, default=6, help="queue workers for this call (<= 12; the slots are shared)")
     ap.add_argument("--gpus", default="0,1")
     a = ap.parse_args(argv)
-    from scene_round import parse_set
-
     pool = a.pool or REPO / "outputs" / "scene_rsi_20261016" / a.family / "pool_diag"
     why = pool_allowed(pool, REPO, SCRATCH_ROOT)
     if why:
@@ -158,7 +165,7 @@ def main(argv=None) -> int:
     if not a.skills.is_dir():
         raise SystemExit(f"{a.skills} is not a directory")
     labels = pick_labels(pool, a.labels, a.task, a.all)
-    overrides = parse_set(a.set)
+    overrides = B.parse_set(a.set)
     out = a.out or Path(os.environ.get("TMPDIR") or SCRATCH_ROOT) / "try" / time.strftime("%H%M%S")
     motor = B.signature(a.family)  # the scene's motor signature (its family's motor block), or a second backend's own
     missing = [x for x in labels if not B.done(out / f"{x}.json", motor)]

@@ -180,7 +180,7 @@ class HiddenSeedsLocked(unittest.TestCase):
         saved = {k: sys.modules.pop(k, None) for k in names}
         sys.path.insert(0, str(HERE))
         try:
-            F = _load("scene_rsi_family_try", HERE / "family.py")
+            F = _load("scene_rsi_family_try", HERE / "scene" / "family.py")
         finally:
             sys.path.remove(str(HERE))
             for k, v in saved.items():

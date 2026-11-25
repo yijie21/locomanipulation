@@ -13,6 +13,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
+import rsi_loop_ns as NS  # noqa: E402
+
 
 def _load(name: str, path: Path):
     import importlib.util
@@ -100,7 +102,7 @@ class Overrides(unittest.TestCase):
         _saved = {k: sys.modules.pop(k, None) for k in _names}
         sys.path.insert(0, str(HERE))
         try:
-            sr = _load("scene_rsi_round", HERE / "scene_round.py")
+            sr = _load("scene_rsi_round", HERE / "scene" / "scene_round.py")
         finally:
             sys.path.remove(str(HERE))
             for _k, _v in _saved.items():
@@ -128,7 +130,7 @@ class RunCount(unittest.TestCase):
         _saved = {k: sys.modules.pop(k, None) for k in _names}
         sys.path.insert(0, str(HERE))
         try:
-            lp = _load("scene_rsi_loop", HERE / "loop.py")
+            lp = NS.fresh_loop()
         finally:
             sys.path.remove(str(HERE))
             for _k, _v in _saved.items():
@@ -163,7 +165,7 @@ class RoleLeftovers(unittest.TestCase):
         _saved = {k: sys.modules.pop(k, None) for k in _names}
         sys.path.insert(0, str(HERE))
         try:
-            lp = _load("scene_rsi_loop_roles", HERE / "loop.py")
+            lp = NS.fresh_loop()
         finally:
             sys.path.remove(str(HERE))
             for _k, _v in _saved.items():
@@ -193,7 +195,7 @@ def _fresh(name: str, file: str):
     saved = {k: sys.modules.pop(k, None) for k in _names}
     sys.path.insert(0, str(HERE))
     try:
-        return _load(name, HERE / file)
+        return _load(name, HERE / file if (HERE / file).exists() else HERE / "scene" / file)
     finally:
         sys.path.remove(str(HERE))
         for k, v in saved.items():
@@ -229,7 +231,7 @@ class Infeasibility(unittest.TestCase):
     def setUp(self):
         from unittest import mock
 
-        self.lp = _fresh("scene_rsi_loop_d13", "loop.py")
+        self.lp = NS.fresh_loop()
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.diag = ["book_pickup_s1", "book_pickup_s2", "mug_pickup_s3", "mug_pickup_s4"]
@@ -473,7 +475,7 @@ class OuterGroups(unittest.TestCase):
     def test_a_task_whose_pick_has_a_gap_joins_the_pick_family(self):
         sys.path.insert(0, str(HERE))
         try:
-            outer = _load("scene_rsi_outer", HERE / "outer.py")
+            outer = _load("scene_rsi_outer", HERE / "scene" / "outer.py")
         finally:
             sys.path.remove(str(HERE))
         meta = {"objects": {"wallet": {"semantic": {"graspable": "single"}}, "box": {}}}
@@ -713,7 +715,7 @@ class Successes(unittest.TestCase):
 
 class SessionUsage(unittest.TestCase):
     def test_a_role_is_booked_for_its_whole_session_not_its_last_turn(self):
-        lp = _fresh("scene_rsi_loop_usage", "loop.py")
+        lp = NS.fresh_loop()
         out = {"usage": {"output_tokens": 679, "input_tokens": 3},  # TODO 37.5.1: the last turn only
                "modelUsage": {"claude-opus-5-5": {"outputTokens": 133000, "inputTokens": 200, "cacheReadInputTokens": 9,
                                                   "cacheCreationInputTokens": 1},

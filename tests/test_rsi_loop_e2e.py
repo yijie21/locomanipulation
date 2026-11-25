@@ -17,39 +17,19 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("skfmm")  # gate.py imports the scene runtime
-
 ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
-LOOP_NAMES = ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "records", "design", "loop")
 TASKS = ("TaskA", "TaskB", "TaskC", "TaskD")
 SEED_SKILL = "PARAMS = {'alpha': 1}\n" + "".join(f"# --- {t}\nSOLVE_{t} = False\nBREAK_{t} = False\n" for t in TASKS)
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fake_loop_backend as FB  # noqa: E402
-
-
-def _isolated(name: str, path: Path):
-    """`path` under its own module name (the warehouse experiment has a loop.py, gate.py and batch.py too)."""
-    saved, old_path = {k: sys.modules.pop(k, None) for k in LOOP_NAMES}, list(sys.path)
-    sys.path[:0] = [str(HERE), str(ROOT / "src")]
-    try:
-        spec = importlib.util.spec_from_file_location(name, path)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules[name] = mod
-        spec.loader.exec_module(mod)
-        return mod
-    finally:
-        sys.path[:] = old_path
-        for k, v in saved.items():
-            sys.modules.pop(k, None)
-            if v is not None:
-                sys.modules[k] = v
+import rsi_loop_ns as NS  # noqa: E402
 
 
 class World:
     """A loop on the fake bed in a temp tree, its role calls canned, its gate and sealed set run in this process."""
 
-    def __init__(self, tmp: Path, monkeypatch, family_extra: dict | None = None):
+    def __init__(self, tmp: Path, monkeypatch, family_extra: dict | None = None, scene: bool = False):
         self.tmp, self.calls, self.sealed_runs = tmp, [], []
         self.targets: dict[int, list[str]] = {}  # iteration -> the task each hypothesis (H1, H2, ...) is about
         self.conflict: set[int] = set()  # iterations in which drafts 1 and 2 edit the same line
@@ -57,18 +37,26 @@ class World:
         self.breaks: dict[str, list[str]] = {}  # "<iter>:<k>" -> tasks that draft breaks
         monkeypatch.setenv("E2E_ROOT", str(tmp / "bed"))
         monkeypatch.setenv("RSI_BACKEND_PATH", "e2efake=fake_loop_backend")
-        monkeypatch.setenv("RSI_NO_SEALED", "0")
         (tmp / "bed" / "skills").mkdir(parents=True)
         (tmp / "bed" / "skills" / "skill.py").write_text(SEED_SKILL)
         fam = dict(name="e2e", backend="e2efake", tasks=list(TASKS), pools={"diag": {"n": 40}, "accept": {"n": 60}},
-                   caps=dict(FB.CAPS), plan=None, rules="x", prompts="x", **(family_extra or {}))  # fmt: skip
+                   caps=dict(FB.CAPS), rules="x", prompts="x", **(family_extra or {}))  # fmt: skip
+        if scene:  # a family without a backend: the scene plug-in's flow, on the fake bed standing in for the simulator
+            fam.pop("backend"), fam.pop("caps")
+            fam["scene"] = "scene"
         (tmp / "families").mkdir()
         (tmp / "families" / "e2e.json").write_text(json.dumps(fam))
         self.fam = fam
-        self.lp = lp = _isolated("rsi_e2e_loop", HERE / "loop.py")
-        self.gate = _isolated("rsi_e2e_gate", HERE / "gate.py")
-        import backend as BK
-
+        monkeypatch.syspath_prepend(str(HERE))
+        monkeypatch.syspath_prepend(str(ROOT / "src"))
+        with NS.fresh(scene=scene):  # a benchmark family: the scene plug-in is never loaded
+            self.lp = lp = NS.load(scene=scene)
+            self.gate, BK = sys.modules["gate"], sys.modules["backend"]
+            self.B = sys.modules["batch"]
+            self.scene_loaded = [m for m in NS.SCENE_MODULES if m in sys.modules]  # what the loop pulled in by itself
+        self.scene = scene
+        if scene:
+            self.wire_scene(monkeypatch, lp, BK)
         monkeypatch.setattr(BK, "HERE", tmp)
         monkeypatch.setattr(lp, "REPO", tmp)
         monkeypatch.setattr(lp, "family_spec", lambda: self.fam)
@@ -84,8 +72,34 @@ class World:
                          role_tmp=lambda: tmp / "roletmp", write_hit_rate=lambda: None,
                          copy_review_notes=lambda *a: None).items():  # fmt: skip
             monkeypatch.setattr(lp, k, v)
-        monkeypatch.setattr(lp, "subprocess", self.shim())
+        shim = self.shim()
+        for m in ("cascade", "stop"):  # the gate and the sealed set run in this process
+            monkeypatch.setattr(lp.module(m), "subprocess", shim)
         FB.CALLS.clear()
+
+    def wire_scene(self, monkeypatch, lp, BK):
+        """The fake bed stands in for the simulator under a family with no backend: the batch's rounds, the signature,
+        the cards, the skills loader of the gate's static step."""
+        monkeypatch.setattr(BK, "of", lambda family: None)
+        real_layout = BK.layout
+        monkeypatch.setattr(BK, "layout", lambda family: dict(real_layout(family), skills=self.tmp / "bed" / "skills"))
+        monkeypatch.setattr(self.B, "run_jobs", FB.run_jobs)
+        monkeypatch.setattr(self.B, "signature", lambda family, where="probe": "fake")
+        monkeypatch.setitem(sys.modules, "scene_round", types.SimpleNamespace(load_skills=FB.load_skills))
+        scene = lp.module("loop_scene")
+        monkeypatch.setattr(scene, "parameters_of", lambda inc: {"alpha": 1})
+        monkeypatch.setattr(
+            scene, "reviewer_cards", lambda n, base, it_dir, log=True: self.scene_cards(n, base, it_dir)
+        )
+        caps = dict(lp.module("state").CAPS, diag_redraw=False, design_probes=False, claims=False, check_half=False)
+        monkeypatch.setattr(lp, "CAPS", caps)
+        monkeypatch.setattr(lp, "SKILLS", self.tmp / "bed" / "skills")
+
+    def scene_cards(self, n, base, it_dir):
+        out = it_dir / "cards"
+        FB.cards(list(self.B.outcomes(base).values()), out)
+        self.lp.ledger(dict(step="cards", iter=n))
+        return out / "cards.md"
 
     # -- the process seam: the gate and the sealed set run in this process
     def shim(self):
@@ -141,6 +155,9 @@ class World:
             f.write_text(text)
             return dict(mechanism=f"solve {task}", files_changed=["skill.py"], set={}, tests="none",
                         scope=dict(when=task, starts=[task])), acct  # fmt: skip
+        if role == "manager":
+            ids = [h for h in (f"H{i}" for i in range(1, len(tasks) + 1))]
+            return dict(decision="engineer", hypothesis=ids[0], hypotheses=ids, reason="canned", summary_zh="桩"), acct
         if role == "composer":
             return self.composer, acct
         raise AssertionError(f"unexpected role {role}")
@@ -152,6 +169,41 @@ class World:
     def rows(self, step=None) -> list[dict]:
         es = self.lp.entries()
         return [e for e in es if step is None or e.get("step") == step]
+
+
+@pytest.fixture
+def scene_world(tmp_path, monkeypatch):
+    pytest.importorskip("skfmm")  # the scene plug-in imports the scene runtime
+    return World(tmp_path, monkeypatch, scene=True)
+
+
+def test_a_scene_family_runs_the_managers_flow_through_the_plugin(scene_world):
+    """TODO 54 phase 3: a family without a backend loads scripts/rsi/scene/loop_scene.py as the loop's hooks; the Prober, the
+    Manager, the Engineers and the Composer run as before, and the gate takes the candidate."""
+    w = scene_world
+    st = w.lp.module("state")
+    assert st.H is w.lp.module("loop_scene") and st.H.scene
+    w.targets = {0: ["TaskA", "TaskB"]}
+    assert w.run(1, stop_rate=0.99) == 0
+    assert [e["step"] for e in w.rows() if e["step"] in ("review", "probe", "manager", "engineer", "compose", "gate")][
+        :3
+    ] == ["review", "probe", "manager"]
+    assert "manager" in w.calls and w.calls.count("composer") == 1
+    mgr = w.rows("manager")[0]
+    assert mgr["decision"] == "engineer" and mgr.get("by") != "program"
+    g = w.rows("gate")[0]
+    assert g["accepted"] and g["unparked"] is None and g["rule"] == w.lp.GATE_RULE
+    schema = w.lp.hypotheses_schema()["properties"]["hypotheses"]["items"]["properties"]
+    assert {"sweep", "measure"} <= set(schema) and "design" not in schema  # the scene fields, by caps
+
+
+def test_a_benchmark_family_never_loads_the_scene_plugin(world):
+    world.targets = {0: ["TaskA"]}
+    world.run(1, stop_rate=0.99)
+    assert world.lp.module("state").H.scene is False
+    assert world.scene_loaded == []  # no module of scripts/rsi/scene was imported by the core
+    scene_names = {n for n in dir(world.lp.module("plugin").NULL) if not n.startswith("_")}
+    assert scene_names  # the hooks a benchmark gets are no-ops
 
 
 @pytest.fixture
@@ -287,18 +339,6 @@ def test_the_hypothesis_schema_follows_the_caps(world):
     assert not {"measure", "design", "sweep"} & set(p) and "starts" in p
     assert "infeasible" not in lp.hypotheses_schema()["properties"]
     assert "tasks" in lp.hypotheses_schema()["properties"]["hypotheses"]["items"]["required"]
-    scene = dict(lp.CAPS, claims=True, design_probes=True, measure_claims=True, prober=True, manager="llm")
-    lp.CAPS = scene
-    p = props()
-    assert {"measure", "design", "sweep"} <= set(p) and "starts" not in p
-    assert "infeasible" in lp.hypotheses_schema()["properties"]
-    assert (
-        "tune" in lp.manager_schema(True)["properties"]
-        and "reopen" in lp.manager_schema(True)["properties"]["decision"]["enum"]
-    )
-    lp.CAPS = dict(scene, claims=False, prober=False)
-    m = lp.manager_schema(True)["properties"]
-    assert "tune" not in m and "gap_proposals" not in m and "reopen" not in m["decision"]["enum"]
 
 
 def test_program_assignment_is_in_reviewer_order_with_disjoint_tasks(world):

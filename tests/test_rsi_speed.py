@@ -13,6 +13,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
+import rsi_loop_ns as NS  # noqa: E402
+
 
 def _load(name: str, path: Path):
     import importlib.util
@@ -30,7 +32,7 @@ _path = list(sys.path)
 sys.path.insert(0, str(HERE))
 try:
     batch = _load("scene_rsi_batch", HERE / "batch.py")
-    replay = _load("scene_rsi_replay", HERE / "replay.py")
+    replay = _load("scene_rsi_replay", HERE / "scene" / "replay.py")
 finally:
     sys.path[:] = _path
     for _k, _v in _saved.items():
@@ -148,7 +150,7 @@ def _scene_loop():
     saved = {k: sys.modules.pop(k, None) for k in names}
     sys.path.insert(0, str(HERE))
     try:
-        return _load("scene_rsi_loop_32", HERE / "loop.py")
+        return NS.fresh_loop()
     finally:
         sys.path.remove(str(HERE))
         for k, v in saved.items():
@@ -787,7 +789,7 @@ class ExperienceLibrary(unittest.TestCase):
         _path = list(sys.path)
         sys.path.insert(0, str(HERE))
         try:
-            reflect = _load("scene_rsi_reflect", HERE / "reflect.py")
+            reflect = _load("scene_rsi_reflect", HERE / "scene" / "reflect.py")
         finally:
             sys.path[:] = _path
         a, b = "/w/s/outputs/x/incumbents/h/skills", "/w/s/outputs/x_hidden/f/gate/02/cand/skills"

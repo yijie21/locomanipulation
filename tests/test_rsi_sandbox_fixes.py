@@ -28,11 +28,12 @@ def _load(name: str, path: Path):
 def _fresh(name: str, file: str):
     """One of the loop's scripts under its own module name; the generic names it imports are left as they were."""
     saved = {k: sys.modules.pop(k, None) for k in ("gate", "batch", "family", "scene_round", "sandbox", "reflect")}
-    sys.path.insert(0, str(HERE))
+    sys.path[:0] = [str(HERE), str(HERE / "scene")]
     try:
-        return _load(name, HERE / file)
+        return _load(name, HERE / file if (HERE / file).exists() else HERE / "scene" / file)
     finally:
         sys.path.remove(str(HERE))
+        sys.path.remove(str(HERE / "scene"))
         for k, v in saved.items():
             sys.modules.pop(k, None)
             if v is not None:
@@ -81,7 +82,7 @@ class HiddenSeeds(unittest.TestCase):
             _write(root / "scene" / "scene_meta.json", "{}")
             _write(root / "t.jsonl", json.dumps(dict(id="a")) + "\n")
             self.sb.hide_seeds(root, "fam")
-            with mock.patch.object(F, "HERE", root / "scripts" / "rsi"), mock.patch.object(F, "REPO", root):
+            with mock.patch.object(F, "HERE", root / "scripts" / "rsi" / "scene"), mock.patch.object(F, "REPO", root):
                 fam = F.load("fam")
                 self.assertEqual([fam["pools"][p]["seed"] for p in ("diag", "accept", "sealed")], [1, 2, 3])
                 (root / self.sb.HIDDEN / "fam" / "seeds.json").unlink()  # not in this tree: blank stays blank
@@ -169,13 +170,15 @@ class SandboxLibrary(unittest.TestCase):
     def test_nothing_the_loop_runs_needs_the_stripped_files(self):
         # no role prompt names the report/ tools (TODO 36.8 dropped the tools note); nothing but docs / lint scripts
         # name the guides, and nothing the loop runs imports from report/
-        loop = (HERE / "loop.py").read_text()
+        loop = (HERE / "loop.py").read_text() + (HERE / "state.py").read_text()
         self.assertNotIn("TOOLS_NOTE", loop)
         for f in (HERE / "prompts").glob("*.md"):
             self.assertNotRegex(f.read_text(), r"\{TOOLS\}|rsi/report|rsi/tools", f.name)
         for name in ("loop", "gate", "batch", "scene_round", "sealed", "digest", "claim_check", "family"):
             self.assertNotRegex(
-                (HERE / f"{name}.py").read_text(), r"CLAUDE\.md|AGENTS\.md|rsi/library|rsi/report", name
+                (HERE / f"{name}.py" if (HERE / f"{name}.py").exists() else HERE / "scene" / f"{name}.py").read_text(),
+                r"CLAUDE\.md|AGENTS\.md|rsi/library|rsi/report",
+                name,
             )
 
 

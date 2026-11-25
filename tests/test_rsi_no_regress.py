@@ -11,6 +11,8 @@ from unittest import mock
 
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
+import rsi_loop_ns as NS  # noqa: E402
+
 CLASH = ("gate", "batch", "family", "scene_round", "digest", "loop", "sealed", "hit_rate")
 
 
@@ -111,7 +113,7 @@ class SealedConfirm(unittest.TestCase):
 
 class LoopHooks(unittest.TestCase):
     def setUp(self):
-        self.lp = _mod("loop")
+        self.lp = NS.fresh_loop(scene=False)
         self.d = tempfile.TemporaryDirectory()
         self.addCleanup(self.d.cleanup)
         root = Path(self.d.name)

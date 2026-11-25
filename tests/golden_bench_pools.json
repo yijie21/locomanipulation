@@ -1,0 +1,127 @@
+{
+ "blank": {
+  "bigym2_reach_drawer": "851853074f4c",
+  "lml_q_bench": "4ff781b66202",
+  "simple_art": "ac0811638911"
+ },
+ "cards": {
+  "lml": "9b522f3de7d5",
+  "lml_text": "ebb9536ead6c",
+  "seeded": "9136b13eaa77",
+  "seeded_text": "6259626711b6",
+  "simple": "8130bff45025",
+  "simple_text": "22401158f9b9"
+ },
+ "draw": {
+  "bigym2_reach_drawer": {
+   "accept": [
+    "6c9c70a31143",
+    "9efef42c75ea"
+   ],
+   "diag": [
+    "eb4bf808dbc3",
+    "96eb6236b35b"
+   ],
+   "sealed": [
+    "7dcdc041ea07",
+    "358d7dde41a1"
+   ]
+  },
+  "humanoidarena_pp_box": {
+   "accept": [
+    "ba416f934f14",
+    "2f08b92d262b"
+   ],
+   "diag": [
+    "f2f045e63151",
+    "601649eb6322"
+   ],
+   "sealed": [
+    "1bcd3266c239",
+    "3debd1bdf8f1"
+   ]
+  },
+  "lml_drawer_bench": {
+   "accept": [
+    "d6e90b69b735",
+    "157ad71cc6db"
+   ],
+   "diag": [
+    "9f6e75f77e2e",
+    "388bba40d501"
+   ],
+   "sealed": [
+    "cd01f6c8c076",
+    "8454ea37bd4e"
+   ]
+  },
+  "lml_fridge_bench": {
+   "accept": [
+    "09ab62d20db8",
+    "6105767d1baf"
+   ],
+   "diag": [
+    "ab4f93127884",
+    "61a3adb995eb"
+   ],
+   "sealed": [
+    "721e72f4b4b4",
+    "b04d5d0b3656"
+   ]
+  },
+  "lml_q_bench": {
+   "accept": [
+    "cd6871c7864f",
+    "6a78fce29fda"
+   ],
+   "diag": [
+    "1ca38546bc59",
+    "b7623188b05b"
+   ],
+   "sealed": [
+    "1c162fae8710",
+    "93020e636efd"
+   ]
+  },
+  "simple_art": {
+   "accept": [
+    "dd213f036be6",
+    "c11b6737aeac"
+   ],
+   "diag": [
+    "0ac23988fc46",
+    "db2e5f3c894e"
+   ],
+   "sealed": [
+    "c2e3b6b8eca8",
+    "b73e8b68199e"
+   ]
+  },
+  "simple_q": {
+   "accept": [
+    "0353edfa7e32",
+    "7e69837ec714"
+   ],
+   "diag": [
+    "4f2246f1e120",
+    "86c05874628b"
+   ],
+   "sealed": [
+    "4cf7b21920c1",
+    "0c1ecdb6ab0c"
+   ]
+  }
+ },
+ "rounds": {
+  "bigym2_reach_drawer:seed_fail": "fbec955ba6f4",
+  "humanoidarena_pp_box:seed_ok": "da02a7adf0d3",
+  "humanoidarena_pp_box:seed_to": "72a8e9730cf4",
+  "lml_q_bench:lml_0": "386b813f2aa6",
+  "lml_q_bench:lml_1": "23dd2d31f244",
+  "lml_q_bench:lml_err": "3201d659d3af",
+  "simple_art:simple_art": "8ef5f68e4a45",
+  "simple_art:simple_comply": "e8cbe3748850",
+  "simple_art:simple_ok": "c82ed2f57761",
+  "simple_art:simple_pick": "0f716a02487d"
+ }
+}

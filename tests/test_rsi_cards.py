@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import rsi_loop_ns as NS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
@@ -90,7 +91,7 @@ def _digests(out: Path) -> dict:
 
 
 def test_one_card_per_failed_round_under_the_pool_summary(tmp_path, diag):
-    cd = _isolated("rsi_cards", HERE / "cards.py")
+    cd = _isolated("rsi_cards", HERE / "scene" / "cards.py")
     assert cd.build(diag, _scene(tmp_path / "scene_meta.json"), tmp_path / "out") == 2
     text = (tmp_path / "out" / "cards.md").read_text()
     assert text.startswith("# Failure cards: fam/incumbent_abc")
@@ -103,7 +104,7 @@ def test_one_card_per_failed_round_under_the_pool_summary(tmp_path, diag):
 
 
 def test_cards_are_deterministic(tmp_path, diag):
-    cd = _isolated("rsi_cards", HERE / "cards.py")
+    cd = _isolated("rsi_cards", HERE / "scene" / "cards.py")
     scene = _scene(tmp_path / "scene_meta.json")
     cd.build(diag, scene, tmp_path / "a")
     cd.build(diag, scene, tmp_path / "b")
@@ -111,7 +112,7 @@ def test_cards_are_deterministic(tmp_path, diag):
 
 
 def test_a_blocked_stand_point_is_named_from_the_walk_map(tmp_path):
-    cd = _isolated("rsi_cards", HERE / "cards.py")
+    cd = _isolated("rsi_cards", HERE / "scene" / "cards.py")
     scene = cd.Scene(_scene(tmp_path / "scene_meta.json"))
     sf = dict(scene.surfaces["top"])
     edges = {e["edge"]: e for e in scene.edges(sf, np.array([0.0, 0.0, 0.8]), np.array([-0.9, 0.0]), "Table")}
@@ -123,7 +124,7 @@ class Harness:
     """iterate() with everything around the Reviewer call stubbed, on a real round directory."""
 
     def __init__(self, tmp_path, monkeypatch, diag):
-        self.lp = lp = _isolated("rsi_cards_loop", HERE / "loop.py", LOOP_NAMES)
+        self.lp = lp = NS.fresh_loop()
         self.base, self.calls = diag, []
         scene = _scene(tmp_path / "scene_meta.json")
         state = tmp_path / "state"
@@ -170,7 +171,7 @@ def test_a_failed_reviewer_gives_the_rounds_back(tmp_path, monkeypatch, diag):
 
 
 def test_a_crash_under_the_lock_is_repaired_at_the_next_start(tmp_path, monkeypatch, diag):
-    lp = _isolated("rsi_cards_loop", HERE / "loop.py", LOOP_NAMES)
+    lp = NS.fresh_loop()
     monkeypatch.setattr(lp, "LOOP", diag.parents[1])
     other = diag.parent / "candidate_abc"
     other.mkdir()
@@ -196,5 +197,6 @@ def test_a_broken_cards_run_stops_the_iteration_before_the_reviewer(tmp_path, mo
 @pytest.mark.parametrize("family", ["grasp_atomic", "grasp_floor", "grasp_prep"])
 def test_a_family_with_a_sandbox_list_keeps_the_cards(family):
     spec = json.loads((HERE / "families" / f"{family}.json").read_text())["sandbox"]
-    assert "scripts/rsi/cards.py" in spec["keep"] and "cards" in spec["closure"]
-    assert "scripts/rsi/digest.py" in spec["keep"]  # try.py --steps prints through it
+    assert (
+        "scripts/rsi/scene" in spec["keep"] and "cards" in spec["closure"]
+    )  # the plug-in holds cards.py and digest.py

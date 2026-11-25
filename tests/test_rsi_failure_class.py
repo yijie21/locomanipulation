@@ -1,4 +1,4 @@
-"""TODO 33.15: the round failure classifier (scripts/rsi/failure_class.py) on synthetic traces and step records."""
+"""TODO 33.15: the round failure classifier (scripts/rsi/scene/failure_class.py) on synthetic traces and step records."""
 
 from __future__ import annotations
 

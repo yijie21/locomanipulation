@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import rsi_loop_ns as NS  # noqa: E402
+
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
@@ -23,7 +25,7 @@ def _load(name: str, path: Path):
     return mod
 
 
-DP = _load("scene_rsi_diag_pool", HERE / "diag_pool.py")
+DP = _load("scene_rsi_diag_pool", HERE / "scene" / "diag_pool.py")
 TASKS = [f"pick_{t}" for t in ("A", "B", "C")]
 
 
@@ -205,7 +207,7 @@ class LoopSettings(unittest.TestCase):
         saved = {k: sys.modules.pop(k, None) for k in names}
         sys.path.insert(0, str(HERE))
         try:
-            lp = _load("scene_rsi_loop_33_23", HERE / "loop.py")
+            lp = NS.fresh_loop()
         finally:
             sys.path.remove(str(HERE))
             for k, v in saved.items():
@@ -218,9 +220,6 @@ class LoopSettings(unittest.TestCase):
         self.assertEqual((cfg["diag_min_fails"], cfg["diag_target_fails"], cfg["diag_draw_max"]), (0, 15, 12))
         cfg = lp.resolve_settings(Namespace(), dict(started="x", diag_min_fails=4), True)
         self.assertEqual(cfg["diag_min_fails"], 4)
-        line = lp.iteration_line(3, [dict(step="diag_pool", iter=3, fails_before=0, fails_after=15, n=30,
-                                          added=list("abc"), retired=list("xyz"), drawn=60)])  # fmt: skip
-        self.assertIn("diag pool redrawn: 0 -> 15 failing of 30 (+3 -3, 60 fresh starts run)", line)
 
 
 if __name__ == "__main__":

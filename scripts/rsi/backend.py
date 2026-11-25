@@ -1,5 +1,5 @@
 """The loop's second backend seam (plan loop_seam_plan.md, section B). A family file may carry a "backend" key
-("simple" -> backend_simple.py); every place of the loop that assumes the scene backend asks `of(family)` first and runs
+("bench" -> backend_bench.py, the one benchmark backend); every place of the loop that assumes the scene backend asks `of(family)` first and runs
 today's code when it gets None. Nothing here imports a backend until a family names one.
 
 The backend module's interface (the loop codes against exactly this): load(name), draw(fam, pool, out, n, tasks),
@@ -22,7 +22,7 @@ REPO = HERE.parents[1]
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-TABLE = {"simple": "backend_simple", "lml": "backend_lml", "bench": "backend_bench"}
+TABLE = {"bench": "backend_bench"}
 
 # What a scene family has today; a backend's layout()["caps"] overrides keys of it. "claims", "design_probes" and
 # "diag_redraw" switch the loop's claim check, design probes and diagnostic-pool redraw; the other three are the gate's.
@@ -33,7 +33,6 @@ SCENE_CAPS = {
     "sentinel_exact": True,  # a sentinel re-run must reproduce `ok` and `t_end`; False: `ok` alone
     "min_net": 3,  # gate.MIN_NET; read only where p_max is None (with p_max it can never bind: the smallest p <= 0.05 is 5:0)
     "loss_share": 3,  # scene rule (p_max None): the losses may be at most a third of the wins
-    "repeat": 1,  # runs per round (the gate's repeat k > 1: see gate.py, not implemented)
     "p_max": None,  # a number: the paired sign test's one-sided p replaces the loss-share condition (gate.verdict_fails)
     "sentinel_flips": 0,  # sentinel re-runs that may differ from the stored rounds before the pairing is void
     "probe_scope": False,  # True: a hypothesis's probe runs only on the tasks it is about (loop.probe_labels)
@@ -83,6 +82,28 @@ def of(family):
     return importlib.import_module(mods[name])
 
 
+def _scene_family():
+    """The scene plug-in's family module (scripts/rsi/scene/family.py), imported only for a family without a backend."""
+    scene_dir = str(HERE / "scene")
+    if scene_dir not in sys.path:
+        sys.path.insert(0, scene_dir)
+    return importlib.import_module("family")
+
+
+def load(name: str) -> dict:
+    """The family dict of families/<name>.json: the backend's own load for a benchmark family, the scene plug-in's
+    (scene file, tasks file, hidden seeds) for one without a backend."""
+    be = of(name)
+    return be.load(name) if be else _scene_family().load(name)
+
+
+def draw(fam: dict, pool: str, out: Path, **kw) -> dict:
+    """Write a pool's starts into `out` ({"written": n, "unavailable": ...}); the backend draws its own, the scene
+    plug-in draws a scene family's from its seeds."""
+    be = of(fam)
+    return be.draw(fam, pool, out, **kw) if be else _scene_family().draw(fam, pool, out, **kw)
+
+
 def layout(family) -> dict:
     """Where the family's editable package, rules, prompts and plan are, and its caps. A family without a backend gets
     today's constants (the scene skills, rules_scene.md, prompts/, the family file's `plan` or the scene plan), all caps on."""
@@ -111,3 +132,26 @@ def caps(family) -> dict:
 def _spec(name: str) -> dict:
     p = HERE / "families" / f"{name}.json"
     return json.loads(p.read_text()) if p.exists() else {}
+
+
+def main(argv=None) -> int:
+    """`backend.py draw <family> <diag|accept|sealed> <out>`: a family's pool, drawn by its backend (sandbox.py runs it)."""
+    import argparse
+
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    d = sub.add_parser("draw")
+    d.add_argument("family")
+    d.add_argument("pool", choices=("diag", "accept", "sealed"))
+    d.add_argument("out", type=Path)
+    a = ap.parse_args(argv)
+    sys.path.insert(0, str(REPO / "src"))
+    res = draw(load(a.family), a.pool, a.out)
+    print(
+        f"{res['written']} starts, {len(res.get('skipped') or [])} seeds skipped, unavailable {res.get('unavailable')} -> {a.out}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

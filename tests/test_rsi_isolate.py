@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
 sys.path.insert(0, str(ROOT / "src"))
 
+import rsi_loop_ns as NS  # noqa: E402
+
 from locomani.backends.scalebfm import motor as M  # noqa: E402
 
 
@@ -64,7 +66,9 @@ def test_the_call_log_records_outer_calls_with_plain_arguments():
 
 
 def _iso():
-    return _isolated("scene_rsi_isolate_test", HERE / "isolate.py", ("batch", "family", "scene_round", "isolate"))
+    return _isolated(
+        "scene_rsi_isolate_test", HERE / "scene" / "isolate.py", ("batch", "family", "scene_round", "isolate")
+    )
 
 
 def test_the_suspect_is_the_call_that_fell_else_the_first_that_failed():
@@ -80,8 +84,7 @@ def test_the_suspect_is_the_call_that_fell_else_the_first_that_failed():
 
 
 def test_escalations_are_written_once_per_incumbent_and_round(tmp_path, monkeypatch):
-    lp = _isolated("scene_rsi_loop_isolate_test", HERE / "loop.py",
-                   ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "records", "loop"))  # fmt: skip
+    lp = NS.fresh_loop()  # fmt: skip
     state, loop = tmp_path / "fam" / "loop", tmp_path / "fam"
     state.mkdir(parents=True)
     monkeypatch.setattr(lp, "STATE", state)
@@ -100,8 +103,7 @@ def test_escalations_are_written_once_per_incumbent_and_round(tmp_path, monkeypa
 
 
 def test_attribution_runs_only_for_a_recurring_class(tmp_path, monkeypatch):
-    lp = _isolated("scene_rsi_loop_isolate_test2", HERE / "loop.py",
-                   ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "records", "loop"))  # fmt: skip
+    lp = NS.fresh_loop()  # fmt: skip
     monkeypatch.setattr(lp, "STATE", tmp_path / "loop")
     monkeypatch.setattr(lp, "LOOP", tmp_path)
     (tmp_path / "loop").mkdir()

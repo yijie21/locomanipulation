@@ -31,11 +31,8 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import backend as BK  # noqa: E402
 import batch as B  # noqa: E402
-import family as F  # noqa: E402
 import verdict as V  # noqa: E402
 from gate import mcnemar_one_sided, overrides, wilson  # noqa: E402
-
-from locomani.tasks.scene import body  # noqa: E402
 
 BUCKET1_RATE = 0.50
 
@@ -81,7 +78,7 @@ def main(argv=None) -> int:
     hidden = REPO / "outputs" / "scene_rsi_20261016_hidden" / a.family
     pool, out = hidden / "pool_sealed", hidden / "sealed"
     if not pool.exists():
-        res = F.draw(F.load(a.family), "sealed", pool)
+        res = BK.draw(BK.load(a.family), "sealed", pool)
         print(f"sealed pool: {res['written']} starts, unavailable {res['unavailable']}")
     vs = versions(hidden / "gate")
     # TODO 36 (review 2026-10-22): nothing accepted -> vs[-1] is the seed; it ran twice as [seed, seed]
@@ -91,9 +88,10 @@ def main(argv=None) -> int:
     # gate's environment (bed_env_gate: cameras rendered every step, user 2026-11-23)
     missing = B.run_jobs(jobs, a.family, pool, a.procs, out / "run.log", a.gpus, where="gate")
     summary = dict(pool=str(pool), versions={name: tally(B.outcomes(out / name)) for name, _ in order},
-                   missing={order[k][0]: v for k, v in missing.items() if v},
-                   # TODO 33.1.2: the body model's predictions against the delivered reaches, beside the success rate
-                   prediction={name: _score(B.outcomes(out / name).values()) for name, _ in order})  # fmt: skip
+                   missing={order[k][0]: v for k, v in missing.items() if v})  # fmt: skip
+    scene = BK.of(a.family) is None
+    if scene:  # TODO 33.1.2: the body model's predictions against the delivered reaches, beside the success rate
+        summary["prediction"] = {name: _score(B.outcomes(out / name).values()) for name, _ in order}
     final, seed = B.outcomes(out / order[0][0]), B.outcomes(out / "seed")
     keys = sorted(set(final) & set(seed))
     b = sum(final[k]["ok"] and not seed[k]["ok"] for k in keys)
@@ -101,7 +99,9 @@ def main(argv=None) -> int:
     rate = sum(final[k]["ok"] for k in keys) / max(len(keys), 1)
     k_ok = sum(final[k]["ok"] for k in keys)
     summary.update(final=order[0][0], final_vs_seed=dict(n=len(keys), b=b, c=c, p_one_sided=mcnemar_one_sided(b, c)),
-                   final_rate=round(rate, 3), final_rate_ci=wilson(k_ok, len(keys)), bucket1=rate >= BUCKET1_RATE)  # fmt: skip
+                   final_rate=round(rate, 3), final_rate_ci=wilson(k_ok, len(keys)))  # fmt: skip
+    if scene:
+        summary["bucket1"] = rate >= BUCKET1_RATE
     caps = BK.caps(a.family)
     summary["confirm"] = confirm(final, seed, caps.get("p_max"), caps.get("alpha_task"))
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
@@ -117,6 +117,8 @@ def main(argv=None) -> int:
 def _score(rounds):
     """body.score for the scene backend's rounds; None where the records have no reach predictions (other backends)."""
     try:
+        from locomani.tasks.scene import body
+
         return body.score(rounds)
     except Exception:
         return None

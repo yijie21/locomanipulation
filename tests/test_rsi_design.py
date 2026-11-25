@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import rsi_loop_ns as NS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
@@ -32,7 +33,7 @@ def _isolated(name: str, path: Path, names: tuple[str, ...]):
                 sys.modules[k] = v
 
 
-DS = _isolated("scene_rsi_design_test", HERE / "design.py", ("batch", "family", "design"))
+DS = _isolated("scene_rsi_design_test", HERE / "scene" / "design.py", ("batch", "family", "design"))
 META = {
     "surfaces": {"T": {"xy": [0.0, 0.0], "half_extent": [0.5, 0.3, 0.01], "yaw": 0.0}},
     "objects": {
@@ -153,8 +154,7 @@ def test_a_probe_reports_why_starts_were_left_out(tmp_path, monkeypatch):
 
 
 def test_the_driver_runs_at_most_two_and_records_where_results_go(tmp_path, monkeypatch):
-    lp = _isolated("scene_rsi_loop_design_test", HERE / "loop.py",
-                   ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "records", "design", "loop"))  # fmt: skip
+    lp = NS.fresh_loop()  # fmt: skip
     monkeypatch.setattr(lp, "STATE", tmp_path / "fam" / "loop")
     monkeypatch.setattr(lp, "LOOP", tmp_path / "fam")
     (tmp_path / "fam" / "loop").mkdir(parents=True)

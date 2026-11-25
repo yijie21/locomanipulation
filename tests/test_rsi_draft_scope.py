@@ -11,26 +11,15 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 HERE = ROOT / "scripts" / "rsi"
+
+import rsi_loop_ns as NS  # noqa: E402
+
 LOOP_NAMES = ("gate", "batch", "family", "scene_round", "digest", "diag_pool", "records", "design", "loop")
 
 
 @pytest.fixture
 def lp():
-    saved, old_path = {k: sys.modules.pop(k, None) for k in LOOP_NAMES}, list(sys.path)
-    sys.path[:0] = [str(HERE), str(ROOT / "src")]
-    try:
-        spec = importlib.util.spec_from_file_location("rsi_scope_loop", HERE / "loop.py")
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["rsi_scope_loop"] = mod
-        spec.loader.exec_module(mod)
-        yield mod
-    finally:
-        sys.path[:] = old_path
-        sys.modules.pop("rsi_scope_loop", None)
-        for k, v in saved.items():
-            sys.modules.pop(k, None)
-            if v is not None:
-                sys.modules[k] = v
+    return NS.fresh_loop()
 
 
 def _rec(ok: bool, *steps: tuple) -> dict:

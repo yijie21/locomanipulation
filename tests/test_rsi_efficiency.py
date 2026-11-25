@@ -13,26 +13,11 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 HERE = REPO / "scripts" / "rsi"
 
+import rsi_loop_ns as NS  # noqa: E402
+
 
 def _scene_loop():
-    """scripts/rsi/loop.py under its own name, sys.modules left as it was (as test_rsi_speed does)."""
-    import importlib.util
-
-    names = ("gate", "batch", "family", "scene_round", "digest", "loop")
-    saved = {k: sys.modules.pop(k, None) for k in names}
-    sys.path.insert(0, str(HERE))
-    try:
-        spec = importlib.util.spec_from_file_location("scene_rsi_loop_eff", HERE / "loop.py")
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["scene_rsi_loop_eff"] = mod
-        spec.loader.exec_module(mod)
-        return mod
-    finally:
-        sys.path.remove(str(HERE))
-        for k, v in saved.items():
-            sys.modules.pop(k, None)
-            if v is not None:
-                sys.modules[k] = v
+    return NS.fresh_loop()
 
 
 class CheckHalf(unittest.TestCase):

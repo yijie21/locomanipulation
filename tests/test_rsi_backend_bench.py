@@ -14,8 +14,10 @@ RSI = Path(__file__).resolve().parents[1] / "scripts" / "rsi"
 sys.path.insert(0, str(RSI))
 import backend  # noqa: E402
 import backend_bench as BB  # noqa: E402
-import backend_lml as BL  # noqa: E402
-import backend_simple as B  # noqa: E402
+import bench_common as C  # noqa: E402
+import bench_lml as BL  # noqa: E402
+import bench_lml as LL  # noqa: E402
+import bench_simple as B  # noqa: E402
 
 BENCH_REAL = Path("/workspace/code/locomanipulation-bench")
 needs_lml = pytest.mark.skipif(
@@ -73,7 +75,6 @@ def bench_fam(tmp_path, monkeypatch, family: str, **bench_kw) -> dict:
         + "-".join(f"{k}:{v}" for k, v in sorted(f["bench"].get("options", {}).items()))
     )  # noqa: E731
     monkeypatch.setattr(BB, "bench_record", rec)
-    monkeypatch.setattr(B, "bench_record", rec)
     monkeypatch.setenv("RSI_PACKAGE_ROOT", str(tmp_path / "pk"))
     return fam
 
@@ -96,14 +97,14 @@ def test_the_seam_knows_the_generic_backend(monkeypatch):
     assert backend.table()["bench"] == "backend_bench"
     for n in ("simple_art", *FAMILIES):
         assert backend.of(n) is BB
-    assert backend.of("simple_q") is B and backend.of("lml_q") is BL  # families without a bench block stay
+    assert backend.of("simple_q") is BB  # every benchmark family is on the one backend
+    assert backend.table() == {"bench": "backend_bench"}
 
 
 @pytest.mark.parametrize("name", FAMILIES)
 def test_lml_bench_family_files(name):
     fam = json.loads((RSI / "families" / f"{name}.json").read_text())
-    old = json.loads((RSI / "families" / f"{name[:-6]}.json").read_text())
-    assert fam["name"] == name and fam["backend"] == "bench" and fam["probe_bed"] == "official"
+    assert fam["name"] == name and fam["backend"] == "bench"
     assert fam["bench"]["name"] == "locomanilab" and fam["bench"]["options"] == {}
     assert fam["bench"]["config"] == (
         {"slots": [3, 4]} if "fridge" in name else {"slots": [5, 6]} if "drawer" in name else {}
@@ -119,20 +120,13 @@ def test_lml_bench_family_files(name):
         "bed_env",
         "official_slots",
     } & set(fam)
-    assert fam["tasks"] == old["tasks"] and fam["pools"] == old["pools"] and fam["bed_fixed"] == old["bed_fixed"]
-    assert fam["tasks_file"] == old["tasks_file"] and fam["practice_dir"] == old["practice_dir"]
+    assert fam["bed_fixed"] == {**fam["bed_fixed"], "feed_torque": True} and fam["tasks_file"].endswith("_tasks.jsonl")
     assert fam["rules"] == "scripts/rsi/rules_notes/lml.md" and (RSI.parents[1] / fam["rules"]).is_file()
     assert (RSI.parents[1] / fam["prompts"] / "engineer.md").is_file()
     sb = fam["sandbox"]
     for k in ("keep", "overlay"):
         assert f"scripts/rsi/families/{name}.json" in sb[k] and "scripts/rsi/backend_bench.py" in sb[k]
-        assert "scripts/rsi/backend_lml.py" in sb[k] and "scripts/rsi/backend_simple.py" in sb[k]
-
-
-def test_old_lml_family_files_are_untouched():
-    for n in ("lml_q", "lml_fridge", "lml_drawer"):
-        old = json.loads((RSI / "families" / f"{n}.json").read_text())
-        assert old["backend"] == "lml" and old["runner"].endswith(".sh") and "bench" not in old
+        assert all(f"scripts/rsi/{m}.py" in sb[k] for m in ("bench_common", "bench_pools", "bench_rows", "bench_lml"))
 
 
 def test_rules_and_prompts_name_the_new_package():
@@ -145,40 +139,10 @@ def test_rules_and_prompts_name_the_new_package():
 
 
 # --------------------------------------------------------- simple_art: the generic backend equals the old path
-def test_simple_art_moved_to_the_generic_backend_with_identical_argv_and_signature(tmp_path, monkeypatch):
+def test_simple_art_signature_slots_and_env(tmp_path, monkeypatch):
     fam = bench_fam(tmp_path, monkeypatch, "simple_art", config={"slots": [1, 2], "batch_tries": 2})
     assert fam["backend"] == "bench"
-    old = dict(fam, backend="simple")  # the same family on backend_simple's own bench path
-    assert B.bed_files(old) == BB.bed_files(fam) and B.base_rel(old) == BB.base_rel(fam)
-    for where in ("probe", "gate", "sealed"):
-        assert B.signature(old, where) == BB.signature(fam, where), where
     assert BB.signature(fam, "probe") == BB.signature(fam, "gate")  # TODO 52: one render mode for every round
-    ids = tmp_path / "ids.txt"
-    for full in (False, True):
-        for stance in (None, {"d": 0.05}):
-            a = B.bench_argv(
-                old,
-                "OpenOvenTeleop",
-                ids,
-                {"art_gap": 0.2},
-                stance,
-                tmp_path / "o" / "rows.jsonl",
-                tmp_path / "pkg",
-                tmp_path / "o",
-                full,
-            )
-            b = BB.bench_argv(
-                fam,
-                "OpenOvenTeleop",
-                ids,
-                {"art_gap": 0.2},
-                stance,
-                tmp_path / "o" / "rows.jsonl",
-                tmp_path / "pkg",
-                tmp_path / "o",
-                full,
-            )
-            assert a == b
     assert (
         BB.slots_of(fam) == 2 and BB.slots_of(dict(fam, bench=dict(fam["bench"], config={}))) == 3
     )  # as run_jobs had it (3)
@@ -186,34 +150,6 @@ def test_simple_art_moved_to_the_generic_backend_with_identical_argv_and_signatu
     assert env["PYTHONPATH"] == "src" and env.get("TMPDIR") == __import__("os").environ.get(
         "TMPDIR"
     )  # SIMPLE: no TMPDIR of ours
-
-
-def test_simple_art_old_and_new_runner_calls_agree(tmp_path, monkeypatch):
-    fam = bench_fam(tmp_path, monkeypatch, "simple_art")
-    old = dict(fam, backend="simple")
-    seen = []
-    monkeypatch.setattr(
-        B,
-        "_exec",
-        lambda argv, env, log, stop, cwd, tree=False: (
-            seen.append((argv, cwd, tree, sorted(k for k in env if k.startswith(("SIMPLE_", "LML_"))))) or 0
-        ),
-    )
-    monkeypatch.setenv("SIMPLE_RUN_DIR", "inherited")
-    pkg = tmp_path / "pkg"
-    pkg.mkdir()
-    (tmp_path / "u").mkdir()
-    for mod, f in ((B, old), (BB, fam)):
-        mod.official_runner(
-            "OpenOvenTeleop",
-            ["OpenOvenTeleop/Q/3"],
-            pkg,
-            {"art_gap": 0.2},
-            tmp_path / "u" / "rows.jsonl",
-            family=f,
-            full=True,
-        )
-    assert seen[0] == seen[1] and seen[0][2] is True and seen[0][3] == []
 
 
 def test_simple_art_rows_stay_simple_rows(tmp_path, monkeypatch):
@@ -225,10 +161,9 @@ def test_simple_art_rows_stay_simple_rows(tmp_path, monkeypatch):
         t_end=5.0,
         bench=dict(signature="simple/x"),
     )
-    a = B.to_round(rec, "OpenOvenTeleop_s3", "h", {}, "sig")
+    a = B.to_round(rec, "OpenOvenTeleop_s3", "h", {}, "sig") | {"bench": "simple/x"}
     b = BB.to_round(rec, "OpenOvenTeleop_s3", "h", {}, "sig", fam)
     assert a == b and b["bench"] == "simple/x" and "simple" in b and "lml" not in b
-    assert BB.package_parameters(BB.base_dir(fam)) == B.package_parameters(BB.base_dir(fam))
 
 
 # --------------------------------------------------------------------------------------------------- LocoManiLab
@@ -261,7 +196,7 @@ def test_lml_runner_argv(tmp_path, monkeypatch):
     assert json.loads(pairs(a, "--setting")[0]) == {"speed": 0.2} and json.loads(pairs(a, "--stance")[0]) == {"d": 0.1}
     assert pairs(a, "--bench-set") == []  # the family's options are empty: the adapter's profile resolves
     sets = pairs(a, "--set")
-    pdir = B.practice_dir(fam, False)
+    pdir = BB.practice_dir(fam, False)
     assert sets[:5] == [
         "kinds=Q",
         f"practice_dir={pdir}",
@@ -282,15 +217,15 @@ def test_lml_runner_call_and_env(tmp_path, monkeypatch):
     fam = lml(tmp_path, monkeypatch)
     seen = {}
     monkeypatch.setattr(
-        B,
-        "_exec",
+        C,
+        "run_command",
         lambda argv, env, log, stop, cwd, tree=False: seen.update(argv=argv, env=env, cwd=cwd, tree=tree) or 0,
     )
     monkeypatch.setenv("LML_SLOTS", "9")
     monkeypatch.setenv("SIMPLE_LOOP", "1")
     monkeypatch.setenv("EXAM_OPEN", "1")
     (tmp_path / "u").mkdir()
-    BB.official_runner(
+    BB.run_unit(
         "IThorKitchenOpenFridge_scene13",
         ["IThorKitchenOpenFridge_scene13/Q/3"],
         tmp_path / "pkg",
@@ -335,8 +270,6 @@ def test_lml_benchmark_commit_enters_the_signature(tmp_path, monkeypatch):
 
 def test_check_bench_errors(tmp_path, monkeypatch):
     fam = lml(tmp_path, monkeypatch)
-    with pytest.raises(ValueError, match="no mirror bed"):
-        BB.signature(dict(fam, probe_bed="mirror"), "probe")
     with pytest.raises(ValueError, match="not ported"):
         BB.check_bench(dict(fam, bench=dict(fam["bench"], name="nosuchbench")))
     with pytest.raises(ValueError, match="bench.root"):
@@ -355,7 +288,7 @@ def test_check_bench_errors(tmp_path, monkeypatch):
 
 def test_lml_package_parameters_and_stance_keys(tmp_path, monkeypatch):
     fam = lml(tmp_path, monkeypatch)
-    p = BB.package_parameters(BB.base_dir(fam))
+    p = BL.package_parameters(BB.base_dir(fam))
     assert p == {
         "stand": 0.27,
         "speed": 0.3,
@@ -365,7 +298,7 @@ def test_lml_package_parameters_and_stance_keys(tmp_path, monkeypatch):
         "nav_gap": 0.3,
     }  # skill.py + EXTRA of __init__.py
     sk = BB.load_skills(BB.base_dir(fam), family=fam)
-    assert isinstance(sk, BL.SkillPackage)
+    assert isinstance(sk, LL.SkillPackage)
     assert sk.apply_set(sk, {"lift": 0.4, "stance_d": 0.1, "stance_here": True}) == {
         "lift": 0.4,
         "stance_d": 0.1,
@@ -378,7 +311,7 @@ def test_lml_package_parameters_and_stance_keys(tmp_path, monkeypatch):
     with pytest.raises(KeyError, match="fixed"):
         sk.apply_set(sk, {"feed_torque": False})
     art = bench_fam(tmp_path, monkeypatch, "simple_art")
-    assert isinstance(BB.load_skills(BB.base_dir(art), family=art), B.SkillPackage)
+    assert isinstance(BB.load_skills(BB.base_dir(art), family=art), C.SkillPackage)
 
 
 def seed_job(tmp_path, with_init=True):
@@ -395,7 +328,7 @@ def test_lml_run_jobs_rows_to_rounds_and_cards(tmp_path, monkeypatch):
     fam["tasks"] = tasks
     fam["practice_dir"] = str(practice(tmp_path / "practice", tasks))
     pool = tmp_path / "pool"
-    B.draw(fam, "diag", pool, n=4)
+    BB.draw(fam, "diag", pool, n=4)
     got = []
 
     def fake(task, ids, package, setting, out, family=None, env=None, full=None, **kw):
@@ -417,7 +350,7 @@ def test_lml_run_jobs_rows_to_rounds_and_cards(tmp_path, monkeypatch):
         Path(out).write_text("".join(json.dumps(dict(rec, episode_id=e)) + "\n" for e in ids))
         return 0
 
-    monkeypatch.setattr(BB, "official_runner", fake)
+    monkeypatch.setattr(BB, "run_unit", fake)
     monkeypatch.setattr(BB, "run_guard", lambda *a: None)
     pk = seed_job(tmp_path)
     job = type("J", (), dict(skills=pk, out=tmp_path / "o", overrides={"speed": 0.1}, labels=None))()
@@ -448,9 +381,9 @@ def test_lml_run_jobs_guard_and_refused_rows(tmp_path, monkeypatch):
     pdir = practice(tmp_path / "practice", tasks)
     fam["practice_dir"] = str(pdir)
     pool = tmp_path / "pool"
-    B.draw(fam, "diag", pool, n=3)
+    BB.draw(fam, "diag", pool, n=3)
     calls = []
-    monkeypatch.setattr(BB, "official_runner", lambda *a, **k: calls.append(a) or 0)
+    monkeypatch.setattr(BB, "run_unit", lambda *a, **k: calls.append(a) or 0)
     pk = seed_job(tmp_path)
     monkeypatch.setattr(BB, "run_guard", lambda *a: "R4 pick.py: forbidden name 'qpos'")
     job = type("J", (), dict(skills=pk, out=tmp_path / "o", overrides={}, labels=None))()
@@ -477,7 +410,7 @@ def test_lml_guard_and_seed_are_the_real_ones(tmp_path, monkeypatch):
     assert fam["bench"]["root"] == str(BENCH_REAL)
     base = BB.base_dir(fam)
     assert base == (BENCH_REAL / "src/locomani/bench/locomanilab/seed").resolve()
-    p = BB.package_parameters(base)
+    p = BL.package_parameters(base)
     assert "lift" in p and "nav_gap" in p and "stand" in p
     assert BB.run_guard(fam, base, base) is None
     cand = tmp_path / "cand"
@@ -503,7 +436,7 @@ def test_lml_sandbox_copies_the_readable_adapter_and_blanks_hidden_rows(tmp_path
     fam = lml(tmp_path, monkeypatch, name)
     fam["practice_dir"] = str(practice(tmp_path / "practice", fam["tasks"]))
     fam["sandbox"] = dict(fam["sandbox"], task_files=[])
-    monkeypatch.setattr(B, "HIDDEN", "hid")
+    monkeypatch.setattr(C, "HIDDEN", "hid")
     dest = tmp_path / "sb"
     (dest / "scripts/rsi/families").mkdir(parents=True)
     (dest / "scripts/rsi/families" / f"{name}.json").write_text(json.dumps(fam))
@@ -531,7 +464,7 @@ def test_simple_sandbox_through_the_generic_backend(tmp_path, monkeypatch):
     fam = bench_fam(tmp_path, monkeypatch, "simple_art")
     fam["practice_dir"] = str(practice(tmp_path / "practice", ART_TASKS))
     fam["sandbox"] = dict(fam["sandbox"], task_files=[])
-    monkeypatch.setattr(B, "HIDDEN", "hid")
+    monkeypatch.setattr(C, "HIDDEN", "hid")
     dest = tmp_path / "sb"
     (dest / "scripts/rsi/families").mkdir(parents=True)
     (dest / "scripts/rsi/families/simple_art.json").write_text(json.dumps(fam))

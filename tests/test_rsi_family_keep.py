@@ -15,8 +15,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 RSI = ROOT / "scripts" / "rsi"
+SCENE = RSI / "scene"
 SRC = ROOT / "src"
-ENTRIES = ("loop", "try", "sealed", "gate", "batch", "scene_round", "family")  # what the driver and gate run
+ENTRIES = ("loop", "try", "sealed", "gate", "batch")  # what the driver and gate run (scene families add the plug-in)
 
 
 def imported(f: Path) -> set[str]:
@@ -35,6 +36,14 @@ def src_file(mod: str) -> Path | None:
     return next((q for q in (p.with_suffix(".py"), p / "__init__.py") if q.exists()), None)
 
 
+def is_scene(family: str) -> bool:
+    return not json.loads((RSI / "families" / f"{family}.json").read_text()).get("backend")
+
+
+def where(m: str) -> Path | None:
+    return next((p for p in (RSI / f"{m}.py", SCENE / f"{m}.py") if p.exists()), None)
+
+
 def named_commands() -> set[str]:
     files = [
         RSI / "rules_core.md",
@@ -43,18 +52,20 @@ def named_commands() -> set[str]:
         *sorted((RSI / "prompts").rglob("*.md")),
     ]
     text = "".join(f.read_text() for f in files)
-    return {m for m in re.findall(r"scripts/rsi/([a-z_]+)\.py", text) if (RSI / f"{m}.py").exists()}
+    return {m for m in re.findall(r"scripts/rsi/(?:scene/)?([a-z_]+)\.py", text) if where(m)}
 
 
-def scripts_needed() -> set[str]:
-    local = {p.stem for p in RSI.glob("*.py")}
-    seen, todo = set(), {*ENTRIES, *named_commands()}
+def scripts_needed(scene: bool) -> set[str]:
+    """The scripts/rsi modules (and, for a scene family, scripts/rsi/scene ones) the loop and the roles run. A benchmark
+    family's loop never imports the plug-in: its lazy imports of scene modules are not followed."""
+    local = {p.stem for p in RSI.glob("*.py")} | ({p.stem for p in SCENE.glob("*.py")} if scene else set())
+    seen, todo = set(), {*ENTRIES, *(["scene_round", "family"] if scene else []), *named_commands()}
     while todo:
         m = todo.pop()
         if m in seen or m not in local:
             continue
         seen.add(m)
-        todo |= {x.split(".")[0] for x in imported(RSI / f"{m}.py")}
+        todo |= {x.split(".")[0] for x in imported(where(m))}
     return seen
 
 
@@ -66,14 +77,14 @@ def src_reached(entries: list[str]) -> set[str]:
         if m in seen:
             continue
         seen.add(m)
-        f = (RSI / f"{m}.py") if (RSI / f"{m}.py").exists() else src_file(m)
+        f = where(m) or src_file(m)
         if f is None:
             continue
         for x in imported(f):
             if x.startswith("locomani"):
                 parts = x.split(".")
                 todo |= {".".join(parts[:i]) for i in range(1, len(parts) + 1)}
-            elif (RSI / f"{x.split('.')[0]}.py").exists():
+            elif where(x.split(".")[0]):
                 todo.add(x.split(".")[0])
     return seen
 
@@ -84,8 +95,16 @@ FAMILIES = sorted(p.stem for p in (RSI / "families").glob("*.json") if "sandbox"
 @pytest.mark.parametrize("family", FAMILIES)
 def test_the_keep_list_holds_what_the_loop_and_the_roles_run(family):
     spec = json.loads((RSI / "families" / f"{family}.json").read_text())["sandbox"]
-    missing = sorted(m for m in scripts_needed() if f"scripts/rsi/{m}.py" not in spec["keep"])
+    scene = is_scene(family)
+    needed = scripts_needed(scene)
+    missing = sorted(m for m in needed if (RSI / f"{m}.py").exists() and f"scripts/rsi/{m}.py" not in spec["keep"])
     assert not missing, f"{family}: sandbox.keep lacks {missing}"
+    if scene:
+        assert "scripts/rsi/scene" in spec["keep"], f"{family}: a scene family keeps the plug-in directory"
+    else:
+        assert not [k for k in spec["keep"] if k.startswith("scripts/rsi/scene")], (
+            f"{family}: no plug-in in a benchmark sandbox"
+        )
 
 
 @pytest.mark.parametrize("family", FAMILIES)
@@ -93,6 +112,8 @@ def test_the_closure_reaches_every_src_module_a_kept_script_imports(family):
     spec = json.loads((RSI / "families" / f"{family}.json").read_text())["sandbox"]
     reached = src_reached(spec["closure"])
     kept = [k for k in spec["keep"] if k.startswith("scripts/rsi/") and k.endswith(".py")]
+    if is_scene(family):
+        kept += [f"scripts/rsi/scene/{m}.py" for m in scripts_needed(True) if (SCENE / f"{m}.py").exists()]
     wanted = {x for k in kept for x in imported(ROOT / k) if x.startswith("locomani") and src_file(x)}
     assert not sorted(wanted - reached), f"{family}: closure does not reach {sorted(wanted - reached)}"
 

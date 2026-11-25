@@ -65,10 +65,10 @@ $PY -m pytest tests/test_strict_box_goal.py tests/test_box_bimanual_family.py te
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 PYTHONPATH=src \
-  $PY scripts/rsi/probe_box.py --out outputs/scene_rsi_20261016/box_probe_$(date +%Y%m%d)
+  $PY scripts/rsi/scene/probe_box.py --out outputs/scene_rsi_20261016/box_probe_$(date +%Y%m%d)
 ```
 
-做什么：先用一段人写的序列证明这个任务做得到，再花钱跑循环。默认用的是 crate / 纸箱线人工定义的双臂抓法（`MODE` 为 `"wall"`）：机器人从场景的默认出生点走到离纸箱最近的台沿外 0.38 m，骨盆降到 0.76 m；两手各对准机器人左右两侧的箱壁，抓点在箱沿下 1 cm、离箱壁外表面 8 mm，张开的夹爪跨在 1 cm 厚的壁上（一根手指在箱内、一根在箱外），手掌向下俯 60°；先到抓点上方 9 cm、往身体方向退 4 cm 的预抓位置，再直线下到抓点，两手同时合爪；然后两手一起向上 32 cm、骨盆站直到 0.79 m，保持。纸箱按两个任务的摆放各随机放 5 次。序列在 `scripts/rsi/probe_box_skills/`，不进沙盒；参数都是大写常量，用 `--set` 改（如 `'{"PALM_PITCH_DEG": 45.0}'`；`MODE` 为 `"hug"` 是两手张开从两侧顶住箱壁的抱法）。每局按任务族的判据判，记录和循环的同格式。
+做什么：先用一段人写的序列证明这个任务做得到，再花钱跑循环。默认用的是 crate / 纸箱线人工定义的双臂抓法（`MODE` 为 `"wall"`）：机器人从场景的默认出生点走到离纸箱最近的台沿外 0.38 m，骨盆降到 0.76 m；两手各对准机器人左右两侧的箱壁，抓点在箱沿下 1 cm、离箱壁外表面 8 mm，张开的夹爪跨在 1 cm 厚的壁上（一根手指在箱内、一根在箱外），手掌向下俯 60°；先到抓点上方 9 cm、往身体方向退 4 cm 的预抓位置，再直线下到抓点，两手同时合爪；然后两手一起向上 32 cm、骨盆站直到 0.79 m，保持。纸箱按两个任务的摆放各随机放 5 次。序列在 `scripts/rsi/scene/probe_box_skills/`，不进沙盒；参数都是大写常量，用 `--set` 改（如 `'{"PALM_PITCH_DEG": 45.0}'`；`MODE` 为 `"hug"` 是两手张开从两侧顶住箱壁的抱法）。每局按任务族的判据判，记录和循环的同格式。
 得到什么：终端打印每局成败、失败类型和步骤；`--out` 下 `rounds/`（每局记录和 50 Hz 轨迹）、`videos/`（每局一段回放，`previews/` 里是 ≤ 500 KB 的预览）、`summary.json`。约 1 分钟，出视频再加约 1 分钟；加 `--no-video` 不出视频。
 怎么用结果：5 / 10 以上开循环；1–4 / 10 调一次参数再试；0 / 10 停下，先查是控制器做不到还是抱法不对。2026-10-24 严格判据下的 6 种设置见第 9 节。
 
@@ -169,6 +169,6 @@ bash scripts/stop_unreal.sh
 
 - 角色的命令被拒、账本没问题但 `iter_NN/<角色>_raw.json` 里 `permission_denials` 不为空：这台机器的 Claude CLI 不让 `--permission-mode bypassPermissions` 放开 Bash。`scripts/rsi/loop.py` 里调 `claude -p` 的命令带着 `--allowedTools "Bash"`（2026-10-24 加的）；别的机器上如果仍被拒，查组织策略。
 - `scene_lint.py` 报 error：不要开循环，先按第 1 节重建场景。
-- 内环第一行就崩、`loop.log` 里 `No module named ...`：任务族文件的 `sandbox.keep` 缺了 `loop.py` 新 import 的脚本（2026-10-23 起要 `scripts/rsi/diag_pool.py` 和 `try.py`）；`sandbox.closure` 里不能写 `try`。
+- 内环第一行就崩、`loop.log` 里 `No module named ...`：任务族文件的 `sandbox.keep` 缺了 `loop.py` 新 import 的脚本（2026-10-23 起要 `scripts/rsi/scene/diag_pool.py` 和 `try.py`）；`sandbox.closure` 里不能写 `try`。
 - `report_unreal.py` 报 `films ... at fovy 73.74, the scene's shot is ... at 45`：场景文件里还留着场景包的固定机位 `video_camera`。用现在的 `prepare_logistics_scene.py --rsi` 重建场景（它会去掉这个字段），再做 7.1。
 - 探针不到 5 / 10：不要开循环，按第 3 节的规则处理。

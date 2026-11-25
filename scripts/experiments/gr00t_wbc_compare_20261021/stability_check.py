@@ -30,7 +30,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[2]
-sys.path[:0] = [str(REPO / "scripts/rsi"), str(REPO / "src")]
+sys.path[:0] = [str(REPO / "scripts/rsi/scene"), str(REPO / "src")]
 
 import motor_check as MC  # noqa: E402
 

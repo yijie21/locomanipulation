@@ -69,7 +69,9 @@ def git(dest: Path, *args, **kw):
 
 def closure(dest: Path, entries: list[str]) -> set[str]:
     """The locomani modules importing `entries` loads in the sandbox (scripts/rsi and src on the path)."""
-    code = "import sys; sys.path[:0] = ['scripts/rsi', 'src']\n" + "".join(f"import {e}\n" for e in entries)
+    code = "import sys; sys.path[:0] = ['scripts/rsi', 'scripts/rsi/scene', 'src']\n" + "".join(
+        f"import {e}\n" for e in entries
+    )
     r = subprocess.run(
         [str(SIM_PY), "-X", "importtime", "-c", code], cwd=dest, env=SUB_ENV, capture_output=True, text=True
     )
@@ -187,7 +189,7 @@ def library_without(dest: Path, family: str) -> None:
             md = d / "EXPERIENCE.md"
             if md.exists():
                 md.write_text("".join(x for x in md.read_text().splitlines(keepends=True) if "final.patch" not in x))
-    mod = importlib.util.spec_from_file_location("rsi_reflect", HERE / "reflect.py")
+    mod = importlib.util.spec_from_file_location("rsi_reflect", HERE / "scene" / "reflect.py")
     reflect = importlib.util.module_from_spec(mod)
     mod.loader.exec_module(reflect)
     reflect.index(lib)
@@ -236,7 +238,7 @@ def build(dest: Path, family: str, ref: str = "HEAD") -> None:
     )
     loop = dest / "outputs" / "scene_rsi_20261016" / family
     hidden = dest / HIDDEN / family
-    fam = dest / "scripts" / "rsi" / "family.py"
+    fam = dest / "scripts" / "rsi" / "backend.py"
     # the runtime data first: a family whose pools keep only starts needing a preparation (`require_prep`, TODO
     # 33.24.3) asks the chooser, and the chooser the body model's table, while it draws
     lib = REPO / "outputs" / "scene_rsi_20261016" / "records" / "library.jsonl"  # TODO 33.15.1: the record library
