@@ -200,12 +200,21 @@ class Overlap:
         inc = CS.incumbent()  # the present incumbent: the seed on a fresh run
         tree = PrivateTree("warm", inc["hash"])
         box: dict = {}
+        # The incumbent record is made here, in the driver's thread, before any round runs: it copies the seed, and a copy
+        # made by the worker could meet the driver rewriting the working package for a diagnostic or draft round.
+        try:
+            gi = G.init_incumbent(tree.root / "gate", S.FAMILY)
+        except BaseException as e:  # noqa: BLE001 -- the first gate call makes it then
+            box["error"] = f"{type(e).__name__}: {e}"[:300]
+            gi = None
 
         def job() -> None:
             t0 = time.time()
             CS._VIEW.v = CS.View(tree.root, tree.root / "_stash")
+            if gi is None:
+                box["seconds"] = 0
+                return
             try:
-                gi = G.init_incumbent(tree.root / "gate", S.FAMILY)
                 d = Path(gi["dir"])
                 B.run_jobs([B.Job(d / "skills", Path(gi["rounds"]), overrides(d))], S.FAMILY, CS.accept_pool(),
                            max(1, S.PROCS // 4), tree.root / "gate" / "warm.log", S.GPUS, where="gate")  # fmt: skip

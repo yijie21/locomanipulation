@@ -338,7 +338,10 @@ def init_incumbent(gate: Path, family: str) -> dict:
     inc_state = gate / "incumbent.json"
     if not inc_state.exists():
         seed = gate / "incumbent_seed"
-        snapshot(_seed_dir(gate, BK.layout(family)["skills"]), seed)
+        lay = BK.layout(family)
+        snapshot(
+            _seed_dir(gate, lay.get("seed") or lay["skills"]), seed
+        )  # the seed's own copy when the backend names one
         inc_state.write_text(json.dumps(dict(dir=str(seed), rounds=str(gate / "incumbent_seed_rounds"), since=0)))
     return json.loads(inc_state.read_text())
 

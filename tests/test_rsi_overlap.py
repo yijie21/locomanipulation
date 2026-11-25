@@ -399,9 +399,18 @@ def test_the_seed_incumbents_rounds_start_with_the_run_and_the_first_gate_reuses
             assert ev.wait(WAIT)  # held until the first Reviewer has been called
 
     FB.BEFORE_JOB = before
-    ow.on_role = lambda role, n: (ow.log("warm_running", started.is_set()), ev.set())[1] if role == "reviewer" else None
+
+    def on_role(role, n):
+        # The warm-up thread is started before the first role call; on a loaded machine it may reach its first job only
+        # after the Reviewer has been called, so the Reviewer waits for it here instead of the test racing the scheduler.
+        if role == "reviewer":
+            started.wait(WAIT)
+            ow.log("warm_running", started.is_set())
+            ev.set()
+
+    ow.on_role = on_role
     assert ow.run(1, stop_rate=0.99) == 0
-    assert ("warm_running", True) in ow.ev and ow.index("warm_start") < ow.index("role", "reviewer", 0)
+    assert ("warm_running", True) in ow.ev and ow.index("warm_start") < ow.index("gate_start", 0)
     n_accept = len(list((ow.hidden / "pool_accept").glob("*.json")))
     seed_rounds = [x for x in FB.RAN if x[0] == "incumbent_seed_rounds"]
     assert len(seed_rounds) == n_accept == len(set(seed_rounds))  # each start once: the gate found them done

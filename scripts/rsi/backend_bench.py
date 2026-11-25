@@ -452,6 +452,10 @@ def layout(family) -> dict:
     rm = rows_module(fam)
     return dict(
         skills=ensure_package(fam),
+        seed=base_dir(
+            fam
+        ),  # the immutable seed package: the gate's first incumbent is copied from here, never from the
+        # working package, which the driver rewrites for every round (a concurrent copy could catch a draft)
         rules=C._abs(fam["rules"]),
         prompts=C._abs(fam["prompts"]),
         plan=None,
