@@ -250,6 +250,13 @@ def _logged(fn):
     return wrap
 
 
+class Futures(dict):
+    """The keypoint futures, carrying the reference poses beside them for a tracker that reads joints (`poses`)."""
+
+    poses: list = ()
+    base_wrists: dict | None = None
+
+
 class Motor:
     """One robot in one scene under ScaleBFM. `t` is simulated time since `reset`; `trace` holds one row per tick."""
 
@@ -266,6 +273,10 @@ class Motor:
         self.sim, self.pol, self.cfg = sim, policy, config or MotorConfig()
         self.kp = Keypoints(sim.m, policy.sel)
         self.ik = ArmIK(model_xml) if model_xml else None
+        if hasattr(
+            policy, "attach"
+        ):  # a tracker that reads joints (heft.py) realises the servo's wrist shifts by arm IK
+            policy.attach(self)
         self.jacobian = jacobian
         self.track = {n: sim.m.body(n).id for n in track}
         self.foot_bodies = {sim.m.body(ANKLE[s]).id for s in SIDES}
@@ -410,8 +421,11 @@ class Motor:
 
     def _futures(self) -> dict:
         out: dict = {}
+        poses = []  # HEFT (heft.py) reads the reference's joints, not keypoints: the unextrapolated pose at each future step
         for j in self.pol.fidx:
             pose = self.ref(self.t + j * R.DT)
+            if getattr(self.pol, "wants_poses", False):
+                poses.append((pose.pos, pose.quat, pose.joints))
             kp = self.kp(pose.pos, pose.quat, pose.joints + pose.velocity * j * R.DT)
             if self.pinned is not None:
                 kp.update(self.pinned)
@@ -419,11 +433,18 @@ class Motor:
                 out.setdefault(n, ([], []))
                 out[n][0].append(p)
                 out[n][1].append(q)
-        fut = self._servo({n: (np.array(v[0]), np.array(v[1])) for n, v in out.items()})
+        fut = {n: (np.array(v[0]), np.array(v[1])) for n, v in out.items()}
+        base = (
+            {WRIST[s]: fut[WRIST[s]] for s in SIDES} if poses else None
+        )  # the reference's own wrists, before the servo
+        fut = self._servo(fut)
         for side, (jaw, rot, vel) in self.hand_override.items():
             lead = np.array([j * R.DT for j in self.pol.fidx])[:, None] * vel[None]
             fut[WRIST[side]] = (np.repeat((jaw - rot @ R.OFF)[None], self.pol.F, 0) + lead,
                                 np.repeat(R.quat_wxyz(rot)[None], self.pol.F, 0))  # fmt: skip
+        if poses:
+            fut = Futures(fut)
+            fut.poses, fut.base_wrists = poses, base
         return fut
 
     def hand(self, side: str, jaw_centre=None, rotation=None, velocity=None) -> None:
