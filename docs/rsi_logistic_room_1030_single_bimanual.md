@@ -238,7 +238,7 @@ CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 
 $PY scripts/rsi/alternate.py status $R                                  # 看进度
 ```
 
-从种子重新开始（用户 11-24，“从零开始重新跑 RSI，不用之前 RSI 学到的技能”）：`init` 加 `--seed scripts/rsi/seeds/gso_picked_start`，其余命令不变。这个目录就是 gso-alt-a 开跑时的技能包（11-19 的主库，提交 04f5b4c6，写回之前；封存集上种子 0/200 的前身 0/100、双手 0/40），两个沙盒的技能包都换成它，沙盒里任务族文件的 `sandbox.seed` 记下来源，`alternate.json` 的 `seed` 也记着；共享知识库本来就是空的。种子包里没有 `grasp_common.py`，提示词里关于它的那句会自动省去（`loop.py` 的 `shared_skills_note`）。模式 1 / 2 对应的是 `sandbox.py $S <任务族> --fresh --seed scripts/rsi/seeds/gso_picked_start`。不加 `--seed` 就从主库现状开始（下一条）。
+从种子重新开始（用户 11-24，“从零开始重新跑 RSI，不用之前 RSI 学到的技能”）：`init` 加 `--seed scripts/rsi/seeds/gso_picked_start`，其余命令不变。这个目录就是 gso-alt-a 开跑时的技能包（11-19 的主库，提交 04f5b4c6，写回之前；封存集上种子 0/200 的前身 0/100、双手 0/40），两个沙盒的技能包都换成它，沙盒里任务族文件的 `sandbox.seed` 记下来源，`alternate.json` 的 `seed` 也记着；共享知识库本来就是空的。种子包里没有 `grasp_common.py`，提示词里关于它的那句会自动省去（`loop.py` 的 `shared_skills_note`）。模式 1 / 2 对应的是 `sandbox.py $S <任务族> --fresh --seed scripts/rsi/seeds/gso_picked_start`。不加 `--seed` 就从主库现状开始（下一条）。11-24 晚从种子冒烟一个桩迭代（1d0a65a5）：两个沙盒和合并底本都等于种子目录，种子包自己的 29 个测试在沙盒里通过，诊断池单手 60 局、双手 24 局全跑，种子全失败（0/60、0/24，和 gso-alt-a 封存集上的种子 0/100、0/40 一致），链路走完，提示词里没有 grasp_common。
 
 ```bash
 R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-seed
