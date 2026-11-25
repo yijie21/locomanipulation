@@ -594,7 +594,7 @@ def main(argv=None) -> int:
     r.add_argument("run", type=Path)
     r.add_argument("--iters", type=int, default=5, help="iterations, each a half of both families")
     r.add_argument(
-        "--max-hours", type=float, default=20.0, help="hours both families may run together (default 20; 15 and 10 before)"
+        "--max-hours", type=float, default=20.0, help="hours both families may run together (default 20; 15 before)"
     )
     r.add_argument("--stop-rate", type=float, default=0.95, help="a family stops once its incumbent wins this share "
                    "of its acceptance pool (default 0.95; 0.8 until 2026-11-24)")  # fmt: skip
