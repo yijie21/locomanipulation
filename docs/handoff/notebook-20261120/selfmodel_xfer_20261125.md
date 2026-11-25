@@ -306,3 +306,22 @@ xfer sonic (native planner, native stance, delay 4 frames): /wuji-vefps-D/wuji-i
    - 站姿用 SONIC 在 HA 里的默认姿态，不用 LML 站姿，这一点和 data3 不同。原因是用 LML 站姿时，SONIC 在 HA 里停不住：xy 漂 8 cm，冒烟里一段都没采到。
 5. **ScaleBFM 和 HEFT 的接法。** 和 data3 喂 LML 的方式一样，世界系 qpos 帧经 motion buffer 推入，延迟取 buffer 的 delay_s，站姿用 LML 的。驱动代码用 ha_controllers 的 `ha_g1ctrl.py`（md5 72a7bc22）。
 6. **运动学一致。** HA 的运动学和 robot_fk 相差约 1e-7 m。
+
+## 预测修订：HumanoidArena 三个组合（2026-11-26 约 18:20Z 写下）
+
+**写下时的状态**：ScaleBFM·HA 已经开跑，但还没看到任何结果；HEFT·HA 和 SONIC·HA 还没开跑。原来登记的预测和判据保留不动，这里只补充一条新的预测。
+
+**这条预测怎么来的**
+- SIMPLE 的三个组合显示，两边物理身体相同、驱动方式也相同时，HEFT 能迁移（组合 6）。
+- HA 的情况不同：驱动方式和 LML 相同（ScaleBFM 和 HEFT 都走 motion buffer），但物理引擎换成了 PhysX，身体也不同。接入冒烟时查到：
+  - 整机 38.6 kg，LML 是 36.2 kg；
+  - 踝力矩上限 40 N·m，LML 是 50 N·m；
+  - armature、阻尼、摩擦都是 0。
+- 所以如果"模型对应的是控制器、驱动方式和物理身体"成立，在 HA 里就不该迁移。
+
+**预测（预测误差 / LML val，合计）**
+- ScaleBFM·HA：> 1.5 倍。冒烟里 30 cm 前伸时它往前倒、迈步。
+- HEFT·HA：1.3–3 倍。冒烟里前伸误差 3.7 cm，LML 是 1.3 cm。
+- SONIC·HA：> 1.5 倍。HA 的 40 维帧接口和站姿都和 LML 不同。
+
+**什么结果会推翻这条解释**：ScaleBFM 或 HEFT 在 HA 里落进 ≤ 1.3 倍那一格。那就说明连物理引擎和身体参数的差别都不要紧，"驱动方式"之外的解释都要重新考虑。
