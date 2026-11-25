@@ -261,13 +261,23 @@ def card(lines: list[str], W: int, H: int, note: str = GHOST_NOTE) -> np.ndarray
 
 
 def compose(
-    sc, out: Path, panels: list, caps: list, lines: list[str], speed: int, size=V.PANEL, note: str = GHOST_NOTE
+    sc,
+    out: Path,
+    panels: list,
+    caps: list,
+    lines: list[str],
+    speed: int,
+    size=V.PANEL,
+    note: str = GHOST_NOTE,
+    card_s: float = 6.0,
 ) -> Path:
-    """`panels`: per panel a frame generator or a held image; `note` closes the card."""
+    """`panels`: per panel a frame generator or a held image. The video opens with `card_s` seconds of the card
+    (`lines`, `note` closing it); 0 opens on the first frame (report_unreal.py, user 2026-11-25)."""
     strip = np.hstack([dv.caption_strip(c, size[0]) for c in caps])
     W, H = size[0] * len(panels), size[1] + strip.shape[0]
     w = dv.Writer(out, W, H)
-    w.write(card(lines, W, H, note), int(6 * dv.FPS))
+    if card_s > 0:
+        w.write(card(lines, W, H, note), int(card_s * dv.FPS))
     last = [p if isinstance(p, np.ndarray) else None for p in panels]
     frame = None
     while True:

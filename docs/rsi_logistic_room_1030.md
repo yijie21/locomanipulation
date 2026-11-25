@@ -172,7 +172,7 @@ PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" scripts/rsi/rep
 bash scripts/stop_unreal.sh
 ```
 
-做什么：读上一条输出目录的 `tasks_final.json` 和 `media.json`（场景名 `logistics_room_1030_s0` 从这里来，不加 `--scene`），把每段视频的那一局回放进 `/Game/Levels/logistics_room_1030_s0`，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍，再合成同样的字幕卡；`all` 或点名一段（如 `final_05_pack_gso_0558`）。回放摆的是 MuJoCo 回放同一组姿态，所以纸箱和其余物体也跟着轨迹动。
+做什么：读上一条输出目录的 `tasks_final.json` 和 `media.json`（场景名 `logistics_room_1030_s0` 从这里来，不加 `--scene`），把每段视频的那一局回放进 `/Game/Levels/logistics_room_1030_s0`，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍，再合成视频（顶部字幕条相同；2026-11-25 起没有 MuJoCo 版开头的 6 秒字幕卡，第一帧就是场景）；`all` 或点名一段（如 `final_05_pack_gso_0558`）。回放摆的是 MuJoCo 回放同一组姿态，所以纸箱和其余物体也跟着轨迹动。
 得到什么：`--out` 下每段 `<名字>.mp4`、`previews/`、海报、`<名字>/panel0/NNNNN.jpg` 逐帧和 `compare_*.jpg`（同一时刻 Unreal 与 MuJoCo 上下对照，先看它确认对齐）；约 1 分钟一段。渲染期间不跑别的重任务（封存集也不行）：编辑器的守护脚本在 CPU 占满时会杀掉它，日志在 `$UNREAL_ROOT/logs/`。关卡的 `source.json` 哈希和场景 XML 不一致时会拒绝渲染，按第 7 节重建关卡。换实例就把命令里的 `s0` 换掉。
 
 ## 7. Unreal 关卡（每个实例一个）

@@ -313,24 +313,24 @@ PYTHONPATH=src "$BRIDGE_PY" scripts/rsi/report/report_unreal.py all --media outp
 bash scripts/stop_unreal.sh
 ```
 
-做什么：读上一步目录里的 `tasks_final.json` 和 `media.json`（场景名从这里来），把每段的那一局回放进对应的关卡，沿 MuJoCo 版同一条机位轨迹拍，再合成同样的字幕卡。关卡的 `source.json` 哈希和场景 XML 对不上时拒绝渲染，先跑第 8 节的命令重建关卡。渲染时不要同时跑封存集这类重任务：编辑器的守护脚本在 CPU 占满时会杀掉它。
+做什么：读上一步目录里的 `tasks_final.json` 和 `media.json`（场景名从这里来），把每段的那一局回放进对应的关卡，沿 MuJoCo 版同一条机位轨迹拍，再合成视频（顶部字幕条相同；2026-11-25 起没有 MuJoCo 版开头的 6 秒字幕卡，第一帧就是场景）。关卡的 `source.json` 哈希和场景 XML 对不上时拒绝渲染，先跑第 8 节的命令重建关卡。渲染时不要同时跑封存集这类重任务：编辑器的守护脚本在 CPU 占满时会杀掉它。
 得到什么：`--out` 下每段 `<名字>.mp4` 和海报 `.jpg`、`previews/`、逐帧 `<名字>/panel0/`，以及 `compare_*.jpg`（同一时刻 Unreal 和 MuJoCo 上下对照，先看它确认对齐）。2026-11-19：编辑器启动约 15 秒，单手 20 段 8.4 分钟，双手 8 段 3.7 分钟；逐帧 JPG 两边共约 2.3 GB。
 
-可选：把成功的 Unreal 视频挑出来，每个任务族一个目录，并剪掉开头的字幕卡：
+可选：把成功的 Unreal 视频挑出来，每个任务族一个目录：
 
 ```bash
 for F in gso_single_grasp gso_bimanual_lift; do
   M=outputs/scene_rsi_20261016/${F}_media; O=outputs/scene_rsi_20261016/${F}_unreal_success; mkdir -p $O
   for N in $(python3 -c "import json,os;[print(os.path.basename(r['video'])) for r in json.load(open('$M/tasks_final.json')) if r['final_ok']]"); do
-    ffmpeg -v error -y -i ${M}_unreal/$N -vf "trim=start_frame=150,setpts=PTS-STARTPTS" -c:v libx264 -crf 18 -preset slow -pix_fmt yuv420p -movflags +faststart -an $O/$N
+    cp ${M}_unreal/$N $O/$N
   done
 done
 ```
 
-做什么：从 `tasks_final.json` 里挑出 `final_ok` 为 true 的段，剪掉前 150 帧（25 fps 下的 6 秒字幕卡），写进 `<任务族>_unreal_success/`；原片不动。
-得到什么：每段比原片少 150 帧，第一帧就是场景。11-19 两边都是全部成功（20 段和 8 段），每段 2–3 MB。
+做什么：从 `tasks_final.json` 里挑出 `final_ok` 为 true 的段，复制进 `<任务族>_unreal_success/`。2026-11-25 之前渲染的 Unreal 片开头还有 6 秒字幕卡（25 fps 下前 150 帧），要把 `cp` 换成 `ffmpeg -v error -y -i ${M}_unreal/$N -vf "trim=start_frame=150,setpts=PTS-STARTPTS" -c:v libx264 -crf 18 -pix_fmt yuv420p -an $O/$N` 剪掉。
+得到什么：每段第一帧就是场景。11-19 两边都是全部成功（20 段和 8 段），每段 2–3 MB。
 
-这些剪过的片和 `--out` 里的原片都不是压缩预览。要发给别人、给播放链接或打包下载，先用 `src/locomani/pipeline/video_preview.py` 压成每个不超过 500,000 字节的预览，做法见[视频导出](rendering.md#video-export)。
+这些挑出的片和 `--out` 里的原片都不是压缩预览。要发给别人、给播放链接或打包下载，先用 `src/locomani/pipeline/video_preview.py` 压成每个不超过 500,000 字节的预览，做法见[视频导出](rendering.md#video-export)。
 
 场景图（PAST）页面，每局一页 HTML，给人看（`VA`、`VB` 同上面 MuJoCo 视频那一段）：
 

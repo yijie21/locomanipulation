@@ -134,7 +134,7 @@ PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" scripts/rsi/rep
 bash scripts/stop_unreal.sh
 ```
 
-做什么：第一条在编辑器没开着时才需要。第二条读第 6 节输出目录的索引和 `media.json`（场景是 `logistics_room_mars`，不用加 `--scene`），把每段视频的那几局回放进 Unreal 关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍，再用同样的起点和字幕卡合成；`all` 或点名（如 `final_01_box_long_side`）。第三条关编辑器。
+做什么：第一条在编辑器没开着时才需要。第二条读第 6 节输出目录的索引和 `media.json`（场景是 `logistics_room_mars`，不用加 `--scene`），把每段视频的那几局回放进 Unreal 关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍，再用同样的起点合成（顶部字幕条相同；2026-11-25 起没有 MuJoCo 版开头的 6 秒字幕卡，第一帧就是场景）；`all` 或点名（如 `final_01_box_long_side`）。第三条关编辑器。
 得到什么：`--out` 下每段 `<名字>.mp4`、`previews/`、海报、`<名字>/panel0/NNNNN.jpg` 逐帧，以及 `compare_*.jpg`（同一时刻 Unreal 和 MuJoCo 上下对照，先看它确认对齐）；约 1 分钟一段。渲染期间不要跑别的重任务，编辑器的守护脚本在 CPU 占满时会把它杀掉，日志在 `$UNREAL_ROOT/logs/`。加 `--scene` 和 `configs/scenes.yaml` 里的场景名可以指定别的场景；不带 `--media` 也不带 `--scene` 时它渲染的是 ADT 进展报告自己的清单。
 
 ## 8. 改判据

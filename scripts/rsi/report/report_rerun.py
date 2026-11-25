@@ -63,7 +63,7 @@ def jobs() -> list[dict]:
                         label=src.name, ok=bool(rec["ok"])))  # fmt: skip
 
     sand, fam = family_dir(RU.PICK)
-    for before, after, label, _ in RU.PS.values():
+    for before, after, label in RU.PS.values():
         for v in (before, after):
             add(RU.PICK / v / label, OUT / "pick" / v / label, fam, RU.PICK.parent / "pool_diag", None, sand)
     for key, (fk, before, after, label, *_rest) in RM.STEPS.items():

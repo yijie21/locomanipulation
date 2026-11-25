@@ -11,7 +11,8 @@ Rounds are filmed one after the other in URLab's "stream" capture (Lumen and TSR
 before, as a game renders; the first frame of a round is a "fresh" capture). Filming the two rounds of a step in
 alternation would make every frame a jump. A step whose old version had no skill (its seed refused in planning) shows
 the start's first frame held, one fresh capture, as report_media does. Frames go to <out>/<name>/<panel>/NNNNN.jpg,
-then the video <out>/<name>.mp4 (card, caption strip, panels at 800 x 600 each), its <= 500 KB preview
+then the video <out>/<name>.mp4 (caption strip, panels at 800 x 600 each; no opening card since user 2026-11-25,
+the film starts on the round's first frame), its <= 500 KB preview
 (<out>/previews/) and poster, plus for a step stills at full size beside MuJoCo's picture of the same state
 (<out>/<name>/compare_*.jpg).
 
@@ -90,25 +91,13 @@ OUT = REPO / "outputs" / "scene_rsi_20261016" / "report" / "media_unreal"
 PICK = Path("/workspace/code/rsi-scene/pick-a/outputs/scene_rsi_20261016/pick_single/diag")
 FILM = (1280, 960)  # the level's source.json `film`
 PANEL = (800, 600)
-# pick_single's four steps, as visualize.py made them: seed and accepted versions, start, card
+# pick_single's four steps, as visualize.py made them: seed and accepted versions, start
 PS = {
-    "ps_00": ("incumbent_b897126e9dde", "incumbent_7ec46c87bf5c", "canister_pickup_s100053",
-              ["拿起 · 第 0 轮：罐子是被手掌推开的",
-               "夹爪底座在爪口中心后 4.07 cm → 预抓取站远、到位判据提前、爪口规则放宽",
-               "大铁罐 s100053 · 左：种子 · 右：第 0 轮采纳的版本 · Unreal 渲染"]),
-    "ps_01": ("incumbent_7ec46c87bf5c", "incumbent_e8ce52c71938", "canister_pickup_s100045",
-              ["拿起 · 第 1 轮：导航图上没有地上的凳子",
-               "补上地上物体、四条边都试、站位侧移 → 工程师写接近规划",
-               "大铁罐 s100045 · 左：第 0 轮后 · 右：第 1 轮采纳的版本 · Unreal 渲染"]),
-    "ps_02": ("incumbent_e8ce52c71938", "incumbent_acd864174766", "tv_remote_pickup_s100005",
-              ["拿起 · 第 2 轮：遥控器侧着抓进不去",
-               "超时放宽到 20 s 一局不变 → 是被挡住不是太慢 → 工程师写从上往下捏",
-               "遥控器 s100005 · 左：第 1 轮后 · 右：第 2 轮采纳的版本 · Unreal 渲染"]),
-    "ps_03": ("incumbent_acd864174766", "incumbent_0109bde905a8", "jam_pickup_s100030",
-              ["拿起 · 第 3 轮：右手的站位全被吧台凳挡住",
-               "镜像站位改用左手 → 工程师写换手回退",
-               "果酱 s100030 · 左：第 2 轮后 · 右：第 3 轮采纳的版本 · Unreal 渲染"]),
-}  # fmt: skip
+    "ps_00": ("incumbent_b897126e9dde", "incumbent_7ec46c87bf5c", "canister_pickup_s100053"),
+    "ps_01": ("incumbent_7ec46c87bf5c", "incumbent_e8ce52c71938", "canister_pickup_s100045"),
+    "ps_02": ("incumbent_e8ce52c71938", "incumbent_acd864174766", "tv_remote_pickup_s100005"),
+    "ps_03": ("incumbent_acd864174766", "incumbent_0109bde905a8", "jam_pickup_s100030"),
+}
 
 
 def pose(cam: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -198,16 +187,15 @@ def media_index(media: Path, names: list[str]) -> dict[str, dict]:
 
 def media_job(sc: V.Scene, row: dict) -> dict:
     """A job from an evolution_media row: its panels' rounds on the row's start, cameras as report_media plans them,
-    captions as evolution_media writes them, the card with " · Unreal 渲染" appended. A panel marked `held` (the old
-    version had no trace) is the start's first frame, held, as the STEPS branch of `job` does."""
+    captions as evolution_media writes them. A panel marked `held` (the old version had no trace) is the start's
+    first frame, held, as the STEPS branch of `job` does."""
     label = row["label"]
     live = [p for p in row["panels"] if not p.get("held")]
     rounds = [RM.Rd(Path(p["diag"]) / label) for p in live]
     ps = RM.plan(sc, rounds, None)
     panels = [(f"panel{k}", r, p) for k, (r, p) in enumerate(zip(rounds, ps))]
     caps = [[(p["name"], V.FG), EM.outcome(r)] for p, r in zip(live, rounds)]
-    lines = [*row["lines"][:-1], row["lines"][-1] + " · Unreal 渲染"]
-    out = dict(panels=panels, caps=caps, lines=lines, speed=EM.SPEED, compare=rounds[-1])
+    out = dict(panels=panels, caps=caps, speed=EM.SPEED, compare=rounds[-1])
     if len(live) < len(row["panels"]):
         aft, p0 = rounds[-1], ps[-1]
         r0 = aft.z["robot"][0, :3]
@@ -222,9 +210,9 @@ def media_job(sc: V.Scene, row: dict) -> dict:
 
 
 def job(sc: V.Scene, name: str) -> dict:
-    """What one video films: panels (a round and its camera plan, or a held still), captions, card, speed."""
+    """What one video films: panels (a round and its camera plan, or a held still), captions, speed."""
     if name in PS:
-        before, after, label, lines = PS[name]
+        before, after, label = PS[name]
         b, aft = RM.Rd(PICK / before / label), RM.Rd(PICK / after / label)
         target = b.z[b.key][0, :3]
         az = V.pick_azimuth(sc, [b, aft], target, V.grasp_view_azimuth(aft), 1.3, -26)
@@ -233,14 +221,13 @@ def job(sc: V.Scene, name: str) -> dict:
             [("旧版本", V.FG), RM.flagged(b, b.outcome_zh())],
             [("新版本", V.FG), RM.flagged(aft, aft.outcome_zh())],
         ]
-        return dict(panels=[("before", b, p), ("after", aft, p)], caps=caps, lines=lines, speed=V.SPEED, compare=aft)
+        return dict(panels=[("before", b, p), ("after", aft, p)], caps=caps, speed=V.SPEED, compare=aft)
     if name in RM.STEPS:
-        fam, before, after, label, lines, fail, speed = RM.STEPS[name]
+        fam, before, after, label, _, fail, speed = RM.STEPS[name]
         aft = RM.Rd(RM.DIAG[fam] / after / label)
         b = RM.Rd(RM.DIAG[fam] / before / label) if before else None
         dest = aft.z[aft.key][-1, :3] if aft.rec["ok"] else None
         ps = RM.plan(sc, [x for x in (b, aft) if x is not None], dest)
-        lines = [*lines[:-1], lines[-1] + " · Unreal 渲染"]
         caps = [[("旧版本", V.FG), RM.outcome(b, fail) if b else (fail, (255, 110, 100))],
                 [("新版本", V.FG), RM.outcome(aft, None)]]  # fmt: skip
         if b is None:  # the seed refused: the start's first frame, held, from the camera report_media holds it at
@@ -249,12 +236,10 @@ def job(sc: V.Scene, name: str) -> dict:
             sc.set(aft, 0)
             cam = dict(lookat=lk, distance=min(V.follow_distance(r0, p0["obj0"], 1.3), sc.clear_distance(lk, p0["az1"], -26)),
                        azimuth=p0["az1"], elevation=-26)  # fmt: skip
-            return dict(panels=[("before", aft, cam), ("after", aft, ps[0])], caps=caps, lines=lines, speed=speed,
-                        compare=aft, held=RM.NO_SKILL)  # fmt: skip
-        return dict(
-            panels=[("before", b, ps[0]), ("after", aft, ps[1])], caps=caps, lines=lines, speed=speed, compare=aft
-        )
-    sample, labels, lines, speed = RM.SOLOS[name]
+            return dict(panels=[("before", aft, cam), ("after", aft, ps[0])], caps=caps, speed=speed, compare=aft,
+                        held=RM.NO_SKILL)  # fmt: skip
+        return dict(panels=[("before", b, ps[0]), ("after", aft, ps[1])], caps=caps, speed=speed, compare=aft)
+    sample, labels, _, speed = RM.SOLOS[name]
     panels, caps = [], []
     for k, lab in enumerate(labels):
         r = RM.Rd(RM.UNTRAINED / sample / "rounds" / lab)
@@ -262,9 +247,7 @@ def job(sc: V.Scene, name: str) -> dict:
         panels.append((f"start{k}", r, RM.plan(sc, [r], dest)[0]))
         why = RM.FAIL.get(r.label) or V.why_zh(r.rec.get("plan_why") or r.rec.get("why") or "")
         caps.append([(f"起点 s{r.label.rsplit('_s', 1)[1]}", V.FG), RM.outcome(r, "失败：" + why)])
-    meta = lines[1] if len(lines) > 1 else ""
-    return dict(panels=panels, caps=caps, lines=[lines[0], meta, "用现在的技能目录跑的一局 · Unreal 渲染"], speed=speed,
-                compare=None)  # fmt: skip
+    return dict(panels=panels, caps=caps, speed=speed, compare=None)
 
 
 def main(argv=None) -> int:
@@ -309,7 +292,7 @@ def main(argv=None) -> int:
                 else:
                     panels.append(film_round(view, sc, r, p, j["speed"], work / side))
             gens = [p if isinstance(p, np.ndarray) else from_disk(p) for p in panels]
-            RM.compose(sc, a.out / f"{name}.mp4", gens, j["caps"], j["lines"], j["speed"], PANEL, note="")
+            RM.compose(sc, a.out / f"{name}.mp4", gens, j["caps"], [], j["speed"], PANEL, note="", card_s=0)
             if j["compare"] is not None:
                 compare(sc, j["compare"], j["panels"][-1][2], j["speed"], panels[-1], work)
             print(f"wrote {a.out / name}.mp4 ({time.time() - t0:.0f} s)", flush=True)

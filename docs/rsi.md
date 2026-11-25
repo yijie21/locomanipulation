@@ -384,7 +384,7 @@ PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" scripts/rsi/rep
 bash scripts/stop_unreal.sh
 ```
 
-做什么：第 1 条在编辑器没开着时才需要。第 2 条读第 8 节 `evolution_media.py` 输出目录里的索引（`steps.json`、`tasks.json`、`tasks_final.json`），把每段视频的那几局通过 URLab 回放进关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍摄，再用同样的起点、版本和字幕卡合成；`all` 或点名（`step_01`、`task_07_tv_remote_pickup`、`final_03_jam_pickup`）。不带 `--media` 时它渲染的是进展报告自己的清单（`ps_00`、`on_02` 等，`--help` 列全），那些局只在原机器上。第 3 条关编辑器。
+做什么：第 1 条在编辑器没开着时才需要。第 2 条读第 8 节 `evolution_media.py` 输出目录里的索引（`steps.json`、`tasks.json`、`tasks_final.json`），把每段视频的那几局通过 URLab 回放进关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍摄，再用同样的起点和版本合成（顶部字幕条相同；2026-11-25 起没有 MuJoCo 版开头的 6 秒字幕卡，第一帧就是场景）；`all` 或点名（`step_01`、`task_07_tv_remote_pickup`、`final_03_jam_pickup`）。不带 `--media` 时它渲染的是进展报告自己的清单（`ps_00`、`on_02` 等，`--help` 列全），那些局只在原机器上。第 3 条关编辑器。
 得到什么：`--out` 下每段 `<名字>.mp4`、`previews/`、海报，`<名字>/<面板>/NNNNN.jpg` 逐帧，和 `compare_*.jpg`（同一时刻 Unreal 与 MuJoCo 上下对照）；一段几分钟。渲染期间不要跑别的重任务，编辑器的守护脚本在 CPU 饱和时会把它杀掉，日志在 `$UNREAL_ROOT/logs/`。
 
 ## 10. 常见错误
