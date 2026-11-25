@@ -68,3 +68,32 @@ SONIC 到 HumanoidArena 应该差得最多，因为送参考的方式不同：Lo
 | 预测误差 ≤ 1.3 倍 val，区间上限 ≤ 1.5 倍 | 身体基本一样。直接拿 LocoManiLab 的模型去做这个 benchmark 的对比（直接执行对用模型修正） |
 | 预测误差 > 1.5 倍 val | 身体不一样。在这个仿真里按 data3 + data3b 的采法重采、重训，之后再对比。重采另行登记 |
 | 1.3–1.5 倍之间 | 先在 200 段上做一次微调式的小样本校准（另行登记），再决定 |
+
+## 修订 1：三个控制器在三个 benchmark 里都要跑（2026-11-25，新组合都还没开跑）
+
+**用户的要求（2026-11-25）**：SIMPLE、HumanoidArena、LocoManiLab 三个 benchmark 都跑 SONIC、ScaleBFM、HEFT 三个控制器。原来的三个组合，预测和判据都不变。
+
+**新增三个组合**。三个都要先把控制器接进对应的仿真，接好、冒烟通过以后才开跑：
+
+| 组合 | 现状 | 要做的事 |
+|---|---|---|
+| HEFT → SIMPLE | SIMPLE 里没有 HEFT | 写一个 SIMPLE 接口。用 g1_backend 的 policy.onnx 和观测构造，喂和 LocoManiLab 里一样的参考帧 |
+| ScaleBFM → HumanoidArena | HumanoidArena 只有原生 SONIC | 在 IsaacLab 的仿真循环里换掉 SONIC，改由 ScaleBFM 输出关节目标 |
+| HEFT → HumanoidArena | 同上 | 同上，换成 HEFT |
+
+**关节参数怎么定**：同一个 benchmark 里，三个控制器要用同一套身体设置。
+- SIMPLE：先查清 ScaleBFM 和 SONIC 用的是哪一套关节参数，HEFT 照用同一套。
+- HumanoidArena：用 IsaacLab 自带的 G1 关节参数，PD 增益按各控制器自己的配置。
+
+两边实际怎么设，都在冒烟报告里写明。
+
+**新组合的预测**：
+- 预测误差是 LocoManiLab val 的几倍：
+  - HEFT → SIMPLE：2–6 倍。HEFT 对关节参数最敏感，在 LocoManiLab 里也最容易摔。
+  - ScaleBFM → HumanoidArena：2–6 倍。物理引擎换了，从 MuJoCo 换到 PhysX。
+  - HEFT → HumanoidArena：2–8 倍。
+- 直接执行误差和 LocoManiLab 比，至少差三成，和原来三个组合一样。
+
+**判据**：和原登记相同。
+
+**接不上时**：哪个组合接不上，就写明卡在哪，那一格留空，不影响其他组合。
