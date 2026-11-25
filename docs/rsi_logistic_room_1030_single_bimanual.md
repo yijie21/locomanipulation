@@ -301,7 +301,7 @@ $PY scripts/rsi/report/evolution_media.py --sandbox $R/a --family gso_single_gra
 $PY scripts/rsi/report/evolution_media.py --sandbox $R/b --family gso_bimanual_lift --out outputs/scene_rsi_20261016/gso_bimanual_lift_media --only task --versions final --rounds $R/b/$H/gso_bimanual_lift/sealed/$VB
 ```
 
-做什么：每个任务一段视频，用最终版本在封存集上的局（`--rounds`；不加就用验收池的局）：有成功局取最短的一局，否则取最短的失败局，回放时摆回轨迹里的每个物体。每段开头 6 秒是黑底字幕卡（物体名和封存集成功数）。
+做什么：每个任务一段视频，用最终版本在封存集上的局（`--rounds`；不加就用验收池的局）：有成功局取最短的一局，否则取最短的失败局，回放时摆回轨迹里的每个物体。每段第一帧就是场景（2026-11-25 起没有开头的黑底字幕卡），顶部字幕条标版本和成败；物体名和封存集成功数在 `tasks_final.json` 里。
 得到什么：`--out` 下 `final_NN_<任务>.mp4`（单手 20 段、双手 8 段）、`tasks_final.json`（每段的任务、局名，最终版本成功时 `final_ok` 为 true）、`media.json` 和 `previews/` 下的压缩预览。各不到 1 分钟。
 
 同一批视频的 Unreal 版（关卡要先按第 8 节建好；编辑器已开着就跳过第一行）：
@@ -313,7 +313,7 @@ PYTHONPATH=src "$BRIDGE_PY" scripts/rsi/report/report_unreal.py all --media outp
 bash scripts/stop_unreal.sh
 ```
 
-做什么：读上一步目录里的 `tasks_final.json` 和 `media.json`（场景名从这里来），把每段的那一局回放进对应的关卡，沿 MuJoCo 版同一条机位轨迹拍，再合成视频（顶部字幕条相同；2026-11-25 起没有 MuJoCo 版开头的 6 秒字幕卡，第一帧就是场景）。关卡的 `source.json` 哈希和场景 XML 对不上时拒绝渲染，先跑第 8 节的命令重建关卡。渲染时不要同时跑封存集这类重任务：编辑器的守护脚本在 CPU 占满时会杀掉它。
+做什么：读上一步目录里的 `tasks_final.json` 和 `media.json`（场景名从这里来），把每段的那一局回放进对应的关卡，沿 MuJoCo 版同一条机位轨迹拍，再用同样的顶部字幕条合成。关卡的 `source.json` 哈希和场景 XML 对不上时拒绝渲染，先跑第 8 节的命令重建关卡。渲染时不要同时跑封存集这类重任务：编辑器的守护脚本在 CPU 占满时会杀掉它。
 得到什么：`--out` 下每段 `<名字>.mp4` 和海报 `.jpg`、`previews/`、逐帧 `<名字>/panel0/`，以及 `compare_*.jpg`（同一时刻 Unreal 和 MuJoCo 上下对照，先看它确认对齐）。2026-11-19：编辑器启动约 15 秒，单手 20 段 8.4 分钟，双手 8 段 3.7 分钟；逐帧 JPG 两边共约 2.3 GB。
 
 可选：把成功的 Unreal 视频挑出来，每个任务族一个目录：
@@ -327,7 +327,7 @@ for F in gso_single_grasp gso_bimanual_lift; do
 done
 ```
 
-做什么：从 `tasks_final.json` 里挑出 `final_ok` 为 true 的段，复制进 `<任务族>_unreal_success/`。2026-11-25 之前渲染的 Unreal 片开头还有 6 秒字幕卡（25 fps 下前 150 帧），要把 `cp` 换成 `ffmpeg -v error -y -i ${M}_unreal/$N -vf "trim=start_frame=150,setpts=PTS-STARTPTS" -c:v libx264 -crf 18 -pix_fmt yuv420p -an $O/$N` 剪掉。
+做什么：从 `tasks_final.json` 里挑出 `final_ok` 为 true 的段，复制进 `<任务族>_unreal_success/`。2026-11-25 之前渲染的片开头还有 6 秒字幕卡（25 fps 下前 150 帧），要把 `cp` 换成 `ffmpeg -v error -y -i ${M}_unreal/$N -vf "trim=start_frame=150,setpts=PTS-STARTPTS" -c:v libx264 -crf 18 -pix_fmt yuv420p -an $O/$N` 剪掉。
 得到什么：每段第一帧就是场景。11-19 两边都是全部成功（20 段和 8 段），每段 2–3 MB。
 
 这些挑出的片和 `--out` 里的原片都不是压缩预览。要发给别人、给播放链接或打包下载，先用 `src/locomani/pipeline/video_preview.py` 压成每个不超过 500,000 字节的预览，做法见[视频导出](rendering.md#video-export)。

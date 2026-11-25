@@ -12,7 +12,7 @@ before, as a game renders; the first frame of a round is a "fresh" capture). Fil
 alternation would make every frame a jump. A step whose old version had no skill (its seed refused in planning) shows
 the start's first frame held, one fresh capture, as report_media does. Frames go to <out>/<name>/<panel>/NNNNN.jpg,
 then the video <out>/<name>.mp4 (caption strip, panels at 800 x 600 each; no opening card since user 2026-11-25,
-the film starts on the round's first frame), its <= 500 KB preview
+like the MuJoCo ones), its <= 500 KB preview
 (<out>/previews/) and poster, plus for a step stills at full size beside MuJoCo's picture of the same state
 (<out>/<name>/compare_*.jpg).
 
@@ -21,7 +21,7 @@ gripper mesh. The rig and ghosts stay parked except for the rig while filming. T
 container is saturated (scripts/unreal/editor_guard.sh), so nothing CPU-heavy runs beside it.
 
 Any other run: `--media <evolution_media.py --out dir>` films that directory's videos instead (steps.json, tasks.json,
-tasks_final.json: the same starts, versions and cards as its MuJoCo videos; user 2026-10-23, the pick-repro run).
+tasks_final.json: the same starts and versions as its MuJoCo videos; user 2026-10-23, the pick-repro run).
     bash scripts/start_unreal.sh --gpu 1
     PYTHONPATH=src:$PYTHONPATH MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" \\
         scripts/rsi/report/report_unreal.py ps_00 [on_02 u_wolf_cart ... | all] \\
@@ -223,7 +223,7 @@ def job(sc: V.Scene, name: str) -> dict:
         ]
         return dict(panels=[("before", b, p), ("after", aft, p)], caps=caps, speed=V.SPEED, compare=aft)
     if name in RM.STEPS:
-        fam, before, after, label, _, fail, speed = RM.STEPS[name]
+        fam, before, after, label, fail, speed = RM.STEPS[name]
         aft = RM.Rd(RM.DIAG[fam] / after / label)
         b = RM.Rd(RM.DIAG[fam] / before / label) if before else None
         dest = aft.z[aft.key][-1, :3] if aft.rec["ok"] else None
@@ -239,7 +239,7 @@ def job(sc: V.Scene, name: str) -> dict:
             return dict(panels=[("before", aft, cam), ("after", aft, ps[0])], caps=caps, speed=speed, compare=aft,
                         held=RM.NO_SKILL)  # fmt: skip
         return dict(panels=[("before", b, ps[0]), ("after", aft, ps[1])], caps=caps, speed=speed, compare=aft)
-    sample, labels, _, speed = RM.SOLOS[name]
+    sample, labels, speed = RM.SOLOS[name]
     panels, caps = [], []
     for k, lab in enumerate(labels):
         r = RM.Rd(RM.UNTRAINED / sample / "rounds" / lab)
@@ -292,7 +292,7 @@ def main(argv=None) -> int:
                 else:
                     panels.append(film_round(view, sc, r, p, j["speed"], work / side))
             gens = [p if isinstance(p, np.ndarray) else from_disk(p) for p in panels]
-            RM.compose(sc, a.out / f"{name}.mp4", gens, j["caps"], [], j["speed"], PANEL, note="", card_s=0)
+            RM.compose(sc, a.out / f"{name}.mp4", gens, j["caps"], j["speed"], PANEL)
             if j["compare"] is not None:
                 compare(sc, j["compare"], j["panels"][-1][2], j["speed"], panels[-1], work)
             print(f"wrote {a.out / name}.mp4 ({time.time() - t0:.0f} s)", flush=True)

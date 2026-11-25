@@ -223,8 +223,8 @@ class MediaRounds(unittest.TestCase):
         sealed_rounds.mkdir(parents=True)
         got = {}
 
-        def fake_videos(sc, vs, out_dir, names, final_only=False, pool="诊断池"):
-            got.update(vs=vs, final_only=final_only, pool=pool)
+        def fake_videos(sc, vs, out_dir, names, final_only=False):
+            got.update(vs=vs, final_only=final_only)
             return []
 
         real = (EM.versions, EM.task_videos, EM.V.Scene)
@@ -240,10 +240,9 @@ class MediaRounds(unittest.TestCase):
             self.assertEqual([v["hash"] for v in got["vs"]], ["b"])
             self.assertEqual(got["vs"][0]["diag"], sealed_rounds.resolve())
             self.assertTrue(got["final_only"])
-            self.assertEqual(got["pool"], "封存集")
             EM.main(["--sandbox", str(tmp), "--family", "fam", "--out", str(tmp / "out"), "--only", "task"])
             self.assertEqual([v["hash"] for v in got["vs"]], ["a", "b"])
-            self.assertEqual((got["final_only"], got["pool"]), (False, "诊断池"))
+            self.assertFalse(got["final_only"])
         finally:
             EM.versions, EM.task_videos, EM.V.Scene = real
 

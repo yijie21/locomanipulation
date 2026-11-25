@@ -348,7 +348,7 @@ $PY scripts/rsi/outer_run.py $R r1_on_single r1_held_single r1_in_single --paral
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=1 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family pick_single --out outputs/rsi_repro/visual
 MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 $PY scripts/rsi/report/evolution_media.py --sandbox $S --family pick_single --out outputs/scene_rsi_20261016/pick_repro_media --only task --versions final
 ```
-做什么：读沙盒的账本，取种子和每一次被验收门接受的版本，再读它们在诊断池上的逐局记录和轨迹，出三样东西（`--only step,overview,task` 选其中几样，默认全出）。`step_NN.mp4`：第 NN 次被接受的改动，在它改前改后都跑过的起点里选一个被它从失败翻成成功、轨迹最短的，左改前右改后，3 倍速，字幕卡默认是 Manager 那一轮的中文总结（`--cards <JSON>` 按版本哈希换成自己写的，`"_names"` 给物体改名；种子没有技能时左边放起点第一帧）。`task_NN_<任务>.mp4`：任务族的每个任务一段，取最终版本做成的最短一局，没有成功就取最短的失败局（规划拒绝也是一局，机器人站着不动），左种子右最终版本，字幕卡列出每个版本在该任务诊断起点上的成功数；只要最终技能、不要种子对照时加 `--versions final`，同样的起点和字幕卡，单画面，文件名 `final_NN_<任务>.mp4`，不覆盖双画面的那套。`overview.png`：每个任务一行、每个版本一列，每格是那一局决定成败的那一刻（成功取抬起后一秒，失败取结尾）。
+做什么：读沙盒的账本，取种子和每一次被验收门接受的版本，再读它们在诊断池上的逐局记录和轨迹，出三样东西（`--only step,overview,task` 选其中几样，默认全出）。`step_NN.mp4`：第 NN 次被接受的改动，在它改前改后都跑过的起点里选一个被它从失败翻成成功、轨迹最短的，左改前右改后，3 倍速（`--cards <JSON>` 按版本哈希用 `"label"` 指定起点，`"_names"` 给物体改名；种子没有技能时左边放起点第一帧）。`task_NN_<任务>.mp4`：任务族的每个任务一段，取最终版本做成的最短一局，没有成功就取最短的失败局（规划拒绝也是一局，机器人站着不动），左种子右最终版本，每个版本在该任务诊断起点上的成功数写进 `tasks.json`；只要最终技能、不要种子对照时加 `--versions final`，同样的起点，单画面，文件名 `final_NN_<任务>.mp4`，不覆盖双画面的那套。`overview.png`：每个任务一行、每个版本一列，每格是那一局决定成败的那一刻（成功取抬起后一秒，失败取结尾）。视频开头没有字幕卡（2026-11-25 起），第一帧就是场景，顶部字幕条标版本和成败。
 得到什么：`outputs/rsi_repro/visual/` 下的视频、同名海报 `.jpg`、`previews/`，索引 `versions.json`（版本、哈希、来自第几轮、验收门数字、Manager 总结）和 `tasks.json`（每段任务视频的起点和各版本成功数；`--versions final` 的写到 `tasks_final.json`）。一段视频约 1 分钟，单画面约 40 秒；被接受两次、8 个任务的运行约 10 分钟。
 
 **只用于 pick-a 那次运行：`visualize.py`**
@@ -384,7 +384,7 @@ PYTHONPATH=src MUJOCO_GL=egl MUJOCO_EGL_DEVICE_ID=0 "$BRIDGE_PY" scripts/rsi/rep
 bash scripts/stop_unreal.sh
 ```
 
-做什么：第 1 条在编辑器没开着时才需要。第 2 条读第 8 节 `evolution_media.py` 输出目录里的索引（`steps.json`、`tasks.json`、`tasks_final.json`），把每段视频的那几局通过 URLab 回放进关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍摄，再用同样的起点和版本合成（顶部字幕条相同；2026-11-25 起没有 MuJoCo 版开头的 6 秒字幕卡，第一帧就是场景）；`all` 或点名（`step_01`、`task_07_tv_remote_pickup`、`final_03_jam_pickup`）。不带 `--media` 时它渲染的是进展报告自己的清单（`ps_00`、`on_02` 等，`--help` 列全），那些局只在原机器上。第 3 条关编辑器。
+做什么：第 1 条在编辑器没开着时才需要。第 2 条读第 8 节 `evolution_media.py` 输出目录里的索引（`steps.json`、`tasks.json`、`tasks_final.json`），把每段视频的那几局通过 URLab 回放进关卡，沿 MuJoCo 版同一条机位轨迹以 1280 × 960 拍摄，再用同样的起点、版本和顶部字幕条合成；`all` 或点名（`step_01`、`task_07_tv_remote_pickup`、`final_03_jam_pickup`）。不带 `--media` 时它渲染的是进展报告自己的清单（`ps_00`、`on_02` 等，`--help` 列全），那些局只在原机器上。第 3 条关编辑器。
 得到什么：`--out` 下每段 `<名字>.mp4`、`previews/`、海报，`<名字>/<面板>/NNNNN.jpg` 逐帧，和 `compare_*.jpg`（同一时刻 Unreal 与 MuJoCo 上下对照）；一段几分钟。渲染期间不要跑别的重任务，编辑器的守护脚本在 CPU 饱和时会把它杀掉，日志在 `$UNREAL_ROOT/logs/`。
 
 ## 10. 常见错误

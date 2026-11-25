@@ -1,4 +1,4 @@
-"""The opening card of the report videos (user 2026-11-25): MuJoCo videos keep it, Unreal videos open on the round."""
+"""No opening card on the report videos (user 2026-11-25): MuJoCo and Unreal videos both open on the round."""
 
 from __future__ import annotations
 
@@ -37,26 +37,18 @@ def decoded(mp4: Path) -> np.ndarray:
 
 
 class Compose(unittest.TestCase):
-    def render(self, d: Path, **kw) -> np.ndarray:
-        out = RM.compose(None, d / "v.mp4", [frames()], [[("final", (255, 255, 255))]], ["title", "detail", "pool"], 3,
-                         SIZE, note="", **kw)  # fmt: skip
-        self.assertTrue(out.with_suffix(".jpg").exists())
-        return decoded(out)
-
-    def test_the_card_is_six_seconds_by_default_and_none_at_zero(self):
+    def test_the_video_opens_on_the_rounds_first_frame(self):
         with tempfile.TemporaryDirectory() as d:
-            with_card = self.render(Path(d) / "card")
-            without = self.render(Path(d) / "none", card_s=0)
-        hold = int(2 * RM.dv.FPS)  # the last frame, held
-        self.assertEqual(len(with_card), int(6 * RM.dv.FPS) + FRAMES + hold)
-        self.assertEqual(len(without), FRAMES + hold)
-        # the card is dark text on black; the round's frames are near white below the caption strip
-        self.assertLess(with_card[0, -20:].mean(), 60)
-        self.assertGreater(without[0, -20:].mean(), 200)
+            out = RM.compose(None, Path(d) / "v.mp4", [frames()], [[("final", (255, 255, 255))]], 3, SIZE)
+            self.assertTrue(out.with_suffix(".jpg").exists())
+            video = decoded(out)
+        self.assertEqual(len(video), FRAMES + int(2 * RM.dv.FPS))  # the frames, then the last one held 2 s
+        # the round's frames are near white below the caption strip; a card would be dark text on black
+        self.assertGreater(video[0, -20:].mean(), 200)
 
 
 class UnrealVideo(unittest.TestCase):
-    def test_report_unreal_composes_without_the_card(self):
+    def test_report_unreal_composes_the_filmed_round(self):
         row = {"video": "x/final_01_pick_a.mp4"}
         j = dict(panels=[("panel0", object(), {})], caps=[[("final", (255, 255, 255))]], speed=3, compare=None)
         with (
@@ -72,8 +64,8 @@ class UnrealVideo(unittest.TestCase):
         ):
             self.assertEqual(RU.main(["all", "--media", d, "--out", str(Path(d) / "out"), "--scene", "x"]), 0)
         self.assertEqual(compose.call_count, 1)
-        self.assertEqual(compose.call_args.kwargs.get("card_s"), 0)
         self.assertEqual(compose.call_args.args[1], Path(d) / "out" / "final_01_pick_a.mp4")
+        self.assertEqual(compose.call_args.args[3:5], (j["caps"], 3))  # caption strip and speed, nothing else
 
 
 if __name__ == "__main__":

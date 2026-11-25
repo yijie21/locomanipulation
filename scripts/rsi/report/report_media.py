@@ -46,78 +46,38 @@ DIAG = {
     "on2": RSI / "r2-on-a/outputs/scene_rsi_20261016/r2_on_single/diag",
 }
 NO_SKILL = "旧版本没有这个技能：规划直接拒绝，机器人原地不动"
-# name: (family, before dir or None, after dir, start, card lines, before outcome, speed)
+# name: (family, before dir or None, after dir, start, before outcome, speed)
 STEPS = {
-    "on_02": ("on", None, "incumbent_49e184847690", "tv_remote_to_tv_stand_s110000",
-              ["放到台面上 · 第 2 轮：第一个被采纳的放下技能",
-               "动手前先定好放置点和路线，估算搬运要多久；夹持余量撑不到终点就不抓；失败时先放回台面，不在半空松手",
-               "遥控器放到电视柜 s110000 · 左：起步时的技能（只会拿起） · 右：第 2 轮采纳的版本"], NO_SKILL, 3),
+    "on_02": ("on", None, "incumbent_49e184847690", "tv_remote_to_tv_stand_s110000", NO_SKILL, 3),
     "on_05": ("on", "incumbent_49e184847690", "candidate_9da5a5e404f4", "hand_soap_to_bathroom_sink_s110020",
-              ["放到台面上 · 第 5 轮：放下的最后一步改成闭环",
-               "按物体实际姿态摆正手腕再松手，松手后对中、水平退出；还带上第 4 轮的改动：高台面前站远一点（0.40 → 0.46 m）",
-               "洗手液放到洗手池台 s110020 · 左：第 2 轮的版本 · 右：第 5 轮采纳的版本"],
               "失败：预抓位置差 22 cm，放弃", 3),
     "held_01": ("held", "incumbent_9da5a5e404f4", "incumbent_f1ad0545bdcc", "pick_candle_coffee_table_s120005",
-                ["拿起矮物体 · 第 1 轮：夹爪外壳会先碰到台面",
-                 "侧着抓矮物体时手腕向下压 15°，按夹爪真实外形抬高抓取点；被隔板盖住的物体抓起后先水平拉出",
-                 "茶几上的蜡烛 s120005 · 左：起步时的版本 · 右：第 1 轮采纳的版本"],
                 "失败：伸手超时，离抓取点还差 9.6 cm", 2),
     "held_04": ("held", "incumbent_f1ad0545bdcc", "candidate_498b72b75889", "pick_car_key_s120017",
-                ["拿起 · 第 4 轮：车钥匙用指尖捏，没抓住就退后重来",
-                 "抓取点移到指尖附近，夹爪外壳离台面的余量 5 → 3 mm；一次没抓住，手退 15 cm、人退 25 cm，按物体新位置再抓",
-                 "车钥匙 s120017 · 左：第 1 轮的版本 · 右：第 4 轮采纳的版本"],
                 "失败：伸手超时，离抓取点还差 14 cm", 2),
-    "in_00": ("in", None, "incumbent_af37bb8d307b", "coffee_can_in_trash_s130040",
-              ["放进容器 · 第 0 轮：第一个放进容器的技能",
-               "拿起 → 搬到容器旁 → 手越过容器沿 → 对准开口松手",
-               "咖啡罐放进垃圾桶 s130040 · 左：起步时的技能 · 右：第 0 轮采纳的版本"], NO_SKILL, 3),
+    "in_00": ("in", None, "incumbent_af37bb8d307b", "coffee_can_in_trash_s130040", NO_SKILL, 3),
     "in_03": ("in", "incumbent_af37bb8d307b", "candidate_56bde6992e0a", "apple_in_black_bowl_s130001",
-              ["放进容器 · 第 3 轮：苹果不绕桌角，从这边直接放进碗",
-               "旧版要绕桌角搬 67 s，算出会滑脱，干脆不抓；新版在苹果这一侧伸进 0.70 m，手抬到 0.22 m 越过饼干盒，手腕下倾 15° 免得小臂挂住桌边",
-               "苹果放进黑碗 s130001 · 左：第 0 轮的版本 · 右：第 3 轮采纳的版本"],
               "失败：规划拒绝（搬运 67 s，夹持余量不够）", 3),
-    "near_00": ("near", None, "incumbent_9ff30cad950b", "bring_canister_to_island_s140036",
-                ["拿着走到某物旁 · 第 0 轮：第一版“拿起来走过去”",
-                 "拿起 → 规划一条能拿着东西走的路 → 停在离目标 1 m 以内",
-                 "铁罐拿到岛台旁 s140036 · 左：起步时的技能 · 右：第 0 轮采纳的版本"], NO_SKILL, 2),
+    "near_00": ("near", None, "incumbent_9ff30cad950b", "bring_canister_to_island_s140036", NO_SKILL, 2),
     "near_01": ("near", "incumbent_9ff30cad950b", "candidate_00a754a08cc4", "bring_remote_to_sofa_s140005",
-                ["拿着走到某物旁 · 第 1 轮：走窄路到沙发旁",
-                 "按 0.35 m 的身体半径，沙发旁找不到能站的格子；找不到时改用 0.28 m 的窄路地图，走进茶几北边的通道",
-                 "遥控器拿到沙发旁 s140005 · 左：第 0 轮的版本 · 右：第 1 轮采纳的版本"],
                 "失败：沙发旁找不到能站的地方", 2),
     "slide_01": ("slide", "incumbent_bb14d5bf66d8", "incumbent_fba81e5762ec", "pick_thick_novel_s150000",
-                 ["夹在隔板下的厚书 · 第 1 轮：伸深、夹紧、抽出来",
-                  "手多伸进 5 cm，夹紧力加倍到约 20 N，水平抽出 30 cm 再抬起（只给夹在隔板下、能夹的面窄于约 6 cm 的书）",
-                  "厚小说 s150000 · 左：起步时的版本 · 右：第 1 轮采纳的版本"],
                  "失败：伸手时把书推开 5 cm", 2),
     "on2_00": ("on2", "incumbent_fba81e5762ec", "incumbent_470aff016d4c", "canister_to_island_s1110014",
-               ["放到台面上（第 2 轮外环）· 第 0 轮：夹爪外壳会推走长物体",
-                "夹爪外壳在爪中心后 4.07 cm，伸太深会把长物体推走 → 放下前的抓取停在离中心 2.5 cm 处（原 1.5 cm）；轻物体滑得慢，滑移估计 0.09 → 0.062 cm/s",
-                "铁罐放到岛台 s1110014 · 左：起步时的版本 · 右：第 0 轮采纳的版本"],
                "失败：伸手时把铁罐推开 2 cm", 3),
     "on2_04": ("on2", "incumbent_470aff016d4c", "candidate_d99d433524f3", "big_white_vase_to_tv_stand_s1110007",
-               ["放到台面上（第 2 轮外环）· 第 4 轮：大花瓶找到放置点",
-                "圆形物体找放置点不再按转了角的方盒算，放置点净空 4 → 3.5 cm；花瓶在瓶身最粗处下方 3 cm 平着夹",
-                "大白花瓶放到电视柜 s1110007 · 左：第 0 轮的版本 · 右：第 4 轮采纳的版本"],
                "失败：规划拒绝（电视柜上找不到空位）", 3),
 }  # fmt: skip
-# name: (sample, start(s), card lines, outcome captions, speed)
+# name: (sample, start(s), speed)
 SOLOS = {
-    "u_wolf_cart": ("cal_r4", ["b1_put_DisplayWolf_on_UtilityCart__2_s8200041"],
-                    ["没练过 · 狼摆件放到推车上（现在 8 局成 3 局，补碰撞前 8 / 8）", "练过的是狼摆件放到茶几；推车是另一张台面"], 3),
-    "u_canister_round": ("cal_r4", ["b1_canister_to_round_table_s8200021"],
-                         ["没练过 · 大铁罐竖着放到黑色圆桌（现在 0 / 8，补碰撞前 8 / 8）", "练过的是铁罐放到岛台"], 3),
-    "u_soap_pick": ("cal_r2", ["b1_pick_HandSoap_1_s8000108"],
-                    ["没练过 · 拿起洗手液（8/8）", "练过的是拿起洗洁精、果酱、铁罐等"], 2),
-    "u_candle_pick": ("cal_r3", ["b2_pick_CandlePattern02_1_s8100096"],
-                      ["没练过 · 拿起花纹蜡烛（8/8）", "检查器原来判它做不到（第 2 桶），实测 8 局全成"], 2),
-    "u_vase_trash": ("cal_r4", ["b1_put_WhiteVaseBig_1_in_WhiteTrashBin_s8200071"],
-                     ["没练过 · 大白花瓶放进白垃圾桶（现在 0 / 8，补碰撞前 6 / 8）", "补碰撞前，它是没练过的“放进容器”任务里唯一过半的"], 3),
-    "u_jam_stool": ("cal_r2", ["b1_put_Jam_Anon_on_BlackBarStool_B__0_s8000085"],
-                    ["没练过 · 果酱放到吧台凳上（6/8）", "吧台凳没在任何族里当过目标台面"], 3),
+    "u_wolf_cart": ("cal_r4", ["b1_put_DisplayWolf_on_UtilityCart__2_s8200041"], 3),
+    "u_canister_round": ("cal_r4", ["b1_canister_to_round_table_s8200021"], 3),
+    "u_soap_pick": ("cal_r2", ["b1_pick_HandSoap_1_s8000108"], 2),
+    "u_candle_pick": ("cal_r3", ["b2_pick_CandlePattern02_1_s8100096"], 2),
+    "u_vase_trash": ("cal_r4", ["b1_put_WhiteVaseBig_1_in_WhiteTrashBin_s8200071"], 3),
+    "u_jam_stool": ("cal_r2", ["b1_put_Jam_Anon_on_BlackBarStool_B__0_s8000085"], 3),
     "u_remote_console": ("cal_r2", ["b1_put_TvRemote_1_on_ConsoleTable__1_s8000021",
-                                    "b1_put_TvRemote_1_on_ConsoleTable__1_s8000057"],
-                         ["没练过、成功率低 · 遥控器放到边桌（8 局成 3 局）", "同一个技能，左边这个起点成了，右边这个没成"], 4),
+                                    "b1_put_TvRemote_1_on_ConsoleTable__1_s8000057"], 4),
 }  # fmt: skip
 
 
@@ -250,34 +210,12 @@ def flagged(r: Rd, cap: tuple[str, tuple]) -> tuple[str, tuple]:
     return ("补碰撞后" + cap[0], cap[1]) if old is not None and old["ok"] and not r.rec["ok"] else cap
 
 
-GHOST_NOTE = "半透明紫球：指令给的手腕位置"
-
-
-def card(lines: list[str], W: int, H: int, note: str = GHOST_NOTE) -> np.ndarray:
-    blocks = [(lines[0], 38, V.FG)] + [(t, 24, (255, 210, 120)) for t in lines[1:-1]] + [(lines[-1], 21, V.DIM)]
-    if note:
-        blocks.append((note, 19, V.DIM))
-    return np.asarray(V.text_block(blocks, W, H, pad=48).convert("RGB"))
-
-
-def compose(
-    sc,
-    out: Path,
-    panels: list,
-    caps: list,
-    lines: list[str],
-    speed: int,
-    size=V.PANEL,
-    note: str = GHOST_NOTE,
-    card_s: float = 6.0,
-) -> Path:
-    """`panels`: per panel a frame generator or a held image. The video opens with `card_s` seconds of the card
-    (`lines`, `note` closing it); 0 opens on the first frame (report_unreal.py, user 2026-11-25)."""
+def compose(sc, out: Path, panels: list, caps: list, speed: int, size=V.PANEL) -> Path:
+    """`panels`: per panel a frame generator or a held image, under their caption strip. The video opens on the first
+    frame (no title card since user 2026-11-25) and holds the last one 2 s."""
     strip = np.hstack([dv.caption_strip(c, size[0]) for c in caps])
     W, H = size[0] * len(panels), size[1] + strip.shape[0]
     w = dv.Writer(out, W, H)
-    if card_s > 0:
-        w.write(card(lines, W, H, note), int(card_s * dv.FPS))
     last = [p if isinstance(p, np.ndarray) else None for p in panels]
     frame = None
     while True:
@@ -305,7 +243,7 @@ def compose(
 
 
 def step(sc: V.Scene, name: str, out_dir: Path) -> Path:
-    fam, before, after, label, lines, fail, speed = STEPS[name]
+    fam, before, after, label, fail, speed = STEPS[name]
     a = Rd(DIAG[fam] / after / label)
     b = Rd(DIAG[fam] / before / label) if before else None
     dest = a.z[a.key][-1, :3] if a.rec["ok"] else None
@@ -323,11 +261,11 @@ def step(sc: V.Scene, name: str, out_dir: Path) -> Path:
     else:
         panels = [frames(sc, b, ps[0], speed), frames(sc, a, ps[1], speed)]
         caps = [[("旧版本", V.FG), outcome(b, fail)], [("新版本", V.FG), outcome(a, None)]]
-    return compose(sc, out_dir / f"{name}.mp4", panels, caps, lines, speed)
+    return compose(sc, out_dir / f"{name}.mp4", panels, caps, speed)
 
 
 def solo(sc: V.Scene, name: str, out_dir: Path) -> Path:
-    sample, labels, lines, speed = SOLOS[name]
+    sample, labels, speed = SOLOS[name]
     rs = [Rd(UNTRAINED / sample / "rounds" / lab) for lab in labels]
     size = V.PANEL if len(rs) > 1 else (960, 600)
     panels, caps = [], []
@@ -336,8 +274,7 @@ def solo(sc: V.Scene, name: str, out_dir: Path) -> Path:
         panels.append(frames(sc, r, plan(sc, [r], dest)[0], speed, size))
         why = FAIL.get(r.label) or V.why_zh(r.rec.get("plan_why") or r.rec.get("why") or "")
         caps.append([(f"起点 s{r.label.rsplit('_s', 1)[1]}", V.FG), outcome(r, "失败：" + why)])
-    meta = lines[1] if len(lines) > 1 else ""
-    return compose(sc, out_dir / f"{name}.mp4", panels, caps, [lines[0], meta, "用现在的技能目录跑的一局"], speed, size)
+    return compose(sc, out_dir / f"{name}.mp4", panels, caps, speed, size)
 
 
 def use_rounds(name: str | None) -> None:
