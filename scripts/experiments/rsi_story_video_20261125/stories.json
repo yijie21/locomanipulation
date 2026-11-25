@@ -1,0 +1,20 @@
+{
+ "sandbox": "/workspace/code/rsi-scene/simple_art_r2",
+ "loopdir": "/workspace/code/rsi-scene/simple_art_r2/outputs/scene_rsi_20261016/simple_art",
+ "practice": "/workspace/code/rsi-scene/simple_art_r2/bed_readonly_copy/practice",
+ "worktree": "/workspace/code/locomanipulation-bench-loop",
+ "versions": {"0": {"hash": "470384689a1c", "skills": "d4a5dbfcfdfd", "caption": "v0 种子"},
+              "1": {"hash": "fda7af7386a1", "skills": "746d5c640585", "caption": "v1 第 1 轮后"}},
+ "stories": [
+  {"task": "OpenOvenTeleop", "label": "OpenOvenTeleop_s2", "note": "grasp -> ok"},
+  {"task": "OpenOvenTeleop", "label": "OpenOvenTeleop_s109", "note": "perceive -> ok"},
+  {"task": "OpenOvenTeleop", "label": "OpenOvenTeleop_s52", "note": "comply -> ok"},
+  {"task": "CloseDoorTeleop", "label": "CloseDoorTeleop_s100", "note": "collide -> ok"},
+  {"task": "CloseDoorTeleop", "label": "CloseDoorTeleop_s54", "note": "timeout -> ok"},
+  {"task": "OpenFaucetTeleop", "label": "OpenFaucetTeleop_s104", "note": "perceive -> ok"},
+  {"task": "OpenFaucetTeleop", "label": "OpenFaucetTeleop_s53", "note": "collide -> ok"},
+  {"task": "OpenFaucetTeleop", "label": "OpenFaucetTeleop_s105", "note": "ok -> collide (got worse)"},
+  {"task": "OpenTrashCanTeleop", "label": "OpenTrashCanTeleop_s8", "note": "short -> ok"},
+  {"task": "OpenTrashCanTeleop", "label": "OpenTrashCanTeleop_s107", "note": "grasp -> ok"}
+ ]
+}
