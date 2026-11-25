@@ -167,6 +167,7 @@ def bench_fam(tmp_path, monkeypatch, **bench_kw) -> dict:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
         (root / rel).write_text(text)
     fam = json.loads((Path(__file__).resolve().parents[1] / "scripts/rsi/families/simple_art.json").read_text())
+    bench_kw.setdefault("memo", False)  # (the family ships with it on, TODO 53; the tests below choose)
     fam["bench"] = dict(fam["bench"], root=str(root), **bench_kw)
     monkeypatch.setattr(
         B,
@@ -347,7 +348,11 @@ def test_bench_guard_and_seed_are_the_real_ones(tmp_path, monkeypatch):
     base = B.base_dir(fam)
     p = B.package_parameters(base)
     assert "art_obj" in p and "art_sweep" in p and "stand" in p
-    assert B.signature(fam, "probe") == B.signature(fam, "gate")  # (one render mode for every round, TODO 52)
+    off = dict(fam, bench=dict(fam["bench"], memo=False))
+    assert B.signature(off, "probe") == B.signature(off, "gate")  # (one render mode for every round, TODO 52)
+    assert fam["bench"]["memo"] is True and B.signature(fam, "gate") == B.signature(
+        off, "gate"
+    )  # TODO 53: on, outside the gate
     assert B.run_guard(fam, base, base) is None
     import shutil
 
@@ -359,6 +364,33 @@ def test_bench_guard_and_seed_are_the_real_ones(tmp_path, monkeypatch):
     (cand / "pick.py").write_text((base / "pick.py").read_text())
     (cand / "extra.py").write_text("")
     assert "R1" in B.run_guard(fam, base, cand)
+
+
+def test_memo_store_is_outside_the_sandbox_and_the_hidden_tree(tmp_path, monkeypatch):
+    """TODO 53: the disk store of saved states lives in the loop's scratch area: not in a sandbox a role reads, not in the
+    hidden tree, not in the repository."""
+    fam = bench_fam(tmp_path, monkeypatch, memo=True)
+    scratch = tmp_path / "scratch"
+    monkeypatch.setenv("TMPDIR", str(scratch))
+    store = B.memo_store_dir(fam)
+    assert store.parent == scratch.resolve() and store.name == "simple_simple_art_memo"
+    sandbox = tmp_path / "sandbox"
+    hidden = (B.REPO / B.HIDDEN).resolve()
+    for wall in (sandbox, hidden, B.REPO.resolve(), (B.REPO / "third_party").resolve().parent):
+        assert wall not in store.parents and store != wall
+    for inside in (
+        B.REPO / "outputs" / "x",
+        hidden / "pool",
+        B.REPO / "tmp",
+    ):  # a scratch area put inside a wall is refused
+        monkeypatch.setenv("TMPDIR", str(inside))
+        with pytest.raises(ValueError, match="memo store"):
+            B.memo_store_dir(fam)
+    monkeypatch.setenv("TMPDIR", str(scratch))
+    argv = " ".join(B.bench_argv(fam, "OpenOvenTeleop", "ids", {}, None, "out", tmp_path, tmp_path / "run", False))
+    assert "memo_dir=" + str(store) in argv
+    full = " ".join(B.bench_argv(fam, "OpenOvenTeleop", "ids", {}, None, "out", tmp_path, tmp_path / "run", True))
+    assert "--set memo" not in full  # the gate and the sealed set: neither read nor write the store
 
 
 def test_bench_sandbox_copies_the_adapter_and_blanks_hidden_rows(tmp_path, monkeypatch):
@@ -395,11 +427,20 @@ def test_render_mode_and_memo_switches_of_the_bench_family(tmp_path, monkeypatch
     with pytest.raises(ValueError, match="render"):
         B.check_bench(dict(fam, bench=dict(fam["bench"], render="sometimes")))
     memo = dict(fam, bench=dict(fam["bench"], memo=True))
-    assert (
-        B.memo_sets(memo, False) == ["memo=true"] and B.memo_sets(memo, True) == []
-    )  # never at the gate or the sealed set
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "scratch"))
+    sets = B.memo_sets(memo, False)
+    assert sets[0] == "memo=true" and sets[1:] == [
+        f"memo_dir={tmp_path / 'scratch' / 'simple_simple_art_memo'}",
+        f"memo_sig={B.signature(memo, 'probe')}",
+        "memo_gb=20",
+    ]
+    assert B.memo_sets(memo, True) == []  # never at the gate or the sealed set: neither read nor written
+    assert B.memo_sets(dict(fam, bench=dict(memo["bench"], memo_gb=5)), False)[-1] == "memo_gb=5"
     assert B.signature(memo, "probe") != B.signature(fam, "probe") and B.signature(memo, "gate") == B.signature(
         fam, "gate"
     )
+    for k in ("memo_dir", "memo_sig", "memo_gb"):  # keys the backend sets itself
+        with pytest.raises(ValueError, match=k):
+            B.check_bench(dict(fam, bench=dict(fam["bench"], config={k: "x"})))
     with pytest.raises(ValueError, match="memo"):
         B.check_bench(dict(fam, bench=dict(fam["bench"], config={"memo": True})))

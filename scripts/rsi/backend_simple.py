@@ -142,6 +142,9 @@ BENCH_OWN = (
     "lazy_warm",
     "lazy_subframes",
     "memo",
+    "memo_dir",
+    "memo_sig",
+    "memo_gb",
     "kinds",
 )  # --set keys the backend sets itself
 
@@ -163,11 +166,39 @@ def render_sets(fam: dict) -> list[str]:
     return ["lazy_render=true", f"lazy_warm={LAZY_WARM}"]
 
 
-def memo_sets(fam: dict, full: bool) -> list[str]:
-    """TODO 52 mechanism 2: `bench.memo = true` turns on replay from saved states (memo.py) in the diagnostic, probe, sweep and draft
-    rounds; the gate and the sealed set (`full`) always run every episode in full. Off by default: a round of one setting never
-    visits a state twice, and the saving needs the variants of a start to run in one process (see docs/handoff/fast-rounds-20261125.md)."""
-    return ["memo=true"] if (bench(fam) or {}).get("memo") and not full else []
+MEMO_GB = 20  # size cap of a family's disk store, in GB (bench.memo_gb overrides)
+
+
+def memo_on(fam: dict, full: bool) -> bool:
+    """`bench.memo = true` turns on replay from saved states (memo.py) in the diagnostic, probe, sweep and draft rounds; the gate and
+    the sealed set (`full`) always run every episode in full: they neither read nor write the store."""
+    return bool((bench(fam) or {}).get("memo")) and not full
+
+
+def memo_store_dir(fam: dict) -> Path:
+    """The family's disk store of saved states (TODO 53): in the scratch directory (the loop's own, like the run directories), so
+    outside every sandbox a role can read and outside the hidden tree; never under the repository."""
+    root = _scratch().resolve()
+    origin = (REPO / "third_party").resolve().parent  # a sandbox links third_party and outputs to the origin checkout
+    for bad in {REPO.resolve(), (REPO / HIDDEN).resolve(), origin, (origin / HIDDEN).resolve()}:
+        if root == bad or bad in root.parents:
+            raise ValueError(f"the memo store would be inside {bad}: set TMPDIR / LOCOMANI_TMP to a scratch folder")
+    return root / f"simple_{fam['name']}_memo"
+
+
+def memo_sets(fam: dict, full: bool, sig: str | None = None) -> list[str]:
+    """The adapter's --set values for the memo: on (diagnostic, probe, sweep and draft rounds), its disk store in the scratch
+    directory, the loop's signature (the store's sub-folder: a changed bed or switch set reaches no old state) and the size cap.
+    `sig`: the adapter's own signature (backend_bench), else this backend's. Off by default (see docs/handoff/fast-rounds-20261125.md)."""
+    if not memo_on(fam, full):
+        return []
+    gb = (bench(fam) or {}).get("memo_gb", MEMO_GB)
+    return [
+        "memo=true",
+        f"memo_dir={memo_store_dir(fam)}",
+        f"memo_sig={sig or signature(fam, 'probe')}",
+        f"memo_gb={gb}",
+    ]
 
 
 def render_tag(fam: dict) -> str:
@@ -841,7 +872,7 @@ def signature(family, where: str) -> str:
     if bench(fam):  # the resolved switches: two switch sets never share a pool or a gate signature
         h.update(b"\0bench" + bench_signature(fam).encode())
         h.update(b"\0render_" + render_tag(fam).encode())  # TODO 52: lazy with warm-up everywhere, or every step
-        if memo_sets(fam, where == "gate"):
+        if memo_on(fam, where == "gate"):
             h.update(b"\0memo")  # saved-state replay shares perception between variants: its rounds are their own
     return h.hexdigest()[:10]
 

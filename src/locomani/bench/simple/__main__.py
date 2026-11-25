@@ -120,7 +120,9 @@ def main(argv: list[str] | None = None) -> int:
         cfg,
         bed_run.load_package(pkg_dir),
         a.slot,
-        dict(bench=resolved.record(), simple_config=cfg.to_dict()),
+        dict(
+            bench=resolved.record(), simple_config={k: v for k, v in cfg.to_dict().items() if k != "memo_dir"}
+        ),  # (the store's folder is the loop's scratch area: not in a row)
         resolved.options,
     )
     bed.record.update(view="truth" if resolved.options.target == "truth" else "camera", depth_source=bed.depth_source)

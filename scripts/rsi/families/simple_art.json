@@ -27,6 +27,7 @@
  "bench": {
   "name": "simple",
   "root": "/workspace/code/locomanipulation-bench-loop",
+  "memo": true,
   "options": {
    "target": "perception",
    "sensor": "stereo"

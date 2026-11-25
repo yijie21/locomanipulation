@@ -62,6 +62,9 @@ class SimpleConfig:
     memo_check: bool = (
         False  # debug: after every restored state, ask both sides what differs from the state that was stored
     )
+    memo_dir: str = ""  # memo: the states are also kept on disk under this folder (memostore.py), so the next process finds them; "" = memory only. The loop sets it to a folder of its scratch area, never inside a sandbox
+    memo_sig: str = ""  # memo: the loop's bed signature; with a hash of the code that makes a state it names the store's sub-folder, so a changed bed or switch set reaches no old state
+    memo_gb: float = 20.0  # memo: size cap of the disk store in GB (oldest files go first)
     memo_states: int = 400  # saved states kept (client and server); the oldest go first
     env_names: str = _DATA + "/official/env_names.json"  # task -> SIMPLE's gym environment name
     xdir: str = "/nonexistent"  # released-episode folder handed to the server: it is never opened

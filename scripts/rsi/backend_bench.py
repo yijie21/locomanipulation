@@ -74,6 +74,9 @@ ADAPTERS: dict[str, dict] = {
             "lazy_warm",
             "lazy_subframes",
             "memo",
+            "memo_dir",
+            "memo_sig",
+            "memo_gb",
             "kinds",
         ),  # config keys the backend sets itself
         strip_env=("SIMPLE_",),
@@ -503,7 +506,7 @@ def signature(family, where: str = "probe") -> str:
     h.update(b"\0bench" + bench_signature(fam).encode())
     if ad["render_key"]:  # TODO 52: lazy with warm-up everywhere (gate and sealed included), or every step
         h.update(b"\0render_" + B.render_tag(fam).encode())
-        if B.memo_sets(fam, where == "gate"):
+        if B.memo_on(fam, where == "gate"):
             h.update(b"\0memo")
     if ad.get("benchmark"):
         h.update(b"\0benchmark" + bench_commit(fam).encode())
@@ -623,7 +626,10 @@ def bench_sets(fam: dict, run_dir, full: bool) -> list[str]:
             f"lock_file={B._scratch()}/{bench(fam)['name']}.lock",
         ]
     if ad["render_key"]:
-        sets += [*B.render_sets(fam), *B.memo_sets(fam, full)]
+        sets += [
+            *B.render_sets(fam),
+            *B.memo_sets(fam, full, None if full or not B.memo_on(fam, full) else signature(fam, "probe")),
+        ]
     if ad["cache_key"]:
         sets.append(f"{ad['cache_key']}={scratch_cache(fam)}")
     return [*sets, *bench_config_args(fam)]

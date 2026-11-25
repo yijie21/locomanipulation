@@ -26,6 +26,12 @@ perception of their common beginning (their differences are then the parameter's
 The chain breaks (no more hits or stores for the round) when the simulation was stepped outside a primitive, as a hand program does
 through `tick`; and a primitive that ends the episode (Done) is never stored. `max_states` bounds the stored states (the oldest go
 first, on the server too).
+
+TODO 53, the disk (`disk`, memostore.DiskStore): every state stored after a miss is also written to a file (client changes, the
+primitive's return value, trace, calls and row growth, and the server's state as bytes from its `snap_dump`), and every perception
+output too; a state that is not in memory is looked for on disk (the server takes it with `snap_load`). So a fresh process, with a
+fresh server, starts from what an earlier process stored. What cannot be written (a callable that is not a constant reference, a
+shared handle inside a container) keeps that state in memory only and is counted (`unpersistable`).
 """
 
 from __future__ import annotations
@@ -33,6 +39,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import pickle
+import types
+import zlib
 from collections import OrderedDict
 
 import numpy as np
@@ -127,7 +136,11 @@ class Memo:
         eyes_store: OrderedDict | None = None,
         eyes_cache: bool = True,
         max_eyes: int = 120,
+        disk=None,
     ):
+        self.disk = disk
+        self.persisted = self.unpersistable = self.disk_hits = self.eyes_disk_hits = self.eyes_persisted = 0
+        self.why_not: dict = {}
         self.max_eyes = max_eyes
         self.check, self.diffs = check, []
         self.env, self.link = env, env.sim.link
@@ -213,14 +226,131 @@ class Memo:
                 self.eyes_store.move_to_end(k)
                 sim.last_eyes = dict(hit[2])
                 return hit[0], hit[1]
+            got = self._eyes_from_disk(k)
+            if got is not None:
+                self.eyes_disk_hits += 1
+                self.eyes_store[k] = got
+                sim.last_eyes = dict(got[2])
+                return got[0], got[1]
             self.eyes_misses += 1
             out = eyes()
             self.eyes_store[k] = (out[0], out[1], dict(sim.last_eyes))
+            self._eyes_to_disk(k, self.eyes_store[k])
             while len(self.eyes_store) > self.max_eyes:
                 self.eyes_store.popitem(last=False)
             return out
 
         sim.eyes = cached
+
+    def _eyes_from_disk(self, k):
+        if self.disk is None:
+            return None
+        blob = self.disk.get(f"{k[0]}.e{k[1]}")
+        if blob is None:
+            return None
+        try:
+            rgb, depth, last = pickle.loads(zlib.decompress(blob))
+            return rgb, depth, dict(last)
+        except Exception:
+            self.disk.corrupt += 1
+            return None
+
+    def _eyes_to_disk(self, k, val) -> None:
+        if self.disk is None:
+            return
+        try:
+            blob = zlib.compress(pickle.dumps(val, protocol=5), 3)
+        except Exception:
+            return
+        if self.disk.put(f"{k[0]}.e{k[1]}", blob):
+            self.eyes_persisted += 1
+
+    # ---- the disk: a state as bytes, and back
+
+    def _ref_hook(self, f, path):
+        """A plain function without a closure (a class's method, set once) stays as it is on the other side. Motor.ref is a closure over the primitive's trajectory (and the motor); on disk it is the pose it holds, which is
+        all a later primitive reads of it when it is constant over the policy's look-ahead (a finished primitive's is)."""
+        from locomani.backends.scalebfm import motor as M
+
+        m = self.mo
+        if path != "mo.ref":
+            if isinstance(f, types.FunctionType) and not f.__closure__:
+                return SC.KEEP
+            raise SC.Unpersistable(f"callable at {path}: {f!r}")
+        try:
+            p0 = f(m.t)
+            if not isinstance(p0, M.Pose):
+                raise SC.Unpersistable("callable that is not a reference")
+            for j in [*[int(x) for x in m.pol.fidx], 1, 50]:
+                q = f(m.t + j * 0.02)
+                if any(
+                    not np.array_equal(getattr(p0, a), getattr(q, a)) for a in ("pos", "quat", "joints", "velocity")
+                ):
+                    raise SC.Unpersistable("reference still moving")
+        except SC.Unpersistable:
+            raise
+        except Exception as e:
+            raise SC.Unpersistable(f"callable {e!r}") from e
+        return copy.deepcopy(p0)
+
+    @staticmethod
+    def _ref_load(p0):
+        return lambda _t, p=p0: p
+
+    def _persist(self, key: str, e: Entry) -> None:
+        if self.disk is None or self.disk.has(key):
+            return
+        try:
+            self.link.send(("snap_dump", e.sid))
+            server = self.link.recv()
+            if not isinstance(server, bytes):
+                raise SC.Unpersistable(f"server: {server}")
+            client = {
+                n: {a: SC.to_plain(p, self._ref_hook, True, f"{n}.{a}") for a, p in part.items()}
+                for n, part in e.changes.items()
+            }
+            blob = zlib.compress(
+                pickle.dumps(
+                    dict(v=1, client=client, out=e.out, trace=e.trace, calls=e.calls, row=e.row, server=server),
+                    protocol=5,
+                ),
+                3,
+            )
+        except SC.Unpersistable as ex:
+            self.unpersistable += 1
+            self.why_not[str(ex)[:200]] = self.why_not.get(str(ex)[:200], 0) + 1
+            return
+        except Exception as ex:  # a return value or a row that does not pickle
+            self.unpersistable += 1
+            self.why_not[repr(ex)[:200]] = self.why_not.get(repr(ex)[:200], 0) + 1
+            return
+        if self.disk.put(key, blob):
+            self.persisted += 1
+
+    def _from_disk(self, key: str) -> Entry | None:
+        if self.disk is None:
+            return None
+        blob = self.disk.get(key)
+        if blob is None:
+            return None
+        try:
+            d = pickle.loads(zlib.decompress(blob))
+            if d.get("v") != 1:
+                raise SC.Unpersistable("version")
+            classes = SC.class_map(self.owned)
+            changes = {
+                n: {a: SC.from_plain(x, classes, self._ref_load) for a, x in part.items()}
+                for n, part in d["client"].items()
+            }
+            self.link.send(("snap_load", d["server"]))
+            sid = self.link.recv()
+            if not isinstance(sid, int):
+                raise SC.Unpersistable(f"server: {sid}")
+        except Exception:
+            self.disk.corrupt += 1
+            return None
+        self.disk_hits += 1
+        return Entry(changes, d["out"], d["trace"], d["calls"], d["row"], sid)
 
     # ---- the record's lists grown inside a primitive (reach_err_cm, ...)
 
@@ -248,6 +378,11 @@ class Memo:
             self.key = next_key(self.key, name, args, kw)
             self.n_eyes = 0
             hit = self.store.get(self.key)
+            if hit is None:
+                hit = self._from_disk(self.key)
+                if hit is not None:
+                    self.store[self.key] = hit
+                    self._bound()
             if hit is not None:
                 self.store.move_to_end(self.key)
                 try:
@@ -274,6 +409,7 @@ class Memo:
             )  # fmt: skip
             self.store[self.key].trace = list(self.store[self.key].trace)
             self.k_seen = m.k
+            self._persist(self.key, self.store[self.key])
             self._bound()
             return out
 
@@ -285,6 +421,8 @@ class Memo:
         k_before = m.k
         self.link.send(("restore", e.sid))
         r = self.link.recv()
+        if isinstance(r, str) and r.startswith("restore failed"):
+            raise RuntimeError(f"state {e.sid} left the server half restored: {r}")  # the episode cannot go on
         if r is not True:
             raise LookupError(f"the server could not restore state {e.sid}: {r}")
         self.apply(e.changes)
@@ -321,6 +459,22 @@ class Memo:
             saved_ticks=self.saved_ticks,
             stored=len(self.store),
             live=self.live,
+            **self.disk_stats(),
+        )
+
+    def disk_stats(self) -> dict:
+        if self.disk is None:
+            return {}
+        return dict(
+            disk=dict(
+                self.disk.stats(),
+                state_hits=self.disk_hits,
+                eyes_hits=self.eyes_disk_hits,
+                persisted=self.persisted,
+                eyes_persisted=self.eyes_persisted,
+                unpersistable=self.unpersistable,
+                why_not=self.why_not,
+            )
         )
 
 

@@ -1,4 +1,4 @@
-# Rules for the RSI loop on SIMPLE's articulated tasks (family simple_art; this file is version 4, 2026-11-25 (version 4: rule 25 as rules_simple.md version 10, every round renders only at the robot's looks after 48 warm-up renders, the gate and the sealed evaluation included (TODO 52); version 3: the loop runs on the bench adapter `locomani.bench.simple` (TODO 49.6a); the package is one folder skill.py, pick.py, camera_view.py, handover.py with a frozen __init__.py, rules 1 and 44 name those files, the imports a draft may use and what it receives: a view, a body and an env facade, never the simulator's bed or the truth side; version 2: rule 30 allows the task's name, rule 24 gives the seed's development numbers), adapted from rules_simple.md version 10 (rules 25, 47, 49 as there): rules 1, 2, 12, 14, 16, 17, 24, 30, 31, 32, 39, 40, 43, 44, 45 and 46 rewritten for the four articulated tasks; the other rules are rules_simple.md's)
+# Rules for the RSI loop on SIMPLE's articulated tasks (family simple_art; this file is version 5, 2026-11-25 (version 5: rule 25 says that the diagnostic, probe and draft rounds start from saved states of earlier rounds (TODO 53: `bench.memo`, the states are on disk in the loop's scratch area), so a round no longer re-simulates the beginning another round already ran; the gate and the sealed evaluation never do; version 4: rule 25 as rules_simple.md version 10, every round renders only at the robot's looks after 48 warm-up renders, the gate and the sealed evaluation included (TODO 52); version 3: the loop runs on the bench adapter `locomani.bench.simple` (TODO 49.6a); the package is one folder skill.py, pick.py, camera_view.py, handover.py with a frozen __init__.py, rules 1 and 44 name those files, the imports a draft may use and what it receives: a view, a body and an env facade, never the simulator's bed or the truth side; version 2: rule 30 allows the task's name, rule 24 gives the seed's development numbers), adapted from rules_simple.md version 10 (rules 25, 47, 49 as there): rules 1, 2, 12, 14, 16, 17, 24, 30, 31, 32, 39, 40, 43, 44, 45 and 46 rewritten for the four articulated tasks; the other rules are rules_simple.md's)
 
 With the family's plan (if its file names one), the only human knowledge the loop reads. The numbering follows
 `scripts/rsi/rules.md`, because the driver's messages cite rules by number. A rule that does not apply on this backend
@@ -121,7 +121,16 @@ change to the family plan, is committed and counted as one human intervention.
     renderer's auto-exposure settles; one render without them sees another image, brighter by about 5 %, and on the faucet
     SAM 3 can miss the object), the gate and the sealed evaluation included (bench block `render`, default "lazy"; the
     family's `bed_env_gate` is the esc bed's). On the 60 diagnostic starts of the four articulated tasks this gave the same
-    success rate (83 % against 78 % rendering every step, Fisher p 0.33) and per-start agreement with every-step runs
+    success rate (83 % against 78 % rendering every step, Fisher p 0.33) and per-start agreement with every-step runs (0.85 against 0.92 between two
+    every-step runs). The diagnostic, probe and draft rounds (not the gate, not the sealed evaluation) also start from saved
+    states: a round whose first commands to the motor (walk_to, turn, sidestep, posture, reach, adopt_hand, grip, release,
+    squeeze, hold, with the same arguments) are those of an earlier round of the same start restores the simulation as that
+    round left it, instead of running it again, and its looks at that state show it the images the earlier round saw (the
+    renderer is not repeatable, so a re-run would see other pixels and could place the stance a hair differently). The
+    skill's Python between the commands runs as always, so a change that comes after the shared commands (the grasp, the
+    arc, the speed) changes the result exactly as a full run would, and a change before them (the approach, the look, the
+    stance) shares nothing. Two rounds of one setting on one start are therefore the same round, bit for bit (code,
+    TODO 52 and 53; the store is in the loop's scratch area, outside the sandbox and the hidden tree: a role cannot read it).
 26. (scene backend: redraw of the acceptance pool after parks; not used here.)
 27. (scene backend: families that start from an empty seed; not used here.)
 28. An iteration builds several candidates (K Engineers in parallel, each in its own copy of the skill package), each

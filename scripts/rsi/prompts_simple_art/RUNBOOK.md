@@ -46,7 +46,7 @@ Iteration files: `$O/loop/iter_NN/` (cards, prompts, hypotheses, manager.json, c
 ## (e) simple_art on the bench adapter (TODO 49.6a, 2026-11-24)
 The family file's `bench` block (root of the bench worktree, `options` = BenchOptions overrides, `config` = SimpleConfig `--set`
 overrides) makes every round of every step run `python -m locomani.bench.simple run <Task> --ids F --setting J --out F --skills <package>
---bench-set k=v --set kinds=Q --set practice_dir=.. --set run_dir=.. --set lazy_render=true --set lazy_warm=48` (every round, the gate and the sealed set included; `bench.render = "every_step"` gives `lazy_render=false`, the mode for official benchmark and exam reports; `bench.memo = true` adds `--set memo=true` outside the gate)
+--bench-set k=v --set kinds=Q --set practice_dir=.. --set run_dir=.. --set lazy_render=true --set lazy_warm=48` (every round, the gate and the sealed set included; `bench.render = "every_step"` gives `lazy_render=false`, the mode for official benchmark and exam reports; `bench.memo = true` (the family's default since TODO 53) adds `--set memo=true --set memo_dir=<scratch>/simple_<family>_memo --set memo_sig=<signature> --set memo_gb=20` outside the gate and the sealed set: saved states of the diagnostic, probe and draft rounds on disk, shared between the processes)
 in the bench root with PYTHONPATH=src, no SIMPLE_* variable. (b) and (c) above describe the esc bed, which a family without the block
 still uses; with the block there is no mirror bed (`probe_bed` must be "official"). The seed is `src/locomani/bench/simple/seed`
 (skill.py, pick.py, camera_view.py, __init__.py), the guard is `bench/simple/guard.py`, and the pool and gate signatures carry the

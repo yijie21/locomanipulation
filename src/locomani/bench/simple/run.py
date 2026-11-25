@@ -139,6 +139,7 @@ class Bed:
         default_factory=dict
     )  # memo.py's saved states, shared by this process's episodes
     memo_eyes: dict = dataclasses.field(default_factory=dict)  # and its stored perception outputs
+    memo_disk: object = None  # memostore.DiskStore of this process (cfg.memo_dir), opened on first use
     _pol: object = None
 
     @property
@@ -483,6 +484,41 @@ def look(bed: Bed, episode_id: str, setting: dict | None = None) -> dict:
     return rec
 
 
+CODE_GLOBS = (
+    "src/locomani/bench/options.py",
+    "src/locomani/bench/simple/*.py",
+    "src/locomani/backends/scalebfm/*.py",
+    "src/locomani/perception/*.py",
+)
+
+
+def code_signature() -> str:
+    """sha1 over the files that make a state (the bed, ScaleBFM's motor and runtime, the perception): a changed one reaches no
+    state an earlier code stored."""
+    root = Path(__file__).resolve().parents[4]
+    h = hashlib.sha1()
+    for g in CODE_GLOBS:
+        for f in sorted(root.glob(g)):
+            h.update(f.name.encode() + b"\0" + f.read_bytes())
+    return h.hexdigest()
+
+
+def memo_disk(bed: Bed):
+    """The disk store of this process (None without cfg.memo_dir): the signature folder is the loop's signature, the code's hash,
+    the switches and the render mode."""
+    cfg = bed.cfg
+    if not cfg.memo_dir:
+        return None
+    if bed.memo_disk is None:
+        from locomani.bench.simple.memostore import GB, DiskStore
+
+        parts = [cfg.memo_sig, code_signature(), [bed.switch(a) for a in ("target", "sensor", "depth_noise", "self_pose", "controller_root")],
+                 [cfg.lazy_render, cfg.lazy_warm, cfg.lazy_subframes, cfg.memo_eyes]]  # fmt: skip
+        sig = hashlib.sha1(json.dumps(parts, default=str).encode()).hexdigest()[:20]
+        bed.memo_disk = DiskStore(cfg.memo_dir, sig, max_bytes=int(cfg.memo_gb * GB))
+    return bed.memo_disk
+
+
 def install_memo(bed: Bed, env, episode_id: str, K: dict, stance: dict | None):
     """memo.py on this episode: the chain starts from everything the start depends on that is not a primitive's argument (the
     episode, the stance, the switches, the Motor's and the bed's own parameters, how the cameras render)."""
@@ -509,6 +545,7 @@ def install_memo(bed: Bed, env, episode_id: str, K: dict, stance: dict | None):
         check=cfg.memo_check,
         eyes_store=bed.memo_eyes if isinstance(bed.memo_eyes, OrderedDict) else None,
         eyes_cache=cfg.memo_eyes,
+        disk=memo_disk(bed),
     )
 
 

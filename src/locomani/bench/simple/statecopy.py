@@ -24,7 +24,10 @@ from __future__ import annotations
 import copy
 import functools
 import hashlib
+import importlib
+import pickle
 import types
+import zlib
 
 import numpy as np
 
@@ -122,9 +125,23 @@ def pack(x, owned: tuple, ctx: list):
     return Packed("ref", x)  # shared: connections, models, modules, anything not owned
 
 
+class _Keep:
+    """The value of a shared handle read back from disk: the live one stays (nested in a container: the live element)."""
+
+    def __repr__(self):
+        return "KEEP"
+
+
+KEEP = _Keep()
+
+
 def unpack(p: Packed, live=None):
     """A fresh value from `p`; when `live` is a compatible live value it is updated in place and returned."""
     k = p.kind
+    if k == "ref" and p.val is KEEP:
+        if live is None:
+            raise AssertionError("a stored shared handle has no live counterpart")
+        return live
     if k == "atom" or k == "ref" or k == "fn":
         return p.val
     if k == "nd":
@@ -153,7 +170,10 @@ def unpack(p: Packed, live=None):
             return live
         return items
     if k == "tuple":
-        return tuple(unpack(v) for v in p.val)
+        return tuple(
+            unpack(v, live[i] if isinstance(live, (tuple, list)) and i < len(live) else None)
+            for i, v in enumerate(p.val)
+        )
     if k == "dict":
         items = [(unpack(a), unpack(b, live.get(unpack(a)) if isinstance(live, dict) else None)) for a, b in p.val]
         if isinstance(live, dict):
@@ -253,3 +273,191 @@ def fingerprint(snap: dict) -> str:
         h.update(k.encode())
         walk(snap[k])
     return h.hexdigest()
+
+
+# ---------------------------------------------------------------------------------------------------- to and from bytes
+# TODO 53: a snapshot written to disk, read by another process. A Packed tree becomes plain tuples (arrays, scalars, strings), and
+# back; classes go by name (the `owned` classes are found by their qualified name, a few standard ones by import), MuJoCo data by
+# its numeric fields. What cannot be written raises Unpersistable: a callable (unless the caller's hook turns it into data), a
+# shared handle inside a container (a handle that is an attribute is never written back, so it is dropped), a class that is not
+# known. The caller then keeps that state in memory only.
+
+
+class Unpersistable(Exception):
+    """This snapshot cannot be written to bytes (and read back as the same state)."""
+
+
+FORMAT = 1
+_STD_MODULES = ("builtins", "collections", "numpy")
+
+
+def _cname(cls) -> str:
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _mj_fields(v) -> dict:
+    names = _FIELDS.get(type(v))
+    if names is None:
+        names = _FIELDS[type(v)] = [
+            n for n in dir(type(v)) if not n.startswith("_") and isinstance(getattr(type(v), n), property)
+        ]
+    out = {}
+    for n in names:
+        try:
+            x = getattr(v, n)
+        except Exception:
+            continue
+        if isinstance(x, np.ndarray) and x.dtype.kind in "fiub":
+            out[n] = x.copy()
+        elif isinstance(x, (int, float, np.generic)) and not isinstance(x, bool):
+            out[n] = x
+    return out
+
+
+def to_plain(p: Packed, fn=None, attr: bool = False, path: str = "", key: bool = False):
+    """A plain, picklable image of `p`. `fn(callable, path)` -> a picklable stand-in for a callable, or KEEP (the live one stays),
+    else Unpersistable; a shared handle (or KEEP) is not written: the live one stays (in a list, tuple or dict value: the live
+    element); as a dict key or a set member it cannot be."""
+    k, v = p.kind, p.val
+    if k == "atom":
+        return ("a", v)
+    if k == "nd":
+        return ("n", v)
+    if k == "tensor":
+        return ("T", v.cpu(), str(v.device))
+    if k == "mjdata":
+        return ("m", _mj_fields(v))
+    if k in ("list", "tuple"):
+        return ("l" if k == "list" else "t", [to_plain(q, fn, False, f"{path}[{i}]") for i, q in enumerate(v)])
+    if k == "dict":
+        return (
+            "d",
+            _cname(p.cls),
+            [
+                (to_plain(a, fn, False, path + "{k}", True), to_plain(b, fn, False, f"{path}[{i}]"))
+                for i, (a, b) in enumerate(v)
+            ],
+        )
+    if k == "set":
+        return ("s", _cname(p.cls), [to_plain(q, fn, False, path + "{}", True) for q in v])
+    if k == "fn":
+        if fn is None:
+            raise Unpersistable(f"callable at {path}: {v!r}")
+        out = fn(v, path)
+        if out is KEEP:
+            if key:
+                raise Unpersistable(f"callable as a key at {path}")
+            return ("r",)
+        return ("f", out)
+    if k == "obj":
+        return ("o", _cname(p.cls), {n: to_plain(q, fn, True, f"{path}.{n}") for n, q in v.items()})
+    if k == "ref":
+        if key:
+            raise Unpersistable(f"shared handle {type(v).__name__} as a key at {path}")
+        return ("r",)
+    raise Unpersistable(k)
+
+
+def unpersistable(snap: dict) -> list:
+    """Every node of a snapshot ({object: {attribute: Packed}}) that `dumps` would refuse, as [(path, why)] (a diagnostic: callables)."""
+    bad = []
+
+    def walk(p, path, attr):
+        k, v = p.kind, p.val
+        if k == "fn":
+            bad.append((path, f"callable {v!r}"[:160]))
+        elif k in ("list", "tuple", "set"):
+            for i, q in enumerate(v):
+                walk(q, f"{path}[{i}]", False)
+        elif k == "dict":
+            for i, (a, b) in enumerate(v):
+                walk(a, f"{path}{{k{i}}}", False)
+                walk(b, f"{path}[{i}]", False)
+        elif k == "obj":
+            for n, q in v.items():
+                walk(q, f"{path}.{n}", True)
+
+    for n, part in snap.items():
+        for a, p in part.items():
+            walk(p, f"{n}.{a}", True)
+    return bad
+
+
+def _resolve(name: str, classes: dict):
+    if name in classes:
+        return classes[name]
+    mod, _, qual = name.rpartition(".")
+    if mod.split(".")[0] not in _STD_MODULES and not mod.startswith("locomani."):
+        raise Unpersistable(f"class {name}")
+    try:
+        obj = importlib.import_module(mod)
+        for part in qual.split("."):
+            obj = getattr(obj, part)
+        return obj
+    except (ImportError, AttributeError) as e:
+        raise Unpersistable(f"class {name}: {e}") from e
+
+
+def from_plain(x, classes: dict, fn=None):
+    """The Packed tree of a plain image. `classes`: {qualified name: class} of the owned ones; `fn(stand-in)` -> callable."""
+    t = x[0]
+    if t == "a":
+        return Packed("atom", x[1])
+    if t == "n":
+        return Packed("nd", x[1])
+    if t == "T":
+        v = x[1]
+        if torch is not None:
+            try:
+                v = v.to(x[2])
+            except Exception:
+                pass
+        return Packed("tensor", v)
+    if t == "m":
+        return Packed("mjdata", types.SimpleNamespace(**x[1]))
+    if t == "l":
+        return Packed("list", [from_plain(q, classes, fn) for q in x[1]])
+    if t == "t":
+        return Packed("tuple", [from_plain(q, classes, fn) for q in x[1]])
+    if t == "d":
+        return Packed(
+            "dict", [(from_plain(a, classes, fn), from_plain(b, classes, fn)) for a, b in x[2]], _resolve(x[1], classes)
+        )
+    if t == "s":
+        return Packed("set", [from_plain(q, classes, fn) for q in x[2]], _resolve(x[1], classes))
+    if t == "f":
+        if fn is None:
+            raise Unpersistable("callable without a hook")
+        return Packed("fn", fn(x[1]))
+    if t == "o":
+        return Packed("obj", {n: from_plain(q, classes, fn) for n, q in x[2].items()}, _resolve(x[1], classes))
+    if t == "r":
+        return Packed("ref", KEEP)
+    raise Unpersistable(f"node {t}")
+
+
+def class_map(owned: tuple) -> dict:
+    return {_cname(c): c for c in owned}
+
+
+def dumps(snap: dict, fn=None, level: int = 3) -> bytes:
+    """A whole snapshot ({object name: what `capture` returned}) as compressed bytes."""
+    plain = (FORMAT, {n: {k: to_plain(p, fn, True, f"{n}.{k}") for k, p in part.items()} for n, part in snap.items()})
+    try:
+        return zlib.compress(pickle.dumps(plain, protocol=5), level)
+    except (pickle.PicklingError, TypeError, AttributeError) as e:
+        raise Unpersistable(str(e)) from e
+
+
+def loads(blob: bytes, owned: tuple = (), fn=None) -> dict:
+    """The snapshot `dumps` wrote (any error is Unpersistable: a miss for the caller)."""
+    try:
+        fmt, tree = pickle.loads(zlib.decompress(blob))
+        if fmt != FORMAT:
+            raise Unpersistable(f"format {fmt}")
+        classes = class_map(owned)
+        return {n: {k: from_plain(x, classes, fn) for k, x in part.items()} for n, part in tree.items()}
+    except Unpersistable:
+        raise
+    except Exception as e:  # a corrupt blob: zlib / pickle / key errors alike
+        raise Unpersistable(f"unreadable: {e!r}") from e

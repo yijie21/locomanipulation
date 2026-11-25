@@ -615,7 +615,14 @@ class Episode:
         return out
 
     SKIP = dict(
-        ep=("frames", "obs", "prof", "snaps", "n_snap"),
+        ep=(
+            "frames",
+            "obs",
+            "prof",
+            "snaps",
+            "n_snap",
+            "_last_frame",
+        ),  # (_last_frame: the real frame the lazy observation shows, set at setup)
         u=("viewer",),
         mj=("renderers", "viewer"),
         isaac=(),
@@ -630,6 +637,37 @@ class Episode:
         snap = {}
         for n, o in self.state_objects().items():
             snap[n] = SC.capture(o, skip=self.SKIP.get(n, ()), owned=owned, models=models)
+        self.n_snap = getattr(self, "n_snap", 0) + 1
+        self.snaps[self.n_snap] = snap
+        return self.n_snap
+
+    # callables the saved states hold that are set once while the episode is set up and never change: the live ones stay
+    STATIC_FN = ("ep._render0", "ep._orch0", "u._render_frame", "u.substep_callback")
+
+    def _keep_fn(self, f, path):
+        if path in self.STATIC_FN:
+            return SC.KEEP
+        raise SC.Unpersistable(f"callable at {path}")
+
+    def dump(self, sid: int):
+        """TODO 53: the saved state `sid` as bytes (a file of the memo's disk store), or the reason it cannot be."""
+        if sid not in self.snaps:
+            return f"no state {sid}"
+        try:
+            return SC.dumps(self.snaps[sid], fn=self._keep_fn)
+        except Exception as e:  # (never the server's end: the caller keeps the state in memory)
+            return f"unpersistable: {e!r}"
+
+    def unpersistable(self, sid: int) -> list:
+        """TODO 53 (a diagnostic): what in the saved state `sid` the disk format would refuse."""
+        return SC.unpersistable(self.snaps[sid])
+
+    def load(self, blob: bytes):
+        """TODO 53: a state written by `dump` (this process or another) as a new saved state: its id, or the reason it fails."""
+        try:
+            snap = SC.loads(blob, owned=(C.Watcher, C.ArtWatcher))
+        except Exception as e:
+            return f"unreadable: {e!r}"
         self.n_snap = getattr(self, "n_snap", 0) + 1
         self.snaps[self.n_snap] = snap
         return self.n_snap
@@ -650,8 +688,13 @@ class Episode:
         if sid not in self.snaps:
             return f"no state {sid}"
         models = (self.u.mujoco.mjModel,)
-        for n, o in self.state_objects().items():
-            SC.restore(o, self.snaps[sid][n], models=models)
+        try:
+            for n, o in self.state_objects().items():
+                SC.restore(o, self.snaps[sid][n], models=models)
+        except (
+            Exception
+        ) as e:  # (a state read from disk that does not fit this episode: the caller must not go on from here)
+            return f"restore failed: {e!r}"
         mj, u = self.u.mujoco, self.u
         # (no mj_forward here: sensors and body poses are one substep behind the state after a step, and they were restored as such)
         if mj.render_step > 5:  # the update MujocoEngine.step makes of the layout's poses after each step
@@ -794,6 +837,12 @@ with Listener(sock, family="AF_UNIX") as lis:
                         c.send(ep.lazy)
                     elif k == "snap":  # TODO 52: save the whole state of the episode; -> an id
                         c.send(ep.snap())
+                    elif k == "snap_dump":  # TODO 53: ("snap_dump", id) -> bytes
+                        c.send(ep.dump(msg[1]))
+                    elif k == "snap_unpersistable":  # TODO 53 diagnostic: ("snap_unpersistable", id) -> [(path, why)]
+                        c.send(ep.unpersistable(msg[1]))
+                    elif k == "snap_load":  # TODO 53: ("snap_load", bytes) -> a new id
+                        c.send(ep.load(msg[1]))
                     elif k == "restore":  # TODO 52: ("restore", id): put it back, the renderer's scene synced
                         c.send(ep.restore(msg[1]))
                     elif (

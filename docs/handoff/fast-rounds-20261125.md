@@ -55,3 +55,53 @@ The Isaac server and the stereo depth service run in sessions of their own (`sta
 (SIGTERM, SIGKILL, a restart of the terminal) left them running: four stereo servers kept 13 GB on GPU 1. `Session.run_round`
 now turns SIGTERM / SIGHUP / SIGINT into an exit through its `finally` (the services are stopped by pid) and the services get
 `PR_SET_PDEATHSIG(SIGTERM)` (`die_with_parent`), which covers SIGKILL. Tests: `tests/test_simple_session.py::NoLeak`.
+
+## 4. The memo on disk (TODO 53, 2026-11-25)
+
+The loop runs one setting per process, so section 2's in-memory store saved nothing there. The states are now also written to
+disk and read by the next process. Evidence and tables: `outputs/memo_disk_20261125/notes.md`; scripts:
+`scripts/experiments/memo_disk_20261125/`. Branch `memo-disk` (worktree `locomanipulation-memo`), not committed.
+
+**What is on disk.** One file per stored item under `<store>/<signature>/<ab>/<name>` (`src/locomani/bench/simple/memostore.py`): a
+state after a primitive (the client's changed attributes, the primitive's return value, trace, calls and row growth, and the server's
+state as bytes from the new `snap_dump` message; `snap_load` puts bytes back as a new saved state) and every perception output of
+a state. A state is about 0.77 MB compressed (the MuJoCo data of both sides, mostly), a stored look about 1.2 MB. A CloseDoor start
+stores 2-27 states, an oven 3-33, a faucet or a trash can about 53. `statecopy.dumps / loads` turn a snapshot into bytes: classes by name,
+MuJoCo data by its numeric fields, shared handles (the MuJoCo views a list holds, the renderer's prims) are not written and the live
+ones stay. A callable is refused unless it is one of the few set once at setup (the server's `STATIC_FN`; a plain function of the
+client) or `Motor.ref`, which is written as the pose it holds when that pose is constant over the policy's look-ahead (a finished
+primitive's is); a state that cannot be written stays in memory only and is counted (`unpersistable`; none in 8 starts x 5
+runs). The server no longer keeps `ep._last_frame` (a 0.77 MB image, set at setup, not state).
+
+**Signature and walls.** The folder is `sha1(memo_sig, code hash, switches, render mode)`: `memo_sig` is the loop's bed signature
+(adapter files, switches, render tag), the code hash covers `bench/options.py`, `bench/simple/*.py`, `backends/scalebfm/*.py` and
+`perception/*.py` (`run.code_signature`), so any change to those files, a switch or the render mode reaches no old state. The chain key
+inside (section 2) already carries the episode, stance, parameters and the package's `camera_view.py`. The loop places the store at
+`<scratch>/simple_<family>_memo` (`backend_simple.memo_store_dir`: the scratch area, TMPDIR or `/workspace/tmp`), refuses a scratch
+area inside the repository, the origin checkout or the hidden tree, and the store path is not written into rows. The sandbox audit is
+unchanged and clean. The gate and the sealed set never get the memo flags (`memo_sets(fam, full=True)` is empty), so they neither read
+nor write it. `bench.memo_gb` (default 20) caps the store, oldest first (a hit refreshes a file), pruned when a process opens it and every 64
+writes; writes are temporary file plus rename; a truncated or damaged file is a miss (counted as `corrupt`, and removed). Each row
+carries `memo.disk`: hits, misses, writes, bytes read and written, corrupt, pruned, state_hits, eyes_hits, persisted, unpersistable.
+
+**Correctness across processes.** Process A (base setting, memo on, perception recorded) then a fresh process B (fresh server, empty
+memory): D, D2 from scratch with A's perception, C with the memo restoring from A's files, L the base setting again with live
+perception, 12 starts, 3 per task: C against D, bit-identical in all 12 (0.0 difference in every joint and base reading over the
+2 351 steps stepped after 5 828 restored from disk, every row field equal); L (everything from disk) reproduced A's rows; D2 equals D.
+No corrupt file in any read.
+
+**Gain in the loop's shape** (CloseDoorTeleop, 15 starts, one `python -m locomani.bench.simple run` process per setting, two sequences
+side by side on slots 1 and 2, memo off against on): (a) a sweep of 5 values of `art_speed`: 1 830 s without, 1 263 s with (1.45x;
+the first value pays 384 s against 365 s for writing the states, every later value 213-225 s against 363-368 s); (b) the incumbent's
+round then a draft that changes only the arc (`art_sweep` 80 to 70): the draft 226 s against 373 s (1.65x), the incumbent's writing
+380 s against 368 s. The floor of a call is the services' start and the reset (about 60 s), so a longer round gains more. A repeat of a
+value with everything stored: 138 s, and its 15 rows equal the first run's in every field, which two runs without the memo never do
+(0 of 15; the renderer is not repeatable).
+
+**On by default.** `bench.memo: true` in `scripts/rsi/families/simple_art.json` (diagnostic, probe and draft rounds). Its probe
+signature now differs from its gate signature (the memo rounds are their own pool, as before). Rules `rules_simple_art.md` version 5.
+
+**Open.** (1) The family's `bench.root` is the worktree pinned at 4bdbbe14, older than TODO 52 and 53: its `SimpleConfig` rejects `--set memo` (and `lazy_warm`) as unknown fields (checked), so the loop must move the pin to a commit that holds this branch before the family's `bench.memo: true` can run; until then keep the pin or set `memo` to false. (2) With the memo a round sees the perception that the first round of that state stored; it equals no every-run
+render, so its numbers are comparable to other memo rounds, not bit for bit to non-memo ones (success agreed in 74 of 75 runs here).
+(3) Any edit of the code files above is a new store (whitespace included); a skill that changes `camera_view.py` shares nothing.
+(4) The state stores the MuJoCo data twice on the server (`u` and `mj` hold the same one): 20 % could be saved.

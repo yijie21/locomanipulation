@@ -62,6 +62,10 @@ def bench_fam(tmp_path, monkeypatch, family: str, **bench_kw) -> dict:
     """A bench family (the real family file) on a fake bench root; the switches resolve without the adapter."""
     fam = json.loads((RSI / "families" / f"{family}.json").read_text())
     root = fake_root(tmp_path, fam["bench"]["name"])
+    if family == "simple_art":
+        bench_kw.setdefault(
+            "memo", False
+        )  # (the family ships with it on, TODO 53; test_memo_sets_of_the_generic_backend)
     fam["bench"] = dict(fam["bench"], root=str(root), **bench_kw)
     rec = lambda f: dict(
         signature=f["bench"]["name"]
@@ -570,3 +574,22 @@ def test_cache_is_pruned_to_the_newest(tmp_path, monkeypatch):
         __import__("os").utime(d, (1000 + i, 1000 + i))
     BB.prune_cache(root)
     assert sorted(p.name for p in root.iterdir()) == [f"k{i}" for i in range(3, 9)]
+
+
+def test_memo_sets_of_the_generic_backend(tmp_path, monkeypatch):
+    """TODO 53: simple_art ships with bench.memo on; the adapter call outside the gate carries the store, the signature and the
+    cap (the generic backend's signature), the gate and the sealed call carry none."""
+    fam = bench_fam(tmp_path, monkeypatch, "simple_art", memo=True)
+    monkeypatch.setenv("TMPDIR", str(tmp_path / "scratch"))
+    shipped = json.loads((RSI / "families" / "simple_art.json").read_text())
+    assert shipped["bench"]["memo"] is True
+    probe = pairs(BB.bench_argv(fam, "OpenOvenTeleop", tmp_path / "ids", {}, None, "o", "p", tmp_path, False), "--set")
+    gate = pairs(BB.bench_argv(fam, "OpenOvenTeleop", tmp_path / "ids", {}, None, "o", "p", tmp_path, True), "--set")
+    store = tmp_path / "scratch" / "simple_simple_art_memo"
+    assert "memo=true" in probe and f"memo_dir={store}" in probe and f"memo_sig={BB.signature(fam, 'probe')}" in probe
+    assert "memo_gb=20" in probe
+    assert not [s for s in gate if s.startswith("memo")]
+    assert BB.signature(fam, "probe") != BB.signature(fam, "gate")  # the memo's rounds are their own pool
+    for k in ("memo_dir", "memo_sig", "memo_gb"):  # the backend's own keys
+        with pytest.raises(ValueError, match=k):
+            BB.check_bench(dict(fam, bench=dict(fam["bench"], config={k: "x"})))
