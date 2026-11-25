@@ -22,7 +22,7 @@
  "hold_s": 2.0,
  "judge_s": 5.0,
  "stop_rate": 0.95,
- "max_wall_h": 15.0,
+ "max_wall_h": 20.0,
  "max_run_iters": 5,
  "pool_per_task": {
   "diag": 3,

@@ -101,7 +101,7 @@ MAX_GATE_CALLS = 12
 # unparked view; the audit's void streak and a failed role call still stop it as failures.
 ALTERNATING = False
 # iterations one run takes across its resumes; None = no cap (`--max-iters` only bounds one invocation). A family file
-# may set `max_run_iters`, `max_wall_h` and `stop_rate` (every logistics room family: 5, 15 h, 95 % since 2026-11-24;
+# may set `max_run_iters`, `max_wall_h` and `stop_rate` (every logistics room family: 5, 20 h, 95 % since 2026-11-24;
 # 5, 5 h, 80 % before, user 2026-11-06)
 MAX_RUN_ITERS = None
 MAX_VOID_STREAK = 2  # TODO 36.7 (user 2026-10-22): voided iterations in a row that stop the loop

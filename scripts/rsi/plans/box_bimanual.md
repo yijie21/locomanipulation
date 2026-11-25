@@ -94,7 +94,7 @@ Measured ScaleBFM facts (controller comparison, 2026-10-13; the box line, TODO 2
 | D4 | The ninth motor action stays atomic: `grip` / `release` take `"both"`, `squeeze` presses the two jaw centres together and keeps pressing. Where to stand, where to put the hands, how hard to squeeze and how to lift are the skills' (the loop's). |
 | D6 | The Engineer may add and change skills in the skills package (code, tests, parameters). The motor layer takes only default-off switches; the controller, simulator, scene, predicates, success rule and gate are frozen. |
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random box placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
-| D8 | The loop stops when the incumbent wins 95 % of the acceptance pool, the run has been going 15 h or it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 70 % and 6 h before), or at a hard stop: 12 gate calls or the Manager's stop. |
+| D8 | The loop stops when the incumbent wins 95 % of the acceptance pool, the run has been going 20 h or it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 70 % and 6 h before), or at a hard stop: 12 gate calls or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
 | D12 | The success rule (2026-10-24, user): `held(nor_cal_box)` and `lifted(nor_cal_box, 0.20, 60)` at every 0.1 s check over the round's last 5 s. |
 | D13 | Infeasibility is handled as in section 8. |

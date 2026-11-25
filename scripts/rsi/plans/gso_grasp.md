@@ -86,7 +86,7 @@ has one). Not delivered: hands at 1.39 m, closing the jaw while walking, a 65 de
 | D5 | The motor layer's actions: `walk_to` (pose), `turn`, `sidestep`, `posture` (pelvis height, torso lean), `reach` (one or both jaw centres to a pose, jaw-centre and attitude servo), `grip`, `release`, `squeeze`, `hold`; each in its best measured mode. |
 | D6 | The Engineer may add and change skills in the skills package (code, tests, parameters). The motor layer takes only default-off switches; the controller, simulator, scene, predicates, success rule and gate are frozen. |
 | D7 | One family = one group of tasks; pools as in section 2, from the family's random task-object placements and robot spawns; disjoint seeds; the sealed pool is drawn after the loop. |
-| D8 | The loop stops at the first of: the incumbent wins 95 % of the acceptance pool, the run has been going 15 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 80 % and 5 h before), 12 gate calls, or the Manager's stop. |
+| D8 | The loop stops at the first of: the incumbent wins 95 % of the acceptance pool, the run has been going 20 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 80 % and 5 h before), 12 gate calls, or the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
 | D12 | The success rule (user Q23, 2026-11-03): `held(X)` and `lifted(X, 0.10, 60)` at the end of the round. |
 | D13 | Infeasibility is handled as in section 8. The task object always starts within 0.35 m of an approach edge (the `placement` option); a distractor may sit in the unreachable middle. |

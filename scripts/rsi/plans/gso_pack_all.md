@@ -92,7 +92,7 @@ releases): `gso_pack.md` section 3.
 | D4 | The motor actions stay atomic, the two-hand ones included; where to stand, where to put the hands, how hard to squeeze, how high to carry and where to let go are the skills' (the loop's). |
 | D6 | The Engineer may add and change skills in the skills package (code, tests, parameters). The motor layer takes only default-off switches; the controller, simulator, scene, predicates, success rule, stage and gate are frozen. |
 | D7 | One family = the pack task of every object of one instance; pools as in section 2, from the tasks' random placements and spawns; disjoint seeds; the sealed pool is drawn after the loop. |
-| D8 | The loop stops at the first of: the incumbent wins 95 % of the acceptance pool (stage 4), the run has been going 15 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 80 % and 5 h before; user 2026-11-06); or at a hard stop: 12 gate calls, the Manager's stop. |
+| D8 | The loop stops at the first of: the incumbent wins 95 % of the acceptance pool (stage 4), the run has been going 20 h, it has taken 5 iterations (the family file's `stop_rate`, `max_wall_h`, `max_run_iters`; user 2026-11-24, 80 % and 5 h before; user 2026-11-06); or at a hard stop: 12 gate calls, the Manager's stop. |
 | D11 | The only human knowledge is the versioned `rules.md` and this plan; interventions are recorded. |
 | D12 | The success rule is `gso_pack.md`'s: `in`, `held` and `lifted` of the carton over the last 5 s. |
 | D13 | Infeasibility is handled as in section 8. The task object always starts within 0.35 m of an approach edge and the carton on the hug's band (the `placement` option). |

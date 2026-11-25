@@ -18,7 +18,7 @@
 
 Every family's pools (user 2026-11-24, every logistics room family): PER_TASK starts per task, 3 diagnostic / 10
 acceptance / 10 sealed by default (`--per-task`; the acceptance pool at least gate.STAGE1 + 1), and the stops STOPS: the
-incumbent wins 95 % of the acceptance pool, 15 h, 5 iterations.
+incumbent wins 95 % of the acceptance pool, 20 h, 5 iterations.
 
 Every task row carries a `placement`: the task object within REACH (the scene's `gso.reach_depth_m`) of an approach edge
 (D13: the middle of the platform is out of reach). The pack rows add per-object conditions (`objects`): the carton on
@@ -147,11 +147,12 @@ ALONG_EDGE = {True: [85, 90], False: [0, 5]}  # the box x axis along the edge wh
 # probe (s0, gso_0945 beside the carton) missed by 15 cm with neighbours there and by 1-2 cm with the platform clear
 HANDS_CLEAR_M = 0.18
 # when a family's inner loop stops (loop.py resolve_settings): the incumbent wins 95 % of the acceptance pool, the run
-# has been going 15 h, or it has taken 5 iterations, whichever comes first (user 2026-11-24, every logistics room
+# has been going 20 h, or it has taken 5 iterations, whichever comes first (user 2026-11-24, every logistics room
 # family; 80 % and 5 h before, user 2026-11-06: the main library already wins 87 % of the picked families' acceptance
-# pools, the written-back incumbents of gso-alt-a, so an 80 % line stopped a run at its first gate). The 15 h is the
-# inner loop's own cap (modes 1 and 2); alternate.py's --max-hours (mode 3, 20 h since 2026-11-24 evening) overrides it.
-STOPS = {"stop_rate": 0.95, "max_wall_h": 15.0, "max_run_iters": 5}
+# pools, the written-back incumbents of gso-alt-a, so an 80 % line stopped a run at its first gate; 15 h until the
+# evening of 11-24). The hours are the inner loop's own cap (modes 1 and 2); in mode 3 alternate.py's --max-hours (also
+# 20) counts for both families together.
+STOPS = {"stop_rate": 0.95, "max_wall_h": 20.0, "max_run_iters": 5}
 
 # the sandbox block every scene RSI family carries (box_bimanual.json, grasp_atomic.json): what the archive keeps,
 # the src import closure, what is stripped; only the family's own files differ

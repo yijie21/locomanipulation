@@ -121,7 +121,7 @@ def test_the_writer_puts_both_families_and_the_tasks_file_in_the_given_directory
     assert not set(p["seed"] for p in every["pools"].values()) & set(seeds)
     assert "hold_s" not in every and every["sandbox"]["seed"] is None and (ROOT / every["plan"]).is_file()
     assert all(p in every["sandbox"]["keep"] for p in set(GF.PLANS.values()))
-    assert (every["stop_rate"], every["max_wall_h"], every["max_run_iters"]) == (0.95, 15.0, 5)  # user 2026-11-24
+    assert (every["stop_rate"], every["max_wall_h"], every["max_run_iters"]) == (0.95, 20.0, 5)  # user 2026-11-24
     by_id = {r["id"]: r for r in rows}
     assert "hold_s" not in by_id["pick_gso_0001"]
     assert all((by_id[t]["hold_s"], by_id[t]["judge_s"]) == (2.0, 5.0) for t in every["tasks"][1:])
@@ -141,7 +141,7 @@ def test_the_writer_puts_both_families_and_the_tasks_file_in_the_given_directory
         packs["plan"] in packs["sandbox"]["keep"]
         and "scripts/rsi/families/gso_pack_all_s7.json" in packs["sandbox"]["keep"]
     )
-    assert (packs["stop_rate"], packs["max_wall_h"], packs["max_run_iters"]) == (0.95, 15.0, 5)
+    assert (packs["stop_rate"], packs["max_wall_h"], packs["max_run_iters"]) == (0.95, 20.0, 5)
     assert "progress stage" in packs["about"] and "red mug" in packs["about"]
 
 
@@ -161,7 +161,7 @@ def test_every_tracked_gso_all_family_is_the_four_families_of_its_instance():
             assert {k: p["n"] for k, p in f["pools"].items()} == {
                 "diag": 3 * len(f["tasks"]), "accept": max(10 * len(f["tasks"]), 31), "sealed": 10 * len(f["tasks"])
             }  # fmt: skip
-            assert (f["stop_rate"], f["max_wall_h"], f["max_run_iters"]) == (0.95, 15.0, 5)
+            assert (f["stop_rate"], f["max_wall_h"], f["max_run_iters"]) == (0.95, 20.0, 5)
 
 
 def test_a_scene_without_the_gso_block_or_a_kind_is_refused(tmp_path):
