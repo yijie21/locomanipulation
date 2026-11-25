@@ -25,7 +25,8 @@ class Config(unittest.TestCase):
         self.assertEqual(c.slots, (1, 2, 3))
         self.assertEqual((c.isaac_gpu, c.depth_gpu, c.graspgen_gpu), (0, 1, 1))
         self.assertEqual((c.sam3_host, c.sam3_port, c.sam3()), ("127.0.0.1", 18832, ("127.0.0.1", 18832)))
-        self.assertFalse(c.lazy_render)
+        self.assertTrue(c.lazy_render)  # TODO 52: lazy with warm-up renders is the default, every step is explicit
+        self.assertEqual((c.lazy_warm, c.lazy_subframes, c.memo), (48, 1, False))
         self.assertEqual(c.kinds, "Q")
         self.assertEqual(c.xdir, "/nonexistent")
         self.assertEqual(c.env_names, ESC + "/official/env_names.json")

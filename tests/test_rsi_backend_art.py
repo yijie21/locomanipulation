@@ -198,7 +198,11 @@ def test_bench_files_signature_and_switches(tmp_path, monkeypatch):
     assert "src/locomani/bench/simple/run.py" in files and "src/locomani/perception/head.py" in files
     assert "src/locomani/backends/scalebfm/motor.py" in files and "src/locomani/bench/options.py" in files
     s = B.signature(fam, "probe")
-    assert B.signature(fam, "gate") != s  # the gate renders every step
+    assert B.signature(fam, "gate") == s  # TODO 52: every round renders lazily with warm-up, the gate included
+    every = dict(fam, bench=dict(fam["bench"], render="every_step"))
+    assert B.signature(every, "probe") != s and B.signature(every, "gate") == B.signature(
+        every, "probe"
+    )  # the explicit every-step mode is its own bed
     other = dict(fam, bench=dict(fam["bench"], options={"target": "perception", "sensor": "rgbd"}))
     assert B.signature(other, "probe") != s  # two switch sets never share a signature
     (Path(fam["bench"]["root"]) / "src/locomani/bench/simple/run.py").write_text("r = 2\n")
@@ -276,13 +280,21 @@ def test_bench_runner_argv_diagnostic_and_gate(tmp_path, monkeypatch):
         f"practice_dir={B.practice_dir(fam, False)}",
         f"run_dir={tmp_path / 'u00'}",
         "lazy_render=true",
+        "lazy_warm=48",
         "slots=1,2",
         "batch_tries=2",
     ]
     assert d["cwd"] == Path(fam["bench"]["root"]) and d["tree"] is True and d["env"]["PYTHONPATH"] == "src"
     assert not [k for k in d["env"] if k.startswith("SIMPLE_")] and "EXAM_OPEN" not in d["env"]
     g = runner_call(fam, monkeypatch, tmp_path, True)["argv"]
-    assert "lazy_render=false" in pairs(g, "--set") and "--stance" not in g
+    assert (
+        "lazy_render=true" in pairs(g, "--set") and "lazy_warm=48" in pairs(g, "--set") and "--stance" not in g
+    )  # (gate: lazy too)
+    fam_every = dict(fam, bench=dict(fam["bench"], render="every_step"))
+    ge = runner_call(fam_every, monkeypatch, tmp_path, True)["argv"]
+    assert "lazy_render=false" in pairs(ge, "--set") and "lazy_warm=48" not in pairs(
+        ge, "--set"
+    )  # the explicit every-step mode
 
 
 def test_bench_run_jobs_at_the_gate(tmp_path, monkeypatch):
@@ -335,7 +347,7 @@ def test_bench_guard_and_seed_are_the_real_ones(tmp_path, monkeypatch):
     base = B.base_dir(fam)
     p = B.package_parameters(base)
     assert "art_obj" in p and "art_sweep" in p and "stand" in p
-    assert B.signature(fam, "probe") != B.signature(fam, "gate")
+    assert B.signature(fam, "probe") == B.signature(fam, "gate")  # (one render mode for every round, TODO 52)
     assert B.run_guard(fam, base, base) is None
     import shutil
 
@@ -372,3 +384,22 @@ def test_bench_sandbox_copies_the_adapter_and_blanks_hidden_rows(tmp_path, monke
     first = (nest / "practice" / "OpenOvenTeleop.jsonl").read_text().splitlines()
     assert first[0] != "{}"  # the diagnostic rows stay visible
     assert sum(x == "{}" for x in first) == 120
+
+
+def test_render_mode_and_memo_switches_of_the_bench_family(tmp_path, monkeypatch):
+    """TODO 52: bench.render is lazy (default) or every_step; bench.memo turns on saved-state replay outside the gate."""
+    fam = bench_fam(tmp_path, monkeypatch)
+    assert B.render_sets(fam) == ["lazy_render=true", "lazy_warm=48"] and B.memo_sets(fam, False) == []
+    every = dict(fam, bench=dict(fam["bench"], render="every_step"))
+    assert B.render_sets(every) == ["lazy_render=false"]
+    with pytest.raises(ValueError, match="render"):
+        B.check_bench(dict(fam, bench=dict(fam["bench"], render="sometimes")))
+    memo = dict(fam, bench=dict(fam["bench"], memo=True))
+    assert (
+        B.memo_sets(memo, False) == ["memo=true"] and B.memo_sets(memo, True) == []
+    )  # never at the gate or the sealed set
+    assert B.signature(memo, "probe") != B.signature(fam, "probe") and B.signature(memo, "gate") == B.signature(
+        fam, "gate"
+    )
+    with pytest.raises(ValueError, match="memo"):
+        B.check_bench(dict(fam, bench=dict(fam["bench"], config={"memo": True})))

@@ -4,8 +4,12 @@ lost server, the row check and the exit codes -- with fake server, depth, bed an
 import fcntl
 import json
 import os
+import signal
 import stat
+import subprocess
+import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -227,3 +231,47 @@ class Readiness(Fixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def alive(pid: int) -> bool:
+    try:
+        return "sleep" in Path(f"/proc/{pid}/cmdline").read_text()
+    except OSError:
+        return False
+
+
+class NoLeak(Fixture):
+    """TODO 52: the services (own sessions) must not outlive a killed session (four stereo servers leaked 13 GB on 2026-11-24)."""
+
+    def test_sigterm_to_the_session_stops_both_services(self):
+        slow = self.t / "slow_bed.sh"
+        script(slow, FAKE_BED.replace("  batch)", "  batch) sleep 30;;\n  batchx)"))
+        self.cfg = SimpleConfig(**{**self.cfg.__dict__, "sim_python": str(slow)})
+        s = self.session()
+        threading.Timer(2.0, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+        with self.assertRaises(SystemExit):
+            s.run_round()
+        time.sleep(0.3)
+        for f in ("server_XMovePickTeleop.pid", "depth_XMovePickTeleop.pid"):
+            self.assertFalse(alive(int((Path(self.cfg.run_dir) / f).read_text())), f)
+        self.assertEqual(signal.getsignal(signal.SIGTERM), signal.SIG_DFL)  # handlers restored
+
+    def test_sigkill_of_the_session_takes_a_service_with_it(self):
+        code = (
+            "import subprocess, sys, os, time\n"
+            "from locomani.bench.simple.session import die_with_parent\n"
+            "p = subprocess.Popen(['sleep', '100'], start_new_session=True, preexec_fn=die_with_parent)\n"
+            "print(p.pid, flush=True); time.sleep(100)\n"
+        )
+        parent = subprocess.Popen(
+            [sys.executable, "-c", code], stdout=subprocess.PIPE, text=True, env=dict(os.environ, PYTHONPATH=str(S.SRC))
+        )
+        pid = int(parent.stdout.readline())
+        self.assertTrue(alive(pid))
+        parent.kill()
+        parent.wait()
+        for _ in range(40):
+            if not alive(pid):
+                break
+            time.sleep(0.1)
+        self.assertFalse(alive(pid))

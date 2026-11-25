@@ -155,7 +155,7 @@ def test_simple_art_moved_to_the_generic_backend_with_identical_argv_and_signatu
     assert B.bed_files(old) == BB.bed_files(fam) and B.base_rel(old) == BB.base_rel(fam)
     for where in ("probe", "gate", "sealed"):
         assert B.signature(old, where) == BB.signature(fam, where), where
-    assert BB.signature(fam, "probe") != BB.signature(fam, "gate")
+    assert BB.signature(fam, "probe") == BB.signature(fam, "gate")  # TODO 52: one render mode for every round
     ids = tmp_path / "ids.txt"
     for full in (False, True):
         for stance in (None, {"d": 0.05}):

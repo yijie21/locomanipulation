@@ -65,9 +65,17 @@ ADAPTERS: dict[str, dict] = {
         hash_files=(),  # hashed only
         kinds="Q",
         practice_keys=("practice_dir",),  # config fields that name the practice files (one per task group)
-        render_key="lazy_render",  # the gate and the sealed set render every step: this is false there, else true
+        render_key="lazy_render",  # lazy with warm-up renders in every round (B.render_sets); bench.render = "every_step" for official reporting
         cache_key=None,  # a config field for the look and grasp cache the backend places in its scratch directory
-        own=("practice_dir", "run_dir", "lazy_render", "kinds"),  # config keys the backend sets itself
+        own=(
+            "practice_dir",
+            "run_dir",
+            "lazy_render",
+            "lazy_warm",
+            "lazy_subframes",
+            "memo",
+            "kinds",
+        ),  # config keys the backend sets itself
         strip_env=("SIMPLE_",),
         tmpdir=False,
         units=3,  # work units side by side when the family names no official_slots and no `slots`
@@ -229,6 +237,8 @@ def check_bench(fam: dict) -> None:
     own = sorted(set(b.get("config") or {}) & set(ad["own"]))
     if own:
         raise ValueError(f"{fam.get('name')}: bench.config may not set {own} (the backend sets them)")
+    if ad["render_key"] and B.render_mode(fam) not in B.RENDER_MODES:
+        raise ValueError(f"{fam.get('name')}: bench.render {B.render_mode(fam)!r} is not one of {B.RENDER_MODES}")
     if seeded(fam):
         check_seeded(fam)
 
@@ -491,8 +501,10 @@ def signature(family, where: str = "probe") -> str:
     if where == "gate" and gate_env(fam):
         h.update(b"\0gate_env" + json.dumps(gate_env(fam), sort_keys=True).encode())
     h.update(b"\0bench" + bench_signature(fam).encode())
-    if where == "gate" and ad["render_key"]:  # the gate and the sealed set render every step, the rest lazily
-        h.update(b"\0gate_render")
+    if ad["render_key"]:  # TODO 52: lazy with warm-up everywhere (gate and sealed included), or every step
+        h.update(b"\0render_" + B.render_tag(fam).encode())
+        if B.memo_sets(fam, where == "gate"):
+            h.update(b"\0memo")
     if ad.get("benchmark"):
         h.update(b"\0benchmark" + bench_commit(fam).encode())
     return h.hexdigest()[:10]
@@ -600,7 +612,7 @@ def bed_env(fam: dict, package: Path, run_dir: Path, full: bool = False) -> dict
 def bench_sets(fam: dict, run_dir, full: bool) -> list[str]:
     """The `--set` values of a call: the backend's own keys first (kinds, the practice files, the run directory, the render
     flag, the look cache), then the family's `bench.config`. `full`: the gate and the sealed set read the full practice
-    files and render every step; everything else the family's visible files, lazily."""
+    files; the render keys are the same in every round (lazy with warm-up renders, or every step by `bench.render`)."""
     ad = adapter(fam)
     pdir = practice_dir(fam, full)
     sets = [f"kinds={ad['kinds']}"] if ad["kinds"] else []
@@ -611,7 +623,7 @@ def bench_sets(fam: dict, run_dir, full: bool) -> list[str]:
             f"lock_file={B._scratch()}/{bench(fam)['name']}.lock",
         ]
     if ad["render_key"]:
-        sets.append(f"{ad['render_key']}={'false' if full else 'true'}")
+        sets += [*B.render_sets(fam), *B.memo_sets(fam, full)]
     if ad["cache_key"]:
         sets.append(f"{ad['cache_key']}={scratch_cache(fam)}")
     return [*sets, *bench_config_args(fam)]
@@ -674,7 +686,7 @@ def run_jobs(jobs, family, pool, procs, log, gpus, stop=None, where: str = "prob
     """Run the jobs' missing rounds; returns {job index: labels still missing} as batch.run_jobs does. A job has `skills`
     (the package directory), `out`, `overrides` (the setting) and `labels` (None = the whole pool). Each job is guarded
     first; one that fails gets ok False rounds ("guard: <violation>") and runs nothing. One adapter serves probes and the
-    gate; `where` selects the practice files and the render flag (the full files and every step for "gate")."""
+    gate; `where` selects the practice files (the full ones for "gate"); the render mode is the family's in every round."""
     fam = _fam(family)
     check_bench(fam)
     pool, log = Path(pool), Path(log)

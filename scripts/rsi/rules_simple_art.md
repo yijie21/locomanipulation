@@ -1,4 +1,4 @@
-# Rules for the RSI loop on SIMPLE's articulated tasks (family simple_art; this file is version 3, 2026-11-24 (version 3: the loop runs on the bench adapter `locomani.bench.simple` (TODO 49.6a); the package is one folder skill.py, pick.py, camera_view.py, handover.py with a frozen __init__.py, rules 1 and 44 name those files, the imports a draft may use and what it receives: a view, a body and an env facade, never the simulator's bed or the truth side; version 2: rule 30 allows the task's name, rule 24 gives the seed's development numbers), adapted from rules_simple.md version 9 (rules 25, 47, 49 as there): rules 1, 2, 12, 14, 16, 17, 24, 30, 31, 32, 39, 40, 43, 44, 45 and 46 rewritten for the four articulated tasks; the other rules are rules_simple.md's)
+# Rules for the RSI loop on SIMPLE's articulated tasks (family simple_art; this file is version 4, 2026-11-25 (version 4: rule 25 as rules_simple.md version 10, every round renders only at the robot's looks after 48 warm-up renders, the gate and the sealed evaluation included (TODO 52); version 3: the loop runs on the bench adapter `locomani.bench.simple` (TODO 49.6a); the package is one folder skill.py, pick.py, camera_view.py, handover.py with a frozen __init__.py, rules 1 and 44 name those files, the imports a draft may use and what it receives: a view, a body and an env facade, never the simulator's bed or the truth side; version 2: rule 30 allows the task's name, rule 24 gives the seed's development numbers), adapted from rules_simple.md version 10 (rules 25, 47, 49 as there): rules 1, 2, 12, 14, 16, 17, 24, 30, 31, 32, 39, 40, 43, 44, 45 and 46 rewritten for the four articulated tasks; the other rules are rules_simple.md's)
 
 With the family's plan (if its file names one), the only human knowledge the loop reads. The numbering follows
 `scripts/rsi/rules.md`, because the driver's messages cite rules by number. A rule that does not apply on this backend
@@ -117,9 +117,11 @@ change to the family plan, is committed and counted as one human intervention.
     whatever the other tasks gained (code, TODO 48.19; the gate's `per_task` gives each task's wins and losses). A
     change that helps one task and hurts another is two changes: keep the part that helps, and condition it so it
     stays out of the other task's episodes (rule 38).
-    The gate and the sealed evaluation render the cameras in every step (the family's `bed_env_gate`); diagnostic
-    rounds, probes and drafts render them only at the robot's looks, which is faster and, on the final version of
-    2026-11-22, won 4 of 150 diagnostic starts fewer and none more. Read a diagnostic number as from that mode (code).
+    Every round renders the cameras only at the robot's looks, each look after 48 warm-up renders of the same state (the
+    renderer's auto-exposure settles; one render without them sees another image, brighter by about 5 %, and on the faucet
+    SAM 3 can miss the object), the gate and the sealed evaluation included (bench block `render`, default "lazy"; the
+    family's `bed_env_gate` is the esc bed's). On the 60 diagnostic starts of the four articulated tasks this gave the same
+    success rate (83 % against 78 % rendering every step, Fisher p 0.33) and per-start agreement with every-step runs
 26. (scene backend: redraw of the acceptance pool after parks; not used here.)
 27. (scene backend: families that start from an empty seed; not used here.)
 28. An iteration builds several candidates (K Engineers in parallel, each in its own copy of the skill package), each

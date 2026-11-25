@@ -44,6 +44,16 @@ def _judge():
     return mod
 
 
+def _statecopy():
+    """statecopy.py by its file, as judge.py: the capture / restore of live objects (snap / restore messages)."""
+    spec = importlib.util.spec_from_file_location("bed_statecopy", os.path.join(HERE, "statecopy.py"))
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["bed_statecopy"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+SC = _statecopy()
 C = _judge()  # the Watcher runs here, where the physics is: the skill package cannot reach it
 
 faulthandler.dump_traceback_later(900, repeat=True)
@@ -101,6 +111,7 @@ class Episode:
             set(),
         )  # what touched a moving body during this control step's physics steps
         self.prof, self.t_step = None, [0.0, 0]
+        self.snaps: dict = {}  # TODO 52: id -> saved state (snap / restore)
         self.first_contacts: list = []
         self.hits: dict = {}  # body name -> first counted step it touched the target
         self.hand_log: dict = {}  # counted step -> bits of what touched the target (1 left arm/hand, 2 right, 4 table, 8 container)
@@ -594,6 +605,71 @@ class Episode:
                     left=idx(self.rob.left_hand_index), right=idx(self.rob.right_hand_index), limit=self.limit,
                     torque_limit=np.asarray(self.rob.torque_limit), instruction=self.u.task.instruction)  # fmt: skip
 
+    # ---- TODO 52: saved states (snap / restore). Everything the stepping changes, on this side of the socket.
+
+    def state_objects(self) -> dict:
+        u = self.u
+        out = dict(ep=self, u=u, mj=u.mujoco, tl=self.env, robot=u.task.robot, task=u.task)
+        if getattr(u, "isaac", None) is not None:
+            out["isaac"] = u.isaac
+        return out
+
+    SKIP = dict(
+        ep=("frames", "obs", "prof", "snaps", "n_snap"),
+        u=("viewer",),
+        mj=("renderers", "viewer"),
+        isaac=(),
+        tl=(),
+        robot=(),
+        task=(),
+    )
+
+    def snap(self) -> int:
+        owned = (C.Watcher, C.ArtWatcher)
+        models = (self.u.mujoco.mjModel,)
+        snap = {}
+        for n, o in self.state_objects().items():
+            snap[n] = SC.capture(o, skip=self.SKIP.get(n, ()), owned=owned, models=models)
+        self.n_snap = getattr(self, "n_snap", 0) + 1
+        self.snaps[self.n_snap] = snap
+        return self.n_snap
+
+    def snap_diff(self, sid: int) -> list:
+        """The attributes whose current value differs from the saved state `sid` (a check, TODO 52): ["object.attr", ...]."""
+        owned = (C.Watcher, C.ArtWatcher)
+        models = (self.u.mujoco.mjModel,)
+        out = []
+        for n, o in self.state_objects().items():
+            now = SC.capture(o, skip=self.SKIP.get(n, ()), owned=owned, models=models)
+            for k, p in self.snaps[sid][n].items():
+                if p.kind != "ref" and k in now and SC.fingerprint({k: p}) != SC.fingerprint({k: now[k]}):
+                    out.append(f"{n}.{k}")
+        return out
+
+    def restore(self, sid: int):
+        if sid not in self.snaps:
+            return f"no state {sid}"
+        models = (self.u.mujoco.mjModel,)
+        for n, o in self.state_objects().items():
+            SC.restore(o, self.snaps[sid][n], models=models)
+        mj, u = self.u.mujoco, self.u
+        # (no mj_forward here: sensors and body poses are one substep behind the state after a step, and they were restored as such)
+        if mj.render_step > 5:  # the update MujocoEngine.step makes of the layout's poses after each step
+            for objtype, mj_obj in mj.mj_objects.items():
+                u.task.layout.actors[objtype].pose.position = list(mj_obj.xpos)
+                u.task.layout.actors[objtype].pose.quaternion = list(mj_obj.xquat)
+            u.task.layout.actors["robot"].pose.position = list(np.round(mj.mjData.qpos[:3], 3))
+            u.task.layout.actors["robot"].pose.quaternion = list(np.round(mj.mjData.qpos[3:7], 3))
+        if (
+            getattr(u, "isaac", None) is not None
+        ):  # the renderer's scene follows the restored state before any image is read
+            step_id = u.isaac.step_id
+            u.isaac.step(mj)
+            u.isaac.step_id = step_id
+            if not getattr(self, "lazy", False):
+                self.obs = u._get_obs()  # every-step rendering: `eyes` reads the last step's frame
+        return True
+
     def step(self, q, kp, kd, counted, film):
         if self.amo:
             self.pend = (np.asarray(q, float), np.asarray(kp, float), np.asarray(kd, float))
@@ -706,12 +782,28 @@ with Listener(sock, family="AF_UNIX") as lis:
                                 ep._orch0(*a, **k) if (ep.force or not ep.lazy) else None
                             )
                         ep.lazy = bool(msg[1])
+                        ep.warm = (
+                            int(msg[2]) if len(msg) > 2 else 0
+                        )  # extra renders of the same state before `eyes` reads (TODO 52)
+                        ep.sub = int(msg[3]) if len(msg) > 3 else 1  # rt_subframes of every `eyes` render
                         if (
                             ep.lazy
                         ):  # the observation keeps its image keys (gymnasium's checker) with the last real frame
                             ep._last_frame = ep._render0()
                         ep.u._render_frame = (lambda: ep._last_frame) if ep.lazy else ep._render0
                         c.send(ep.lazy)
+                    elif k == "snap":  # TODO 52: save the whole state of the episode; -> an id
+                        c.send(ep.snap())
+                    elif k == "restore":  # TODO 52: ("restore", id): put it back, the renderer's scene synced
+                        c.send(ep.restore(msg[1]))
+                    elif (
+                        k == "snap_diff"
+                    ):  # TODO 52: ("snap_diff", id) -> the attributes that differ from the saved state
+                        c.send(ep.snap_diff(msg[1]))
+                    elif k == "snap_free":  # TODO 52: ("snap_free", [ids])
+                        for i in msg[1]:
+                            ep.snaps.pop(i, None)
+                        c.send(True)
                     elif k == "render":  # record only: stop (False) or resume (True) the cameras' rendering in the step
                         if not hasattr(ep, "_render0"):
                             ep._render0 = ep.u._render_frame
@@ -830,7 +922,8 @@ with Listener(sock, family="AF_UNIX") as lis:
                         if getattr(ep, "lazy", False):
                             ep.force = True
                             try:
-                                step(rt_subframes=1, pause_timeline=False)
+                                for _ in range(1 + getattr(ep, "warm", 0)):
+                                    step(rt_subframes=getattr(ep, "sub", 1), pause_timeline=False)
                                 fr = ep._render0()
                             finally:
                                 ep.force = False
@@ -866,11 +959,38 @@ with Listener(sock, family="AF_UNIX") as lis:
                     elif k == "eyes" and getattr(ep, "lazy", False):
                         ep.force = True  # one render of the state now (the steps in between rendered nothing)
                         try:
-                            ep._orch0(rt_subframes=1, pause_timeline=False)
+                            for _ in range(
+                                1 + getattr(ep, "warm", 0)
+                            ):  # `warm` extra renders of the same state: the renderer's
+                                ep._orch0(
+                                    rt_subframes=getattr(ep, "sub", 1), pause_timeline=False
+                                )  # temporal state settles
                             fr = ep._render0()
                         finally:
                             ep.force = False
                         c.send(dict(left=np.asarray(fr["head_stereo_left"]), right=np.asarray(fr["head_stereo_right"])))
+                    elif (
+                        k == "eyes_seq"
+                    ):  # diagnostic (TODO 52): n renders of the SAME state, both head images after each
+                        out = []
+                        if not hasattr(ep, "_orch0"):
+                            raise RuntimeError(
+                                "eyes_seq needs a lazy_render message first (it installs the render hook)"
+                            )
+                        ep.force = True
+                        try:
+                            for _ in range(int(msg[1])):
+                                ep._orch0(rt_subframes=int(msg[2]) if len(msg) > 2 else 1, pause_timeline=False)
+                                fr = ep._render0()
+                                out.append(
+                                    (
+                                        np.asarray(fr["head_stereo_left"]).copy(),
+                                        np.asarray(fr["head_stereo_right"]).copy(),
+                                    )
+                                )
+                        finally:
+                            ep.force = False
+                        c.send(out)
                     elif k == "eyes":
                         c.send(
                             dict(

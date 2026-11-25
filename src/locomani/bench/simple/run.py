@@ -135,6 +135,10 @@ class Bed:
     record: dict = dataclasses.field(default_factory=dict)  # the `bench` and `simple_config` fields of every row
     options: object = None  # the run's resolved BenchOptions (None: the loops' defaults)
     _links: dict = dataclasses.field(default_factory=dict)
+    memo_store: dict = dataclasses.field(
+        default_factory=dict
+    )  # memo.py's saved states, shared by this process's episodes
+    memo_eyes: dict = dataclasses.field(default_factory=dict)  # and its stored perception outputs
     _pol: object = None
 
     @property
@@ -353,7 +357,7 @@ def setup(bed: Bed, episode_id: str, K: dict, stance: dict | None, cloud_dir: Pa
             )  # AMO tasks only matter; default off. The server answers with the value it holds
             echo[key] = bool(link.recv())
         if cfg.lazy_render:  # default off: nothing is sent, the cameras render in every step
-            link.send(("lazy_render", True))
+            link.send(("lazy_render", True, cfg.lazy_warm, cfg.lazy_subframes))
             link.recv()
         if (
             bed.switch("sensor") == "rgbd" and bed.switch("target") == "perception"
@@ -479,6 +483,35 @@ def look(bed: Bed, episode_id: str, setting: dict | None = None) -> dict:
     return rec
 
 
+def install_memo(bed: Bed, env, episode_id: str, K: dict, stance: dict | None):
+    """memo.py on this episode: the chain starts from everything the start depends on that is not a primitive's argument (the
+    episode, the stance, the switches, the Motor's and the bed's own parameters, how the cameras render)."""
+    from collections import OrderedDict
+
+    from locomani.bench.simple import memo as MEMO
+
+    S, cfg = bed.S, bed.cfg
+    keys = sorted(
+        set(BED_KEYS) | set(S.MOTOR_KEYS) | {"start_hold", "walk_hold", "odo_stop", "stop_timeout", "look_near"}
+    )
+    label = json.dumps(
+        dict(id=episode_id, stance=stance, k={k: K.get(k) for k in keys}, sw=[bed.switch(a) for a in ("target", "sensor", "depth_noise", "self_pose", "controller_root")],
+             render=[cfg.lazy_render, cfg.lazy_warm, cfg.lazy_subframes], pkg=hashlib.sha1((Path(bed.pkg.path) / "camera_view.py").read_bytes()).hexdigest()),
+        sort_keys=True, default=str,
+    )  # fmt: skip
+    if not isinstance(bed.memo_store, OrderedDict):
+        bed.memo_store, bed.memo_eyes = OrderedDict(), OrderedDict()
+    return MEMO.install(
+        env,
+        label,
+        max_states=cfg.memo_states,
+        store=bed.memo_store,
+        check=cfg.memo_check,
+        eyes_store=bed.memo_eyes if isinstance(bed.memo_eyes, OrderedDict) else None,
+        eyes_cache=cfg.memo_eyes,
+    )
+
+
 def run(bed: Bed, episode_id: str, setting: dict | None = None, stance: dict | None = None) -> dict:
     """One episode -> its record (the row)."""
     S = bed.S
@@ -493,6 +526,8 @@ def run(bed: Bed, episode_id: str, setting: dict | None = None, stance: dict | N
     K.update(skill)
     K.update(extra)
     env = setup(bed, episode_id, K, stance, bed.cache_dir(task, setting))
+    if bed.cfg.memo:
+        install_memo(bed, env, episode_id, K, stance)
     mo, t_run = env.mo, time.time()
     try:
         S.episode(env)
@@ -547,6 +582,10 @@ def run(bed: Bed, episode_id: str, setting: dict | None = None, stance: dict | N
     ):  # truth for the record: the joint, its advance, and the contacts with the moving parts (the server's ArtWatcher)
         rec["art"], rec["art_touch"] = comply_state["art"], comply_state["art_touch"]
     rec["loss"] = loss_of(rec)
+    if getattr(env, "memo", None) is not None:
+        rec["memo"] = env.memo.stats()
+        if env.memo.diffs:
+            rec["memo"]["diffs"] = env.memo.diffs
     del mo
     free(env)
     rec["rss_mb"] = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // 1024

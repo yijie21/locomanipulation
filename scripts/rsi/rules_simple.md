@@ -1,4 +1,4 @@
-# Rules for the RSI loop on the SIMPLE benchmark (adapted from rules.md version 28; this file is version 9, 2026-11-23: rules 25, 47, 49: no task may lose at the gate or the check half, the sealed check at the end (TODO 48.19); version 8, 2026-11-23: rule 25: the gate and the sealed evaluation render every step; version 7, 2026-11-23: rule 48: segments, hot and stable steps (TODO 48.17.6); version 6, 2026-11-23: rules 3, 8, 25, 33, 42, 47: role reruns, the check half, stage 1 first, the probe beside the Engineers (TODO 48.17); version 5, 2026-11-23: rules 4, 12, 17, 43, 45, 46: the bed's fixed switches, the two robot models and the objects' weight, where on the object the grasp sits, `BED` reports; version 4, 2026-11-20: rule 25's sign test, rule 40's held run for the pick tasks; rules 28, 33, 38: parameters searched by the program, review notes, no duplicate assignments, drafts run where they act)
+# Rules for the RSI loop on the SIMPLE benchmark (adapted from rules.md version 28; this file is version 10, 2026-11-25: rule 25: every round renders only at the robot's looks after 48 warm-up renders, the gate and the sealed evaluation included (TODO 52); version 9, 2026-11-23: rules 25, 47, 49: no task may lose at the gate or the check half, the sealed check at the end (TODO 48.19); version 8, 2026-11-23: rule 25: the gate and the sealed evaluation render every step; version 7, 2026-11-23: rule 48: segments, hot and stable steps (TODO 48.17.6); version 6, 2026-11-23: rules 3, 8, 25, 33, 42, 47: role reruns, the check half, stage 1 first, the probe beside the Engineers (TODO 48.17); version 5, 2026-11-23: rules 4, 12, 17, 43, 45, 46: the bed's fixed switches, the two robot models and the objects' weight, where on the object the grasp sits, `BED` reports; version 4, 2026-11-20: rule 25's sign test, rule 40's held run for the pick tasks; rules 28, 33, 38: parameters searched by the program, review notes, no duplicate assignments, drafts run where they act)
 
 With the family's plan (if its file names one), the only human knowledge the loop reads. The numbering follows
 `scripts/rsi/rules.md`, because the driver's messages cite rules by number. A rule that does not apply on this backend
@@ -116,9 +116,14 @@ change to the family plan, is committed and counted as one human intervention.
     whatever the other tasks gained (code, TODO 48.19; the gate's `per_task` gives each task's wins and losses). A
     change that helps one task and hurts another is two changes: keep the part that helps, and condition it so it
     stays out of the other task's episodes (rule 38).
-    The gate and the sealed evaluation render the cameras in every step (the family's `bed_env_gate`); diagnostic
-    rounds, probes and drafts render them only at the robot's looks, which is faster and, on the final version of
-    2026-11-22, won 4 of 150 diagnostic starts fewer and none more. Read a diagnostic number as from that mode (code).
+    Every round renders the cameras only at the robot's looks, each look after 48 warm-up renders of the same state (the
+    renderer's auto-exposure settles; one render without them sees another image, brighter by about 5 %, and on the faucet
+    SAM 3 can miss the object), the gate and the sealed evaluation included (bench block `render`, default "lazy"; the
+    family's `bed_env_gate` is the esc bed's). On the 60 diagnostic starts of the four articulated tasks this gave the same
+    success rate (83 % against 78 % rendering every step, Fisher p 0.33) and per-start agreement with every-step runs
+    (0.85) as the repeats of one mode have with each other (0.83 and 0.92), in 2.5 times less time per start
+    (docs/handoff/fast-rounds-20261125.md). The explicit every-step mode, `"render": "every_step"` in the bench block, is for
+    official benchmark and exam reports (code).
 26. (scene backend: redraw of the acceptance pool after parks; not used here.)
 27. (scene backend: families that start from an empty seed; not used here.)
 28. An iteration builds several candidates (K Engineers in parallel, each in its own copy of the skill package), each

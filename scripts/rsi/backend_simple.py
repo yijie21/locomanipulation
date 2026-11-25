@@ -135,7 +135,44 @@ BENCH_FILES = (  # the adapter's code a round depends on (globs below the bench 
     "src/locomani/perception/*.py",
     "src/locomani/backends/scalebfm/*.py",
 )
-BENCH_OWN = ("practice_dir", "run_dir", "lazy_render", "kinds")  # --set keys the backend sets itself
+BENCH_OWN = (
+    "practice_dir",
+    "run_dir",
+    "lazy_render",
+    "lazy_warm",
+    "lazy_subframes",
+    "memo",
+    "kinds",
+)  # --set keys the backend sets itself
+
+# TODO 52 (2026-11-25): every round renders the cameras lazily with LAZY_WARM warm-up renders per look, the gate and the sealed set
+# included (outputs/fast_rounds_20261125: same success rates and per-start agreement as rendering every step, 2.5 x cheaper).
+# `bench.render = "every_step"` in the family is the explicit every-step mode for official benchmark / exam reporting.
+LAZY_WARM = 48
+RENDER_MODES = ("lazy", "every_step")
+
+
+def render_mode(fam: dict) -> str:
+    return (bench(fam) or {}).get("render", "lazy")
+
+
+def render_sets(fam: dict) -> list[str]:
+    """The adapter's --set values for how the cameras render: lazily with warm-up renders (default), or every step."""
+    if render_mode(fam) == "every_step":
+        return ["lazy_render=false"]
+    return ["lazy_render=true", f"lazy_warm={LAZY_WARM}"]
+
+
+def memo_sets(fam: dict, full: bool) -> list[str]:
+    """TODO 52 mechanism 2: `bench.memo = true` turns on replay from saved states (memo.py) in the diagnostic, probe, sweep and draft
+    rounds; the gate and the sealed set (`full`) always run every episode in full. Off by default: a round of one setting never
+    visits a state twice, and the saving needs the variants of a start to run in one process (see docs/handoff/fast-rounds-20261125.md)."""
+    return ["memo=true"] if (bench(fam) or {}).get("memo") and not full else []
+
+
+def render_tag(fam: dict) -> str:
+    """What enters the bed signature: two render modes never share a pool or a gate signature."""
+    return "every_step" if render_mode(fam) == "every_step" else f"lazy{LAZY_WARM}"
 
 
 def bench(fam: dict) -> dict | None:
@@ -158,6 +195,8 @@ def check_bench(fam: dict) -> None:
     own = sorted(set(b.get("config") or {}) & set(BENCH_OWN))
     if own:
         raise ValueError(f"{fam.get('name')}: bench.config may not set {own} (the backend sets them)")
+    if render_mode(fam) not in RENDER_MODES:
+        raise ValueError(f"{fam.get('name')}: bench.render {render_mode(fam)!r} is not one of {RENDER_MODES}")
 
 
 def _setting_arg(v) -> str:
@@ -801,8 +840,9 @@ def signature(family, where: str) -> str:
         h.update(b"\0gate_env" + json.dumps(gate_env(fam), sort_keys=True).encode())
     if bench(fam):  # the resolved switches: two switch sets never share a pool or a gate signature
         h.update(b"\0bench" + bench_signature(fam).encode())
-        if where == "gate":  # the gate and the sealed set render every step (lazy_render=false), the rest lazily
-            h.update(b"\0gate_render")
+        h.update(b"\0render_" + render_tag(fam).encode())  # TODO 52: lazy with warm-up everywhere, or every step
+        if memo_sets(fam, where == "gate"):
+            h.update(b"\0memo")  # saved-state replay shares perception between variants: its rounds are their own
     return h.hexdigest()[:10]
 
 
@@ -967,8 +1007,9 @@ def _exec(argv: list[str], env: dict, log, stop: threading.Event | None, cwd: Pa
 
 def bench_argv(fam: dict, task: str, ids_file, skill: dict, stance, out, package, run_dir, full: bool) -> list[str]:
     """The adapter's command for one unit: `python -m locomani.bench.simple run <Task> ...` (run in the bench root with
-    PYTHONPATH=src). --set kinds, practice_dir, run_dir and lazy_render are the backend's: the gate and the sealed set
-    (`full`) read the full practice files and render every step, everything else the family's visible files and lazily."""
+    PYTHONPATH=src). --set kinds, practice_dir, run_dir and the render keys are the backend's: the gate and the sealed set
+    (`full`) read the full practice files; every round renders lazily with warm-up renders unless the family says bench.render =
+    "every_step" (render_sets)."""
     argv = [fam["bench"].get("python") or BENCH_PY, "-m", "locomani.bench.simple", "run", task, "--ids", str(ids_file),
             "--setting", json.dumps(skill), "--out", str(out), "--skills", str(Path(package).resolve())]  # fmt: skip
     if stance:
@@ -976,7 +1017,7 @@ def bench_argv(fam: dict, task: str, ids_file, skill: dict, stance, out, package
     for kv in bench_options_args(fam):
         argv += ["--bench-set", kv]
     for kv in ("kinds=Q", f"practice_dir={practice_dir(fam, full)}", f"run_dir={run_dir}",
-               f"lazy_render={'false' if full else 'true'}", *bench_config_args(fam)):  # fmt: skip
+               *render_sets(fam), *memo_sets(fam, full), *bench_config_args(fam)):  # fmt: skip
         argv += ["--set", kv]
     return argv
 

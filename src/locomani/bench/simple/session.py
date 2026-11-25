@@ -22,6 +22,7 @@ gives each unit its own).
 
 from __future__ import annotations
 
+import ctypes
 import fcntl
 import json
 import os
@@ -37,6 +38,16 @@ EXIT_OK, EXIT_ROWS, EXIT_ARGS, EXIT_NO_CACHE = 0, 1, 2, 3
 ARTICULATED = ("OpenOvenTeleop", "CloseDoorTeleop", "OpenFaucetTeleop", "OpenTrashCanTeleop")
 HERE = Path(__file__).resolve().parent
 SRC = HERE.parents[2]  # the src/ this package is imported from: the bed's child processes get it as PYTHONPATH
+
+
+def die_with_parent() -> None:
+    """preexec_fn of the services: the kernel sends SIGTERM to the child when its parent (the session) dies, however it dies
+    (SIGKILL included, which no handler can catch). The services run in sessions of their own (start_new_session), so without
+    this a killed session left them orphaned: four stereo depth services held 13 GB on GPU 1 on 2026-11-24 (TODO 52)."""
+    try:
+        ctypes.CDLL("libc.so.6", use_errno=True).prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    except OSError:
+        pass
 
 
 class SlotTimeout(RuntimeError):
@@ -185,7 +196,7 @@ class Session:
             self.server = subprocess.Popen(
                 [cfg.simple_python, str(HERE / "server.py"), str(sock), cfg.xdir, cfg.env_names],
                 cwd=cfg.simple_root, env=env, stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                start_new_session=True,
+                start_new_session=True, preexec_fn=die_with_parent,
             )  # fmt: skip
         (self.run / f"server_{self.task}.pid").write_text(f"{self.server.pid}\n")
         ready = self.wait_for(lambda: "listening" in log.read_text(errors="replace"), cfg.server_ready_s, self.server)
@@ -208,7 +219,7 @@ class Session:
             self.depth = subprocess.Popen(
                 [cfg.sam3d_python, "-s", str(stereo), str(sock)],
                 cwd=cfg.graspgen_root, env=env, stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                start_new_session=True,
+                start_new_session=True, preexec_fn=die_with_parent,
             )  # fmt: skip
         (self.run / f"depth_{self.task}.pid").write_text(f"{self.depth.pid}\n")
         ready = self.wait_for(sock.exists, cfg.depth_ready_s, self.depth)
@@ -310,6 +321,24 @@ class Session:
         self.tim("batch", t)
 
     def run_round(self) -> int:
+        """The round; SIGTERM / SIGHUP / SIGINT to the session end it through its `finally` (the services are stopped by pid)."""
+        old = {}
+        try:
+            for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+                old[sig] = signal.signal(sig, self._on_signal)
+        except ValueError:  # not the main thread: the parent-death signal of the services still covers it
+            old = {}
+        try:
+            return self._round()
+        finally:
+            for sig, h in old.items():
+                signal.signal(sig, h)
+
+    @staticmethod
+    def _on_signal(signum, frame):
+        raise SystemExit(128 + signum)
+
+    def _round(self) -> int:
         t0 = time.time()
         try:
             self.slot, lock = take_slot(self.cfg, self.slot_timeout_s, self.sleep)

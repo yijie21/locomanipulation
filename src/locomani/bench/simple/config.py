@@ -51,8 +51,18 @@ class SimpleConfig:
     sam3_host: str = "127.0.0.1"  # SAM 3 service: expected to be up, never started or stopped by a run
     sam3_port: int = 18832
     lazy_render: bool = (
-        False  # cameras render only on `eyes` (diagnostic rounds); gate and sealed rounds render every step
+        True  # cameras render only on `eyes`, in every round; False = every step (official benchmark / exam reporting)
     )
+    lazy_warm: int = (
+        48  # lazy render: extra renders of the same state before an `eyes` read (auto-exposure settles; TODO 52)
+    )
+    lazy_subframes: int = 1  # lazy render: rt_subframes of each `eyes` render
+    memo: bool = False  # replay from a saved state: variants of one start share the stepping of their common primitives (memo.py; diagnostic / probe / sweep rounds, not the gate or the sealed set)
+    memo_eyes: bool = True  # memo: the head images at a state are stored and reused (renders differ run to run, so keys would never match otherwise)
+    memo_check: bool = (
+        False  # debug: after every restored state, ask both sides what differs from the state that was stored
+    )
+    memo_states: int = 400  # saved states kept (client and server); the oldest go first
     env_names: str = _DATA + "/official/env_names.json"  # task -> SIMPLE's gym environment name
     xdir: str = "/nonexistent"  # released-episode folder handed to the server: it is never opened
     server_ready_s: int = 400  # wait for the Isaac server's "listening" line
