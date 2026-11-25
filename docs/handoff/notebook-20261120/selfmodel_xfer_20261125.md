@@ -307,7 +307,7 @@ xfer sonic (native planner, native stance, delay 4 frames): /wuji-vefps-D/wuji-i
 5. **ScaleBFM 和 HEFT 的接法。** 和 data3 喂 LML 的方式一样，世界系 qpos 帧经 motion buffer 推入，延迟取 buffer 的 delay_s，站姿用 LML 的。驱动代码用 ha_controllers 的 `ha_g1ctrl.py`（md5 72a7bc22）。
 6. **运动学一致。** HA 的运动学和 robot_fk 相差约 1e-7 m。
 
-## 预测修订：HumanoidArena 三个组合（2026-11-26 约 18:20Z 写下）
+## 预测修订：HumanoidArena 三个组合（2026-11-25 约 17:15Z 写下，即北京时间 11-26 01:15）
 
 **写下时的状态**：ScaleBFM·HA 已经开跑，但还没看到任何结果；HEFT·HA 和 SONIC·HA 还没开跑。原来登记的预测和判据保留不动，这里只补充一条新的预测。
 
