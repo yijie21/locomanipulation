@@ -189,7 +189,7 @@ cd $S1 && $PY scripts/rsi/loop.py status gso_single_grasp; cd -      # 看进度
 
 做什么：和 1030 runbook 第 5 节一样：建沙盒、抽池，然后在后台跑内环，直到满足终止条件。`--fresh` 让沙盒既不带知识库也不带经验库，这次运行不继承任何以前的知识。
 - **池**：按任务数分配（用户 11-18），默认每个任务诊断 3 局、验收 10 局、封存 10 局（用户 11-24；之前是 3 / 4 / 5）：单手 20 个任务是 60 / 200 / 200 局，双手 8 个任务是 24 / 80 / 80 局。诊断池只喂 Reviewer 看失败局，补抽会把失败局补到 15 局，所以保持小；验收池决定验收门的判决，32 局的池里两三局接触随机翻转就能左右结果，放大到 200 / 80 局；封存集只在结束后跑一次，决定报告区间的宽度。验收池至少比验收门第一阶段（`gate.py` 的 `STAGE1`，30 局）多 1 局。局数记在任务族文件的 `pool_per_task` 和各池的 `n` 里，建沙盒、内环和封存集都从这里读；要改就用 `PYTHONPATH=src $PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_gso_single --per-task diag=3 accept=10 sealed=10` 重写任务族（可以只给其中几项），提交后再建沙盒。池种子：单手 9000000 / 9100000 / 9200000，双手 9500000 / 9600000 / 9700000。
-- **终止条件**：验收池上赢到 95 %、跑满 15 小时、做满 5 轮或验收门调用满 12 次，先满足哪条就停（用户 11-24；之前是 80 % 和 5 小时。同一天物流间的其他任务族也改成了同样的池局数和终止条件，见 `docs/rsi_logistic_room_1030.md` 第 4 节）。只想先试一轮，加 `--max-iters 1`。
+- **终止条件**（模式 1 / 2 的内环）：验收池上赢到 95 %、跑满 15 小时、做满 5 轮或验收门调用满 12 次，先满足哪条就停；模式 3 由 `alternate.py` 的 `--max-hours`（默认 20 小时）统一计时，见 7.3（用户 11-24；之前是 80 % 和 5 小时。同一天物流间的其他任务族也改成了同样的池局数和终止条件，见 `docs/rsi_logistic_room_1030.md` 第 4 节）。只想先试一轮，加 `--max-iters 1`。
 - **起点（11-24 起）**：主库的技能包就是 gso-alt-a 写回的最终现任（7.5），验收池上单手 70/80、双手 28/32（87.5 %），这也是把停止线从 80 % 提到 95 % 的原因：新的验收池是 200 / 80 局，95 % 就是单手赢 190 局、双手赢 76 局，第一次验收门不会直接停下。模式 2 同样。
 - 11-24 从 fdf6d850 各建一个 `--fresh` 沙盒跑过一轮桩迭代（`--stub --max-iters 1`，角色不调用模型，池和验收门真实）：两边都走完 diag_pool → review → probe → manager → engineer → compose → gate → pause，诊断池单手 45/60、双手 19/24；沙盒内的技能包测试通过。
 - 11-24 晚（3390cc92，池 3 / 10 / 10、停止线 95 %）再冒烟：模式 3 一个桩迭代（7.3 的命令），单手诊断池 60 局全跑（现任 45/60，补抽后摘要 45/60），双手 24 局全跑（补抽把 8 局通过的换成 8 局失败的新起点，摘要 13/24，原池 21/24），验收池抽到 200 / 80 局，两次同步都是 `the merge changes nothing`，日志无报错；同一沙盒里把双手现任在同一诊断池上再跑一遍，24 局逐局结果一致。模式 1 用 `gso_all_s0` 跑一个桩迭代，63 局全跑（现任 22/63），链路走完。注意第 0 节的 `RSI_GPUS=0` 不设时，内环默认把仿真分片轮流派到 GPU 0 和 1，本机设备 1 是核显，派过去的分片 `torch.cuda.is_available() is False` 直接退出，诊断池只跑了一部分（单手 33/60、双手 8/24、gso_all 37/63 局），账本里没有任何报错；摘要里的 `N/24` 是补抽之后的数，不是成功率。
@@ -234,7 +234,7 @@ rm -rf $R0
 ```bash
 R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-a
 python3 scripts/rsi/alternate.py init $R gso_single_grasp gso_bimanual_lift
-CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 --max-hours 15 > $R/run.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 --max-hours 20 > $R/run.log 2>&1 &
 $PY scripts/rsi/alternate.py status $R                                  # 看进度
 ```
 
@@ -243,7 +243,7 @@ $PY scripts/rsi/alternate.py status $R                                  # 看进
 ```bash
 R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-seed
 python3 scripts/rsi/alternate.py init $R gso_single_grasp gso_bimanual_lift --seed scripts/rsi/seeds/gso_picked_start
-CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 --max-hours 15 > $R/run.log 2>&1 &
+CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 5 --max-hours 20 > $R/run.log 2>&1 &
 ```
 
 做什么：
@@ -255,7 +255,7 @@ CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 
   3. 把这一方的现任技能包（参数覆盖值写进常数）三方合并进另一方的现任。两边改了同一处时这次同步失败（规则第 28 版，11-23）：什么都不合并，共同祖先不动，冲突的文件和位置写进 `sync.jsonl`，两边的 `KNOWLEDGE.md` 都能看到，下个半轮再试；11-23 以前是静默保留接收方的版本，发送方在那一处的工作就丢了。合并结果和接收方现有代码完全一样时，按“合并没有改动”跳过，不调用验收门。合并出候选后先在接收方沙盒里跑合并后技能包自己的测试（`skills/test_*.py`，约 4 秒），失败也算同步失败，记进 `sync.jsonl`，不调用验收门。然后合并结果在另一方的验收池上过“不变差”验收门（`loop.py sync`，`gate.py --non-inferior`）：少赢不超过多赢就成为另一方的新现任，否则作废。这次验收在另一方的账本里记一行 `gate`，计入它的验收门调用次数；结果也写进共享的 `sync.jsonl`，两边的 `KNOWLEDGE.md` 末尾都能看到。
 - 终止条件（用户 11-18），满足任一条就停：
   1. 跑完 `--iters` 个迭代（5：单手 5 轮、双手 5 轮）。
-  2. 整个运行跑满 `--max-hours` 小时（默认 15，11-24 前是 10），算两边合计的时间：驱动实际在跑的时间累加，驱动停着的时间不算。每个阶段开始前检查，正在跑的阶段会跑完。
+  2. 整个运行跑满 `--max-hours` 小时（默认 20，用户 11-24 晚；之前是 15，再之前 10），算两边合计的时间：驱动实际在跑的时间累加，驱动停着的时间不算。每个阶段开始前检查，正在跑的阶段会跑完。
   3. 两边都在各自的验收池上赢到 `--stop-rate`（默认 0.95：单手 200 局赢 190 局，双手 80 局赢 76 局；11-24 前是 0.8）。只有一方赢到时，这一方停下：跳过它的半轮，也不再往它合并代码，它的条目继续给对方用；另一方接着跑。
 - 两边的内环都带 `--alternating` 运行：每个任务族只按停止线停下，不再因为它自己的 5 小时、5 轮、12 次验收门或 Manager 决定停而停；Manager 决定停时只结束这一轮。
 - 一方的内环出错（角色调用失败、审计连续两轮作废、崩溃）或同步验收出错，不算跑完，整个运行停下，`run.log` 最后一行写着原因；查完再跑同一条 `run` 命令，从停下的那一步接着跑。建库得到 0 条或失败只记录，不停。

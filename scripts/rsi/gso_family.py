@@ -149,8 +149,8 @@ HANDS_CLEAR_M = 0.18
 # when a family's inner loop stops (loop.py resolve_settings): the incumbent wins 95 % of the acceptance pool, the run
 # has been going 15 h, or it has taken 5 iterations, whichever comes first (user 2026-11-24, every logistics room
 # family; 80 % and 5 h before, user 2026-11-06: the main library already wins 87 % of the picked families' acceptance
-# pools, the written-back incumbents of gso-alt-a, so an 80 % line stopped a run at its first gate). 15 h is also
-# alternate.py's --max-hours.
+# pools, the written-back incumbents of gso-alt-a, so an 80 % line stopped a run at its first gate). The 15 h is the
+# inner loop's own cap (modes 1 and 2); alternate.py's --max-hours (mode 3, 20 h since 2026-11-24 evening) overrides it.
 STOPS = {"stop_rate": 0.95, "max_wall_h": 15.0, "max_run_iters": 5}
 
 # the sandbox block every scene RSI family carries (box_bimanual.json, grasp_atomic.json): what the archive keeps,
