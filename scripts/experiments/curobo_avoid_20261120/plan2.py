@@ -44,6 +44,12 @@ ap.add_argument(
     help="the target clouds the bench picked its grasp from (cloud_eyes_final/<NAME>.npz, pts, world); the look dump's own mask and cloud are a table patch in 17 of 30 episodes",
 )
 ap.add_argument("--no-finetune", action="store_true", help="skip cuRobo's finetune trajopt")
+ap.add_argument(
+    "--ik-seed",
+    type=int,
+    default=1531,
+    help="cuRobo's IK seed (its default 1531); another value: another path to the same goal",
+)
 ap.add_argument("--diag", action="store_true", help="on a failure: plan again without obstacles and with more tries")
 ap.add_argument("--free", type=float, default=0.01,
                 help="m: voxels nearer than this to the start pose's spheres are dropped (the start pose is where the body is)")  # fmt: skip
@@ -132,6 +138,7 @@ def motion_gen(vox_w):
     return MotionGen(MotionGenConfig.load_from_robot_config(
         robot, world, td, collision_checker_type=CollisionCheckerType.PRIMITIVE, collision_cache={"obb": len(vox) + 16},
         collision_activation_distance=a.act, interpolation_dt=0.02, use_cuda_graph=False, num_trajopt_seeds=8, num_ik_seeds=64,
+        ik_seed=a.ik_seed,
     ))  # fmt: skip
 
 

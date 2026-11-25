@@ -40,7 +40,9 @@ BED=$($PY -m locomani.bench.simple $SETS) || exit 2; eval "$BED"
 CL=$O/$BED_CLOUD; LOOK=$O/$BED_LOOK
 mkdir -p $D/rows $D/rows_ep $D/logs $D/step1 $D/step2 $D/try_act02 $D/via $D/asrun
 log() { echo "[$(date -u +%T)] $*" >> $D/pipeline.log; }
-ARGS="$SETS --trace --episodes $E0-$E1"
+# BENCH_EXTRA, BENCH_EPISODES (2026-11-24, selfmodel_precision_20261124): more simple_bench.py options for every arm (the
+# stance jitter), and an episode list ("31,33,40") in place of E0-E1 for the arms. Unset: as before.
+ARGS="$SETS --trace --episodes ${BENCH_EPISODES:-$E0-$E1} ${BENCH_EXTRA:-}"
 
 # BENCH_GPUS (2026-11-24, the 4090): the GPUs the four tasks' processes go to in turn, e.g. "2 3" -- SONIC with its
 # networks on the GPU takes ~7.4 GB a process, so four do not fit one 24 GB card. Default: all four on BENCH_GPU.

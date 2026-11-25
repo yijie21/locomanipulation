@@ -353,6 +353,14 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
         jit = np.random.default_rng([a.collect_seed, sid, 7]).uniform(-a.jitter, a.jitter, 2)  # ahead, left (m)
         stance = stance + R0[:2, :2] @ jit
         row["jitter"] = jit.round(4).tolist()
+    elif a.stance_jitter > 0:
+        # selfmodel_precision_20261124: the stance moved by up to --stance-jitter ahead and aside, the same draw for every
+        # arm of an episode (keyed by the task, level, index and --jitter-rep), so the reach varies
+        key = zlib.crc32(f"{task}:{ep['level']}:{ep['index']}".encode())
+        rng = np.random.default_rng([a.jitter_seed, key, a.jitter_rep, 11])
+        jit = rng.uniform(-a.stance_jitter, a.stance_jitter, 2)
+        stance = stance + R0[:2, :2] @ jit  # ahead, left (m)
+        row.update(jitter=jit.round(4).tolist(), jitter_rep=a.jitter_rep)
     if edge is not None:
         stance[0] = min(stance[0], edge - a.table_gap)
     w = (R0.T @ np.r_[stance - p0[:2], 0.0])[:2]
@@ -627,6 +635,10 @@ def main() -> None:
     ap.add_argument(
         "--jitter", type=float, default=0.06, help="--collect: m, the stance moved by up to this ahead and aside"
     )
+    ap.add_argument("--stance-jitter", type=float, default=0.0, help="not --collect: m, the stance moved by up to this ahead "
+                    "and aside, one draw per task, level, index and --jitter-rep (selfmodel_precision_20261124); 0: off")  # fmt: skip
+    ap.add_argument("--jitter-rep", type=int, default=0)
+    ap.add_argument("--jitter-seed", type=int, default=0)
     ap.add_argument("--holdout", type=int, default=3, help="--collect: layouts with crc32 % this == 0 are left out")
     ap.add_argument("--skip-done", default="", help="--collect: a rows dir; the task's stances already in any of its files are "
                     "skipped (a stance's run is fixed by its id, so a stopped collection is completed, not redone)")  # fmt: skip
@@ -634,6 +646,7 @@ def main() -> None:
     a = ap.parse_args()
     switches(a)
     assert not (a.comp and a.shift), "--comp or --shift, not both"
+    assert not (a.collect and a.stance_jitter), "--collect moves the stance by --jitter"
     assert not (a.joint and (a.comp or a.shift or not a.avoid)), "--joint goes with --avoid alone"
     if a.collect:
         assert a.film and a.method == "direct" and not (a.avoid or a.comp or a.shift or a.clear), (
