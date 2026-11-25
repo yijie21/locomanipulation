@@ -14,7 +14,7 @@ the interventions -- from the hidden `state_before/iter_NN` snapshot the loop wr
 the ledger for runs before it. The running incumbent's diagnostic rounds and its rounds on the acceptance pool are
 dropped, so the replay re-runs them under today's simulator (TODO 32.4 changed the physics); everything else is
 history. Paths of the finished sandbox are rewritten to the new one. meta.json starts the wall clock now (paused_s 0; copied resume rows dropped;
-candidates, scoped_review and max_wall_h are the source's).
+candidates and max_wall_h are the source's).
 
 `report` gives, per replay: the iteration's role minutes, turns and cost, the Manager's decision, the gate's verdict
 (accepted, n, candidate and incumbent successes, b, c, p) and the Engineer's mechanism.
@@ -169,7 +169,7 @@ def setup(src: Path, family: str, n: int, dst: Path, ref: str = "HEAD") -> None:
             d_state / "interventions.jsonl", [r for r in jl(state / "interventions.jsonl") if r.get("iteration", n) < n]
         )
     meta = json.loads((state / "meta.json").read_text())
-    # candidates / scoped_review / max_wall_h stay the source run's (the loop takes meta on a resume when its flags are
+    # candidates / max_wall_h stay the source run's (the loop takes meta on a resume when its flags are
     # absent); paused_s does not: the source's stopped hours are not the replay's (TODO 36, review 2026-10-22)
     meta.update(started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), started_s=time.time(), paused_s=0.0,
                 replay=dict(source=str(src), iteration=n))  # fmt: skip

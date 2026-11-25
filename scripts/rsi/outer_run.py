@@ -16,7 +16,7 @@ where it stopped:
    end in a normal stop (the incumbent's win, gate calls, wall clock, cost cap, a rejection streak, Manager stop):
    a role failure, a leak or a replay stop is a person's to look at (TODO 36, review 2026-10-22);
 4. `sealed`: sealed.py --all in the sandbox;
-5. `reflect`: reflect.py writes the family's entry into the experience library, scripts/rsi/experience (TODO 32.15:
+5. `reflect` (off unless --reflect, TODO 54): reflect.py writes the family's entry into the experience library, scripts/rsi/experience (TODO 32.15:
    the library is in every sandbox by default, so later families read it once it is committed); a failure leaves
    the library without the entry and does not block;
 6. `writeback`: writeback.py into the catalog (nothing when the final is the seed); the catalog's skills directory
@@ -77,6 +77,7 @@ CLAUDE_DIR = Path(shutil.which("claude") or "/usr/local/bin/claude").parent  # t
 ENV = {"PYTHONPATH": "src", "TMPDIR": paths.TMP, "LOCOMANI_WORKSPACE": paths.WORKSPACE, "OMP_NUM_THREADS": "2",
        "NUMPY_MADVISE_HUGEPAGE": "0", "MUJOCO_GL": "egl", "PATH": f"/usr/local/bin:/usr/bin:/bin:{CLAUDE_DIR}"}  # fmt: skip
 SERIAL = threading.Lock()  # steps 6-9: one family at a time
+REFLECT_ON = False  # TODO 54 (review 2026-11-25): the Reflector is off unless `--reflect` (no with / without comparison ever existed)
 REFLECT = threading.Lock()  # reflect.py rebuilds the library's INDEX.md; two families' reflects raced (TODO 36)
 SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"  # the catalog writeback.py writes into
 ROLLBACK_STEPS = ("tests", "regress", "capability")  # a block here puts the catalog back
@@ -192,6 +193,9 @@ class Family:
                               vs_seed=summ["final_vs_seed"]))  # fmt: skip
 
     def reflect_(self) -> None:
+        if not REFLECT_ON:
+            self.save(reflect=dict(skipped="off by default (outer_run.py --reflect turns it on)"))
+            return
         with REFLECT:
             rc = sh(["python3", str(HERE / "reflect.py"), str(self.sandbox), self.name], REPO,
                     self.logs / "reflect.log")  # fmt: skip
@@ -321,7 +325,12 @@ def main(argv=None) -> int:
     ap.add_argument("families", nargs="+")
     ap.add_argument("--parallel", type=int, default=2)
     ap.add_argument("--skip-round-lint", action="store_true")
+    ap.add_argument(
+        "--reflect", action="store_true", help="run the Reflector (reflect.py) after the loop; off by default"
+    )
     a = ap.parse_args(argv)
+    global REFLECT_ON
+    REFLECT_ON = a.reflect
     if not a.skip_round_lint:
         round_lint(a.round_dir)
     fams = [Family(a.round_dir, f) for f in a.families]

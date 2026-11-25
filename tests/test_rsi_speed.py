@@ -158,55 +158,11 @@ def _scene_loop():
 
 
 class LoopProcedure(unittest.TestCase):
-    """TODO 32.9-32.11: the scoped Reviewers' hypotheses merge under their scope letter; a candidate's diagnostic flips
+    """TODO 32.9-32.11: a candidate's diagnostic flips
     are counted start by start; the Manager and the Reviewer see the multi-candidate and library notes only when on."""
 
     def setUp(self):
         self.lp = _scene_loop()
-
-    def test_scoped_reviewers_merge_two_hypotheses_each(self):
-        from unittest import mock
-
-        def fake(role, prompt, schema, it_dir, tools, stub):
-            tag = role.split("_")[1]
-            self.assertIn("within your scope", prompt)
-            self.assertIn(self.lp.SCOPES[tag][:40], prompt)
-            hyps = [dict(id=f"H{i}", claim=f"{tag}{i}") for i in (1, 2, 3)]
-            claim = dict(task="t", starts=[f"{tag}_s1"])
-            return dict(notes=tag, hypotheses=hyps, infeasible=[claim]), dict(
-                cost_usd=1.0, session=tag, seconds=10 * len(tag)
-            )
-
-        with mock.patch.object(self.lp, "claude", fake):
-            hyps, acct = self.lp.scoped_review("propose at most 4 interventions", Path("."), None)
-        self.assertEqual([h["id"] for h in hyps["hypotheses"]], ["PH1", "PH2", "OH1", "OH2", "SH1", "SH2"])
-        self.assertEqual({h["scope"] for h in hyps["hypotheses"]}, {"P", "O", "S"})
-        self.assertEqual(len(hyps["infeasible"]), 3)
-        self.assertEqual(acct["cost_usd"], 3.0)
-        self.assertEqual(sorted(acct["sessions"]), ["O", "P", "S"])
-
-    def test_the_scoped_reviewers_get_six_probes_and_the_manager_their_note(self):
-        # TODO 33.3: three scopes x two hypotheses all reach the Prober; the Manager is told what S means
-        from unittest import mock
-
-        with mock.patch.object(self.lp, "SCOPED", True):
-            self.assertEqual(self.lp.hypothesis_cap(), 6)
-            self.assertIn("a different way of doing it", self.lp.prompt_vars()["CANDIDATES_NOTE"])
-        with mock.patch.object(self.lp, "SCOPED", False):
-            self.assertEqual(self.lp.hypothesis_cap(), self.lp.MAX_HYPOTHESES)
-            self.assertNotIn("scoped Reviewers", self.lp.prompt_vars()["CANDIDATES_NOTE"])
-
-    def test_a_failed_scoped_reviewer_raises_role_failed(self):
-        # 2026-10-21: a usage limit inside one Reviewer's thread surfaced as KeyError 'P' and crashed the run
-        from unittest import mock
-
-        def fake(role, prompt, schema, it_dir, tools, stub):
-            if role.endswith("_P"):
-                raise self.lp.RoleFailed("reviewer_P: session limit")
-            return dict(notes="", hypotheses=[], infeasible=[]), dict(cost_usd=1.0, session="O", seconds=1)
-
-        with mock.patch.object(self.lp, "claude", fake), self.assertRaises(self.lp.RoleFailed):
-            self.lp.scoped_review("propose at most 4 interventions", Path("."), None)
 
     def test_flips_pair_the_candidate_with_the_incumbent_start_by_start(self):
         with tempfile.TemporaryDirectory() as d:
@@ -234,8 +190,8 @@ class LoopProcedure(unittest.TestCase):
 
 
 class RunFlags(unittest.TestCase):
-    """`loop.py run` takes every TODO 32 switch on its command line (the first --scoped-review never reached the
-    parser: a text edit missed the reformatted line, and 8 scoped replays ran without it, 2026-10-21)."""
+    """`loop.py run` takes every TODO 32 switch on its command line (a text edit once missed the reformatted line
+    and replays ran without a switch, 2026-10-21)."""
 
     def test_the_switches_reach_cmd_run(self):
         from unittest import mock
@@ -248,9 +204,9 @@ class RunFlags(unittest.TestCase):
             return 0
 
         with mock.patch.object(lp, "cmd_run", fake_run), mock.patch.object(lp, "configure", lambda f: None):
-            lp.main(["run", "grasp_atomic", "--candidates", "3", "--scoped-review", "--stop-after", "probe",
+            lp.main(["run", "grasp_atomic", "--candidates", "3", "--stop-after", "probe",
                      "--effort", "engineer=medium", "--engineer-from", "/x/iter_02"])  # fmt: skip
-        self.assertEqual((seen["candidates"], seen["scoped_review"], seen["stop_after"]), (3, True, "probe"))
+        self.assertEqual((seen["candidates"], seen["stop_after"]), (3, "probe"))
         self.assertEqual((seen["effort"], str(seen["engineer_from"])), (["engineer=medium"], "/x/iter_02"))
 
     def test_three_engineers_and_a_composer_by_default(self):
@@ -266,49 +222,39 @@ class RunFlags(unittest.TestCase):
             mock.patch.object(lp, "configure", lambda f: None),
         ):
             lp.main(["run", "grasp_atomic"])
-            self.assertEqual((seen["candidates"], seen["scoped_review"]), (None, None))
+            self.assertIsNone(seen["candidates"])
             lp.main(["run", "grasp_atomic", "--candidates", "1"])
             self.assertEqual(seen["candidates"], 1)
-        none = Namespace(candidates=None, scoped_review=None)
+        none = Namespace(candidates=None)
         self.assertEqual(
             lp.resolve_settings(none, {}, False),
             dict(
                 candidates=3,
-                scoped_review=False,
-                reviewers=1,
-                repair=False,
                 max_wall_h=6.0,
                 stop_rate=0.70,
                 engineer_late_min=10.0,
-                second_shot=False,
                 diag_min_fails=10,
                 diag_target_fails=15,
                 diag_draw_max=90,
             ),  # fmt: skip
         )
-        old = dict(started="x", candidates=1, scoped_review=True, max_wall_h=5.0)
+        old = dict(started="x", candidates=1, max_wall_h=5.0)
         with mock.patch.dict("os.environ", clear=False):
             os.environ.pop("RSI_MAX_WALL_H", None)
             self.assertEqual(
                 lp.resolve_settings(none, old, True),
                 dict(
                     candidates=1,
-                    scoped_review=True,
-                    reviewers=1,
-                    repair=False,
                     max_wall_h=5.0,
                     stop_rate=0.70,
                     engineer_late_min=10.0,
-                    second_shot=False,
                     diag_min_fails=10,
                     diag_target_fails=15,
                     diag_draw_max=90,
                 ),  # fmt: skip
             )
             self.assertEqual(lp.resolve_settings(none, old, False)["candidates"], 3)  # fresh run ignores stale meta
-            self.assertEqual(
-                lp.resolve_settings(Namespace(candidates=2, scoped_review=None), old, True)["candidates"], 2
-            )
+            self.assertEqual(lp.resolve_settings(Namespace(candidates=2), old, True)["candidates"], 2)
             os.environ["RSI_MAX_WALL_H"] = "4"
             self.assertEqual(lp.resolve_settings(none, old, True)["max_wall_h"], 4.0)
 
@@ -379,13 +325,13 @@ class RunExit(unittest.TestCase):
         self.assertEqual(self.lp.entries()[-1]["step"], "resume")
 
     def test_a_resume_keeps_the_recorded_settings_and_logs_a_change(self):
-        self.run_(lambda n, m, s: None, candidates=1, scoped_review=None)
+        self.run_(lambda n, m, s: None, candidates=1)
         meta = self.lp.jload(self.lp.STATE / "meta.json")
         self.assertEqual((meta["candidates"], self.lp.CANDIDATES), (1, 1))
-        self.run_(lambda n, m, s: None, candidates=None, scoped_review=None)
+        self.run_(lambda n, m, s: None, candidates=None)
         self.assertEqual(self.lp.CANDIDATES, 1)
         self.assertNotIn("settings", [e["step"] for e in self.lp.entries()])
-        self.run_(lambda n, m, s: None, candidates=2, scoped_review=None)
+        self.run_(lambda n, m, s: None, candidates=2)
         row = [e for e in self.lp.entries() if e["step"] == "settings"][-1]
         self.assertEqual(row["candidates"], dict(old=1, new=2))
 
@@ -771,7 +717,8 @@ class LeakPolicy(unittest.TestCase):
             rc = self.lp.cmd_run(Namespace(max_iters=4, reprobe=None, stub=True))
         self.assertEqual(rc, 0)
         self.assertEqual(len([e for e in self.lp.entries() if e["step"] == "review"]), 4)
-        self.assertFalse([e for e in self.lp.entries() if e["step"] == "stop"])
+        stops = [e for e in self.lp.entries() if e["step"] == "stop"]  # TODO 54: --max-iters ends through finish() too
+        self.assertEqual([e["reason"] for e in stops], ["max iterations 4 reached"])
 
     def test_a_voided_managers_stop_decides_nothing_and_rejections_never_stop(self):
         meta = dict(started_s=time.time())

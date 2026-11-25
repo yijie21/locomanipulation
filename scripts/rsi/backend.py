@@ -31,15 +31,23 @@ SCENE_CAPS = {
     "design_probes": True,
     "diag_redraw": True,
     "sentinel_exact": True,  # a sentinel re-run must reproduce `ok` and `t_end`; False: `ok` alone
-    "min_net": 3,  # gate.MIN_NET
+    "min_net": 3,  # gate.MIN_NET; read only where p_max is None (with p_max it can never bind: the smallest p <= 0.05 is 5:0)
+    "loss_share": 3,  # scene rule (p_max None): the losses may be at most a third of the wins
     "repeat": 1,  # runs per round (the gate's repeat k > 1: see gate.py, not implemented)
     "p_max": None,  # a number: the paired sign test's one-sided p replaces the loss-share condition (gate.verdict_fails)
     "sentinel_flips": 0,  # sentinel re-runs that may differ from the stored rounds before the pairing is void
     "probe_scope": False,  # True: a hypothesis's probe runs only on the tasks it is about (loop.probe_labels)
     "sweep_rounds": 1200,  # rounds an iteration's program sweeps may run in all (probe sweeps and Engineer-declared knobs)
     "draft_sentinels": 3,  # a draft with declared starts also runs this many starts of every other task (loop.draft_labels)
-    "spec_review": False,  # True: the next Reviewer starts while the gate still runs (loop.gate_candidate, speculative)
-    "task_regress": None,  # k: a task losing k or more net rejects at the gate and at the check half (gate.verdict_fails)
+    "alpha_task": None,  # per-task regression test (verdict.py): a task whose losses are significant at this level, Holm across tasks, rejects at the gate and the sealed set
+    "alpha_task_check": None,  # the same at the check half (looser: 15 starts a task)
+    "check_min_net": 1,  # the check half sends a candidate whose net on the hidden half reaches this
+    # TODO 54 (rsi-lean): the lean iteration is the benchmark default; a scene family keeps the old one through these
+    "manager": "llm",  # "llm": the Manager role chooses what is built; "program": the Reviewer's hypotheses go to the Engineers in order
+    "measure_claims": True,  # False: no `measure` field in the Reviewer's schema
+    "prober": True,  # True: the Prober phase and the Manager's `tune`; False: only the Engineers' `tunable` keys, swept by the program
+    "compose": "llm",  # "llm": the Composer always merges; "program": a 3-way merge by the program, the Composer only on a conflict
+    "stop_no_progress": 0,  # N > 0: this many iterations in a row without a candidate that passes the check half end the run
     "sealed_at_stop": False,  # True: a run that stops by a stop rule runs sealed.py once (loop.run_sealed)
 }
 

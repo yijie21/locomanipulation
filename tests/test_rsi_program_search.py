@@ -4,7 +4,6 @@ gate runs, and the straggler deadline counted from the session's end."""
 
 import json
 import shutil
-import stat
 import sys
 import tempfile
 import threading
@@ -411,7 +410,7 @@ class ReviewNotes(unittest.TestCase):
         idx = (self.root / "it" / "review_notes" / "INDEX.md").read_text()
         self.assertIn("`probe.py` (8 bytes)", idx)
 
-    def test_a_total_over_the_limit_drops_the_largest_first_and_joint_reviewers_are_tagged(self):
+    def test_a_total_over_the_limit_drops_the_largest_first_and_tagged_sources_get_a_directory(self):
         lp = self.lp
         d = self.root / "reviewer_A"
         d.mkdir()
@@ -424,143 +423,6 @@ class ReviewNotes(unittest.TestCase):
         self.assertEqual(got, ["f1.txt", "f2.txt"])
         self.assertEqual((out["files"], out["skipped"]), (2, 1))
         self.assertEqual(lp.review_notes_dir(self.root / "it2").joinpath("INDEX.md").read_text().count("(none)"), 1)
-
-
-class PrivateGate(unittest.TestCase):
-    def setUp(self):
-        self.lp = _scene_loop()
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-        self.hidden = self.root / "scene_rsi_20261016_hidden" / "fam"
-        (self.hidden / "gate" / "01_abc").mkdir(parents=True)
-        (self.hidden / "pool_accept").mkdir()
-        (self.hidden / "pool_accept" / "A_s0.json").write_text("{}")
-        (self.hidden / "practice").mkdir()
-        (self.hidden / "practice" / "A.jsonl").write_text("{}\n")
-        (self.hidden / "seeds.json").write_text("{}")
-        g = self.hidden / "gate"
-        (g / "incumbent.json").write_text(json.dumps(dict(dir=str(g / "incumbent_seed"), rounds=str(g / "r"), since=0)))
-        (g / "ledger.jsonl").write_text(json.dumps(dict(hash="old", accepted=False)) + "\n")
-        (g / "01_abc" / "round.json").write_text(json.dumps(dict(path=str(g / "x"))))
-        (g / "01_abc" / "blob.bin").write_bytes(b"\x00" + str(self.hidden).encode())  # binary: not rewritten
-        (g / "_rule1_x.json").write_text("{}")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_the_copy_names_only_its_own_paths_and_the_round_trip_returns_the_originals(self):
-        lp = self.lp
-        before = {
-            p.relative_to(self.hidden).as_posix(): p.read_bytes()
-            for p in (self.hidden / "gate").rglob("*")
-            if p.is_file()
-        }
-        p, manifest = lp.private_gate_copy(self.hidden, self.hidden / "pool_accept")
-        self.assertEqual(p.parent, self.hidden.parent)
-        self.assertRegex(p.name, r"^\.[0-9a-f]{24}$")
-        self.assertTrue((p / "pool_accept" / "A_s0.json").exists() and (p / "practice" / "A.jsonl").exists())
-        inc = json.loads((p / "gate" / "incumbent.json").read_text())
-        self.assertTrue(inc["dir"].startswith(str(p)) and inc["rounds"].startswith(str(p)))
-        self.assertNotIn(str(self.hidden), (p / "gate" / "01_abc" / "round.json").read_text())
-        # the gate: appends a ledger line, writes a new round, retires one, moves the incumbent
-        with (p / "gate" / "ledger.jsonl").open("a") as fh:
-            fh.write(json.dumps(dict(hash="new", accepted=True, dir=str(p / "gate" / "02_new"))) + "\n")
-        (p / "gate" / "02_new").mkdir()
-        (p / "gate" / "02_new" / "r.json").write_text(json.dumps(dict(at=str(p / "gate" / "02_new"))))
-        (p / "gate" / "_rule1_x.json").unlink()
-        (p / "gate" / "_rule1_y.json").write_text("{}")
-        (p / "gate" / "incumbent.json").write_text(json.dumps(dict(dir=str(p / "gate" / "02_new"), since=1)))
-        written = lp.copy_back_gate(p, self.hidden, manifest)
-        self.assertEqual(sorted(written), ["02_new/r.json", "_rule1_y.json", "incumbent.json", "ledger.jsonl"])
-        g = self.hidden / "gate"
-        lines = (g / "ledger.jsonl").read_text().splitlines()
-        self.assertEqual(json.loads(lines[0]), dict(hash="old", accepted=False))  # old lines come back as they were
-        self.assertEqual(json.loads(lines[1])["dir"], str(g / "02_new"))
-        self.assertEqual(json.loads((g / "incumbent.json").read_text())["dir"], str(g / "02_new"))
-        self.assertFalse((g / "_rule1_x.json").exists())  # the retirement is mirrored
-        self.assertEqual((g / "01_abc" / "blob.bin").read_bytes(), before["gate/01_abc/blob.bin"])
-        self.assertEqual((g / "01_abc" / "round.json").read_bytes(), before["gate/01_abc/round.json"])
-
-    def test_an_untouched_copy_writes_nothing_back(self):
-        lp = self.lp
-        p, manifest = lp.private_gate_copy(self.hidden, self.hidden / "pool_accept")
-        self.assertEqual(lp.copy_back_gate(p, self.hidden, manifest), [])
-
-    def test_the_parent_is_0o311_while_locked_and_restored_also_after_an_exception(self):
-        lp = self.lp
-        state = self.root / "state"
-        state.mkdir()
-        self.hidden.parent.chmod(0o755)
-        with mock.patch.multiple(lp, HIDDEN=self.hidden, STATE=state):
-            with lp.parent_locked():
-                self.assertEqual(stat.S_IMODE(self.hidden.parent.stat().st_mode), 0o311)
-                self.assertTrue(lp.hidden_parent_file().exists())
-            self.assertEqual(stat.S_IMODE(self.hidden.parent.stat().st_mode), 0o755)
-            with self.assertRaises(RuntimeError):
-                with lp.parent_locked():
-                    raise RuntimeError("x")
-            self.assertEqual(stat.S_IMODE(self.hidden.parent.stat().st_mode), 0o755)
-            self.assertFalse(lp.hidden_parent_file().exists())
-            # a crash leaves the file: unlock_hidden puts the mode back and removes the private copy
-            p, _ = lp.private_gate_copy(self.hidden, self.hidden / "pool_accept")
-            lp.hidden_parent_file().write_text("0o755")
-            lp.private_gate_file().write_text(str(p))
-            self.hidden.parent.chmod(0o311)
-            lp.unlock_hidden()
-            self.assertEqual(stat.S_IMODE(self.hidden.parent.stat().st_mode), 0o755)
-            self.assertFalse(p.exists())
-
-
-class SpecDecision(unittest.TestCase):
-    def setUp(self):
-        self.lp = _scene_loop()
-        self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name)
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_adopt_only_for_the_same_incumbent(self):
-        lp = self.lp
-        spec = dict(for_incumbent="h1", from_iter=3, account=dict(cost_usd=1.5, seconds=9), leaks=[])
-        self.assertEqual(lp.spec_decision(spec, "h1"), "adopt")
-        self.assertEqual(lp.spec_decision(spec, "h2"), "discard")
-        self.assertIsNone(lp.spec_decision(None, "h1"))
-
-    def test_discard_renames_the_directory_and_writes_its_cost(self):
-        lp = self.lp
-        rows = []
-        st = self.root / "loop"
-        it = st / "iter_04"
-        it.mkdir(parents=True)
-        (it / "spec.json").write_text("{}")
-        with mock.patch.multiple(lp, STATE=st, ledger=rows.append):
-            gone = lp.discard_spec(
-                4, it, dict(for_incumbent="h1", from_iter=3, account=dict(cost_usd=1.5, seconds=9)), "why", "h2"
-            )
-            self.assertTrue(it.is_dir() and not (it / "spec.json").exists())
-            self.assertTrue((gone / "spec.json").exists() and "spec_discarded" in gone.name)
-            (st / "iter_03").mkdir()
-            (st / "iter_05").mkdir()
-            (st / "iter_05" / "spec.json").write_text("{}")  # a review no iteration took up yet is not an iteration
-            self.assertEqual([d.name for d in lp.iteration_dirs()], ["iter_03", "iter_04"])
-        self.assertEqual((rows[0]["step"], rows[0]["iter"], rows[0]["cost_usd"], rows[0]["incumbent"]),
-                         ("spec_discarded", 4, 1.5, "h2"))  # fmt: skip
-
-    def test_spec_runs_only_for_a_backend_family_with_the_cap_on_and_not_in_a_plain_stub(self):
-        lp = self.lp
-        with mock.patch.object(lp, "BK") as bk:
-            bk.of.return_value = object()
-            with mock.patch.dict(lp.CAPS, {"spec_review": True, "claims": False, "diag_redraw": False}):
-                self.assertTrue(lp.spec_enabled(False))
-                self.assertFalse(lp.spec_enabled(True))
-                with mock.patch.dict("os.environ", {"RSI_STUB_REAL_GATE": "1"}):
-                    self.assertTrue(lp.spec_enabled(True))
-            with mock.patch.dict(lp.CAPS, {"spec_review": False}):
-                self.assertFalse(lp.spec_enabled(False))
-            bk.of.return_value = None
-            with mock.patch.dict(lp.CAPS, {"spec_review": True}):
-                self.assertFalse(lp.spec_enabled(False))
 
 
 class StragglerDeadline(unittest.TestCase):

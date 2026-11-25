@@ -122,7 +122,7 @@ def test_a_blocked_stand_point_is_named_from_the_walk_map(tmp_path):
 class Harness:
     """iterate() with everything around the Reviewer call stubbed, on a real round directory."""
 
-    def __init__(self, tmp_path, monkeypatch, diag, scoped=False):
+    def __init__(self, tmp_path, monkeypatch, diag):
         self.lp = lp = _isolated("rsi_cards_loop", HERE / "loop.py", LOOP_NAMES)
         self.base, self.calls = diag, []
         scene = _scene(tmp_path / "scene_meta.json")
@@ -138,7 +138,7 @@ class Harness:
             return dict(hyps), dict(session="s", cost_usd=0.0, seconds=0)
 
         self.fail_in_role = False
-        for k, v in dict(STATE=state, LOOP=diag.parents[1], FAMILY="fam", SCOPED=scoped, claude=fake_claude, ledger=rows.append,
+        for k, v in dict(STATE=state, LOOP=diag.parents[1], FAMILY="fam", claude=fake_claude, ledger=rows.append,
                          snapshot=lambda n: None, incumbent=lambda: dict(hash="abc", dir=str(tmp_path), set={}),
                          put_skills=lambda p: None, changed_files=lambda: [], diag_incumbent=lambda inc, it: diag,
                          refresh_diag_pool=lambda *a: None, unpark=lambda *a: None, attribute=lambda *a: None,
@@ -159,14 +159,6 @@ def test_the_reviewer_gets_the_cards_and_cannot_read_the_rounds(tmp_path, monkey
     assert stat.S_IMODE(diag.stat().st_mode) == mode  # the Prober and the later roles read the rounds
     row = next(r for r in h.rows if r["step"] == "cards")
     assert row["iter"] == 0 and row["images"] == 1 and row["cards_bytes"] == cards.stat().st_size
-
-
-def test_both_scoped_reviewers_run_under_the_lock(tmp_path, monkeypatch, diag):
-    h = Harness(tmp_path, monkeypatch, diag, scoped=True)
-    assert h.lp.iterate(0, {}, False) == "done"
-    assert sorted(c["role"] for c in h.calls) == sorted(f"reviewer_{t}" for t in h.lp.SCOPES)
-    assert not any(c["readable"] for c in h.calls)
-    assert os.access(diag, os.R_OK)
 
 
 def test_a_failed_reviewer_gives_the_rounds_back(tmp_path, monkeypatch, diag):

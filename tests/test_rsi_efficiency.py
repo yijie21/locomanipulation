@@ -43,7 +43,7 @@ class CheckHalf(unittest.TestCase):
         root = Path(self.d.name)
         self.loop, self.hidden = root / "loop_fam", root / "hidden_fam"
         for p in (mock.patch.multiple(self.lp, FAMILY="fam", LOOP=self.loop, HIDDEN=self.hidden,
-                                      STATE=self.loop / "loop", CAPS={"check_half": True, "check_stop": 2}),):  # fmt: skip
+                                      STATE=self.loop / "loop", CAPS={"check_half": True, "stop_no_progress": 2}),):  # fmt: skip
             p.start()
             self.addCleanup(p.stop)
         pool = self.loop / "pool_diag"
@@ -89,24 +89,49 @@ class CheckHalf(unittest.TestCase):
             self.assertIsNone(self.lp.split_check_half())
         self.assertFalse((self.hidden / "pool_check").exists())
 
-    def test_two_candidates_in_a_row_that_fail_the_check_stop_the_run(self):
+    def test_two_iterations_in_a_row_without_a_candidate_that_passes_the_check_stop_the_run(self):
+        """TODO 54: iterations, not candidates: one whose Composer kept the incumbent has no check row and counts."""
         meta = dict(started="2026-11-23T00:00:00Z")
-        row = lambda sent, net, t: dict(step="check", sent=sent, net=net, t=t)  # noqa: E731
-        es = [row(False, -1, "2026-11-23T01:00:00Z"), row(True, 2, "2026-11-23T02:00:00Z")]
-        self.assertIsNone(self.lp.check_stop(es, meta))
-        es.append(row(False, 0, "2026-11-23T03:00:00Z"))
-        self.assertIsNone(self.lp.check_stop(es, meta))
-        es.append(row(False, -2, "2026-11-23T04:00:00Z"))
-        self.assertIn("diagnostic pool used up", self.lp.check_stop(es, meta))
-        self.assertIsNone(self.lp.check_stop(es, dict(started="2026-11-23T03:30:00Z")))  # this run's rows only
+        review = lambda n, t: dict(step="review", iter=n, t=t)  # noqa: E731
+        check = lambda n, sent, t: dict(step="check", iter=n, sent=sent, net=1, t=t)  # noqa: E731
+        es = [
+            review(0, "2026-11-23T01:00:00Z"),
+            check(0, False, "2026-11-23T01:30:00Z"),
+            review(1, "2026-11-23T02:00:00Z"),
+        ]
+        with mock.patch.object(self.lp, "CAPS", {"check_half": True, "stop_no_progress": 2}):
+            self.assertIn("no progress: iterations 0, 1", self.lp.no_progress_stop(es, meta))
+            es2 = es + [check(1, True, "2026-11-23T02:30:00Z")]
+            self.assertIsNone(self.lp.no_progress_stop(es2, meta))  # iteration 1 passed
+            self.assertIsNone(self.lp.no_progress_stop(es[:1], meta))  # one iteration is not two
+            self.assertIsNone(
+                self.lp.no_progress_stop(es, dict(started="2026-11-23T03:30:00Z"))
+            )  # this run's rows only
+            kept = es + [review(2, "2026-11-23T03:00:00Z")]  # a kept incumbent: no check row
+            self.assertIn("iterations 1, 2", self.lp.no_progress_stop(kept + [], meta))
         with mock.patch.object(self.lp, "CAPS", {"check_half": True}):
-            self.assertIsNone(self.lp.check_stop(es, meta))
+            self.assertIsNone(self.lp.no_progress_stop(es, meta))  # no cap, no rule
+        with mock.patch.object(self.lp, "CAPS", {"stop_no_progress": 2}):  # no check half: gate stage 1 counts
+            gate = lambda n, reason: dict(
+                step="gate", iter=n, reason=reason, stage1=dict(b=1, c=0), t="2026-11-23T05:00:00Z"
+            )  # noqa: E731
+            e3 = [
+                review(0, "2026-11-23T01:00:00Z"),
+                review(1, "2026-11-23T02:00:00Z"),
+                gate(1, "stage 1: net wins -1 < 0"),
+            ]
+            self.assertIn("gate's stage 1", self.lp.no_progress_stop(e3, meta))
+            e3[2] = gate(1, "net wins 2 < 3")  # it passed stage 1 and failed later: progress
+            self.assertIsNone(self.lp.no_progress_stop(e3, meta))
 
-    def test_the_roles_are_told_the_half_they_see(self):
-        with mock.patch.object(self.lp, "family_spec", lambda: dict(pools=dict(diag=dict(n=31)))):
-            self.assertEqual(self.lp.prompt_vars()["N_DIAG"], 16)
-            with mock.patch.object(self.lp, "CAPS", {}):
-                self.assertEqual(self.lp.prompt_vars()["N_DIAG"], 31)
+    def test_the_roles_are_told_the_starts_they_see(self):
+        """TODO 54: counted from the pool directory (the check split has halved it), in all and per task."""
+        v = self.lp.prompt_vars()
+        self.assertEqual((v["N_DIAG"], v["N_DIAG_TASK"]), (9, "4-5"))
+        with mock.patch.object(self.lp, "check_pool", lambda: self.hidden / "pool_check"):
+            (self.hidden / "pool_check").mkdir(parents=True)
+            (self.hidden / "pool_check" / "TaskA_s9.json").write_text("{}")
+            self.assertEqual(self.lp.prompt_vars()["N_DIAG_FULL"], 10)
 
 
 def _round(label, ok, blame=None, steps=("walk", "reach", "lift")):

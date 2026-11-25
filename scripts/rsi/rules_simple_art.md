@@ -1,4 +1,6 @@
-# Rules for the RSI loop on SIMPLE's articulated tasks (family simple_art; this file is version 5, 2026-11-25 (version 5: rule 25 says that the diagnostic, probe and draft rounds start from saved states of earlier rounds (TODO 53: `bench.memo`, the states are on disk in the loop's scratch area), so a round no longer re-simulates the beginning another round already ran; the gate and the sealed evaluation never do; version 4: rule 25 as rules_simple.md version 10, every round renders only at the robot's looks after 48 warm-up renders, the gate and the sealed evaluation included (TODO 52); version 3: the loop runs on the bench adapter `locomani.bench.simple` (TODO 49.6a); the package is one folder skill.py, pick.py, camera_view.py, handover.py with a frozen __init__.py, rules 1 and 44 name those files, the imports a draft may use and what it receives: a view, a body and an env facade, never the simulator's bed or the truth side; version 2: rule 30 allows the task's name, rule 24 gives the seed's development numbers), adapted from rules_simple.md version 10 (rules 25, 47, 49 as there): rules 1, 2, 12, 14, 16, 17, 24, 30, 31, 32, 39, 40, 43, 44, 45 and 46 rewritten for the four articulated tasks; the other rules are rules_simple.md's)
+# Rules for the RSI loop on SIMPLE's articulated tasks (family simple_art; this file is version 6, 2026-11-25: rules 19, 25, 47, 49 and a version note (TODO 54, review 2026-11-25): no Manager and no Prober in the benchmark iteration, the stop on no progress, the per-task sign test replaces "a task net <= -2 rejects", the check half sends at net 4, the program merges the drafts, rule 19 removed, rule 25 no longer says rounds are bit for bit equal; version 5, 2026-11-25 (version 5: rule 25 says that the diagnostic, probe and draft rounds start from saved states of earlier rounds (TODO 53: `bench.memo`, the states are on disk in the loop's scratch area), so a round no longer re-simulates the beginning another round already ran; the gate and the sealed evaluation never do; version 4: rule 25 as rules_simple.md version 10, every round renders only at the robot's looks after 48 warm-up renders, the gate and the sealed evaluation included (TODO 52); version 3: the loop runs on the bench adapter `locomani.bench.simple` (TODO 49.6a); the package is one folder skill.py, pick.py, camera_view.py, handover.py with a frozen __init__.py, rules 1 and 44 name those files, the imports a draft may use and what it receives: a view, a body and an env facade, never the simulator's bed or the truth side; version 2: rule 30 allows the task's name, rule 24 gives the seed's development numbers), adapted from rules_simple.md version 10 (rules 25, 47, 49 as there): rules 1, 2, 12, 14, 16, 17, 24, 30, 31, 32, 39, 40, 43, 44, 45 and 46 rewritten for the four articulated tasks; the other rules are rules_simple.md's)
+
+**Version note (TODO 54, rsi-lean, review 2026-11-25).** The benchmark iteration has no Manager call and no separate Prober phase. After the Reviewer, the program hands the Reviewer's hypotheses, in the Reviewer's order, to up to 3 Engineers, one distinct hypothesis each, with non-overlapping `tasks` (fewer Engineers when fewer are disjoint). The only parameter search is the program's sweep of the Engineers' `tunable` keys, within one budget per iteration. Each draft is screened on its declared starts plus sentinel starts; drafts with a positive screen are merged by the program (3-way merge against the incumbent), and the Composer is called only on a conflict or when no draft is positive. Where a rule below speaks of the Manager (its decision, `tune`, `skip`, `base`, `reopen`) or of the Prober's results (a hypothesis's `status`, `sweep`, `best_set`), read: the program, no such field, no such result. What a role is told changed in rules 19, 25, 47 and 49 (below). Phase 3 of the review rewrites this file; until then this note wins where the text disagrees.
 
 With the family's plan (if its file names one), the only human knowledge the loop reads. The numbering follows
 `scripts/rsi/rules.md`, because the driver's messages cite rules by number. A rule that does not apply on this backend
@@ -88,7 +90,7 @@ change to the family plan, is committed and counted as one human intervention.
     yourself, write loops around it, or wait on background work with `until` / `sleep` polls. A round is slow (a
     minute or more in the official environment), so choose starts that discriminate between causes. The Prober's
     probes and the gate remain the evidence (rules 3, 7); `try.py` is for looking.
-19. Long jobs run under `nohup setsid` with a log; a foreground call that times out loses its children.
+19. (removed in version bump of TODO 54: a role does not background work, and rule 18 forbids waiting on it; a foreground call that times out loses its children.)
 20. Stop and write an escalation instead of acting when a step needs something locked (rule 1), the controller or its
     training, or the budget. A fall that comes from the controller (the same command alone falls the same way) is a
     limit of the layer below: route around it with another stance or a gentler first move; never patch the layer.
@@ -106,15 +108,13 @@ change to the family plan, is committed and counted as one human intervention.
 ## The gate and the stops (code)
 
 25. The gate's stage 1 takes its starts from every task in proportion to the task's share of the acceptance pool. The
-    verdict compares the candidate with the incumbent on the same starts: accepted when wins minus losses reaches the
-    gate's net threshold (3 unless the verdict says otherwise) and the paired sign test over wins and losses gives a
-    one-sided p of at most 0.05 (5 wins against 0 losses pass, 10 against 3, 12 against 4; 8 against 2 and 6 against 3 do not). The
+    verdict compares the candidate with the incumbent on the same starts: accepted when the paired sign test over wins and losses gives a
+    one-sided p of at most 0.05 (the net-win threshold of 3 is not read where p_max is set: no tally of fewer than 5 net wins passes; 5 wins against 0 losses pass, 10 against 3, 12 against 4; 8 against 2 and 6 against 3 do not). The
     official environment does not repeat exactly (rule 41): the same code re-run flips some starts both ways, which
     is why the test is on the pairs, and the gate's verdict JSON says what it counted. The sealed
     evaluation at the end decides what the run reports. The candidate's diagnostic rounds and the early review of the next iteration start only once the gate's
     stage 1 has passed, so a call stage 1 rejects costs only stage 1 (code, TODO 48.17).
-    No task may lose: when a task's losses exceed its wins by 2 or more, the candidate is rejected
-    whatever the other tasks gained (code, TODO 48.19; the gate's `per_task` gives each task's wins and losses). A
+    A task may not lose significantly: for each task the gate runs the one-sided exact sign test on that task's discordant pairs (its losses among its wins and losses, against a half), Holm-corrected across the tasks, at alpha 0.05 (0.10 at the check half, rule 47); a task with a significant loss rejects the candidate whatever the other tasks gained. Small losses on a task no longer reject unless they are significant: 2 losses to 0 wins on one task of four is within the noise, 7 to 0 is not (code, TODO 54; the verdict's `per_task` and `task_tests` give the counts and the p values). A
     change that helps one task and hurts another is two changes: keep the part that helps, and condition it so it
     stays out of the other task's episodes (rule 38).
     Every round renders the cameras only at the robot's looks, each look after 48 warm-up renders of the same state (the
@@ -129,7 +129,7 @@ change to the family plan, is committed and counted as one human intervention.
     renderer is not repeatable, so a re-run would see other pixels and could place the stance a hair differently). The
     skill's Python between the commands runs as always, so a change that comes after the shared commands (the grasp, the
     arc, the speed) changes the result exactly as a full run would, and a change before them (the approach, the look, the
-    stance) shares nothing. Two rounds of one setting on one start are therefore the same round, bit for bit (code,
+    stance) shares nothing. The commands shared with an earlier round are restored, not run again, so the rounds agree up to the first command that differs; from there the official environment runs as always, which does not repeat exactly (rule 41), so two rounds of one setting on one start can still end differently (code,
     TODO 52 and 53; the store is in the loop's scratch area, outside the sandbox and the hidden tree: a role cannot read it).
 26. (scene backend: redraw of the acceptance pool after parks; not used here.)
 27. (scene backend: families that start from an empty seed; not used here.)
@@ -327,13 +327,11 @@ change to the family plan, is committed and counted as one human intervention.
     this file and one human intervention.
 47. **The check half (code, TODO 48.17).** Half of each task's diagnostic starts, chosen by a hash of the start's
     name, is kept from the roles in the hidden tree; the pool you see is the other half. A candidate the Composer
-    sends first runs on the kept half beside the incumbent, start by start, and goes to the gate only when it wins
-    there at least once more than it loses. The ledger's `check` row gives the counts, never the starts. Two
-    candidates in a row that do not pass stop the run: what the visible half shows no longer carries to starts the
+    sends first runs on the kept half beside the incumbent, start by start, and goes to the gate only when it wins there by at least `check_min_net` (4) and the per-task test below does not reject it. The ledger's `check` row gives the counts, never the starts. Two
+    iterations in a row without a candidate that passes it stop the run (an iteration whose Composer kept the incumbent counts; a family without a check half counts a candidate that passes the gate's stage 1; caps `stop_no_progress`): what the visible half shows no longer carries to starts the
     roles have not seen (in the runs of 2026-11-20 to 22, late candidates gained 17-35 visible starts net and nothing
     at the gate).
-    The same per-task rule holds there: a task that loses 2 or more net on the kept half stops the candidate before the
-    gate (the `check` row names the task, not the starts).
+    The per-task test of rule 25 holds there too, at alpha 0.10 (the `check` row names the tasks, not the starts).
 48. **Segments (code, prompt; TODO 48.17.6).** A task's steps are its segments. Over the incumbent's diagnostic
     rounds the driver counts, per task and step, the rounds that reached the step and the losses blamed on it (the
     cards' first table; `segments` in the roles' contexts). The step that holds most of a task's losses (at least 40 %
@@ -344,10 +342,10 @@ change to the family plan, is committed and counted as one human intervention.
     rounds it started from (`segments_touched`) and keeps a change that starts in a stable step only with the flips
     that show what it buys. The verdict is still the whole episode's (rules 3, 25): a segment is where to look, not
     what is judged.
-49. **The sealed check at the end (code, TODO 48.19).** When a stop rule ends the run (not a failed role, a crash or the
-    iteration limit), the driver runs the final incumbent and the seed once on the sealed pool, which no role and no
+49. **The sealed check at the end (code, TODO 48.19).** Whenever the run ends
+    (a stop rule, the iteration limit, the wall clock, a failed role; not a crash), the driver runs the final incumbent and the seed once on the sealed pool, which no role and no
     gate call has seen, in the gate's environment. The final version is confirmed when, start by start, it wins more
-    than it loses against the seed with a one-sided sign test p of at most 0.05 and no task loses 2 or more net. The
+    than it loses against the seed with a one-sided sign test p of at most 0.05 and no task's loss is significant (the per-task test of rule 25, alpha 0.05). The
     numbers stay with people (the hidden tree); the ledger only records that it ran. A version the sealed check does
     not confirm is reported as not confirmed, whatever the gate said along the way: many gate calls in a row each
     risk a lucky acceptance, and the sealed pool is where that shows.

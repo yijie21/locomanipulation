@@ -59,12 +59,12 @@ import argparse
 import calendar
 import collections
 import contextlib
+import copy
 import hashlib
 import json
 import math
 import os
 import re
-import secrets
 import shutil
 import signal
 import stat
@@ -84,8 +84,10 @@ import batch as B  # noqa: E402
 import design as DS  # noqa: E402
 import diag_pool as DP  # noqa: E402
 import family as F  # noqa: E402
+import merge as MG  # noqa: E402
 import records as RC  # noqa: E402
 import segments as SG  # noqa: E402
+import verdict as V  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides  # noqa: E402
 
 from locomani import paths  # noqa: E402
@@ -116,25 +118,6 @@ STOP_RATE = STOP_RATE_DEFAULT  # this run's (`run --stop-rate`, resolve_settings
 # Run C's slowest Engineer took 22-37 min against a median draft of about 14, waiting on its own one-process rounds.
 ENGINEER_LATE_MIN_DEFAULT = 10.0
 ENGINEER_LATE_MIN = ENGINEER_LATE_MIN_DEFAULT  # this run's (`run --engineer-late-min`, resolve_settings)
-# TODO 37.4 (E, user 2026-10-23): after the gate rejects the composed candidate, the best draft it has not judged goes
-# to the gate in the same iteration (one more gate call, 3-5 min, instead of another 60-80 min iteration)
-SECOND_SHOT_DEFAULT = False  # 2026-11-20: off; `run --second-shot` still asks for it
-SECOND_SHOT = SECOND_SHOT_DEFAULT  # this run's (`run --second-shot / --no-second-shot`, resolve_settings)
-REPAIR = (
-    False  # run --repair: a draft that broke a start the incumbent finishes gets one more turn (rule 38, TODO 44.2)
-)
-# TODO 45.7 (user 2026-11-09): RSI_SHADOW=<shadow.py of the imagined Motor> scores each iteration's drafts for the hidden
-# tree and nothing else. An environment variable taken out of the environment, not a flag: meta.json is what roles read,
-# and a role's subprocess inherits the environment.
-SHADOW = os.environ.pop("RSI_SHADOW", None)
-SHADOW_PROCS = 6
-SHADOW_TIMEOUT_S = 900
-# TODO 45.7.2 (user 2026-11-09): RSI_IMAGINE=<composer_view.py of the imagined Motor> gives the Composer the imagined
-# result on starts no real round runs on. Off, the Composer's prompt and context are what they were, byte for byte.
-IMAGINE = os.environ.pop("RSI_IMAGINE", None)
-IMAGINE_TIMEOUT_S = 3600  # about 23 minutes with 6 processes, 40 with 3
-REPAIR_MIN = 20.0  # minutes of that turn; its own clock: --engineer-late-min is for a draft still missing, and a
-# replay's second repair lost 13 minutes of work to it with its first draft already in
 # TODO 33.23 (plan section 3.8, D21; user 2026-10-23): the diagnostic pool is re-drawn when the incumbent fails fewer
 # than DIAG_MIN_FAILS of its starts (run C's incumbent was 30/30 on it while 19 of 90 hidden-pool starts failed, so the
 # roles saw no failure at all): fresh starts from the family's diagnostic seed range, the incumbent runs on them, the
@@ -198,9 +181,6 @@ LOOP = HIDDEN = STATE = GATE_DIR = Path()
 # `--effort reviewer=xhigh` restores it); the Engineers stay xhigh (32.8).
 EFFORT: dict = dict(reviewer="high", manager="xhigh", engineer="xhigh", composer="xhigh")
 STOP_AFTER = None  # run --stop-after probe: a replay of the Reviewer and the Prober only (TODO 32.6)
-SCOPED = False  # run --scoped-review: two Reviewers, procedure and object/scene, two hypotheses each (TODO 32.11)
-REVIEWERS = 1  # run --reviewers N: N Reviewers on the same inputs, no scopes, MAX_HYPOTHESES each (TODO 43.2: not the
-# default, the gate gave 34.25 / 40 against 35.75 with one, and a cause hidden from one Reviewer was hidden from both)
 CANDIDATES = 3  # run --candidates K: K Engineers in parallel and a Composer (TODO 32.9, Harness2's compose step); 3 by
 # default since TODO 32.15 (user 2026-10-22: "设置成默认的吧"), --candidates 1 is the one-Engineer loop, no Composer
 LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience library
@@ -209,34 +189,6 @@ LIBRARY_NOTE = (  # TODO 32.10: shown when the sandbox holds the experience libr
     "code that run ended with in final.patch). Read the index; open an entry when its cue matches a failure here. An "
     "entry's numbers come from other objects and surfaces: they are hypotheses for this family, to check on these "
     "rounds, and where this family's rounds disagree, trust the rounds.\n"
-)
-SCOPES = {  # TODO 32.11 (Harness2's scoped proposals): each scoped Reviewer gives at most two hypotheses in its scope
-    "P": "YOUR SCOPE: HOW THE ROBOT DOES IT. You own the skill's procedure -- the order and timing of walk, stance, reach, "
-    "grip, lift and hold, the tolerances and when a step counts as done, mode switches, approach paths, retries and "
-    "recovery -- the part that should hold for any object. Trace a failing round's steps, fix the earliest step where "
-    "it diverges from a success. Do not propose object-specific grasp choices; another Reviewer owns them.",
-    "O": "YOUR SCOPE: WHAT THE OBJECTS AND THE SCENE REQUIRE. You own what this family's objects and surfaces demand -- "
-    "which side and orientation a grasp can take given the object's size and shape, the jaw's width, the surface's "
-    "height, slabs above, neighbours and edges -- written as rules over the geometry, not lists of objects. Do not "
-    "propose changes to the step sequence or its timing; another Reviewer owns them.",
-    # TODO 33.3 (plan section 4): the third direction, a different way of doing it
-    "S": "YOUR SCOPE: A DIFFERENT WAY TO DO IT. You own how a person would change the approach when the current one "
-    "cannot work: stand elsewhere (the other side, a nearer edge, the side), handle the object first (pull it closer, "
-    "push it to an edge, turn it, tilt it, move a neighbour away), use both hands, switch hands. First show with the "
-    "body model that the current way falls outside what the body delivers, then that the new way falls inside it; "
-    "what a parameter cannot test goes in `needs_code`. Do not tune the current procedure's tolerances or timing, or "
-    "the current approach's grasp side; the other Reviewers own them.",
-}
-SCOPED_NOTE = (  # TODO 33.3: what the Manager reads when the scoped Reviewers ran
-    "Hypotheses come from three scoped Reviewers: P (the procedure), O (what the objects and the scene require) and S "
-    "(a different way of doing it: another stance, handling the object first, two hands, the other hand). S hypotheses "
-    "mostly need code, so their probes are often empty: judge them by the body model's prediction their evidence "
-    "cites, not by a missing probe result.\n"
-)
-TWIN_NOTE = (  # TODO 43.2: what the Manager reads when several Reviewers ran
-    "Hypotheses come from several Reviewers who worked independently on the same inputs (the first letter of an id says "
-    "which). The same mechanism from two of them is agreement, not two mechanisms: give it one slot, and spend the "
-    "other slots on what only one of them found when its evidence holds.\n"
 )
 CANDIDATES_NOTE = (  # TODO 32.9: what the Manager reads when an iteration builds several candidates
     "This iteration builds up to {K} candidates at once: with `engineer`, list up to {K} distinct hypothesis ids in "
@@ -350,6 +302,32 @@ HYPOTHESES_SCHEMA = {
         },
     },
 }
+
+
+def hypotheses_schema() -> dict:
+    """The Reviewer's schema as the family's caps allow it (TODO 54, review verify.md 12 and design.md: a benchmark
+    Reviewer was handed fields for infeasibility claims, design probes, record-library `measure`s and a `sweep` that its
+    backend answers with nothing). `infeasible` needs caps claims, `design` caps design_probes, `measure` caps
+    measure_claims, `sweep` caps prober (the Prober phase; a lean family sweeps only the Engineers' `tunable` keys); with
+    the program as Manager (caps manager "program") each hypothesis must name its `tasks` and may name `starts`, which
+    is what the assignment of Engineers reads."""
+    sch = copy.deepcopy(HYPOTHESES_SCHEMA)
+    items = sch["properties"]["hypotheses"]["items"]
+    props = items["properties"]
+    if not cap("claims"):
+        sch["properties"].pop("infeasible", None)
+    if not cap("design_probes"):
+        props.pop("design", None)
+    if not cap("measure_claims", True):
+        props.pop("measure", None)
+    if not cap("prober", True):
+        props.pop("sweep", None)
+    if cap("manager", "llm") == "program":
+        props["starts"] = {"type": "array", "items": {"type": "string"}}  # the start labels the hypothesis targets
+        items["required"] = [*items["required"], "tasks"]
+    return sch
+
+
 MANAGER_SCHEMA = {
     "type": "object",
     "required": ["decision", "reason", "summary_zh"],
@@ -467,24 +445,42 @@ SCENE_NOTE = (
 )
 
 
+def pool_shape(pool: Path, fallback: int = 0) -> tuple[int, str]:
+    """(starts in all, starts per task as text) of a pool directory; `fallback` in all when the pool is not there. A
+    pool whose tasks hold unequal counts reads "a-b"."""
+    labels = B.pool_labels(pool) if pool.exists() else []
+    if not labels:
+        return fallback, str(fallback)
+    per = collections.Counter(task_of(x) for x in labels)
+    lo, hi = min(per.values()), max(per.values())
+    return len(labels), str(lo) if lo == hi else f"{lo}-{hi}"
+
+
 def prompt_vars() -> dict:
-    """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, the scene
-    the prompts' first line names (`scene_note`, TODO 38.10), and the pool sizes. A family without them gets the text
-    the prompts had before."""
+    """What a family sets in the role prompts (TODO 31): the plan the roles read (empty when the family has none in
+    the sandbox, TODO 54: three benchmark prompt sets pointed every role at a file the sandbox did not hold), a note
+    on the seed's skills, the scene the prompts' first line names (`scene_note`, TODO 38.10), and the pool sizes.
+    TODO 54 (review verify.md 4): `N_DIAG` is the number of diagnostic starts the roles see IN ALL, `N_DIAG_TASK`
+    the number per task (the template used the per-task count as a total: "the incumbent's 15 diagnostic rounds" of
+    60); `N_DIAG_FULL_TASK` and `N_DIAG_FULL` count the starts with the check half. Counted from the pool
+    directories, which the check split has already halved."""
     spec = family_spec()
     pools = spec.get("pools") or {}
-    n_diag = (pools.get("diag") or {}).get("n", 50)
-    if cap("check_half"):  # TODO 48.17: the roles see the half the check pool leaves (half of each task, rounded up)
-        n_diag -= n_diag // 2
+    seen, seen_task = pool_shape(LOOP / "pool_diag", int((pools.get("diag") or {}).get("n", 50)))
+    held, _ = pool_shape(check_pool()) if cap("check_half") else (0, "0")
+    n_accept, accept_task = pool_shape(HIDDEN / "pool_accept", int((pools.get("accept") or {}).get("n", 60)))
+    full = seen + held
     return dict(
-        PLAN=PLAN,
+        PLAN=PLAN if PLAN and Path(PLAN).exists() else "",
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         SCENE_NOTE=spec.get("scene_note") or SCENE_NOTE,
-        N_DIAG=n_diag,
-        N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
-        CANDIDATES_NOTE=(CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "")
-        + (SCOPED_NOTE if SCOPED else "")
-        + (TWIN_NOTE if REVIEWERS > 1 else ""),
+        N_DIAG=seen,
+        N_DIAG_TASK=seen_task,
+        N_DIAG_FULL=full,
+        N_DIAG_FULL_TASK=str(int(round(full / max(1, len({task_of(x) for x in B.pool_labels(LOOP / "pool_diag")}))))),
+        N_ACCEPT=n_accept,
+        N_ACCEPT_TASK=accept_task,
+        CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
         LIBRARY=LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "",
     )
 
@@ -613,7 +609,7 @@ def stop_reason(meta: dict) -> str | None:
             return f"the incumbent wins {here}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
     elif accepted and accepted[-1]["result"]["candidate_ok"] >= STOP_RATE * n_accept:
         return f"the incumbent wins {accepted[-1]['result']['candidate_ok']}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
-    used_up = check_stop(es, meta)  # TODO 48.17 check_half
+    used_up = no_progress_stop(es, meta)  # TODO 54
     if used_up:
         return used_up
     gates = run_gates(es, meta)
@@ -910,14 +906,6 @@ def unlock_hidden() -> None:
         f.unlink()
     elif stat.S_IMODE(HIDDEN.stat().st_mode) & 0o700 == 0:
         HIDDEN.chmod(0o755)
-    if hidden_parent_file().exists():  # a crash while the speculative Reviewer ran (parent_locked)
-        HIDDEN.parent.chmod(int(hidden_parent_file().read_text().strip() or "755", 8))
-        hidden_parent_file().unlink()
-    if private_gate_file().exists():  # ... and the gate's private copy it left
-        p = Path(private_gate_file().read_text().strip())
-        if p.parent == HIDDEN.parent and re.fullmatch(r"\.[0-9a-f]{24}", p.name):
-            shutil.rmtree(p, ignore_errors=True)
-        private_gate_file().unlink()
     _HID.update(n=0, mode=None)
 
 
@@ -964,15 +952,11 @@ def undo_commits(head0: str) -> dict | None:
 
 def claude(
     role: str, prompt: str, schema: dict, it_dir: Path, tools: str, stub=None, stop: threading.Event | None = None,
-    resume: str | None = None,
 ) -> tuple[dict, dict]:  # fmt: skip
     """One role call. `stop` (TODO 37.3): an event the driver sets to give the role up; run_role then kills the
-    session and raises RoleLate. `resume` (rule 38): one more turn in that finished session, under the same role, so
-    it keeps what it read and its try.py budget; its prompt and raw answer go to <role>_repair_*."""
-    if resume is None:
-        prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role))
-    name = f"{role}_repair" if resume else role
-    (it_dir / f"{name}_prompt.md").write_text(prompt)
+    session and raises RoleLate."""
+    prompt += fill(ISOLATION, REPO=REPO, TMP=role_dir(role))
+    (it_dir / f"{role}_prompt.md").write_text(prompt)
     if stub is not None:
         return stub, dict(cost_usd=0.0, session=None, seconds=0.0)
     env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDE_CODE_SSE")}
@@ -990,8 +974,8 @@ def claude(
         *(["--add-dir", *allowed_dirs()] if allowed_dirs() else []),
         *(["--max-budget-usd", str(max(1.0, COST_CAP / 8))] if COST_CAP is not None else []),
     ]  # fmt: skip
-    session = resume or str(uuid.uuid4())
-    how = ["--resume", session] if resume else ["--session-id", session]
+    session = str(uuid.uuid4())
+    how = ["--session-id", session]
     before = transcript(session)
     seen = before.read_text(errors="replace").count(ANSWERED) if before is not None else 0
     t0 = time.time()
@@ -999,7 +983,7 @@ def claude(
     with hidden_locked():
         stdout, stderr, rc, killed = run_role([*cmd, *how], prompt, env, session, stop=stop, seen=seen)
     committed = undo_commits(head0)
-    (it_dir / f"{name}_raw.json").write_text(stdout or stderr)
+    (it_dir / f"{role}_raw.json").write_text(stdout or stderr)
     try:
         out = json.loads(stdout)
     except json.JSONDecodeError as e:
@@ -1330,12 +1314,10 @@ def diag_incumbent(inc: dict, it_dir: Path) -> Path:
 # lml_drawer, each a family cap (backend FALLBACK_CAPS: on for the SIMPLE and LocoManiLab backends; a scene family
 # has none of them and runs as before).
 #   check_half: half of each task's diagnostic starts is kept from the roles; a candidate goes to the gate only when it
-#     wins on that half too, and `check_stop` candidates in a row that do not stop the run (the visible half is used
+#     wins on that half too, and `stop_no_progress` iterations in a row without a candidate that passes it stop the run (the visible half is used
 #     up: late candidates gained 17-35 visible starts net and nothing at the gate).
-#   stage1_first: the candidate's diagnostic rounds and the early review start only once the gate's stage 1 passed (a
+#   stage1_first: the candidate's diagnostic rounds start only once the gate's stage 1 passed (a
 #     call stage 1 rejected cost 1.3-1.6 h, nearly all of it for them).
-#   probe_parallel: the Prober runs beside the Engineers, not before the Manager (8.4 h of simple_q's 28; accepted
-#     versions came mostly from hypotheses the probe had called untested or refuted).
 #   role_rerun: a Reviewer's, Manager's or Composer's first leak in an iteration discards its output and the role runs
 #     once more; a second voids the iteration (two of three voided iterations were a role grepping for the hidden
 #     tree's name to make sure its package did not use it, with the tree locked; USD 85 of 484).
@@ -1417,16 +1399,13 @@ def check_candidate(n: int, it_dir: Path, cand: Path) -> dict:
     B.run_jobs([B.Job(Path(inc["dir"]) / "skills", base, inc["set"], None, True),
                 B.Job(cand / "skills", d, overrides(cand), None, True)], FAMILY, check_pool(), PROCS, log, GPUS)  # fmt: skip
     f = flips(base, d)
+    t = V.counts(
+        B.outcomes(d), B.outcomes(base)
+    )  # TODO 54: verdict.py, the same function as the gate's and the sealed set's
+    v = V.decide(t, "check", dict(check_min_net=int(cap("check_min_net", 1)), alpha_task=cap("alpha_task_check", None)))
     out = dict(n=f["n"], fixed=len(f["fixed"]), broken=len(f["broken"]), net=len(f["fixed"]) - len(f["broken"]),
-               ok=f["ok"], incumbent_ok=f["incumbent_ok"])  # fmt: skip
-    k = cap("task_regress", None)  # TODO 48.19.1: the gate's per-task rule, on the check half too (counts by task only)
-    if k:
-        net = collections.Counter()
-        for x in f["fixed"]:
-            net[task_of(x)] += 1
-        for x in f["broken"]:
-            net[task_of(x)] -= 1
-        out["task_regress"] = {t: v for t, v in sorted(net.items()) if -v >= int(k)}
+               ok=f["ok"], incumbent_ok=f["incumbent_ok"], sent=v["decision"], reasons=v["reasons"],
+               task_regress={t_: x["net"] for t_, x in v["per_task"].items() if x["regress"]})  # fmt: skip
     with (HIDDEN / "check" / "calls.jsonl").open("a") as fh:
         fh.write(
             json.dumps(dict(out, t=now(), iter=n, hash=h, fixed_starts=f["fixed"], broken_starts=f["broken"])) + "\n"
@@ -1434,15 +1413,27 @@ def check_candidate(n: int, it_dir: Path, cand: Path) -> dict:
     return out
 
 
-def check_stop(es: list[dict], meta: dict | None) -> str | None:
-    """check_half: the last `check_stop` candidates of this run all failed the check half."""
-    k = int(cap("check_stop", 0) or 0)
+def progressed(es: list[dict], n: int) -> bool:
+    """Iteration n produced a candidate that passed the check half; for a family without a check half, one that passed
+    the gate's stage 1 (an iteration whose Composer kept the incumbent produced none)."""
+    if cap("check_half"):
+        return any(e.get("step") == "check" and e.get("iter") == n and e.get("sent") for e in es)
+    return any(e.get("step") == "gate" and e.get("iter") == n and not e.get("void") and e.get("stage1")
+               and not str(e.get("reason", "")).startswith("stage 1") for e in es)  # fmt: skip
+
+
+def no_progress_stop(es: list[dict], meta: dict | None) -> str | None:
+    """TODO 54 (review 2026-11-25, records F1 and flow F5: 45-61 % of the spend came after the last accepted candidate):
+    caps `stop_no_progress` N -- the last N iterations of this run each ended without a candidate that passed the check
+    half (without one that passed the gate's stage 1 where the family has no check half). An iteration whose Composer
+    kept the incumbent counts; a voided one does not. The run then ends through finish(), so the sealed set runs."""
+    k = int(cap("stop_no_progress", 0) or 0)
     t0 = (meta or {}).get("started") or ""
-    rows = [e for e in es if e.get("step") == "check" and str(e.get("t", "")) >= t0]
-    if k and len(rows) >= k and not any(r.get("sent") for r in rows[-k:]):
-        nets = ", ".join(str(r.get("net")) for r in rows[-k:])
-        return (f"diagnostic pool used up: the last {k} candidates did not win on its hidden half (net {nets}; "
-                f"rules 47)")  # fmt: skip
+    ran = sorted({e["iter"] for e in es if e.get("step") == "review" and not e.get("void") and isinstance(e.get("iter"), int)
+                  and str(e.get("t", "")) >= t0})  # fmt: skip
+    if k and len(ran) >= k and not any(progressed(es, i) for i in ran[-k:]):
+        what = "the check half" if cap("check_half") else "the gate's stage 1"
+        return f"no progress: iterations {', '.join(map(str, ran[-k:]))} produced no candidate that passed {what} (rules 47)"
     return None
 
 
@@ -1922,9 +1913,6 @@ def iteration_line(n: int, rows: list[dict]) -> str:
                          f"replaced {e.get('replaced')})")  # fmt: skip
         elif st == "forced_skip":
             parts.append(f"forced build of {e.get('hypothesis')} skipped: {e.get('check')}")
-        elif st == "second_shot":
-            parts.append(f"second shot: draft {e.get('draft')} {e.get('hypothesis') or ''} (fixed {e.get('fixed')} "
-                         f"broken {e.get('broken')}) after {e.get('after')}")  # fmt: skip
         elif st == "void_iter":
             parts.append(f"VOID: the {e.get('role')} named off-limits paths ({', '.join(e.get('leaks') or [])})")
         else:
@@ -2053,15 +2041,9 @@ NOTE_MAX_ALL = 4 * 1024 * 1024
 
 
 def review_sources() -> list[tuple[str, Path, bool]]:
-    """Where the Reviewer(s) of this run keep working files: (tag, directory, recurse). One Reviewer shares role_tmp() with
-    every other role, so only its top-level files count; joint Reviewers each have their own directory."""
-    if SCOPED:
-        tags = list(SCOPES)
-    elif REVIEWERS > 1:
-        tags = [chr(65 + k) for k in range(REVIEWERS)]
-    else:
-        return [("", role_tmp(), False)]
-    return [(t, role_dir(f"reviewer_{t}"), True) for t in tags]
+    """Where the Reviewer keeps working files: (tag, directory, recurse). It shares role_tmp() with every other role, so
+    only its top-level files count."""
+    return [("", role_tmp(), False)]
 
 
 def copy_review_notes(it_dir: Path, sources: list[tuple[str, Path, bool]], since: float) -> dict:
@@ -2114,138 +2096,9 @@ def review_notes_dir(it_dir: Path) -> Path:
     return d
 
 
-# -- the next review while the gate runs (change 5) ----------------------------------------------------------------------
-
-TEXT_EXT = (".json", ".jsonl", ".txt", ".md")
-
-
-def rewrite_paths(root: Path, old: str, new: str) -> None:
-    """Every `old` in the text files (TEXT_EXT) under `root` becomes `new`."""
-    for f in root.rglob("*"):
-        if f.suffix in TEXT_EXT and f.is_file() and not f.is_symlink():
-            t = f.read_text(errors="surrogateescape")
-            if old in t:
-                f.write_text(t.replace(old, new), errors="surrogateescape")
-
-
-def _digest(f: Path) -> str:
-    return hashlib.sha1(f.read_bytes()).hexdigest()
-
-
-def tree_digest(root: Path) -> dict[str, str]:
-    return {f.relative_to(root).as_posix(): _digest(f) for f in sorted(root.rglob("*")) if f.is_file()}
-
-
-def private_gate_copy(hidden: Path, pool: Path) -> tuple[Path, dict]:
-    """A private copy of what gate.py reads and writes -- the gate directory, the acceptance pool, and the seeds and
-    practice files the backends read (RSI_HIDDEN_FAMILY) -- in a dot directory with a random name beside `hidden`, with
-    every absolute path inside it rewritten from `hidden` to the copy. Returns the copy and its manifest (digests of the
-    gate directory as it was left)."""
-    p = hidden.parent / ("." + secrets.token_hex(12))
-    p.mkdir(mode=0o700)
-    if (hidden / "gate").is_dir():
-        shutil.copytree(hidden / "gate", p / "gate", symlinks=True)
-    else:
-        (p / "gate").mkdir()
-    shutil.copytree(pool, p / pool.name)
-    for name in ("seeds.json", "practice"):
-        if (hidden / name).is_dir():
-            shutil.copytree(hidden / name, p / name)
-        elif (hidden / name).is_file():
-            shutil.copy2(hidden / name, p / name)
-    rewrite_paths(p, str(hidden), str(p))
-    return p, tree_digest(p / "gate")
-
-
-def copy_back_gate(p: Path, hidden: Path, manifest: dict) -> list[str]:
-    """The gate's new and changed files from the private copy into hidden/gate (paths rewritten back to `hidden`), and the
-    removals it made (a retired round is renamed). Returns what was written."""
-    src, dst, written = p / "gate", hidden / "gate", []
-    now_ = tree_digest(src)
-    for rel, dig in now_.items():
-        if manifest.get(rel) == dig:
-            continue
-        f, g = src / rel, dst / rel
-        g.parent.mkdir(parents=True, exist_ok=True)
-        if f.suffix in TEXT_EXT:
-            g.write_text(f.read_text(errors="surrogateescape").replace(str(p), str(hidden)), errors="surrogateescape")
-        else:
-            shutil.copy2(f, g)
-        written.append(rel)
-    for rel in manifest:
-        if rel not in now_ and (dst / rel).exists():
-            (dst / rel).unlink()
-    return written
-
-
-def hidden_parent_file() -> Path:
-    return STATE / "hidden_parent_mode.txt"
-
-
-def private_gate_file() -> Path:
-    return STATE / "hidden_private_gate.txt"
-
-
-@contextlib.contextmanager
-def parent_locked():
-    """While the speculative Reviewer runs, the hidden tree's parent is 0o311: its children are reachable by exact name (the
-    gate's private copy is) but nothing lists it. The original mode is kept in STATE for unlock_hidden."""
-    if not hidden_lockable():
-        yield
-        return
-    par = HIDDEN.parent
-    mode = stat.S_IMODE(par.stat().st_mode)
-    hidden_parent_file().write_text(oct(mode))
-    par.chmod(0o311)
-    try:
-        yield
-    finally:
-        par.chmod(mode)
-        hidden_parent_file().unlink(missing_ok=True)
-
-
-def spec_enabled(stub: bool) -> bool:
-    """caps spec_review on, a backend family without claim checks or diagnostic redraws (the speculative path skips
-    attribution, the redraw and unpark, which are no-ops for it), and not a plain stub (the stub's gate is a dry run)."""
-    return bool(CAPS.get("spec_review") and BK.of(FAMILY) and not CAPS.get("claims") and not CAPS.get("diag_redraw")
-                and (not stub or os.environ.get("RSI_STUB_REAL_GATE") == "1"))  # fmt: skip
-
-
-def spec_worth() -> bool:
-    """A speculative review is only worth its cost when the run goes on after this gate call."""
-    meta = jload(STATE / "meta.json", {})
-    try:
-        return stop_reason(meta) is None and len(run_gates(entries(), meta)) + 1 < MAX_GATE_CALLS
-    except KeyError:
-        return True
-
-
-def spec_decision(spec: dict | None, incumbent_hash: str) -> str | None:
-    """iterate(n+1): "adopt" a speculative review made for this very incumbent, "discard" any other, None when there is none."""
-    if not spec:
-        return None
-    return "adopt" if spec.get("for_incumbent") == incumbent_hash else "discard"
-
-
 def iteration_dirs() -> list[Path]:
-    """The iteration directories (iter_NN): not a speculative review's that no iteration took up (spec.json still there)
-    nor the renamed discards."""
-    return [
-        d for d in sorted(STATE.glob("iter_*")) if re.fullmatch(r"iter_\d+", d.name) and not (d / "spec.json").exists()
-    ]
-
-
-def discard_spec(n: int, it_dir: Path, spec: dict, why: str, inc_hash: str) -> Path:
-    """The speculative review of iteration n was made for another incumbent: its directory is kept under a new name and the
-    ledger says what it cost."""
-    gone = it_dir.with_name(f"{it_dir.name}_spec_discarded_{time.strftime('%Y%m%dT%H%M%S')}")
-    it_dir.rename(gone)
-    acct = spec.get("account") or {}
-    ledger(dict(step="spec_discarded", iter=n, why=why, for_incumbent=spec.get("for_incumbent"), incumbent=inc_hash,
-                from_iter=spec.get("from_iter"), kept=str(gone), cost_usd=acct.get("cost_usd", 0.0),
-                seconds=acct.get("seconds"), leaks=spec.get("leaks")))  # fmt: skip
-    it_dir.mkdir(parents=True, exist_ok=True)
-    return gone
+    """The iteration directories (iter_NN), not the renamed voids."""
+    return [d for d in sorted(STATE.glob("iter_*")) if re.fullmatch(r"iter_\d+", d.name)]
 
 
 def cards_row(n: int, out: Path) -> dict:
@@ -2271,7 +2124,7 @@ def review_common(n: int, inc: dict, base: Path, cards: Path, attribution: dict 
 
 
 def run_review(n: int, it_dir: Path, inc: dict, base: Path, common: dict, extra: dict, stub: bool, note: str = ""):
-    """The Reviewer(s) of iteration n on the incumbent `inc` and its rounds `base`: (hypotheses, accounting, sessions, leaks).
+    """The Reviewer of iteration n on the incumbent `inc` and its rounds `base`: (hypotheses, accounting, sessions, leaks).
     Writes hypotheses.json and review_notes; the ledger row is the caller's. `note`: appended to the prompt (a rerun)."""
     ctx = it_dir / "reviewer_context.json"
     jdump(ctx, context(inc, extra))
@@ -2281,13 +2134,8 @@ def run_review(n: int, it_dir: Path, inc: dict, base: Path, common: dict, extra:
                   predicted_fixed=[], predicted_broken=[])])  # fmt: skip
     t0 = time.time()
     with rounds_locked(base):
-        if SCOPED:
-            hyps, acct = scoped_review(prompt, it_dir, stub_h if stub else None)
-        elif REVIEWERS > 1:
-            hyps, acct = twin_review(prompt, it_dir, stub_h if stub else None)
-        else:
-            hyps, acct = claude("reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent",
-                                stub_h if stub else None)  # fmt: skip
+        hyps, acct = claude("reviewer", prompt, hypotheses_schema(), it_dir, "Edit,Write,NotebookEdit,Agent",
+                            stub_h if stub else None)  # fmt: skip
     jdump(it_dir / "hypotheses.json", hyps)
     sessions = acct.pop("sessions", None) or [acct["session"]]
     leaks = sorted({x for sess in sessions for x in transcript_leaks(sess)})
@@ -2302,162 +2150,124 @@ def review_row(n: int, hyps: dict, acct: dict, sessions: list, leaks: list, **mo
                 leaks=leaks, **acct, **({"sessions": sessions} if len(sessions) > 1 else {}), **more))  # fmt: skip
 
 
-def speculative_review(n: int, cand: Path, pre: Path, stub: bool, call_no: int, prev_dir: str) -> dict:
-    """Change 5: what iterate(n + 1) does up to and including the review, for the candidate of iteration n as the incumbent,
-    on the candidate's diagnostic rounds `pre`, written to iter_{n+1} with spec.json. No ledger row. Skipped here because
-    a backend family skips them anyway: the incumbent's rounds run (they are `pre`), the diagnostic redraw, unpark and
-    the attribution."""
-    it2 = STATE / f"iter_{n + 1:02d}"
-    if it2.exists():
-        it2.rename(it2.with_name(f"{it2.name}_spec_stale_{time.strftime('%Y%m%dT%H%M%S')}"))
-    it2.mkdir(parents=True)
-    h = candidate_hash(cand)
-    dst = LOOP / "incumbents" / h
-    if not dst.exists():
-        shutil.copytree(cand, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    inc = dict(dir=str(dst), hash=h, set=overrides(dst), since_gate_call=call_no)
-    put_skills(dst / "skills")
-    try:
-        cards = reviewer_cards(n + 1, pre, it2, log=False)
-        common, extra = review_common(n + 1, inc, pre, cards, None)
-        hyps, acct, sessions, leaks = run_review(n + 1, it2, inc, pre, common, extra, stub)
-    finally:
-        put_skills(Path(prev_dir) / "skills")
-    spec = dict(for_incumbent=h, from_iter=n, account=dict(acct, sessions=sessions), leaks=leaks)
-    jdump(it2 / "spec.json", spec)
-    return spec
-
-
 def iterate(n: int, meta: dict, stub: bool) -> str | None:
     it_dir = STATE / f"iter_{n:02d}"
     it_dir.mkdir(parents=True, exist_ok=True)
     snapshot(n)
     inc = incumbent()
-    spec = jload(it_dir / "spec.json")  # change 5: a review made while the gate of iteration n - 1 ran
-    verdict = spec_decision(spec, inc["hash"])
-    why_discard = "the candidate it was made for did not become the incumbent"
-    if verdict == "adopt" and spec.get("leaks") and cap("role_rerun") and not stub:  # TODO 48.17: review again
-        verdict, why_discard = (
-            "discard",
-            f"its Reviewer named off-limits paths ({', '.join(spec['leaks'])}): reviewed again",
-        )
-    if verdict == "discard":
-        gone = discard_spec(n, it_dir, spec, why_discard, inc["hash"])
-        if spec.get("leaks"):  # a leaking review's files leave the visible tree
-            hide_void(n, gone)
     put_skills(Path(inc["dir"]) / "skills")
     base_changes = changed_files()
     base = diag_incumbent(inc, it_dir)
     refresh_diag_pool(inc, base, n)
     unpark(base, n)
     attribution = attribute(inc, base, n, it_dir, stub)  # TODO 33.20
-    if verdict == "adopt":  # the review and its cards are taken as they are; the ledger rows are written now
-        ledger(cards_row(n, it_dir / "cards"))
-        common, extra = review_common(n, inc, base, it_dir / "cards" / "cards.md", attribution)
-        common["REVIEW_NOTES"] = review_notes_dir(it_dir)
-        hyps = jload(it_dir / "hypotheses.json")
-        acct = dict(spec["account"])
-        sessions = acct.pop("sessions", None) or [acct["session"]]
-        leaks = spec.get("leaks") or []
-        review_row(n, hyps, acct, sessions, leaks, speculative=True)
-        (it_dir / "spec.json").rename(it_dir / "spec_adopted.json")
-    else:
-        cards = reviewer_cards(n, base, it_dir)
-        common, extra = review_common(n, inc, base, cards, attribution)
-        hyps, acct, sessions, leaks = run_review(n, it_dir, inc, base, common, extra, stub)
-        if leaks and cap("role_rerun") and not stub:  # TODO 48.17: the first leak discards the review, one more call
-            discard_attempt(n, "reviewer", acct, leaks, it_dir / "hypotheses.json")
-            for d in role_tmp().glob("reviewer_*"):  # the scratch of several Reviewers (reviewer_A, ...)
-                shutil.rmtree(d, ignore_errors=True)
-            hyps, acct, sessions, leaks = run_review(n, it_dir, inc, base, common, extra, stub,
-                                                     note=rerun_note("Reviewer", leaks))  # fmt: skip
-        review_row(n, hyps, acct, sessions, leaks)
+    cards = reviewer_cards(n, base, it_dir)
+    common, extra = review_common(n, inc, base, cards, attribution)
+    hyps, acct, sessions, leaks = run_review(n, it_dir, inc, base, common, extra, stub)
+    if leaks and cap("role_rerun") and not stub:  # TODO 48.17: the first leak discards the review, one more call
+        discard_attempt(n, "reviewer", acct, leaks, it_dir / "hypotheses.json")
+        hyps, acct, sessions, leaks = run_review(n, it_dir, inc, base, common, extra, stub,
+                                                 note=rerun_note("Reviewer", leaks))  # fmt: skip
+    review_row(n, hyps, acct, sessions, leaks)
     if leaks:
         void_iteration(n, "reviewer", leaks)
         return None
     return after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
 
 
-def joint_review(prompts: dict, it_dir: Path, stub: dict | None, per: int) -> tuple[dict, dict]:
-    """Several Reviewers in parallel, one per prompt ({tag: prompt}); at most `per` hypotheses of each are kept. Their
-    hypotheses and claims are merged with short ids, the tag and the position (AH1, BH2: a Reviewer's own id may be
-    anything, and the Manager has to repeat these), the Reviewer's own in `own_id`; their notes are joined. The
-    accounting sums cost and keeps the longer wall time; `session` is the first one's (the leak check reads them all)."""
-    out: dict = {}
-
-    def one(tag):
-        try:
-            out[tag] = claude(
-                f"reviewer_{tag}", prompts[tag], HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub
-            )
-        except RoleFailed as e:
-            out[tag] = e
-
-    ts = [threading.Thread(target=one, args=(t,)) for t in prompts]
-    for t in ts:
-        t.start()
-    for t in ts:
-        t.join()
-    for tag in prompts:  # a failed call reaches cmd_run as the RoleFailed it raised, not a KeyError
-        if isinstance(out.get(tag), RoleFailed):
-            raise out[tag]
-    hyps = dict(notes="", hypotheses=[], infeasible=[])
-    for tag in prompts:
-        h, _ = out[tag]
-        hyps["notes"] += f"[{tag}] {h.get('notes', '')}\n"
-        for i, x in enumerate(h["hypotheses"][:per], 1):
-            hyps["hypotheses"].append(dict(x, id=f"{tag}H{i}", own_id=x["id"], scope=tag))
-        hyps["infeasible"] += [
-            dict(c, id=f"{tag}{c.get('id')}") for c in h.get("infeasible") or [] if isinstance(c, dict)
-        ]
-    accts = [out[t][1] for t in prompts]
-    acct = dict(cost_usd=sum(a["cost_usd"] for a in accts), session=accts[0]["session"],
-                seconds=max(a["seconds"] for a in accts), sessions=[a["session"] for a in accts])  # fmt: skip
-    if any(a.get("committed") for a in accts):
-        acct["committed"] = [a["committed"] for a in accts if a.get("committed")]
-    return hyps, acct
-
-
-def scoped_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, dict]:
-    """Reviewers held to a scope each (SCOPES) and two hypotheses."""
-    text = prompt.replace("propose at most 4 interventions", "propose at most 2 interventions, within your scope")
-    return joint_review({t: f"{text}\n\n{SCOPES[t]}\n" for t in SCOPES}, it_dir, stub, 2)
-
-
-def twin_review(prompt: str, it_dir: Path, stub: dict | None) -> tuple[dict, dict]:
-    """TODO 43.2: REVIEWERS Reviewers on the same prompt. Repeats of one iteration differ more than the Reviewer's
-    inputs ever moved the result (reviewer_card/REPORT_ab.md), so the independent readings are the point."""
-    return joint_review({chr(65 + k): prompt for k in range(REVIEWERS)}, it_dir, stub, MAX_HYPOTHESES)
-
-
-def hypothesis_cap() -> int:
-    """How many hypotheses the Prober runs: MAX_HYPOTHESES a Reviewer, or two per scope with the scoped Reviewers
-    (TODO 33.3: three scopes, six, the plan's 4 -> 6; the probes are cheap since the speed-up)."""
-    return 2 * len(SCOPES) if SCOPED else REVIEWERS * MAX_HYPOTHESES
-
-
-def probe_now(n: int, hyps: dict, inc: dict, base: Path, it_dir: Path, parallel: bool = False) -> list[dict]:
+def probe_now(n: int, hyps: dict, inc: dict, base: Path, it_dir: Path) -> list[dict]:
     """The Prober on the iteration's hypotheses, their statuses, probe.json and the ledger's probe row."""
-    pr = probe(hyps["hypotheses"][: hypothesis_cap()], inc, base, it_dir)
+    pr = probe(hyps["hypotheses"][:MAX_HYPOTHESES], inc, base, it_dir)
     set_statuses(hyps, pr)  # TODO 33.17
     records_statuses(hyps, pr, base)  # TODO 33.15.1
     jdump(it_dir / "hypotheses.json", hyps)
     jdump(it_dir / "probe.json", pr)
-    ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr],
-                **({"parallel": True} if parallel else {})))  # fmt: skip
+    ledger(dict(step="probe", iter=n, results=[{k: v for k, v in p.items() if k != "summary"} for p in pr]))
     return pr
 
 
-PROBE_PENDING = ("runs beside the Engineers this iteration (rules 33, TODO 48.17): no result yet; the Composer gets "
-                 "them, and the program builds the tuned drafts from them")  # fmt: skip
+def hyp_tasks(h: dict) -> set[str]:
+    """The tasks a hypothesis declares it acts on: its `tasks`, plus the tasks of its `starts`."""
+    return {t for t in (h.get("tasks") or []) if isinstance(t, str)} | {task_of(x) for x in h.get("starts") or []
+                                                                         if isinstance(x, str)}  # fmt: skip
+
+
+def assign_program(hyps: list[dict], k: int) -> tuple[list[str], dict[str, str]]:
+    """TODO 54 (review 2026-11-25, flow F4: the Manager chose "engineer" 28 times of 31): the Reviewer's hypotheses go
+    to up to `k` Engineers in the Reviewer's order, one distinct hypothesis each, with non-overlapping declared targets
+    (a hypothesis that shares a task with one already chosen is skipped; a refuted one is skipped; one that declares no
+    task is taken only first and then holds every task); fewer Engineers when fewer are disjoint, at least one when
+    there is any hypothesis. Returns (ids, {skipped id: why})."""
+    ids: list[str] = []
+    skipped: dict[str, str] = {}
+    taken: set[str] = set()
+    everything = False
+    for h in hyps:
+        if not isinstance(h, dict) or "id" not in h:
+            continue
+        if len(ids) >= k or everything:
+            skipped[h["id"]] = "no Engineer slot left" if len(ids) >= k else "an earlier hypothesis declares no task"
+            continue
+        t = hyp_tasks(h)
+        if h.get("status") == "refuted":
+            skipped[h["id"]] = "refuted"
+        elif t & taken:
+            skipped[h["id"]] = f"overlaps {sorted(t & taken)} with a hypothesis already assigned"
+        elif not t and ids:
+            skipped[h["id"]] = "declares no task and another hypothesis is assigned"
+        else:
+            ids.append(h["id"])
+            taken |= t
+            everything = not t
+    return ids, skipped
+
+
+def forward_escalations(n: int, hyps: dict) -> None:
+    """The Manager used to forward the Reviewer's `LEVEL 3` and `BED` paragraphs (rules 39, 45) to people; with the
+    program as Manager they go to loop/escalations.jsonl as they are."""
+    for para in str(hyps.get("notes") or "").split("\n\n"):
+        head = para.strip().split(" ", 1)[0].strip(":.").upper() if para.strip() else ""
+        if head in ("LEVEL", "BED") and (head == "BED" or para.strip().upper().startswith("LEVEL 3")):
+            with (STATE / "escalations.jsonl").open("a") as fh:
+                fh.write(
+                    json.dumps(
+                        dict(
+                            t=now(),
+                            iter=n,
+                            kind="level3" if head == "LEVEL" else "bed",
+                            text=para.strip(),
+                            by="reviewer",
+                        )
+                    )
+                    + "\n"
+                )
+
+
+def program_step(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
+    """The lean iteration after the Reviewer (caps manager "program", TODO 54): no Prober, no Manager. The program
+    assigns the hypotheses to the Engineers (assign_program); the Engineers' drafts are screened, merged and gated as
+    in multi_engineer_step. The parameter search is the program's sweep of the Engineers' `tunable` keys, in one budget
+    for the whole iteration (a fresh one here)."""
+    global SWEEP
+    SWEEP = None  # one budget per iteration, shared by the drafts' tunable sweeps
+    forward_escalations(n, hyps)
+    ids, skipped = assign_program(hyps["hypotheses"], CANDIDATES)
+    dec = dict(decision="engineer", hypothesis=ids[0] if ids else None, hypotheses=ids, by="program",
+               reason="the Reviewer's order, disjoint tasks", summary_zh="")  # fmt: skip
+    jdump(it_dir / "assignment.json", dict(dec, skipped=skipped))
+    ledger(dict(step="assign", iter=n, assigned=ids, skipped=skipped,
+                tasks={i: sorted(hyp_tasks(h)) for h in hyps["hypotheses"] for i in [h["id"]] if i in ids}))  # fmt: skip
+    if not ids:
+        return None
+    return engineer_step(n, it_dir, inc, hyps, [], dec, common, base_changes, stub)
 
 
 def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) -> str | None:
-    """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`). With probe_parallel
-    (TODO 48.17) the Prober runs beside the Engineers instead (multi_engineer_step); a Manager decision that builds
-    no drafts gets the probe before it is carried out."""
-    parallel = bool(cap("probe_parallel")) and CANDIDATES > 1 and STOP_AFTER != "probe"
-    pr = None if parallel else probe_now(n, hyps, inc, base, it_dir)
+    """Prober -> Manager -> Engineer -> Gate for a reviewed iteration (also `run --reprobe N`); a family with caps
+    manager "program" takes program_step instead (no Prober, no Manager)."""
+    if cap("manager", "llm") == "program":
+        return program_step(n, it_dir, inc, base, base_changes, hyps, common, extra, stub)
+    pr = probe_now(n, hyps, inc, base, it_dir)
     claims = [c for c in hyps.get("infeasible") or [] if isinstance(c, dict)]  # older hypotheses carry a string
     if not CAPS["claims"]:  # a backend without claim checks: an infeasibility claim parks nothing
         claims = []
@@ -2483,7 +2293,7 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     if not may_reopen:
         lead["reopen_blocked"] = (f"the last {MAX_REOPEN_RUN} iterations were reopens (rules.md 28, version 14): build a "
                                   "hypothesis this iteration")  # fmt: skip
-    body = context(inc, dict(extra, hypotheses=hyps, probe=pr if pr is not None else PROBE_PENDING, claims=cr,
+    body = context(inc, dict(extra, hypotheses=hyps, probe=pr, claims=cr,
                              parked=jload(STATE / "parked.json", {}),
                              gap_candidates=gaps, candidate_pool=pool_view(inc, base)), compact=True)  # fmt: skip
     jdump(ctx, dict(lead, **body))
@@ -2498,8 +2308,6 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
         dec, acct = claude("manager", prompt + rerun_note("Manager", leaks), manager_schema(may_reopen, ids), it_dir,
                            "Edit,Write,NotebookEdit,Agent,Bash")  # fmt: skip
         leaks = transcript_leaks(acct["session"])
-    if pr is None and dec.get("tune"):  # probe_parallel: no probe result to tune from; the program picks the drafts
-        dec = dict(dec, tune_ignored=dec["tune"], tune=[])
     jdump(it_dir / "manager.json", dec)
     tune, assign = dec.get("tune") or [], {}
     if (
@@ -2530,8 +2338,6 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
         jdump(STATE / "focus.json", dict(iter=n, focus=dec.get("focus", ""), reason=dec["reason"]))
         return None
     dec = force_build(n, dec, hyps, it_dir)  # TODO 33.17 (rules.md 33)
-    if pr is None and not (CANDIDATES > 1 and dec["decision"] == "engineer"):  # a reopen: no Engineers to run beside
-        pr = probe_now(n, hyps, inc, base, it_dir)
     return engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub)
 
 
@@ -2663,27 +2469,23 @@ def gate_lines() -> list[str]:
     return p.read_text().splitlines() if p.exists() else []
 
 
-def gate_candidate(
-    n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple | None = None, shot: int = 1
-) -> str | None:
+def gate_candidate(n: int, it_dir: Path, cand: Path, stub: bool, reopen: tuple | None = None) -> str | None:
     """`cand` to the gate on the acceptance pool, its diagnostic rounds beside it (the next incumbent's, if accepted).
-    `reopen` = (park id, starts won): the park lifts only if this gate call accepts (settle_reopen). `shot` 2: the
-    iteration's second gate call (second_shot, TODO 37.4), marked on its ledger row.
+    `reopen` = (park id, starts won): the park lifts only if this gate call accepts (settle_reopen).
     TODO 36 (review 2026-10-22): the verdict is the ledger line gate.py wrote for THIS candidate; no new line, a line
     for another hash, or an exit code other than 0 / 1 is a gate error and stops the run (the last line used to be
     taken as the verdict, so a crashed gate recorded the previous call's).
     TODO 48.17: with check_half the candidate first runs on the hidden half of the diagnostic starts and goes to the gate
-    only when it wins there by `check_min_net`; with stage1_first its diagnostic rounds and the early review start
-    once gate.py has passed stage 1."""
+    only when it wins there by `check_min_net`; with stage1_first its diagnostic rounds start once gate.py has
+    passed stage 1."""
     if cap("check_half") and not stub and check_pool().exists():
         chk = check_candidate(n, it_dir, cand)
-        sent = chk["net"] >= int(cap("check_min_net", 1)) and not chk.get("task_regress")
-        jdump(it_dir / "check.json", dict(chk, sent=sent))
-        ledger(dict(step="check", iter=n, hash=candidate_hash(cand), sent=sent, **chk))
+        sent = chk["sent"]  # verdict.decide, kind "check": net >= check_min_net and no task's loss significant
+        jdump(it_dir / "check.json", chk)
+        ledger(dict(step="check", iter=n, hash=candidate_hash(cand), **chk))
         if not sent:
             print(f"iteration {n}: the candidate wins {chk['fixed']} and loses {chk['broken']} of the {chk['n']} hidden "
-                  f"diagnostic starts (tasks that lose {cap('task_regress', None)} or more net: "
-                  f"{chk.get('task_regress') or 'none'}): not sent to the gate")  # fmt: skip
+                  f"diagnostic starts ({'; '.join(chk['reasons'])}): not sent to the gate")  # fmt: skip
             return None
     redraw_accept()
     before = len(gate_lines())
@@ -2691,14 +2493,8 @@ def gate_candidate(
     dry = stub and not (
         BK.of(FAMILY) and os.environ.get("RSI_STUB_REAL_GATE") == "1"
     )  # a fake bed can run the real gate
-    spec_on = shot == 1 and spec_enabled(stub) and spec_worth()
-    gate_dir, pool_arg, env, priv = GATE_DIR, pool, dict(os.environ, PYTHONPATH="src"), None
-    if spec_on:  # change 5: the gate on a private copy, so the hidden tree can be locked for the next Reviewer
-        priv = private_gate_copy(HIDDEN, pool)
-        private_gate_file().write_text(str(priv[0]))
-        gate_dir, pool_arg = priv[0] / "gate", priv[0] / pool.name
-        env["RSI_HIDDEN_FAMILY"] = str(priv[0])
-    gate_args = [str(SIM_PY), str(HERE / "gate.py"), FAMILY, "--gate", str(gate_dir), "--pool", str(pool_arg),
+    gate_dir, env = GATE_DIR, dict(os.environ, PYTHONPATH="src")
+    gate_args = [str(SIM_PY), str(HERE / "gate.py"), FAMILY, "--gate", str(gate_dir), "--pool", str(pool),
                  "--candidate", str(cand), "--gpus", GPUS]  # fmt: skip
     if dry:
         gate_args += ["--dry-run"]
@@ -2706,36 +2502,15 @@ def gate_candidate(
     gate_args += ["--procs", str(PROCS - share if not stub else PROCS)]
     stop, side = threading.Event(), None
     pre = LOOP / "diag" / f"candidate_{candidate_hash(cand)}"
-    gate_done, box, spec_thread = threading.Event(), {}, None
-    call_no = len([x for x in gate_lines() if not json.loads(x).get("dry_run")]) + 1
-    prev_dir = incumbent()["dir"]
 
     def start_side() -> None:
-        """The candidate's diagnostic rounds beside the gate (the next incumbent's, if accepted), and the early review."""
-        nonlocal side, spec_thread
-        if not stub or spec_on:
+        """The candidate's diagnostic rounds beside the gate (the next incumbent's, if accepted)."""
+        nonlocal side
+        if not stub:
             side = threading.Thread(target=B.run_jobs, args=([B.Job(cand / "skills", pre, overrides(cand), None, True)],
                                     FAMILY, LOOP / "pool_diag", share, it_dir / "prober.log", GPUS),
                                     kwargs=dict(stop=stop), daemon=True)  # fmt: skip
             side.start()
-        if spec_on:
-            spec_thread = threading.Thread(target=run_spec, daemon=True)
-            spec_thread.start()
-
-    if spec_on:
-
-        def run_spec():
-            try:
-                while side.is_alive():  # the candidate's rounds must be complete, and the gate still running
-                    if gate_done.is_set():
-                        return
-                    time.sleep(1.0)
-                if gate_done.is_set() or len(B.outcomes(pre)) < len(B.pool_labels(LOOP / "pool_diag")):
-                    return
-                with parent_locked():
-                    box["spec"] = speculative_review(n, cand, pre, stub, call_no, prev_dir)
-            except BaseException as e:  # noqa: BLE001 -- recorded below; the gate's result does not depend on it
-                box["error"] = f"{type(e).__name__}: {e}"[:400]
 
     first = bool(cap("stage1_first")) and not dry  # TODO 48.17: the side work waits for stage 1
     if not first:
@@ -2751,27 +2526,11 @@ def gate_candidate(
                     start_side()
             rc = proc.wait()
         except BaseException:
-            gate_done.set()
             stop.set()
             if proc is not None and proc.poll() is None:
                 proc.kill()
                 proc.wait()
             raise
-    gate_done.set()
-    if (
-        priv is not None
-    ):  # the speculative Reviewer (if stage 1 let it start) is waited for; then the gate's copy is back
-        if spec_thread is not None:
-            spec_thread.join()
-        copy_back_gate(priv[0], HIDDEN, priv[1])
-        shutil.rmtree(priv[0], ignore_errors=True)
-        private_gate_file().unlink(missing_ok=True)
-        it2 = STATE / f"iter_{n + 1:02d}"
-        if "error" in box or (it2.exists() and not (it2 / "spec.json").exists()):
-            if it2.exists():
-                it2.rename(it2.with_name(f"{it2.name}_spec_failed_{time.strftime('%Y%m%dT%H%M%S')}"))
-            if "error" in box:
-                ledger(dict(step="spec_failed", iter=n, for_iter=n + 1, error=box["error"]))
     new = gate_lines()[before:]
     try:
         verdict = json.loads(new[-1]) if new else None
@@ -2794,8 +2553,7 @@ def gate_candidate(
     rounds = GATE_DIR / f"{verdict.get('call', 0):02d}_{verdict['hash']}" / "candidate"
     ledger(dict(step="gate", iter=n, accepted=accepted, reason=verdict["reason"], hash=verdict["hash"],
                 result=verdict.get("result"), stage1=verdict.get("stage1"), unparked=unparked_view(rounds),
-                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1),
-                **({"shot": shot} if shot > 1 else {})))  # fmt: skip
+                pool=str(accept_pool()), void=void, rule=verdict.get("rule", 1)))  # fmt: skip
     if not stub:
         pool_update(n, cand, verdict, accepted)
     if reopen:
@@ -3020,7 +2778,6 @@ def mechanism_table(es: list[dict]) -> list[dict]:
         eng = [e for e in rows if e.get("step") == "engineer"]
         comp = next((e for e in rows if e.get("step") == "compose"), None)
         gates = [e for e in rows if e.get("step") == "gate" and not e.get("void")]
-        shot2 = next((e for e in rows if e.get("step") == "second_shot"), None)  # TODO 37.4
         repeats = {r.get("now"): r.get("same_as") for r in (man or {}).get("repeats") or [] if isinstance(r, dict)}
         skip = (man or {}).get("skip") or {}
         for h in hyps:
@@ -3065,14 +2822,11 @@ def mechanism_table(es: list[dict]) -> list[dict]:
                 row["composer"] = ("merge" if comp.get("decision") == "merge" else
                                    "adopted" if went_on else "kept the incumbent" if comp.get("decision") == "keep"
                                    else "not adopted")  # fmt: skip
-            second = shot2 is not None and shot2.get("draft") in ks and len(gates) > 1  # TODO 37.4
-            gate = gates[-1] if second else (gates[0] if gates else None)
-            if gate and (went_on or second):
+            gate = gates[0] if gates else None
+            if gate and went_on:
                 r = gate.get("result") or {}
-                row["gate"] = (
-                    ("accepted" if gate.get("accepted") else "rejected")
-                    + (f" b {r['b']} c {r['c']}" if "b" in r and "c" in r else "")
-                    + (" (second shot)" if second else "")
+                row["gate"] = ("accepted" if gate.get("accepted") else "rejected") + (
+                    f" b {r['b']} c {r['c']}" if "b" in r and "c" in r else ""
                 )
             members = groups.get(root.get(key, key), {key})
             row["open"] = not (members & built) and row["status"] != "refuted"
@@ -3293,12 +3047,19 @@ def manager_schema(allow_reopen: bool, ids: list | None = None) -> dict:
     """`ids`: this iteration's hypotheses, the only ids the Manager can name. multi_engineer_step keeps the ids it knows,
     so one the Manager shortened was dropped without a word: a replay gave its three Engineers one hypothesis."""
     sch = json.loads(json.dumps(MANAGER_SCHEMA))
-    if not allow_reopen:
-        sch["properties"]["decision"]["enum"] = [d for d in sch["properties"]["decision"]["enum"] if d != "reopen"]
+    props = sch["properties"]
+    if not allow_reopen or not cap("claims"):
+        props["decision"]["enum"] = [d for d in props["decision"]["enum"] if d != "reopen"]
+    if not cap("claims"):  # TODO 54: no parks, no infeasibility claims or gap proposals without caps claims
+        for k in ("reopen_claim", "infeasible", "gap_proposals"):
+            props.pop(k, None)
+    if not cap("prober", True):
+        props.pop("tune", None)
     if ids:
         sch["properties"]["hypothesis"]["enum"] = list(ids)
         sch["properties"]["hypotheses"]["items"]["enum"] = list(ids)  # may be empty when `tune` names the drafts
-        sch["properties"]["tune"]["items"]["enum"] = list(ids)
+        if "tune" in props:
+            props["tune"]["items"]["enum"] = list(ids)
     return sch
 
 
@@ -3424,172 +3185,6 @@ def first_difference(a: dict, b: dict) -> dict:
     keys = ("step", "ok", "t0", "t1")
     return dict(index=k, incumbent=dict(zip(keys, pa[k])) if k < len(pa) else None,
                 draft=dict(zip(keys, pb[k])) if k < len(pb) else None)  # fmt: skip
-
-
-def repair_brief(inc_rounds: Path, cand_rounds: Path, was: dict, fp: dict) -> dict:
-    """What a repair turn reads of the draft's run on all the diagnostic starts."""
-    a, b = B.outcomes(inc_rounds), B.outcomes(cand_rounds)
-    broken = [dict(label=x, why=b[x].get("why"), failure_class=b[x].get("failure_class"),
-                   first_difference=first_difference(a[x], b[x])) for x in was["broken"]]  # fmt: skip
-    return dict(draft_rounds=str(cand_rounds), incumbent_rounds=str(inc_rounds), ok=was["ok"], incumbent_ok=was["incumbent_ok"],
-                n=was["n"], fixed=was["fixed"], broken=broken, changed=fp["changed"], outside=fp["outside"], missed=fp["missed"])  # fmt: skip
-
-
-def repair_draft(
-    n: int, k: int, w: Path, res: tuple[dict, dict], inc: dict, ref: Path, it_dir: Path, common: dict
-) -> tuple[dict, dict]:  # fmt: skip
-    """Rule 38 (TODO 44.2, `run --repair`): an Engineer checks its draft on the starts it means to fix, so it may never
-    see a success it broke; only the Composer does, and the Composer cannot ask for a repair. A draft that broke one of
-    the incumbent's successes gets one more turn in its own session with that run's result. The repair stands when it
-    breaks fewer starts without losing net ones; otherwise the first draft goes on (its rounds are kept, hash-keyed)."""
-    eng, acct = res
-    cand = it_dir / f"candidate_{k}"
-    if not cand.exists():  # early_diag failed before it copied the draft
-        return res
-    inc_rounds = LOOP / "diag" / f"incumbent_{inc['hash']}"
-    rounds = LOOP / "diag" / f"candidate_{candidate_hash(cand)}"
-    if not B.outcomes(rounds):
-        return res
-    was = flips(inc_rounds, rounds)
-    if not was["broken"]:
-        return res
-    first = w / "skills_first"
-    shutil.copytree(w / "skills", first, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    brief = w / "repair_brief.json"
-    jdump(brief, repair_brief(inc_rounds, rounds, was, footprint(ref, rounds, eng.get("scope"))))
-    prompt = fill((PROMPTS / "repair.md").read_text(), BRIEF=brief, ITER=w, **dict(common, SKILLS=w / "skills"))
-    row = dict(
-        step="repair",
-        iter=n,
-        candidate=k,
-        session=acct["session"],
-        before=dict(fixed=len(was["fixed"]), broken=was["broken"]),
-    )
-    stop = threading.Event()
-    timer = threading.Timer(REPAIR_MIN * 60, stop.set)
-    timer.start()
-    try:
-        eng2, acct2 = claude(f"engineer_{k}", prompt, ENGINEER_SCHEMA, it_dir, "NotebookEdit,Agent", stop=stop,
-                             resume=acct["session"])  # fmt: skip
-    except RoleFailed as e:
-        timer.cancel()
-        shutil.rmtree(w / "skills")
-        shutil.copytree(first, w / "skills")
-        early_diag(k, w, eng, inc, it_dir)
-        ledger(dict(row, kept="first", error=str(e)[:300], late=isinstance(e, RoleLate)))
-        return res
-    timer.cancel()
-    early_diag(k, w, eng2, inc, it_dir)
-    rounds2 = LOOP / "diag" / f"candidate_{candidate_hash(cand)}"
-    now_ = flips(inc_rounds, rounds2) if B.outcomes(rounds2) else None
-    net = lambda f: len(f["fixed"]) - len(f["broken"])  # noqa: E731
-    better = now_ is not None and len(now_["broken"]) < len(was["broken"]) and net(now_) >= net(was)
-    total = dict(acct, cost_usd=acct["cost_usd"] + acct2["cost_usd"], seconds=acct["seconds"] + acct2["seconds"])
-    ledger(dict(row, kept="repair" if better else "first", cost_usd=acct2["cost_usd"], seconds=acct2["seconds"],
-                after=dict(fixed=len(now_["fixed"]), broken=now_["broken"]) if now_ else None))  # fmt: skip
-    if better:
-        return eng2, total
-    shutil.rmtree(w / "skills")
-    shutil.copytree(first, w / "skills")
-    early_diag(k, w, eng, inc, it_dir)  # candidate_k back to the first draft; its rounds are done
-    return eng, total
-
-
-def second_shot_pick(cands: list[dict], gated_hash: str, rejected: set) -> dict | None:
-    """TODO 37.4 (E): the draft to send after a rejection -- one the gate has not judged (not the rejected hash, not
-    rejected before under the present rule) with more diagnostic starts fixed than broken; the largest net first,
-    fewer broken on ties, then the lower draft number."""
-    ok = [c for c in cands if c.get("hash") not in rejected and c.get("hash") != gated_hash and "fixed" in c
-          and len(c["fixed"]) > len(c.get("broken") or [])]  # fmt: skip
-    return min(ok, key=lambda c: (-(len(c["fixed"]) - len(c["broken"])), len(c["broken"]), c["number"])) if ok else None
-
-
-def second_shot(n: int, it_dir: Path, cands: list[dict], gated_hash: str, stub: bool) -> str | None:
-    """TODO 37.4 (E, user 2026-10-23): when the gate rejected the composed candidate (a real verdict, not a void call),
-    the best remaining draft goes to the gate in the same iteration: a second shot costs the gate's 3-5 minutes
-    instead of another 60-80 minute iteration (run C: iterations 10 and 12 ended in rejections with two unsent drafts
-    each). It is a gate call of the budget, so none is taken when the budget is spent. The first shot's verdict and
-    log stay as gate_shot1.json / gate_shot1.log."""
-    verdict = jload(it_dir / "gate.json")
-    if not verdict or verdict.get("void") or verdict.get("accepted"):
-        return None
-    es = entries()
-    if len(run_gates(es, jload(STATE / "meta.json", {}))) >= MAX_GATE_CALLS:
-        return None
-    rejected = {e["hash"] for e in es if e.get("step") == "gate" and not e.get("accepted") and not e.get("void")
-                and e.get("hash") and e.get("rule", 1) == GATE_RULE}  # fmt: skip
-    pick = second_shot_pick(cands, gated_hash, rejected)
-    if pick is None:
-        return None
-    for f in ("gate.json", "gate.log"):
-        if (it_dir / f).exists():
-            shutil.copy(it_dir / f, it_dir / f.replace(".", "_shot1."))
-    ledger(dict(step="second_shot", iter=n, draft=pick["number"], hypothesis=pick.get("hypothesis"), hash=pick["hash"],
-                fixed=len(pick["fixed"]), broken=len(pick["broken"]), after=gated_hash))  # fmt: skip
-    return gate_candidate(n, it_dir, Path(pick["dir"]), stub, shot=2)
-
-
-def shadow_drafts(n: int, cands: list[dict], inc: dict) -> None:
-    """TODO 45.7: the imagined score of this iteration's drafts and incumbent, before their real rounds, written under
-    HIDDEN (mode 000 while any role runs), neither in the ledger nor in a context. Nothing is returned on purpose, and a
-    failure or a timeout is one line in the log: a measurement must not be able to stop or steer an iteration."""
-    if not SHADOW:
-        return
-    out = HIDDEN / "shadow" / f"iter_{n:02d}"
-    t0, error = time.time(), None
-    try:
-        out.mkdir(parents=True, exist_ok=True)
-        rows = [
-            dict(number=c["number"], hash=c["hash"], dir=c["dir"], set=overrides(Path(c["dir"])), incumbent=False)
-            for c in cands
-        ]
-        rows.append(dict(number="incumbent", hash=inc["hash"], dir=inc["dir"], set=inc["set"], incumbent=True))
-        jdump(out / "candidates.json", rows)
-        r = subprocess.run([str(B.SIM_PY), SHADOW, "--family", FAMILY, "--pool", str((LOOP / "pool_diag").resolve()),
-                            "--candidates", str((out / "candidates.json").resolve()), "--out", str(out.resolve()),
-                            "--procs", str(min(PROCS, SHADOW_PROCS))], cwd=Path(SHADOW).resolve().parent, capture_output=True,
-                           text=True, timeout=SHADOW_TIMEOUT_S,
-                           env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})  # fmt: skip
-        (out / "shadow.log").write_text(r.stdout + r.stderr)
-        error = None if r.returncode == 0 else f"exit {r.returncode}"
-    except Exception as e:  # noqa: BLE001
-        error = repr(e)[:300]
-    print(f"shadow iter {n}: {'done' if error is None else 'failed, ' + error} in {time.time() - t0:.0f} s", flush=True)
-
-
-def imagined_view(n: int, it_dir: Path, cands: list[dict], inc: dict, base: Path) -> dict | None:
-    """TODO 45.7.2: what the imagined Motor says about the drafts on starts outside the diagnostic pool, for the Composer's
-    context. None when it is off or fails (one line in the log): the iteration goes on with the real rounds alone."""
-    if not IMAGINE:
-        return None
-    out = it_dir / "imagined"
-    t0, view, error = time.time(), None, None
-    try:
-        out.mkdir(parents=True, exist_ok=True)
-        rows = [dict(number=c["number"], hash=c["hash"], dir=c["dir"], set=overrides(Path(c["dir"])), incumbent=False,
-                     diag=c["diag"]) for c in cands]  # fmt: skip
-        rows.append(
-            dict(number="incumbent", hash=inc["hash"], dir=inc["dir"], set=inc["set"], incumbent=True, diag=str(base))
-        )
-        jdump(out / "candidates.json", rows)
-        forbid = [str(p.resolve()) for p in (HIDDEN / "pool_accept", HIDDEN / "pool_sealed") if p.exists()]
-        r = subprocess.run([str(B.SIM_PY), IMAGINE, "--family", FAMILY, "--diag-pool", str((LOOP / "pool_diag").resolve()),
-                            "--extra-pool", str((LOOP / "pool_imagine").resolve()), "--forbid", *forbid,
-                            "--candidates", str((out / "candidates.json").resolve()), "--out", str(out.resolve()),
-                            "--procs", str(min(PROCS, SHADOW_PROCS))], cwd=Path(IMAGINE).resolve().parent, capture_output=True,
-                           text=True, timeout=IMAGINE_TIMEOUT_S,
-                           env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"})  # fmt: skip
-        (out / "imagined.log").write_text(r.stdout + r.stderr)
-        if r.returncode == 0:
-            view = json.loads((out / "imagined.json").read_text())
-        else:
-            error = f"exit {r.returncode}"
-    except Exception as e:  # noqa: BLE001
-        error = repr(e)[:300]
-    print(
-        f"imagined iter {n}: {'done' if error is None else 'failed, ' + error} in {time.time() - t0:.0f} s", flush=True
-    )
-    return view
 
 
 MIN_SWEEP_STARTS = 3  # an Engineer-declared knob is not swept on fewer starts than this
@@ -3783,17 +3378,6 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     ids, _ = assign_ids(dec, hyps["hypotheses"], CANDIDATES, tune)  # change 3: no duplicate assignments
     bentry = base_of(n, dec)  # TODO 33.8: every working copy starts from that pool candidate instead of the incumbent
     src = Path(bentry["dir"]) if bentry else Path(inc["dir"])
-    parallel, probe_box = pr is None, {}
-    if parallel:  # TODO 48.17 probe_parallel: the Prober beside the Engineers; its rounds share the queue with theirs
-
-        def run_probe():
-            try:
-                probe_box["pr"] = probe_now(n, hyps, inc, LOOP / "diag" / f"incumbent_{inc['hash']}", it_dir, True)
-            except Exception as e:  # noqa: BLE001 -- the drafts go on without the probe; recorded below
-                probe_box["error"] = f"{type(e).__name__}: {e}"[:400]
-
-        probe_thread = threading.Thread(target=run_probe, daemon=True)
-        probe_thread.start()
     calls = []
     for k, hid in enumerate(ids, 1):
         w = it_dir / f"cand_{k}"
@@ -3802,7 +3386,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         shutil.copytree(src / "skills", w / "skills", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         ctx = w / "engineer_context.json"
         jdump(ctx, context(inc, dict(hypothesis=known[hid], manager=dec,
-                                     probe=PROBE_PENDING if parallel else [p for p in pr if p.get("id") == hid],
+                                     probe=[p for p in pr if p.get("id") == hid],
                                      park=None, draft=dict(number=k, of=len(ids)), base=base_brief(bentry))))  # fmt: skip
         prompt = fill(
             (PROMPTS / "engineer.md").read_text(),
@@ -3835,8 +3419,6 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
             sess_end[k] = time.time()
         if not stub:
             early_diag(k, w, out[k][0], inc, it_dir)
-            if REPAIR:
-                out[k] = repair_draft(n, k, w, out[k], inc, ref, it_dir, common)
             try:  # change 1: the draft's declared knobs, swept on its own starts
                 out[k] = (tune_draft(k, w, out[k][0], inc, it_dir), out[k][1])
             except Exception as e:  # noqa: BLE001 -- the draft stands as it was
@@ -3889,21 +3471,12 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
             first[h] = cands[-1]
             jobs.append(B.Job(cand / "skills", LOOP / "diag" / f"candidate_{candidate_hash(cand)}", overrides(cand),
                               labels, True))  # fmt: skip
-    if parallel:  # the probe's results, and the tuned drafts the program picks from them (the Manager had none)
-        probe_thread.join()
-        pr = probe_box.get("pr") or []
-        if "error" in probe_box:
-            ledger(dict(step="probe_failed", iter=n, error=probe_box["error"]))
-        nets = {p.get("id"): len(p.get("fixed") or []) - len(p.get("broken") or []) for p in pr if p.get("best_set")}
-        tune = sorted((h for h in nets if h in known and h not in ids and nets[h] >= 1), key=lambda h: -nets[h])
-        tune = tune[: int(cap("tune_max", 2))]
     cands += tuned_drafts(n, it_dir, inc, known, pr, tune, src, bentry, len(calls) + 1, first, jobs)  # change 1
     if not cands:
         ledger(dict(step="compose", iter=n, decision="none", reason="no valid candidate", stray=stray))
         if leaked and len(leaked) == len(calls):  # every draft voided by its Engineer's leak: the iteration is void
             void_iteration(n, "engineers", sorted({x for v in leaked.values() for x in v}))
         return None
-    shadow_drafts(n, cands, inc)
     if not stub:
         B.run_jobs(jobs, FAMILY, LOOP / "pool_diag", PROCS, it_dir / "prober.log", GPUS)
     base = LOOP / "diag" / f"incumbent_{inc['hash']}"
@@ -3912,38 +3485,63 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
         c.update(flips(base, Path(c["diag"])), footprint=footprint(ref, Path(c["diag"]), c["scope"]))
         c["segments_touched"] = segments_touched(ref, Path(c["diag"]), c["footprint"]["changed"], seg_table)
     jdump(it_dir / "candidates.json", cands)
-    imagined = imagined_view(n, it_dir, cands, inc, base)
-    # the Composer
+    # the Composition: by the program when the family says so (a 3-way merge of the drafts with a positive screen), the
+    # Composer on a conflict or when no draft is positive (TODO 54); always the Composer for a family that says "llm"
     wc = it_dir / "compose" / "skills"
     if wc.parent.exists():
         shutil.rmtree(wc.parent)
-    shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    ctx = it_dir / "composer_context.json"
-    jdump(ctx, context(inc, dict(hypotheses=[known[h] for h in dict.fromkeys([*ids, *tune])], candidates=cands,
-                                 incumbent_diag=str(base), manager=dec, base=base_brief(bentry),
-                                 candidate_pool=pool_view(inc, base), **({"imagined": imagined} if imagined else {}),
-                                 **({"probe": pr} if parallel else {}))))  # fmt: skip
-    tpl = (PROMPTS / "composer.md").read_text()
-    if imagined:
-        tpl += "\n" + (PROMPTS / "composer_imagined.md").read_text()
-    prompt = fill(tpl, CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
-    stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
-    comp, acct = claude("composer", prompt, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_c if stub else None)
-    leaks = transcript_leaks(acct["session"])
-    if leaks and cap("role_rerun") and not stub:  # TODO 48.17: the first leak discards the composition, one more call
-        revert_strays(base_changes)
-        put_skills(Path(inc["dir"]) / "skills")
-        discard_attempt(n, "composer", acct, leaks, it_dir / "compose")
+    mode, comp_extra, program = None, {}, None
+    if cap("compose", "llm") == "program":
+        for c in cands:
+            c["screen_net"] = len(c.get("fixed") or []) - len(c.get("broken") or [])
+        pos = sorted((c for c in cands if c["screen_net"] > 0), key=lambda c: (-c["screen_net"], c["number"]))
+        if not pos:
+            mode = "none_positive"
+        else:
+            res = MG.merge_drafts(src / "skills", overrides(src), [(c["number"], Path(c["dir"]) / "skills",
+                                  overrides(Path(c["dir"]))) for c in pos], wc)  # fmt: skip
+            comp_extra = dict(merged_cleanly=res["merged"], conflicts=res["conflicts"], merged_set=res["set"])
+            if res["conflicts"]:
+                mode = "conflict"
+            elif len(pos) == 1:
+                program = dict(
+                    decision="adopt", adopted=pos[0]["number"], notes="program: the one draft with a positive screen"
+                )
+            else:
+                program = dict(decision="merge", set=res["set"], notes=f"program: 3-way merge of drafts {res['merged']}",
+                               mechanism="program merge of drafts " + ", ".join(map(str, res["merged"])))  # fmt: skip
+    if mode in (None, "none_positive") and program is None:  # the Composer works on a fresh copy of the base
         shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        comp, acct = claude("composer", prompt + rerun_note("Composer", leaks), COMPOSER_SCHEMA, it_dir,
-                            "NotebookEdit,Agent")  # fmt: skip
+    if program is not None:
+        comp, acct, leaks = program, dict(cost_usd=0.0, session=None, seconds=0.0, by="program"), []
+    else:
+        ctx = it_dir / "composer_context.json"
+        jdump(ctx, context(inc, dict(hypotheses=[known[h] for h in dict.fromkeys([*ids, *tune])], candidates=cands,
+                                     incumbent_diag=str(base), manager=dec, base=base_brief(bentry),
+                                     candidate_pool=pool_view(inc, base),
+                                     **({"compose_mode": mode, **comp_extra} if mode else {}))))  # fmt: skip
+        prompt = fill((PROMPTS / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
+        stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
+        comp, acct = claude("composer", prompt, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_c if stub else None)
         leaks = transcript_leaks(acct["session"])
+        if (
+            leaks and cap("role_rerun") and not stub
+        ):  # TODO 48.17: the first leak discards the composition, one more call
+            revert_strays(base_changes)
+            put_skills(Path(inc["dir"]) / "skills")
+            discard_attempt(n, "composer", acct, leaks, it_dir / "compose")
+            shutil.copytree(
+                src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"), dirs_exist_ok=True
+            )
+            comp, acct = claude("composer", prompt + rerun_note("Composer", leaks), COMPOSER_SCHEMA, it_dir,
+                                "NotebookEdit,Agent")  # fmt: skip
+            leaks = transcript_leaks(acct["session"])
     stray = revert_strays(base_changes)
     put_skills(Path(inc["dir"]) / "skills")
     jdump(it_dir / "composer.json", comp)
     ledger(dict(step="compose", iter=n, decision=comp["decision"], adopted=comp.get("adopted"), notes=comp["notes"],
                 mechanism=comp.get("mechanism", ""), set=comp.get("set"), stray=stray, void=bool(leaks or stray),
-                leaks=leaks, **acct))  # fmt: skip
+                leaks=leaks, **({"mode": mode, **comp_extra} if mode else {}), **acct))  # fmt: skip
     if leaks or stray:  # its working copy leaves the visible tree as a voided draft does
         hide_void(n, it_dir / "compose")
         if leaks:
@@ -3990,10 +3588,7 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     if named:
         named_void(n, named, "the composed candidate")
         return None
-    why = gate_candidate(n, it_dir, cand, stub)
-    if why is not None or stub or not SECOND_SHOT:
-        return why
-    return second_shot(n, it_dir, cands, candidate_hash(cand), stub)  # TODO 37.4
+    return gate_candidate(n, it_dir, cand, stub)
 
 
 def engineer_again(n: int, src: Path, stub: bool) -> str | None:
@@ -4122,7 +3717,7 @@ def parse_effort(items: list[str]) -> dict:
 
 
 def resolve_settings(a, meta: dict, resuming: bool) -> dict:
-    """TODO 36 (review 2026-10-22, L3): a run's candidates, scoped_review, max_wall_h and stop_rate are what the command
+    """TODO 36 (review 2026-10-22, L3): a run's candidates, max_wall_h and stop_rate are what the command
     line says, else -- when the run is resumed (meta.json has `started`) -- what meta.json recorded, else the module
     default. A resume used to rewrite them (32.12 needed RSI_MAX_WALL_H=5 again; an older K = 1 run resumed as K = 3).
     `stop_rate` (`--stop-rate`, user 2026-10-22): grasp_atomic continued from an incumbent at 29/40 on the acceptance
@@ -4134,15 +3729,11 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
     env_wall = os.environ.get("RSI_MAX_WALL_H")
     return dict(
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
-        scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
-        reviewers=max(1, int(pick(getattr(a, "reviewers", None), "reviewers", REVIEWERS))),
-        repair=bool(pick(True if getattr(a, "repair", None) else None, "repair", REPAIR)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", WALL_DEFAULT_H)),
         stop_rate=float(pick(getattr(a, "stop_rate", None), "stop_rate", STOP_RATE_DEFAULT)),
         engineer_late_min=float(
             pick(getattr(a, "engineer_late_min", None), "engineer_late_min", ENGINEER_LATE_MIN_DEFAULT)
         ),  # fmt: skip
-        second_shot=bool(pick(getattr(a, "second_shot", None), "second_shot", SECOND_SHOT_DEFAULT)),
         diag_min_fails=int(pick(getattr(a, "diag_min_fails", None), "diag_min_fails", DIAG_MIN_FAILS_DEFAULT)),
         diag_target_fails=int(
             pick(getattr(a, "diag_target_fails", None), "diag_target_fails", DIAG_TARGET_FAILS_DEFAULT)
@@ -4203,18 +3794,15 @@ def cmd_run(a) -> int:
 
 
 def _run(a, efforts: dict) -> int:
-    global STOP_AFTER, CANDIDATES, SCOPED, REVIEWERS, REPAIR, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT
+    global STOP_AFTER, CANDIDATES, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN
     global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
     meta = prior or dict(started=now(), started_s=time.time(), cost_cap_usd=COST_CAP, model=MODEL, family=FAMILY)
     resume(meta)
     cfg = resolve_settings(a, meta, resuming)
-    CANDIDATES, SCOPED, MAX_WALL_H = cfg["candidates"], cfg["scoped_review"], cfg["max_wall_h"]
-    REVIEWERS, REPAIR = cfg["reviewers"], cfg["repair"]
-    if SCOPED and REVIEWERS > 1:
-        raise SystemExit("--scoped-review and --reviewers are two ways of running several Reviewers: choose one")
-    STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT = cfg["stop_rate"], cfg["engineer_late_min"], cfg["second_shot"]
+    CANDIDATES, MAX_WALL_H = cfg["candidates"], cfg["max_wall_h"]
+    STOP_RATE, ENGINEER_LATE_MIN = cfg["stop_rate"], cfg["engineer_late_min"]
     DIAG_MIN_FAILS, DIAG_TARGET_FAILS = cfg["diag_min_fails"], cfg["diag_target_fails"]
     DIAG_DRAW_MAX = cfg["diag_draw_max"]
     if not cfg["stop_rate"] > 0:
@@ -4229,16 +3817,19 @@ def _run(a, efforts: dict) -> int:
     if not pool_path().exists():  # TODO 33.8: state from before the candidate pool (a replay of an older run)
         rebuild_pool()
     split_check_half()  # TODO 48.17 check_half: once per loop
-    n = len(iteration_dirs())  # change 5: not a speculative review no iteration has taken up
+    n = len(iteration_dirs())
     iters = a.max_iters
     STOP_AFTER = getattr(a, "stop_after", None)
     EFFORT.update(efforts)
 
-    def finish(why: str) -> int:
+    def finish(why: str, sealed: bool = True) -> int:
+        """The one wrap-up of every way a run ends (--max-iters, the wall clock, a stop rule, a failed role, a gate
+        error): the stop row, the hit rates, and the sealed set when the family's caps ask for it (TODO 54, review
+        verify.md 1: --max-iters used to return without it, so no run's final incumbent was ever confirmed)."""
         ledger(dict(step="stop", reason=why))
         print("stop:", why)
         write_hit_rate()
-        if stop_reason(meta) is not None:  # a stop rule ended the run (not a failed role, a crash or --max-iters)
+        if sealed:
             run_sealed(why, a.stub)
         return 3 if is_abnormal(why) else 0
 
@@ -4247,14 +3838,14 @@ def _run(a, efforts: dict) -> int:
             why = stop_reason(meta) or engineer_again(n, a.engineer_from.resolve(), a.stub)
         except RoleFailed as e:
             why = f"role call failed: {e}"
-        return finish(why or "replay: engineer and gate done")
+        return finish(why or "replay: engineer and gate done", sealed=False)
     if a.reprobe is not None:  # the re-probed iteration counts as one of --max-iters
         try:
             why = reprobe(a.reprobe, a.stub)
         except RoleFailed as e:
             why = f"role call failed: {e}"
         if why:
-            return finish(why)
+            return finish(why, sealed=False)
         iters -= 1
     for _ in range(iters):
         why = stop_reason(meta)
@@ -4267,7 +3858,7 @@ def _run(a, efforts: dict) -> int:
             write_hit_rate()
         if why:
             return finish(why)
-    return 0
+    return finish(f"max iterations {a.max_iters} reached")
 
 
 def write_hit_rate() -> None:
@@ -4281,12 +3872,13 @@ def write_hit_rate() -> None:
 
 
 def run_sealed(why: str, stub: bool) -> None:
-    """TODO 48.19.2 (user 2026-11-23, "三条都加上"; rules 49): a run a stop rule ends runs the sealed evaluation once for
-    its final incumbent (sealed.py: the final incumbent and the seed on the sealed pool, in the gate's environment, and
+    """TODO 48.19.2 (user 2026-11-23, "三条都加上"; rules 49), TODO 54: every run that ends through finish() (a stop
+    rule, --max-iters, the wall clock, a failed role or gate) runs the sealed evaluation once for its final incumbent (sealed.py: the final incumbent and the seed on the sealed pool, in the gate's environment, and
     its confirmation against the seed). Its numbers stay in the hidden tree (<hidden>/sealed/summary.json, history.jsonl);
-    the ledger records only that it ran. Off for a stub run, an abnormal stop, a family without caps sealed_at_stop,
-    a run with nothing accepted, and a final incumbent the sealed history already holds."""
-    if stub or is_abnormal(why) or not cap("sealed_at_stop") or os.environ.get("RSI_NO_SEALED") == "1":
+    the ledger records only that it ran. Off for a stub run, a family without caps sealed_at_stop,
+    a run with nothing accepted, and a final incumbent the sealed history already holds (a crash or SIGTERM never
+    reaches finish)."""
+    if stub or not cap("sealed_at_stop") or os.environ.get("RSI_NO_SEALED") == "1":
         return
     inc = jload(GATE_DIR / "incumbent.json")
     if not inc or Path(inc["dir"]).name == "incumbent_seed":
@@ -4371,16 +3963,10 @@ def main(argv=None) -> int:
         help="Engineers per iteration, merged by a Composer (TODO 32.9; default 3 since TODO 32.15; 1: no Composer; "
         "a resumed run keeps its recorded value unless given)",
     )
-    r.add_argument("--scoped-review", action="store_true", default=None, help="two scoped Reviewers (TODO 32.11)")
-    r.add_argument("--reviewers", type=int, help="N independent Reviewers on the same inputs (TODO 43.2; default 1)")
-    r.add_argument("--repair", action="store_true", default=None, help="a draft that broke a start the incumbent "
-                   "finishes gets one more turn (TODO 44.2, rule 38; off by default)")  # fmt: skip
     r.add_argument("--stop-rate", type=float, default=None, help="stop when the incumbent wins this share of the "
                    "acceptance pool (default 0.70; a resumed run keeps its recorded value unless given)")  # fmt: skip
     r.add_argument("--engineer-late-min", type=float, default=None, help="minutes a straggler Engineer gets once half "
                    "the drafts are in, then it is stopped (default 10; 0 waits; a resumed run keeps its value; TODO 37.3)")  # fmt: skip
-    r.add_argument("--second-shot", action=argparse.BooleanOptionalAction, default=None, help="after the gate rejects "
-                   "the composed candidate, gate the best unsent draft in the same iteration (default on; TODO 37.4)")  # fmt: skip
     for flag, key, text in (("--diag-min-fails", "diag_min_fails", "re-draw the diagnostic pool when the incumbent fails "
                              "fewer than this many of its starts (default 10; 0 never; TODO 33.23)"),
                             ("--diag-target-fails", "diag_target_fails", "... until this many fail (default 15)"),

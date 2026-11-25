@@ -88,8 +88,13 @@ class RelaxedGate(unittest.TestCase):
 
     def test_a_candidate_rejected_under_the_older_rule_may_be_judged_again(self):
         self.assertIn("dry run", self._dry([dict(accepted=False, reason="p 0.11 > 0.05", call=3)]))  # no rule: rule 1
-        self.assertIn("dry run", self._dry([dict(accepted=False, void=True, reason="pairing incomplete", rule=2)]))
-        self.assertIn("rejected before", self._dry([dict(accepted=False, reason="net wins 2 < 3", rule=2)]))
+        self.assertIn(
+            "dry run",
+            self._dry([dict(accepted=False, void=True, reason="pairing incomplete", rule=self.gate.GATE_RULE)]),
+        )
+        self.assertIn(
+            "rejected before", self._dry([dict(accepted=False, reason="net wins 2 < 3", rule=self.gate.GATE_RULE)])
+        )
 
 
 class _LoopCase(unittest.TestCase):

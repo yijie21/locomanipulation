@@ -48,10 +48,11 @@ BLAME_ART = {"deliver": "reach", "grasp": "close", "short": "move", "collide": "
 FALLBACK_CAPS = {"claims": False, "design_probes": False, "diag_redraw": False, "sentinel_exact": False,
                  "min_net": 3, "repeat": 1, "p_max": 0.05, "sentinel_flips": 1, "probe_scope": True,
                  # TODO 48.17 (2026-11-23, loop.py's block after diag_incumbent; rules 3, 25, 33, 47)
-                 "check_half": True, "check_min_net": 1, "check_stop": 2, "stage1_first": True,
-                 "probe_parallel": True, "tune_max": 2, "role_rerun": True,
-                 # TODO 48.19 (user 2026-11-23, "三条都加上"; rules 25, 47, 49)
-                 "task_regress": 2, "sealed_at_stop": True}  # fmt: skip
+                 "check_half": True, "check_min_net": 4, "stage1_first": True, "role_rerun": True,
+                 "sealed_at_stop": True,
+                 # TODO 54 (rsi-lean, review 2026-11-25): the lean iteration and the per-task sign test
+                 "alpha_task": 0.05, "alpha_task_check": 0.10, "manager": "program", "prober": False, "measure_claims": False,
+                 "compose": "program", "stop_no_progress": 2}  # fmt: skip
 CLASS_SUGGEST = {
     "error": "the skill or the bed raised: read the error text, fix the code path before tuning anything",
     "timeout": "the check passed after the step limit: shorten the slow phases (walk, settle, search), not the grasp",
@@ -306,10 +307,8 @@ def base_rel(fam: dict) -> str:
 
 
 def hidden_family_dir(name: str) -> Path:
-    """The family's hidden directory (seeds.json, practice/). RSI_HIDDEN_FAMILY names a private copy of the two: the
-    speculative gate (loop.gate_candidate) runs while the real directory is at mode 000."""
-    e = os.environ.get("RSI_HIDDEN_FAMILY")
-    return Path(e) if e else REPO / HIDDEN / name
+    """The family's hidden directory (seeds.json, practice/)."""
+    return REPO / HIDDEN / name
 
 
 def hidden_seeds(name: str) -> dict:

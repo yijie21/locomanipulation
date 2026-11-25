@@ -247,7 +247,7 @@ class StopRate(unittest.TestCase):
         self.lp = _isolated("rsi_forced_build_loop_sr", HERE / "loop.py")
 
     def args(self, **kw):
-        return types.SimpleNamespace(candidates=None, scoped_review=None, stop_rate=None, **kw)
+        return types.SimpleNamespace(candidates=None, stop_rate=None, **kw)
 
     def test_cli_then_meta_on_resume_then_default(self):
         with mock.patch.dict(os.environ, {}, clear=False):
@@ -262,7 +262,7 @@ class StopRate(unittest.TestCase):
 
     def test_a_resume_records_a_changed_rate_even_where_meta_has_none(self):
         ch = self.lp.settings_changes
-        cfg = dict(candidates=3, scoped_review=False, max_wall_h=5.0, stop_rate=0.9)
+        cfg = dict(candidates=3, max_wall_h=5.0, stop_rate=0.9)
         self.assertEqual(ch(cfg, dict(candidates=3, max_wall_h=5.0), True), {"stop_rate": dict(old=0.70, new=0.9)})
         self.assertEqual(ch(cfg, dict(stop_rate=0.9, candidates=3), True), {})
         self.assertEqual(ch(cfg, {}, False), {})

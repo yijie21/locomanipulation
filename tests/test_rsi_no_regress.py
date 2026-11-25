@@ -1,5 +1,6 @@
-"""TODO 48.19 (user 2026-11-23, "三条都加上"): no task may lose at the gate or the check half (caps task_regress), the
-sealed evaluation when a run stops (caps sealed_at_stop, sealed.confirm), and the roles' hit rates (hit_rate.py)."""
+"""TODO 48.19 (user 2026-11-23, "三条都加上"), TODO 54: no task may lose significantly at the gate or the check half (caps
+alpha_task, alpha_task_check: verdict.py's per-task sign test, Holm across the tasks), the sealed evaluation when a run
+stops (caps sealed_at_stop, sealed.confirm), and the roles' hit rates (hit_rate.py)."""
 
 import json
 import sys
@@ -58,16 +59,21 @@ class GateTaskRule(unittest.TestCase):
         self.assertEqual(self.t["per_task"]["TaskA"], dict(n=6, b=6, c=0))
         self.assertEqual(self.t["per_task"]["TaskB"], dict(n=4, b=0, c=2))
 
-    def test_a_task_that_loses_two_net_rejects_what_the_total_would_accept(self):
+    def test_two_losses_on_a_task_no_longer_reject_but_a_significant_loss_does(self):
         self.assertEqual(self.g.verdict_fails(self.t, 3, None), [])
-        fails = self.g.verdict_fails(self.t, 3, None, task_regress=2)
+        # 2 losses to 0 wins on a task of four is within the noise (p 0.25): the old fixed rule rejected it
+        self.assertEqual(self.g.verdict_fails(self.t, 3, None, alpha_task=0.05), [])
+        inc = {f"TaskA_s{i}": False for i in range(20)} | {f"TaskB_s{i}": True for i in range(6)}
+        cand = {f"TaskA_s{i}": True for i in range(20)} | {f"TaskB_s{i}": False for i in range(6)}
+        t = self.g.tally(_rounds(cand), _rounds(inc))
+        self.assertEqual(self.g.verdict_fails(t, 3, 0.05), [])  # the total is 20 : 6
+        fails = self.g.verdict_fails(t, 3, 0.05, alpha_task=0.05)
         self.assertEqual(len(fails), 1)
-        self.assertIn("task TaskB loses 2 net", fails[0])
-        self.assertEqual(self.g.verdict_fails(self.t, 3, None, task_regress=3), [])
+        self.assertIn("task TaskB regresses", fails[0])
 
     def test_a_tally_without_per_task_is_judged_as_before(self):
         t = {k: v for k, v in self.t.items() if k != "per_task"}
-        self.assertEqual(self.g.verdict_fails(t, 3, None, task_regress=2), [])
+        self.assertEqual(self.g.verdict_fails(t, 3, None, alpha_task=0.05), [])
 
 
 class SealedConfirm(unittest.TestCase):
@@ -77,24 +83,30 @@ class SealedConfirm(unittest.TestCase):
     def test_confirmed(self):
         seed = _rounds({f"A_s{i}": False for i in range(8)})
         final = _rounds({f"A_s{i}": i < 6 for i in range(8)})
-        c = self.s.confirm(final, seed, 0.05, 2)
+        c = self.s.confirm(final, seed, 0.05, 0.05)
         self.assertTrue(c["confirmed"], c)
         self.assertEqual((c["b"], c["c"]), (6, 0))
 
-    def test_a_task_that_went_down_since_the_seed_is_not_confirmed(self):
-        seed = _rounds({f"A_s{i}": False for i in range(12)} | {f"B_s{i}": True for i in range(3)})
-        final = _rounds({f"A_s{i}": True for i in range(12)} | {"B_s0": False, "B_s1": False, "B_s2": True})
-        c = self.s.confirm(final, seed, 0.05, 2)
+    def test_a_task_that_went_down_significantly_since_the_seed_is_not_confirmed(self):
+        seed = _rounds({f"A_s{i}": False for i in range(30)} | {f"B_s{i}": True for i in range(7)})
+        final = _rounds({f"A_s{i}": True for i in range(30)} | {f"B_s{i}": False for i in range(7)})
+        c = self.s.confirm(final, seed, 0.05, 0.05)
         self.assertFalse(c["confirmed"])
-        self.assertEqual(c["why"], ["task B loses 2 net"])
+        self.assertIn("task B regresses", c["why"][0])
         self.assertTrue(self.s.confirm(final, seed, 0.05, None)["confirmed"])
+        small = _rounds(
+            {f"A_s{i}": True for i in range(30)}
+            | {"B_s0": False, "B_s1": False}
+            | {f"B_s{i}": True for i in range(2, 7)}
+        )
+        self.assertTrue(self.s.confirm(small, seed, 0.05, 0.05)["confirmed"])  # 2 losses: within the noise
 
     def test_no_gain_is_not_confirmed(self):
         seed = _rounds({"A_s0": True, "A_s1": False})
         final = _rounds({"A_s0": False, "A_s1": True})
-        c = self.s.confirm(final, seed, 0.05, 2)
+        c = self.s.confirm(final, seed, 0.05, 0.05)
         self.assertFalse(c["confirmed"])
-        self.assertIn("net wins 0 <= 0", c["why"])
+        self.assertTrue(any("sign test p" in w for w in c["why"]))
 
 
 class LoopHooks(unittest.TestCase):
@@ -107,27 +119,33 @@ class LoopHooks(unittest.TestCase):
         (self.hidden / "check").mkdir(parents=True)
         (self.hidden / "gate").mkdir(parents=True)
         p = mock.patch.multiple(self.lp, FAMILY="fam", LOOP=root / "vis", HIDDEN=self.hidden, STATE=root / "vis" / "loop",
-                                GATE_DIR=self.hidden / "gate", CAPS={"check_half": True, "task_regress": 2,
-                                                                     "sealed_at_stop": True})  # fmt: skip
+                                GATE_DIR=self.hidden / "gate", CAPS={"check_half": True, "alpha_task_check": 0.10,
+                                                                     "check_min_net": 1, "sealed_at_stop": True})  # fmt: skip
         p.start()
         self.addCleanup(p.stop)
         (root / "vis" / "loop").mkdir(parents=True)
 
-    def _check(self, fixed, broken):
-        f = dict(n=10, fixed=fixed, broken=broken, ok=5, incumbent_ok=5)
+    def _check(self, cand, base):
+        def outcomes(path):
+            return _rounds(cand if "candidate" in str(path) else base)
+
         with (
             mock.patch.multiple(self.lp, incumbent=lambda: dict(hash="inc", dir="/x", set={}), candidate_hash=lambda c: "h1",
-                                check_pool=lambda: Path("/pool"), flips=lambda a, b: f, overrides=lambda c: {}),
+                                check_pool=lambda: Path("/pool"), overrides=lambda c: {}),
             mock.patch.object(self.lp.B, "run_jobs", lambda *a, **k: {}),
+            mock.patch.object(self.lp.B, "outcomes", outcomes),
         ):  # fmt: skip
             return self.lp.check_candidate(1, Path(self.d.name), Path("/cand"))
 
-    def test_check_half_names_a_task_that_loses_two(self):
-        out = self._check(["TaskA_s1", "TaskA_s2", "TaskA_s3", "TaskA_s4"], ["TaskB_s0", "TaskB_s1"])
-        self.assertEqual(out["net"], 2)
-        self.assertEqual(out["task_regress"], {"TaskB": -2})
-        out = self._check(["TaskA_s1", "TaskA_s2"], ["TaskB_s0"])
-        self.assertEqual(out["task_regress"], {})
+    def test_check_half_names_a_task_whose_loss_is_significant(self):
+        base = {f"TaskA_s{i}": False for i in range(4)} | {f"TaskB_s{i}": True for i in range(7)}
+        cand = {f"TaskA_s{i}": True for i in range(4)} | {f"TaskB_s{i}": False for i in range(7)}
+        out = self._check(cand, base)
+        self.assertEqual((out["net"], out["sent"]), (-3, False))
+        self.assertEqual(out["task_regress"], {"TaskB": -7})
+        cand["TaskB_s0"] = cand["TaskB_s1"] = cand["TaskB_s2"] = cand["TaskB_s3"] = True  # 3 losses: within the noise
+        out = self._check(cand, base)
+        self.assertEqual((out["net"], out["task_regress"], out["sent"]), (1, {}, True))
 
     def test_sealed_runs_once_for_a_final_incumbent_and_never_for_a_stub_or_the_seed(self):
         calls = []
@@ -143,9 +161,8 @@ class LoopHooks(unittest.TestCase):
             self.assertEqual(calls, [])  # nothing accepted
             (gate / "incumbent.json").write_text(json.dumps(dict(dir=str(gate / "03_abc" / "cand"), rounds="r")))
             self.lp.run_sealed("manager: stop", True)  # stub
-            self.lp.run_sealed("role call failed: x", False)  # abnormal
             self.assertEqual(calls, [])
-            self.lp.run_sealed("manager: stop", False)
+            self.lp.run_sealed("role call failed: x", False)  # TODO 54: every way a run ends runs it, a failed role too
             self.assertEqual(len(calls), 1)
             self.assertIn("sealed.py", str(calls[0][1]))
             (self.hidden / "sealed" / "history.jsonl").write_text(json.dumps(dict(final="03_abc")) + "\n")

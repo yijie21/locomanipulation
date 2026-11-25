@@ -234,12 +234,11 @@ def test_load_real_family(tmp_path, monkeypatch):
     assert fam["pools"]["accept"] == dict(seed=fam["pools"]["accept"]["seed"], n=150, per_level=10)
     assert fam["pools"]["sealed"]["n"] == 60 and fam["pools"]["diag"]["n"] == 30
     lay = B.layout(fam)
-    assert lay["caps"] == {"claims": False, "design_probes": False, "diag_redraw": False,
-                           "sentinel_exact": False, "min_net": 3, "repeat": 1, "p_max": 0.05,
-                           "sentinel_flips": 1, "probe_scope": True, "sweep_rounds": 300, "spec_review": True,
-                           "check_half": True, "check_min_net": 1, "check_stop": 2, "stage1_first": True,
-                           "probe_parallel": True, "tune_max": 2, "role_rerun": True,
-                           "task_regress": 2, "sealed_at_stop": True}  # fmt: skip
+    assert lay["caps"] == {**B.FALLBACK_CAPS, **fam["caps"]}  # TODO 54: the family file holds the switches explicitly
+    assert (
+        lay["caps"]["check_min_net"] == 4 and lay["caps"]["alpha_task"] == 0.05 and lay["caps"]["manager"] == "program"
+    )
+    assert lay["caps"]["stop_no_progress"] == 2 and "probe_parallel" not in lay["caps"] and "min_net" not in fam["caps"]
     assert set(lay["class_suggest"]) == set(B.CLASSES) and lay["plan"] is None
     assert lay["skills"] == tmp_path / "simple_q" / "package" and (lay["skills"] / "__init__.py").exists()
     assert B.base_dir(fam) != lay["skills"].resolve() and lay["prompts"].name == "prompts_simple"

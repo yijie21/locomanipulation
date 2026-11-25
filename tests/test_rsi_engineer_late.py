@@ -146,7 +146,7 @@ class EngineerDeadline(unittest.TestCase):
         ):
             lp.main(["run", "fam", "--engineer-late-min", "4"])
         self.assertEqual(seen["engineer_late_min"], 4.0)
-        none = Namespace(candidates=None, scoped_review=None, engineer_late_min=None)
+        none = Namespace(candidates=None, engineer_late_min=None)
         self.assertEqual(lp.resolve_settings(none, {}, False)["engineer_late_min"], 10.0)
         self.assertEqual(
             lp.resolve_settings(none, dict(started="x", engineer_late_min=0), True)["engineer_late_min"], 0.0

@@ -11,15 +11,18 @@ Steps, stopping at the first rejection:
 2. sentinel: SENTINELS incumbent rounds re-run must reproduce its stored outcomes (ok and end time) -- the motor
    layer and the scene are shared code, a change there must not move the incumbent. One start per task (`sentinel_labels`).
 3. stage 1: STAGE1 starts drawn from every task in proportion to its share of the pool (`stage1_labels`); reject
-   when the candidate's net wins (b - c) <= 0. (Until 2026-10-18 the first STAGE1 labels by name: about half of a
+   when the candidate's net wins (b - c) < 0 (TODO 54: it was <= 0). (Until 2026-10-18 the first STAGE1 labels by name: about half of a
    multi-task family's tasks, so a candidate that changed only a later task was rejected without one round of it.)
 4. stage 2: the rest of the pool.
-5. verdict (`verdict_fails`): accept iff b - c >= MIN_NET and c <= b / 3 (LOSS_SHARE), falls <= incumbent + 1,
+5. verdict (verdict.decide, TODO 54): with caps["p_max"] accept iff the one-sided sign test p <= p_max (net >= MIN_NET
+   is not read there: with p_max it can never bind), else (scene) b - c >= MIN_NET and c <= b / 3 (LOSS_SHARE); and falls <= incumbent + 1,
    drops <= incumbent + 1 -- or, against an incumbent with no success on the pool, drops <= half the candidate's
    successes when that is more (`drop_limit`; user 2026-10-18: a family starting from zero has no drops to compare).
-   With caps["task_regress"] k (the SIMPLE and LML backends, user 2026-11-23 "三条都加上"): no task may lose k or more
-   net on the pool (its losses minus its wins >= k rejects), so a gain on one task cannot pay for a loss on another;
-   `per_task` in the tally gives each task's wins and losses. A scene family has no such cap.
+   With caps["alpha_task"] (the benchmark families; 0.05 here, 0.10 at the check half): a task whose losses are
+   significant -- one-sided exact sign test on that task's discordant pairs, Holm-corrected across the tasks -- rejects,
+   so a gain on one task cannot pay for a real loss on another while a small, insignificant loss no longer rejects (it
+   was a fixed "net <= -2", too loose for a task that flips half its starts and never binding for one that flips none).
+   `per_task` in the tally gives each task's wins and losses, `task_tests` its p values. A scene family has no such cap.
    The one-sided exact McNemar p is still computed and reported, no longer required (TODO 33.8, gate rule 2, user
    2026-10-22: early research; until then p <= 0.05 was required, which alone needs 5:0, so MIN_NET never bound and a
    change that fixes one object of a 4-start-per-object pool could never pass). Every verdict line records the gate
@@ -46,7 +49,7 @@ import os
 import shutil
 import sys
 import time
-from math import comb, sqrt
+from math import sqrt
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -55,19 +58,18 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import backend as BK  # noqa: E402
 import batch as B  # noqa: E402
+import verdict as V  # noqa: E402
 from scene_round import load_skills, skills_hash  # noqa: E402
 
 STAGE1 = 30
 SENTINELS = 5
-MIN_NET = 3
-LOSS_SHARE = 3  # c <= b / LOSS_SHARE
-GATE_RULE = 2  # 1: b - c >= 3 and p <= 0.05 (to 2026-10-22); 2: b - c >= 3 and c <= b / 3 (TODO 33.8)
+MIN_NET = V.MIN_NET
+LOSS_SHARE = V.LOSS_SHARE  # c <= b / LOSS_SHARE (scene families)
+GATE_RULE = 3  # 3: TODO 54, the per-task sign test and stage 1 on net < 0; 1: b - c >= 3 and p <= 0.05 (to 2026-10-22); 2: b - c >= 3 and c <= b / 3 (TODO 33.8)
 SEED_SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 
 
-def mcnemar_one_sided(b: int, c: int) -> float:
-    n = b + c
-    return 1.0 if n == 0 else sum(comb(n, i) for i in range(b, n + 1)) / 2**n
+mcnemar_one_sided = V.sign_p  # TODO 54: the rule lives in verdict.py
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> list[float]:
@@ -129,39 +131,21 @@ def incomplete(labels, *arms: dict) -> list[str]:
     return sorted(x for x in labels if any(x not in arm for arm in arms))
 
 
-def drop_limit(t: dict) -> int:
-    """The most drops a candidate may have on the pool (verdict step 5)."""
-    limit = t["incumbent_dropped"] + 1
-    return max(limit, t["candidate_ok"] // 2) if t["incumbent_ok"] == 0 else limit
+drop_limit = V.drop_limit
 
 
 def verdict_fails(
-    t: dict, min_net: int = MIN_NET, p_max: float | None = None, task_regress: int | None = None
-) -> list[str]:
-    """Why a full-pool tally `t` is rejected (verdict step 5); empty when it is accepted. `min_net`: a second backend's
-    caps["min_net"] (its pool is smaller and its reruns noisier); a scene family keeps MIN_NET. `p_max` (a backend
-    whose reruns flip outcomes both ways, caps["p_max"]): the paired sign test's one-sided p must not exceed it, in
-    place of the loss-share condition, which the bed's own flips would fail for a real gain. `task_regress` k (caps):
-    a task whose losses exceed its wins by k or more rejects the candidate, whatever the other tasks gained."""
-    fails = []
-    if t["b"] - t["c"] < min_net:
-        fails.append(f"net wins {t['b'] - t['c']} < {min_net}")
-    if p_max is not None:
-        if t["p_one_sided"] > p_max:
-            fails.append(f"sign test p {t['p_one_sided']} > {p_max} (wins {t['b']}, losses {t['c']})")
-    elif t["c"] * LOSS_SHARE > t["b"]:
-        fails.append(f"losses {t['c']} > wins {t['b']} / {LOSS_SHARE}")
-    if t["candidate_fell"] > t["incumbent_fell"] + 1:
-        fails.append(f"falls {t['candidate_fell']} > {t['incumbent_fell']} + 1")
-    if t["candidate_dropped"] > drop_limit(t):
-        fails.append(f"drops {t['candidate_dropped']} > {drop_limit(t)}")
-    if task_regress:
-        for task, v in (t.get("per_task") or {}).items():
-            if v["c"] - v["b"] >= task_regress:
-                fails.append(
-                    f"task {task} loses {v['c'] - v['b']} net (wins {v['b']}, losses {v['c']}) >= {task_regress}"
-                )
-    return fails
+    t: dict, min_net: int = MIN_NET, p_max: float | None = None, alpha_task: float | None = None,
+    loss_share: int = LOSS_SHARE,
+) -> list[str]:  # fmt: skip
+    """Why a full-pool tally `t` is rejected (verdict step 5); empty when it is accepted. The rule is verdict.decide's
+    (TODO 54): with `p_max` the sign test's one-sided p must not exceed it and `min_net` is not read (it can never bind
+    there); a scene family (no p_max) needs net >= `min_net` and losses of at most a `loss_share`th of the wins.
+    `alpha_task`: a task whose losses are significant (one-sided exact sign test on its discordant pairs, Holm across
+    the tasks) rejects the candidate whatever the other tasks gained."""
+    return V.decide(t, "gate", dict(min_net=min_net, p_max=p_max, alpha_task=alpha_task, loss_share=loss_share))[
+        "reasons"
+    ]
 
 
 def task_of(label: str, rnd: dict | None = None) -> str:
@@ -169,15 +153,15 @@ def task_of(label: str, rnd: dict | None = None) -> str:
     return (rnd or {}).get("task") or label.rsplit("_s", 1)[0]
 
 
+def gate_params(caps: dict) -> dict:
+    """The family's caps the verdict reads (verdict.py): p_max, min_net (scene only), alpha_task."""
+    return dict(p_max=caps.get("p_max"), min_net=caps.get("min_net", MIN_NET), alpha_task=caps.get("alpha_task"),
+                loss_share=caps.get("loss_share", LOSS_SHARE))  # fmt: skip
+
+
 def per_task(cand: dict, inc: dict, keys: list[str]) -> dict:
-    """Wins (b) and losses (c) of the candidate against the incumbent, by task (verdict_fails' task_regress)."""
-    out: dict[str, dict] = {}
-    for k in keys:
-        v = out.setdefault(task_of(k, inc[k]), dict(n=0, b=0, c=0))
-        v["n"] += 1
-        v["b"] += bool(cand[k]["ok"] and not inc[k]["ok"])
-        v["c"] += bool(inc[k]["ok"] and not cand[k]["ok"])
-    return dict(sorted(out.items()))
+    """Wins (b) and losses (c) of the candidate against the incumbent, by task (the per-task test's input)."""
+    return V.counts(cand, inc, keys)["per_task"]
 
 
 def sentinel_drift(again: dict, inc_out: dict, exact: bool = True) -> list[str]:
@@ -221,20 +205,13 @@ def per_class(cand: dict, inc: dict, keys: list[str]) -> dict:
 
 def tally(cand: dict, inc: dict) -> dict:
     keys = sorted(set(cand) & set(inc))
-    b = sum(cand[k]["ok"] and not inc[k]["ok"] for k in keys)
-    c = sum(inc[k]["ok"] and not cand[k]["ok"] for k in keys)
     why = {}
     for k in keys:
         if not cand[k]["ok"]:
             w = (cand[k].get("plan_why") or cand[k]["why"] or "?")[:50]
             why[w] = why.get(w, 0) + 1
-    return dict(n=len(keys), candidate_ok=sum(cand[k]["ok"] for k in keys), incumbent_ok=sum(inc[k]["ok"] for k in keys),
-                b=b, c=c, p_one_sided=round(mcnemar_one_sided(b, c), 5),
-                candidate_fell=sum(cand[k]["fell"] for k in keys), incumbent_fell=sum(inc[k]["fell"] for k in keys),
-                candidate_dropped=sum(cand[k]["dropped"] for k in keys),
-                incumbent_dropped=sum(inc[k]["dropped"] for k in keys),
-                candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])),
-                per_class=per_class(cand, inc, keys), per_task=per_task(cand, inc, keys))  # fmt: skip
+    return dict(V.counts(cand, inc, keys), candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])),
+                per_class=per_class(cand, inc, keys))  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -260,7 +237,7 @@ def main(argv=None) -> int:
     inc = json.loads(inc_state.read_text())
     labels = B.pool_labels(a.pool)
     h = candidate_hash(a.candidate)
-    verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE, task_regress=caps.get("task_regress"),
+    verdict = dict(candidate=str(a.candidate), hash=h, rule=GATE_RULE, alpha_task=caps.get("alpha_task"),
                    started=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))  # fmt: skip
     verdict["call"] = len([x for x in history if not x.get("dry_run")]) + 1
 
@@ -314,14 +291,21 @@ def main(argv=None) -> int:
         return void("sentinel or incumbent", miss)
     drift = sentinel_drift(again, inc_out, caps["sentinel_exact"])
     if len(drift) > caps.get("sentinel_flips", 0):  # a noisy bed's caps tolerate that many flips of the sentinel
-        return finish(False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void")
+        # TODO 54 (review verify.md 8): void=True, as `void()` sets it. Without it the hash was blacklisted for good and
+        # the call counted against MAX_GATE_CALLS: an environment fault judged a candidate nobody had measured.
+        return finish(
+            False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void", void=True
+        )
     s1 = stage1_labels(labels)
     miss = incomplete(s1, inc_out, B.outcomes(work / "candidate"))
     if miss:
         return void("stage 1", miss)
     t1 = tally(B.outcomes(work / "candidate"), inc_out)
-    if t1["b"] - t1["c"] <= 0:
-        return finish(False, f"stage 1: net wins {t1['b'] - t1['c']} <= 0 on {t1['n']} pairs", stage1=t1)
+    s1v = V.decide(
+        t1, "stage1"
+    )  # TODO 54: only a net loss rejects (it was net <= 0: 3 starts a task cannot tell 0 from -1)
+    if not s1v["decision"]:
+        return finish(False, f"stage 1: {'; '.join(s1v['reasons'])} on {t1['n']} pairs", stage1=t1)
     # loop.gate_candidate (caps stage1_first, 2026-11-23) starts the candidate's diagnostic rounds and the early review
     # only once this file exists: a call stage 1 rejects costs only stage 1
     (work / "stage1_passed.json").write_text(json.dumps(t1))
@@ -331,13 +315,13 @@ def main(argv=None) -> int:
     if miss:
         return void("final", miss, stage1=t1)
     t = tally(B.outcomes(work / "candidate"), inc_out)
-    fails = verdict_fails(t, caps["min_net"], caps.get("p_max"), caps.get("task_regress"))
-    if fails:
-        return finish(False, "; ".join(fails), stage1=t1, result=t)
+    v = V.decide(t, "gate", gate_params(caps))
+    if not v["decision"]:
+        return finish(False, "; ".join(v["reasons"]), stage1=t1, result=dict(t, task_tests=v["per_task"]))
     inc_state.write_text(
         json.dumps(dict(dir=str(work / "cand"), rounds=str(work / "candidate"), since=verdict["call"]))
     )
-    return finish(True, "accepted", stage1=t1, result=t)
+    return finish(True, "accepted", stage1=t1, result=dict(t, task_tests=v["per_task"]))
 
 
 def _seed_dir(gate: Path, skills: Path = SEED_SKILLS) -> Path:
