@@ -39,13 +39,13 @@
  },
  "hold_s": 2.0,
  "judge_s": 5.0,
- "stop_rate": 0.8,
- "max_wall_h": 5.0,
+ "stop_rate": 0.95,
+ "max_wall_h": 15.0,
  "max_run_iters": 5,
  "pool_per_task": {
   "diag": 3,
-  "accept": 4,
-  "sealed": 5
+  "accept": 10,
+  "sealed": 10
  },
  "pools": {
   "diag": {
@@ -54,11 +54,11 @@
   },
   "accept": {
    "seed": 9100000,
-   "n": 80
+   "n": 200
   },
   "sealed": {
    "seed": 9200000,
-   "n": 100
+   "n": 200
   }
  },
  "plan": "scripts/rsi/plans/gso_single_grasp.md",

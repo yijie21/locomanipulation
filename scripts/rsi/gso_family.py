@@ -32,8 +32,8 @@ start.sample_start; user 2026-11-06: with the nine others fixed, 13 of s0's 21 t
 A hand-picked scene (`logistics_room_gso_single` / `_bimanual`, user 2026-11-17; prepare_logistics_scene.py --picks)
 gets one family instead: `gso_single_grasp` (every picked one-hand object) or `gso_bimanual_lift` (every picked
 two-hand object and the carton), goal `held(X)` + `lifted(X, 0.20, 60)` (`--lift` another height) judged over the
-last 5 s for both, the main skill library as the start, pools sized by the task count (`--per-task diag=3 accept=4
-sealed=5`, the default; the acceptance pool at least gate.STAGE1 + 1); files `gso_single_grasp.json` +
+last 5 s for both, the main skill library as the start, pools sized by the task count (`--per-task diag=3 accept=10
+sealed=10`, the default; the acceptance pool at least gate.STAGE1 + 1); files `gso_single_grasp.json` +
 `gso_single_grasp_tasks.jsonl`.
 
 Writes `<families-dir>/gso_grasp_s<seed>.json`, `gso_bimanual_s<seed>.json`, `gso_pack_s<seed>.json`,
@@ -85,7 +85,10 @@ PICKED_LIFT_M = 0.20
 # gso_pack_all; with a fixed 30 / 40 / 50 the 20 one-hand tasks had 1-2 diagnostic and 2 acceptance starts each, so a
 # change that helped one object could never win the gate's net 3). The family file records the numbers it was written
 # with (`pool_per_task`) and each pool's `n`; the sandbox, the loop and sealed.py read `n` from there.
-PICKED_PER_TASK = {"diag": 3, "accept": 4, "sealed": 5}
+# 3 / 10 / 10 since 2026-11-24 (user; 3 / 4 / 5 before): the diagnostic pool only feeds the Reviewer failures and is
+# topped up by the redraw, so it stays small; the acceptance pool decides the gate, where a 32-start pool let two or
+# three chance flips of a contact round decide the verdict; the sealed pool is run once and sets the report's interval.
+PICKED_PER_TASK = {"diag": 3, "accept": 10, "sealed": 10}
 
 
 def gate_stage1() -> int:
@@ -144,6 +147,10 @@ HANDS_CLEAR_M = 0.18
 # when a family's inner loop stops (loop.py resolve_settings; user 2026-11-06): the incumbent wins 80 % of the acceptance
 # pool, the run has been going 5 h, or it has taken 5 iterations, whichever comes first
 STOPS = {"stop_rate": 0.80, "max_wall_h": 5.0, "max_run_iters": 5}
+# the hand-picked families (gso_single_grasp, gso_bimanual_lift; user 2026-11-24): the main library already wins 87 % of
+# their acceptance pools (the written-back incumbents of gso-alt-a), so the stop line is 95 %; 15 h, the same budget as
+# alternate.py's --max-hours
+PICKED_STOPS = {"stop_rate": 0.95, "max_wall_h": 15.0, "max_run_iters": 5}
 
 # the sandbox block every scene RSI family carries (box_bimanual.json, grasp_atomic.json): what the archive keeps,
 # the src import closure, what is stripped; only the family's own files differ
@@ -437,7 +444,7 @@ def write_picked(
         "tasks": [r["id"] for r in rows],
         "spawn": PICKED_SPAWN,
         **TIMING,
-        **STOPS,
+        **PICKED_STOPS,
         "pool_per_task": per_task or dict(PICKED_PER_TASK),
         "pools": picked_pools(spec["pool_seed"], len(rows), per_task or PICKED_PER_TASK),
         "plan": spec["plan"],

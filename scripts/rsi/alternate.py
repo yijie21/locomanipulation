@@ -3,7 +3,7 @@ share one knowledge library and one skills package. Modes 1 and 2 are the loop a
 `loop.py run`, then `knowledge.py build`).
 
     python3 scripts/rsi/alternate.py init <run dir> <family A> <family B> [--ref HEAD]
-    python3 scripts/rsi/alternate.py run <run dir> [--iters 5] [--max-hours 10] [--stop-rate 0.8] [--loop-args "..."]
+    python3 scripts/rsi/alternate.py run <run dir> [--iters 5] [--max-hours 15] [--stop-rate 0.95] [--loop-args "..."]
     python3 scripts/rsi/alternate.py status <run dir>
     python3 scripts/rsi/alternate.py publish <run dir> [--out scripts/rsi/knowledge]
 
@@ -33,9 +33,9 @@ kind and skill file), which loop.py turns into a line of the Reviewer's and the 
    carries it.
 When it stops (user 2026-11-18), whichever comes first:
 - `--iters` iterations are done (5: five halves of each family);
-- the run has been running `--max-hours` (default 10), both families together: the time the driver ran, summed over
+- the run has been running `--max-hours` (default 15), both families together: the time the driver ran, summed over
   its runs (the time it stood stopped does not count), checked before each phase, so a phase under way finishes;
-- both families have reached the stop rate (`--stop-rate`, default 0.8: the incumbent wins that share of the
+- both families have reached the stop rate (`--stop-rate`, default 0.95 since 2026-11-24, 0.8 before: the incumbent wins that share of the
   family's acceptance pool). Each family's loop runs with `--alternating`: the stop rate is its only stop (no gate-call
   cap, no wall clock, no iteration cap, no Manager stop). A family that reached it stops -- its halves are skipped,
   nothing is merged into it, its entries stay -- and the other goes on.
@@ -309,7 +309,7 @@ def append_sync(run: Path, row: dict) -> None:
 
 class Runner:
     def __init__(
-        self, run: Path, loop_args: list[str] | None = None, stub_knowledge: bool = False, stop_rate: float = 0.8
+        self, run: Path, loop_args: list[str] | None = None, stub_knowledge: bool = False, stop_rate: float = 0.95
     ):
         self.run, self.loop_args, self.stub, self.stop_rate = run, loop_args or [], stub_knowledge, stop_rate
         (run / "logs").mkdir(parents=True, exist_ok=True)
@@ -589,9 +589,11 @@ def main(argv=None) -> int:
     r = sub.add_parser("run")
     r.add_argument("run", type=Path)
     r.add_argument("--iters", type=int, default=5, help="iterations, each a half of both families")
-    r.add_argument("--max-hours", type=float, default=10.0, help="hours both families may run together (default 10)")
-    r.add_argument("--stop-rate", type=float, default=0.8, help="a family stops once its incumbent wins this share "
-                   "of its acceptance pool (default 0.8)")  # fmt: skip
+    r.add_argument(
+        "--max-hours", type=float, default=15.0, help="hours both families may run together (default 15; 10 before)"
+    )
+    r.add_argument("--stop-rate", type=float, default=0.95, help="a family stops once its incumbent wins this share "
+                   "of its acceptance pool (default 0.95; 0.8 until 2026-11-24)")  # fmt: skip
     r.add_argument("--loop-args", default="", help='more arguments for each `loop.py run`, e.g. "--candidates 3"')
     r.add_argument("--stub-knowledge", action="store_true", help="knowledge.build without the model (plumbing)")
     s = sub.add_parser("status")
