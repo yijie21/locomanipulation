@@ -122,6 +122,27 @@ t 有一部分随发令时的身体状态和这条参考变化，所以是可以
 
 ## 预测修订
 
+2026-11-25，训练和任何离线评测以前（实现的 agent 在冻结 aff 以后、开训以前停下来问）：
+
+- **aff_far 照原文做不出来**：开发位置的开局目标离最近的测试目标都不到 5 cm（ScaleBFM 最远 2.65 cm，SONIC 3.03 cm），符合条件的是 0 个。
+- **改为阈值 1 cm**：正好去掉 precision3 复核第 4 条说的那些重合位置（0.21–0.93 cm）。
+  - ScaleBFM 剩 6 个位置、24 个局次；SONIC 剩 4 个位置、9 个局次。SONIC 的这份太少，只报不读。
+  - 它仍只是稳健性对照，不进核心判据。
+- **已冻结的 aff**（agent 原样输出；01:26Z 写好，登记提交 `8bd16b1e` 在 00:59:25Z）：
+
+  ```
+  aff_rr_scalebfm.json: n 44 episode-repeats, 11 positions, 9 layouts; lambda per axis [1000.0, 30.0, 10.0]; a [-1.51175, -5.23368, 5.62639] cm; leave-one-layout miss median 0.9836 cm (in sample 0.8157)
+  aff_rr_sonic.json: n 55 episode-repeats, 16 positions, 15 layouts; lambda per axis [100.0, 100.0, 1000.0]; a [9.14623, -3.30076, 0.94023] cm; leave-one-layout miss median 7.6564 cm (in sample 6.947)
+  ```
+
+  md5 `7c2a7955…` / `7dc30323…`。文件放在 `outputs/simple_eval_20261112/rootframe_20261125/aff/`，没放 `precision_const/`，因为新输出只放新目录。
+- **输入核对**（训练以前）：
+  - 默认开关重建的数据和原数据逐位相同。
+  - 把录像里的真实骨盆挪 5 cm、转 4°，把 W、J 打乱，新框架的输入 x 一位不变，只有标签变。所以输入里没有仿真真值。
+  - S3 原样保留：其中的骨盆高度本来就是里程计估计，`simple_bench.py` 第 660 行强制 `root == "odo"`。
+  - 估计骨盆的 xy 和朝向用站位锚点（行里的 `bel`），因为发令时控制器自己的里程计 xy 没有记下来。
+- **代价，事先写明**：估计的夹爪离真实夹爪，ScaleBFM 中位数 2.0–2.3 cm，SONIC 3.4–7.3 cm。站位以后骨盆漂了多少，模型看不到。
+- **预测、判据、核心比较都不变。**
 ## 结果（贴原始输出，不转述）
 
 ## 意外
