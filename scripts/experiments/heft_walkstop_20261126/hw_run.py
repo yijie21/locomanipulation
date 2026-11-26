@@ -60,6 +60,15 @@ liftoffs (foot load < 10 N for 3 consecutive steps, faildiag's rule, after the c
 read), n_reissue, odo_err (odometry - truth at the read), fell, success. Traces (traces/<arm>_c<cid>_r<rep>.npz) per step:
 truth pelvis xy / yaw, odometry xy / yaw, foot loads, frontmost - line (feet; low), the pushed reference root (world), stage.
 
+heft_reanchor2x2_20261126 (the independent review's 2x2 on P2's re-issues; P2's own path is unchanged when both are
+at their defaults): spec "src" = where a re-issue decision reads the pelvis -- "odo" (the leg odometry, P2) or "true"
+(the simulator's pelvis and yaw: a MEASUREMENT arm that isolates the odometry's share, never a method); spec "aim" =
+what the re-issues bring to the line -- "pelvis" (T fixed at the command, P2) or "toe" (P4: after every settle the feet's
+reach by the robot's own FK in the stance it now stands in, r_now = reach_own, re-derives the pelvis target
+T = p0 + (s_line - r_now - MARGIN) h + lat n and the would-cross guard uses r_now). The first walk is the same in all
+four (the belief at the command is p0 / yaw0 either way). Every walk also records, at its settle, the feet's own reach
+(reach_own_end) and the truth toes past the line (front_past_end). Cells 11 / 12 (2.00 / 3.00 m straight) are the 2x2's.
+
     cd $G; PYTHONPATH=$G:$W/src $PY hw_run.py run --arms p0,p1a,p1b,p1c,p2 --cells 0:11 --reps 0:10 --shard K --shards N
     $PY hw_run.py selftest
 """
@@ -101,7 +110,8 @@ POST_S, T_MAX_S, HOLD_S = 1.0, 90.0, 40.0
 MARKER_M, MARKER_RUN = 1.5, 3.0
 # cells: (run-up d = the distance to walk, lateral offset of the target), straight first
 CELLS = ((0.05, 0.0), (0.10, 0.0), (0.20, 0.0), (0.30, 0.0), (0.50, 0.0), (1.00, 0.0), (1.50, 0.0),
-         (0.20, 0.20), (0.20, -0.20), (1.00, 0.20), (1.00, -0.20))  # fmt: skip
+         (0.20, 0.20), (0.20, -0.20), (1.00, 0.20), (1.00, -0.20),
+         (2.00, 0.0), (3.00, 0.0))  # fmt: skip  (11 / 12: heft_reanchor2x2_20261126 only)
 MARKER_CID = 100
 # arms: backend, gait, program (plan | marker), re-anchor
 ARMS = {
@@ -118,6 +128,10 @@ ARMS = {
     # revision 2 (diagnostic, LML and HA): HEFT on the walk HA's task episodes give it today (hr_real: hg_walk.walk_frames,
     # 0.20 m / 0.55 s steps, 6 cm swing) -- one of the LML-vs-HA candidates is this reference, not the simulator
     "p0hg": dict(backend="heft", gait="hg", program="plan", reanchor=False),
+    # heft_reanchor2x2_20261126: P2 (odo, pelvis) x {re-anchor source} x {aim}; *t = truth pelvis, measurement only
+    "p2t": dict(backend="heft", gait="p0", program="plan", reanchor=True, src="true"),
+    "p4": dict(backend="heft", gait="p0", program="plan", reanchor=True, aim="toe"),
+    "p4t": dict(backend="heft", gait="p0", program="plan", reanchor=True, src="true", aim="toe"),
     "m050": dict(backend="heft", gait="p0", program="marker", reanchor=False),
     "m035": dict(backend="heft", gait="m035", program="marker", reanchor=False),
     "m025": dict(backend="heft", gait="m025", program="marker", reanchor=False),
@@ -307,6 +321,14 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
     n_re, cross_max, cross_low, low_body, trig, f_fin, final = 0, -np.inf, -np.inf, "", None, None, None
     anchor = None
     tr = []
+    src, aim = spec.get("src", "odo"), spec.get("aim", "pelvis")
+    reach_cur = None
+
+    def belief(x) -> tuple:
+        """The pose a decision reads: the odometry's (P2), or the simulator's for the measurement arms (src true)."""
+        if src == "true":
+            return x["root"][:2].astype(float).copy(), L.yaw_of(L._qmat(x["root"][3:]))
+        return odo.pose()
 
     def fwd_lat(p) -> tuple[float, float]:
         v = np.asarray(p, float)[:2] - p0
@@ -314,9 +336,9 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
 
     def issue(x, goal_xy, kind: str) -> bool:
         nonlocal frames, open_f, stage, anchor
-        pose = odo.pose()
+        pose = belief(x)
         gf, gl = fwd_lat(goal_xy)
-        if not marker and gf + R["reach_own"] > R["s_line"]:  # the planned end stance's frontmost point past the line
+        if not marker and gf + (reach_cur if aim == "toe" else R["reach_own"]) > R["s_line"]:  # the planned end stance's frontmost point past the line
             walks.append(dict(kind=kind, f_cmd=f, refused="would cross"))
             return False
         info: dict = {}
@@ -335,10 +357,10 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
 
     def plan_walk(x) -> bool:
         """The next walk toward T from the believed pose (split under dmin)."""
-        rem = target - odo.pose()[0]
+        rem = target - belief(x)[0]
         if dmin and float(np.linalg.norm(rem)) < dmin:
             queue.append(target.copy())
-            return issue(x, odo.pose()[0] - dmin * h, "back")
+            return issue(x, belief(x)[0] - dmin * h, "back")
         return issue(x, target, "walk" if not walks else "reissue")
 
     while True:
@@ -384,6 +406,7 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                 odo = HW.LegOdo(dr, x, (p0.copy(), yaw0))
                 reach_true, reach_low, _ = body.frontmost(dr.d, p0, h)
                 reach_own = body.reach_own(x, h)
+                reach_cur = reach_own
                 j = 0.0 if marker else float(np.random.default_rng([TAG, cid, rep, 2]).uniform(-JIT, JIT))
                 s_line = reach_true + MARGIN + d_run + j
                 R.update(f_cmd0=f, stand=go, stand_wait_s=(f - open_f) / FPS, jitter=j, reach_true=reach_true, reach_true_low=reach_low, reach_own=reach_own,
@@ -413,11 +436,17 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                 bf, bl = fwd_lat(op)
                 wk.update(f_go=f, how=go, wait_s=(f - open_f) / FPS, truth_settled=bool(rig.quiet()), lift=lift.total() - wk["lift0"],
                           moved_fwd=tf - wk["truth"][0], moved_lat=tl - wk["truth"][1], belief_end=[bf, bl], truth_end=[tf, tl])  # fmt: skip
+                if not marker:
+                    wk.update(reach_own_end=body.reach_own(x, h), front_past_end=body.frontmost(dr.d, p0, h)[0] - s_line)
                 nxt = False
                 if queue:  # the forward leg of a split
                     nxt = issue(x, queue.pop(0), "fwd")
                 elif spec["reanchor"]:
-                    rem = target - op
+                    if aim == "toe":  # P4: the stance the robot now stands in sets where the pelvis must go
+                        reach_cur = wk["reach_own_end"]
+                        target = p0 + (s_line - reach_cur - MARGIN) * h + lat * n
+                        wk["aim_fwd"] = float((target - p0) @ h)
+                    rem = target - belief(x)[0]
                     wk["rem_belief_cm"] = 100 * float(np.linalg.norm(rem))
                     if n_re < REISSUE_MAX and float(np.linalg.norm(rem)) >= REM_MIN:
                         n_re += 1
