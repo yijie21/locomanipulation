@@ -1,6 +1,6 @@
 # selfmodel_simpleheft_20261126：SIMPLE 主指标加 HEFT（直接执行 A，闸门，再一次性修正 R_D）
 
-- **状态**：预注册（2026-11-26）。先跑 A 和 AL，算闸门；过了闸门，当天跑 R_D。
+- **状态**：跑完，等独立复核（2026-11-26）。GATE PASS（XMovePick、XMoveBendPick），R_D 当天跑完；HEFT 的 A 进主指标（协调方 11-26 定，见"意外"第 1 条）。
 - **日期**：2026-11-26。
 - **为什么做**：用户 11-26 收窄了范围："不要再发散了"。三个基准、三个控制器，各跑一次自己的自身模型，拿任务指标，和直接发命令比。
   - SIMPLE 上 ScaleBFM 已经有了：45 s 内 A 83/120，R_D 108/120（simplecmp）。
@@ -229,10 +229,413 @@ F_heft 的两项也打印，只作参照，不改变结论。F_heft 那一行的
 
 ## 预测修订
 
+没有。闸门算完以后、R_D 开跑以前都没改预测。修订 1 只改了闸门两种结果的"下一步"和评估的主比较。
+
 ## 结果（贴原始输出，不转述）
+
+- **冻结和运行**：
+  - 冻结在 2026-11-26T12:36:05Z（`asrun/FROZEN_UTC`，冻结时的提交 4d022c97）。CODE_MD5 在评估之后又核了一次，通过。
+  - 4090 的 1、2、3 号卡，0 号卡没碰。每阶段开跑前的 nvidia-smi 在 `run/nvidia_smi_A.txt`、`run/nvidia_smi_R.txt`。
+  - 阶段 A：12:36:26Z 到 13:13:11Z，48 个作业（A、AL 各 24），比预计的 20–30 分钟长。
+  - 阶段 R：13:15:43Z 到 13:34:25Z，24 个作业。
+  - 72 个作业退出码都是 0（`run/run.log`），`run/logs/` 的 12 个日志里没有 Traceback。
+- **共享树没被写**：
+  - 副本自己的 `asrun/code/outputs/simple_eval_20261112/scene/` 是真目录，有 120 个局目录，每个任务 30 个。
+  - 共享树 `ws/code/loco/outputs/simple_eval_20261112` 里，`scene/` 下一层和其余两层都没有 12:36Z 以后改过的文件。
+- **原始输出**都在 `/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/`：
+  - `gate/gate.txt`（md5 3249faa5）：闸门；
+  - `run/eval_A.txt`：阶段 R 之前的一致性；
+  - `f1/f1.txt`（9791fc3c）：R_D 命令上的 F1；
+  - `eval.txt`（4ac18fe7）、`eval.json`（f2eff547）：登记的评估；
+  - 行在 `run/rows/`，修正记录在 `run/corr_AL/`、`run/corr_RD/`。
+
+### 闸门：`sh_gate.sh` → `gate/gate.txt`（13:13:27Z，阶段 A 跑完后、R_D 开跑前）
+
+```
+gate 2026-11-26T13:13:27Z: rows /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/rows, AL record /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/corr_AL
+== D_heft: train /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_data3_20261125/heft/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_data3b_20261125/heft/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_train3b_20261125/heft/data/mid_data3.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_train3b_20261125/heft/data/mid_data3b.npz; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '0', 'REACHWM_TRAIN_HELD': '', 'REACHWM_SUBSET': ''}
+  train split 499077 segments (train.json n_train 499077: equal); val 4321, val starts in range 87.3 %
+  rows A_XMovePickTeleop.jsonl: 30 episodes, md5 aff9c182538c6863aabe4bf89476b888
+  rows A_XMoveBendPickTeleop.jsonl: 30 episodes, md5 8d1830e413711056aea44aab5bbac845
+  rows A_BendPickMP.jsonl: 30 episodes, md5 6b971f539133cf8bc4f6c704ad2be330
+  rows A_TabletopGraspMP.jsonl: 30 episodes, md5 40eddeb56a7b50fe0ed963d079d2266e
+  in range (all 29 joints inside the train split's 0.5 / 99.5 %): share [95 %, layouts resampled]; joints out median; most often out (% of starts)
+    XMovePickTeleop      pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMovePickTeleop      entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMovePickTeleop      both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    BendPickMP           pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    BendPickMP           entry    n  30   83.3 % [ 66.7,  96.7]  out median 0  [('right_hip_roll_joint', 13.3), ('left_knee_joint', 3.3)]
+    BendPickMP           both     n  60   91.7 % [ 83.3, 100.0]  out median 0  [('right_hip_roll_joint', 6.7), ('left_knee_joint', 1.7)]
+    TabletopGraspMP      pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    TabletopGraspMP      entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    TabletopGraspMP      both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    all                  pregrasp n 120  100.0 % [100.0, 100.0]  out median 0  []
+    all                  entry    n 120   95.8 % [ 90.8, 100.0]  out median 0  [('right_hip_roll_joint', 3.3), ('left_knee_joint', 0.8)]
+    all                  both     n 240   97.9 % [ 95.0, 100.0]  out median 0  [('right_hip_roll_joint', 1.7), ('left_knee_joint', 0.4)]
+== F_heft_reference: train /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_data3_20261125/heft/data/all.npz; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '1', 'REACHWM_TRAIN_HELD': '', 'REACHWM_SUBSET': ''}
+  train split 20518 segments (train.json n_train 20518: equal); val 2539, val starts in range 83.0 %
+  rows A_XMovePickTeleop.jsonl: 30 episodes, md5 aff9c182538c6863aabe4bf89476b888
+  rows A_XMoveBendPickTeleop.jsonl: 30 episodes, md5 8d1830e413711056aea44aab5bbac845
+  rows A_BendPickMP.jsonl: 30 episodes, md5 6b971f539133cf8bc4f6c704ad2be330
+  rows A_TabletopGraspMP.jsonl: 30 episodes, md5 40eddeb56a7b50fe0ed963d079d2266e
+  in range (all 29 joints inside the train split's 0.5 / 99.5 %): share [95 %, layouts resampled]; joints out median; most often out (% of starts)
+    XMovePickTeleop      pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMovePickTeleop      entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMovePickTeleop      both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  entry    n  30   93.3 % [ 83.3, 100.0]  out median 0  [('right_hip_roll_joint', 6.7)]
+    XMoveBendPickTeleop  both     n  60   96.7 % [ 91.7, 100.0]  out median 0  [('right_hip_roll_joint', 3.3)]
+    BendPickMP           pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    BendPickMP           entry    n  30   30.0 % [ 10.0,  50.0]  out median 1  [('right_hip_roll_joint', 66.7), ('left_knee_joint', 3.3)]
+    BendPickMP           both     n  60   65.0 % [ 56.7,  76.7]  out median 0  [('right_hip_roll_joint', 33.3), ('left_knee_joint', 1.7)]
+    TabletopGraspMP      pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    TabletopGraspMP      entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    TabletopGraspMP      both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    all                  pregrasp n 120  100.0 % [100.0, 100.0]  out median 0  []
+    all                  entry    n 120   80.8 % [ 70.0,  90.0]  out median 0  [('right_hip_roll_joint', 18.3), ('left_knee_joint', 0.8)]
+    all                  both     n 240   90.4 % [ 85.4,  95.4]  out median 0  [('right_hip_roll_joint', 9.2), ('left_knee_joint', 0.4)]
+== D_heft: model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_train3b_20261125/heft/models_D_s0/E3_ensemble_f1, val 3.204 cm; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '0'}
+  AL: /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/corr_AL: 240 segments (240 kept, not fallen); online = offline on 240 sent stages (plan_same): max |pred diff| 4.998e-06 m; 0 stages without a pair
+    model error at the task label, median cm [95 %, layouts resampled] / val = F1(a) ratio [95 %]; direct miss median; model / direct [95 %]
+    reaches with a table contact (rows' hits): 121 of 240 kept
+    XMovePickTeleop      pregrasp n  30:  0.619 cm [ 0.401,  0.740] = 0.193x [0.125, 0.231]; direct  4.110 cm; model / direct 0.151 [0.105, 0.174]
+    XMovePickTeleop      entry    n  30:  0.433 cm [ 0.328,  0.460] = 0.135x [0.102, 0.143]; direct  3.171 cm; model / direct 0.136 [0.104, 0.145]
+    XMovePickTeleop      both     n  60:  0.451 cm [ 0.417,  0.484] = 0.141x [0.130, 0.151]; direct  3.413 cm; model / direct 0.132 [0.116, 0.142]
+    XMoveBendPickTeleop  pregrasp n  30:  1.756 cm [ 1.045,  3.024] = 0.548x [0.326, 0.944]; direct  3.854 cm; model / direct 0.456 [0.428, 0.537]
+    XMoveBendPickTeleop  entry    n  30:  1.065 cm [ 0.558,  1.742] = 0.332x [0.174, 0.544]; direct  3.494 cm; model / direct 0.305 [0.242, 0.360]
+    XMoveBendPickTeleop  both     n  60:  1.402 cm [ 1.007,  2.018] = 0.438x [0.314, 0.630]; direct  3.635 cm; model / direct 0.386 [0.313, 0.513]
+    BendPickMP           pregrasp n  30:  3.948 cm [ 1.684,  5.557] = 1.232x [0.526, 1.734]; direct  6.293 cm; model / direct 0.627 [0.409, 0.840]
+    BendPickMP           entry    n  30:  4.433 cm [ 2.901,  5.361] = 1.384x [0.906, 1.673]  > 1.3; direct  9.782 cm; model / direct 0.453 [0.374, 0.576]
+    BendPickMP           both     n  60:  4.367 cm [ 2.344,  5.346] = 1.363x [0.732, 1.668]  > 1.3; direct  6.872 cm; model / direct 0.635 [0.421, 0.694]
+    TabletopGraspMP      pregrasp n  30: 34.457 cm [32.937, 35.106] = 10.754x [10.280, 10.957]  > 1.3; direct 43.630 cm; model / direct 0.790 [0.761, 0.804]
+    TabletopGraspMP      entry    n  30: 29.056 cm [28.402, 29.785] = 9.069x [8.865, 9.296]  > 1.3; direct 37.622 cm; model / direct 0.772 [0.753, 0.787]
+    TabletopGraspMP      both     n  60: 31.355 cm [30.189, 32.842] = 9.786x [9.422, 10.250]  > 1.3; direct 40.658 cm; model / direct 0.771 [0.743, 0.789]
+    all                  pregrasp n 120:  2.981 cm [ 1.018,  4.748] = 0.931x [0.318, 1.482]; direct  5.509 cm; model / direct 0.541 [0.244, 0.728]
+    all                  entry    n 120:  1.821 cm [ 0.717,  5.115] = 0.568x [0.224, 1.597]; direct  5.716 cm; model / direct 0.319 [0.177, 0.530]
+    all                  both     n 240:  2.494 cm [ 0.956,  4.765] = 0.778x [0.298, 1.487]; direct  5.579 cm; model / direct 0.447 [0.230, 0.630]
+    XMovePickTeleop free pregrasp n  29:  0.572 cm [ 0.401,  0.726] = 0.178x [0.125, 0.227]; direct  4.100 cm; model / direct 0.139 [0.105, 0.173]
+    XMovePickTeleop free entry    n  29:  0.431 cm [ 0.327,  0.457] = 0.135x [0.102, 0.143]; direct  3.170 cm; model / direct 0.136 [0.103, 0.144]
+    XMovePickTeleop free both     n  58:  0.446 cm [ 0.414,  0.483] = 0.139x [0.129, 0.151]; direct  3.407 cm; model / direct 0.131 [0.119, 0.141]
+    XMoveBendPickTeleop free pregrasp n  28:  1.270 cm [ 1.045,  3.003] = 0.396x [0.326, 0.937]; direct  2.555 cm; model / direct 0.497 [0.420, 0.535]
+    XMoveBendPickTeleop free entry    n  17:  0.557 cm [ 0.496,  0.597] = 0.174x [0.155, 0.186]; direct  2.158 cm; model / direct 0.258 [0.235, 0.284]
+    XMoveBendPickTeleop free both     n  45:  1.045 cm [ 0.942,  2.645] = 0.326x [0.294, 0.825]; direct  2.378 cm; model / direct 0.439 [0.377, 0.516]
+    BendPickMP free      pregrasp n   8:  0.857 cm [ 0.846,  0.983] = 0.268x [0.264, 0.307]; direct  3.112 cm; model / direct 0.275 [0.270, 0.330]
+    BendPickMP free      entry    n   8:  0.865 cm [ 0.854,  0.924] = 0.270x [0.267, 0.288]; direct  3.102 cm; model / direct 0.279 [0.275, 0.311]
+    BendPickMP free      both     n  16:  0.862 cm [ 0.850,  0.949] = 0.269x [0.265, 0.296]; direct  3.103 cm; model / direct 0.278 [0.274, 0.310]
+    all free             pregrasp n  65:  0.850 cm [ 0.725,  1.045] = 0.265x [0.226, 0.326]; direct  3.824 cm; model / direct 0.222 [0.179, 0.311]
+    all free             entry    n  54:  0.484 cm [ 0.434,  0.559] = 0.151x [0.135, 0.175]; direct  3.128 cm; model / direct 0.155 [0.140, 0.190]
+    all free             both     n 119:  0.666 cm [ 0.503,  0.852] = 0.208x [0.157, 0.266]; direct  3.172 cm; model / direct 0.210 [0.156, 0.271]
+== F_heft_reference: model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_fdvel_20261126/heft/models_s0/E3_ensemble_f1, val 4.598 cm; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '1'}
+  AL: /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/corr_AL: 240 segments (240 kept, not fallen); online = offline on 240 sent stages (plan_same): max |pred diff| 3.781e-01 m; 0 stages without a pair
+    model error at the task label, median cm [95 %, layouts resampled] / val = F1(a) ratio [95 %]; direct miss median; model / direct [95 %]
+    XMovePickTeleop      pregrasp n  30: 12.889 cm [12.734, 12.991] = 2.803x [2.770, 2.825]  > 1.3; direct  4.110 cm; model / direct 3.136 [3.034, 3.355]
+    XMovePickTeleop      entry    n  30:  1.786 cm [ 1.643,  2.008] = 0.388x [0.357, 0.437]; direct  3.171 cm; model / direct 0.563 [0.524, 0.618]
+    XMovePickTeleop      both     n  60: 12.476 cm [ 7.301, 12.756] = 2.713x [1.588, 2.774]  > 1.3; direct  3.413 cm; model / direct 3.656 [2.040, 3.811]
+    XMoveBendPickTeleop  pregrasp n  30: 12.625 cm [11.763, 15.046] = 2.746x [2.558, 3.272]  > 1.3; direct  3.854 cm; model / direct 3.276 [2.452, 5.050]
+    XMoveBendPickTeleop  entry    n  30:  2.195 cm [ 0.784,  3.465] = 0.477x [0.170, 0.754]; direct  3.494 cm; model / direct 0.628 [0.362, 0.869]
+    XMoveBendPickTeleop  both     n  60: 11.057 cm [ 7.295, 11.440] = 2.405x [1.587, 2.488]  > 1.3; direct  3.635 cm; model / direct 3.042 [1.398, 4.707]
+    BendPickMP           pregrasp n  30: 12.319 cm [11.896, 13.262] = 2.679x [2.587, 2.884]  > 1.3; direct  6.293 cm; model / direct 1.957 [1.802, 3.224]
+    BendPickMP           entry    n  30:  9.560 cm [ 6.155, 10.631] = 2.079x [1.339, 2.312]  > 1.3; direct  9.782 cm; model / direct 0.977 [0.733, 1.061]
+    BendPickMP           both     n  60: 11.269 cm [10.627, 11.906] = 2.451x [2.311, 2.589]  > 1.3; direct  6.872 cm; model / direct 1.640 [1.169, 2.238]
+    TabletopGraspMP      pregrasp n  30: 43.501 cm [42.763, 45.792] = 9.461x [9.300, 9.959]  > 1.3; direct 43.630 cm; model / direct 0.997 [0.982, 1.042]
+    TabletopGraspMP      entry    n  30: 28.643 cm [27.939, 29.398] = 6.230x [6.076, 6.394]  > 1.3; direct 37.622 cm; model / direct 0.761 [0.748, 0.775]
+    TabletopGraspMP      both     n  60: 36.454 cm [36.199, 37.576] = 7.928x [7.873, 8.172]  > 1.3; direct 40.658 cm; model / direct 0.897 [0.870, 0.904]
+    all                  pregrasp n 120: 13.130 cm [12.846, 14.878] = 2.856x [2.794, 3.236]  > 1.3; direct  5.509 cm; model / direct 2.384 [2.003, 3.073]
+    all                  entry    n 120:  3.499 cm [ 2.090, 10.381] = 0.761x [0.455, 2.258]; direct  5.716 cm; model / direct 0.612 [0.505, 1.023]
+    all                  both     n 240: 12.693 cm [11.887, 13.285] = 2.761x [2.585, 2.889]  > 1.3; direct  5.579 cm; model / direct 2.275 [1.605, 3.032]
+verdict (D_heft; F1-0 share >= 80 % and F1(a) ratio <= 1.3, both stages):
+  XMovePickTeleop      F1-0 100.0 %  F1(a) 0.141x  -> PASS
+  XMoveBendPickTeleop  F1-0 100.0 %  F1(a) 0.438x  -> PASS
+  BendPickMP           F1-0  91.7 %  F1(a) 1.363x  -> FAIL
+  TabletopGraspMP      F1-0 100.0 %  F1(a) 9.786x  -> FAIL
+GATE PASS (XMovePickTeleop, XMoveBendPickTeleop)
+```
+
+### 阶段 R 之前的一致性：`run/eval_A.txt` 第 1 节
+
+这是阶段 A 之后、用冻结副本里修订 1 之前那版 sh_eval 跑的。其余各节里 A、AL 的数，和下面 `eval.txt` 里的相同。
+
+```
+== rows: A 120, AL 120, RD 0, S 120
+
+== 1. consistency
+  A = AL: 120 / 120 episodes identical (every row and stage key but wall_s, --correct's fields and the option sonic_vr_frame)
+  the look (cloud, score, seen_cm) = the main metric's ScaleBFM A: 91 / 120
+  AL: 120 episodes logged, 240 stages, plan_same 240
+```
+
+"那一眼"一项 91/120，不同的 29 局只差在 `seen_cm`，见"意外"第 1 条。
+
+### R_D 命令上的 F1：`sh_f1.sh` → `f1/f1.txt`
+
+AL 的两段（F1-0 和误差）和 `gate.txt` 里 D_heft 的两段逐行相同（用 `diff` 比过）。只有行文件的 md5 不同：闸门读的是 `A_` 的行，这里链接的是 `AL_` 的行。下面只贴第一行和 RD 的两段。
+
+```
+F1 2026-11-26T13:37:09Z: rows /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/rows, records /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/corr_AL, /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/corr_RD
+...
+== D_heft_RD: train /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_data3_20261125/heft/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_data3b_20261125/heft/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_train3b_20261125/heft/data/mid_data3.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_train3b_20261125/heft/data/mid_data3b.npz; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '0', 'REACHWM_TRAIN_HELD': '', 'REACHWM_SUBSET': ''}
+  train split 499077 segments (train.json n_train 499077: equal); val 4321, val starts in range 87.3 %
+  rows A_XMovePickTeleop.jsonl: 30 episodes, md5 893e345cbbef847823d835d88d423249
+  rows A_XMoveBendPickTeleop.jsonl: 30 episodes, md5 5939efddd19485f44cc6814e66be7f30
+  rows A_BendPickMP.jsonl: 30 episodes, md5 343a738ad3ea7c012becd26305e567ff
+  rows A_TabletopGraspMP.jsonl: 30 episodes, md5 11e17474b655993d743d1e171381f026
+  in range (all 29 joints inside the train split's 0.5 / 99.5 %): share [95 %, layouts resampled]; joints out median; most often out (% of starts)
+    XMovePickTeleop      pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMovePickTeleop      entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMovePickTeleop      both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    XMoveBendPickTeleop  both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    BendPickMP           pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    BendPickMP           entry    n  30   83.3 % [ 66.7,  96.7]  out median 0  [('right_hip_roll_joint', 16.7)]
+    BendPickMP           both     n  60   91.7 % [ 85.0,  98.3]  out median 0  [('right_hip_roll_joint', 8.3)]
+    TabletopGraspMP      pregrasp n  30  100.0 % [100.0, 100.0]  out median 0  []
+    TabletopGraspMP      entry    n  30  100.0 % [100.0, 100.0]  out median 0  []
+    TabletopGraspMP      both     n  60  100.0 % [100.0, 100.0]  out median 0  []
+    all                  pregrasp n 120  100.0 % [100.0, 100.0]  out median 0  []
+    all                  entry    n 120   95.8 % [ 90.8,  99.2]  out median 0  [('right_hip_roll_joint', 4.2)]
+    all                  both     n 240   97.9 % [ 95.8,  99.6]  out median 0  [('right_hip_roll_joint', 2.1)]
+== D_heft_RD: model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_train3b_20261125/heft/models_D_s0/E3_ensemble_f1, val 3.204 cm; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '0'}
+  RD: /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpleheft_20261126/run/corr_RD: 240 segments (240 kept, not fallen); online = offline on 240 sent stages (plan_same): max |pred diff| 5.059e-06 m; 0 stages without a pair
+    model error at the task label, median cm [95 %, layouts resampled] / val = F1(a) ratio [95 %]; direct miss median; model / direct [95 %]
+    reaches with a table contact (rows' hits): 89 of 240 kept
+    XMovePickTeleop      pregrasp n  30:  1.113 cm [ 0.856,  1.274] = 0.348x [0.267, 0.398]; direct  5.024 cm; model / direct 0.222 [0.192, 0.243]
+    XMovePickTeleop      entry    n  30:  0.254 cm [ 0.230,  0.351] = 0.079x [0.072, 0.110]; direct  3.522 cm; model / direct 0.072 [0.066, 0.090]
+    XMovePickTeleop      both     n  60:  0.508 cm [ 0.454,  0.651] = 0.159x [0.142, 0.203]; direct  4.113 cm; model / direct 0.123 [0.114, 0.152]
+    XMoveBendPickTeleop  pregrasp n  30:  1.465 cm [ 1.035,  2.873] = 0.457x [0.323, 0.897]; direct  3.412 cm; model / direct 0.429 [0.382, 0.565]
+    XMoveBendPickTeleop  entry    n  30:  1.058 cm [ 0.607,  1.714] = 0.330x [0.189, 0.535]; direct  3.209 cm; model / direct 0.330 [0.265, 0.393]
+    XMoveBendPickTeleop  both     n  60:  1.372 cm [ 0.929,  2.122] = 0.428x [0.290, 0.662]; direct  3.407 cm; model / direct 0.403 [0.354, 0.508]
+    BendPickMP           pregrasp n  30:  6.382 cm [ 3.666,  7.188] = 1.992x [1.144, 2.243]  > 1.3; direct  5.396 cm; model / direct 1.183 [0.782, 1.305]
+    BendPickMP           entry    n  30:  5.173 cm [ 2.058,  7.955] = 1.615x [0.642, 2.483]  > 1.3; direct 11.500 cm; model / direct 0.450 [0.276, 0.553]
+    BendPickMP           both     n  60:  5.992 cm [ 3.025,  7.544] = 1.870x [0.944, 2.355]  > 1.3; direct  6.279 cm; model / direct 0.954 [0.719, 1.168]
+    TabletopGraspMP      pregrasp n  30: 40.013 cm [38.790, 40.929] = 12.489x [12.107, 12.774]  > 1.3; direct 47.449 cm; model / direct 0.843 [0.784, 0.877]
+    TabletopGraspMP      entry    n  30: 34.648 cm [33.213, 34.986] = 10.814x [10.366, 10.919]  > 1.3; direct 40.885 cm; model / direct 0.847 [0.808, 0.860]
+    TabletopGraspMP      both     n  60: 37.760 cm [37.193, 38.707] = 11.785x [11.608, 12.081]  > 1.3; direct 44.984 cm; model / direct 0.839 [0.813, 0.877]
+    all                  pregrasp n 120:  2.878 cm [ 1.284,  6.669] = 0.898x [0.401, 2.081]; direct  5.403 cm; model / direct 0.533 [0.246, 1.116]
+    all                  entry    n 120:  1.714 cm [ 0.661,  6.084] = 0.535x [0.206, 1.899]; direct  4.500 cm; model / direct 0.381 [0.164, 0.476]
+    all                  both     n 240:  2.126 cm [ 1.161,  6.398] = 0.663x [0.362, 1.997]; direct  5.325 cm; model / direct 0.399 [0.250, 0.959]
+    XMovePickTeleop free pregrasp n  30:  1.113 cm [ 0.856,  1.274] = 0.348x [0.267, 0.398]; direct  5.024 cm; model / direct 0.222 [0.191, 0.248]
+    XMovePickTeleop free entry    n  30:  0.254 cm [ 0.230,  0.315] = 0.079x [0.072, 0.098]; direct  3.522 cm; model / direct 0.072 [0.065, 0.094]
+    XMovePickTeleop free both     n  60:  0.508 cm [ 0.454,  0.651] = 0.159x [0.142, 0.203]; direct  4.113 cm; model / direct 0.123 [0.114, 0.152]
+    XMoveBendPickTeleop free pregrasp n  30:  1.465 cm [ 1.035,  2.873] = 0.457x [0.323, 0.897]; direct  3.412 cm; model / direct 0.429 [0.385, 0.609]
+    XMoveBendPickTeleop free entry    n  28:  0.661 cm [ 0.603,  1.676] = 0.206x [0.188, 0.523]; direct  2.333 cm; model / direct 0.283 [0.264, 0.391]
+    XMoveBendPickTeleop free both     n  58:  1.314 cm [ 0.926,  1.812] = 0.410x [0.289, 0.565]; direct  2.664 cm; model / direct 0.493 [0.349, 0.509]
+    BendPickMP free      pregrasp n  20:  6.147 cm [ 0.828,  8.083] = 1.919x [0.258, 2.523]  > 1.3; direct  5.107 cm; model / direct 1.204 [0.241, 1.384]
+    BendPickMP free      entry    n  13:  1.034 cm [ 1.002,  4.874] = 0.323x [0.313, 1.521]; direct  3.455 cm; model / direct 0.299 [0.290, 0.479]
+    BendPickMP free      both     n  33:  4.825 cm [ 1.002,  6.668] = 1.506x [0.313, 2.081]  > 1.3; direct  4.817 cm; model / direct 1.002 [0.290, 1.147]
+    all free             pregrasp n  80:  1.259 cm [ 1.045,  1.378] = 0.393x [0.326, 0.430]; direct  4.572 cm; model / direct 0.275 [0.232, 0.299]
+    all free             entry    n  71:  0.551 cm [ 0.349,  0.999] = 0.172x [0.109, 0.312]; direct  3.476 cm; model / direct 0.158 [0.101, 0.277]
+    all free             both     n 151:  0.999 cm [ 0.864,  1.284] = 0.312x [0.270, 0.401]; direct  4.075 cm; model / direct 0.245 [0.220, 0.300]
+```
+
+### 登记的评估：`asrun/rev1/sh_eval.py`（md5 7f342120）→ `eval.txt`
+
+修订 1 的 sh_eval 另存在 `asrun/rev1/`，旁边没有 simplecmp 的目录。所以要用 `PYTHONPATH` 指到冻结副本里 simplecmp 的目录，才能导入 `scmp_eval`。导入的就是冻结副本里那一份，统计函数没变。stderr 是空的。
+
+```
+$ PYTHONPATH=$O/asrun/code/scripts/experiments/selfmodel_simplecmp_20261126 $PY $O/asrun/rev1/sh_eval.py --run $O/run \
+    --main /workspace/code/loco/outputs/simple_eval_20261112/bench_rgbd_20261124/scalebfm --gate $O/gate --f1 $O/f1 \
+    --json $O/eval.json > $O/eval.txt
+== rows: A 120, AL 120, RD 120, S 120
+
+== 1. consistency
+  A = AL: 120 / 120 episodes identical (every row and stage key but wall_s, --correct's fields and the option sonic_vr_frame)
+  the look (cloud, score, seen_cm) = the main metric's ScaleBFM A: 91 / 120
+  AL: 120 episodes logged, 240 stages, plan_same 240
+  RD: 120 episodes logged, 240 stages, plan_same 240
+
+== 2. failures before the arms split (A's rows), per task and class
+  XMovePick     : 0 (none)
+  XMoveBendPick : 0 (none)
+  BendPick      : 0 (none)
+  TabletopGrasp : 0 (none)
+
+== 3. success per task
+  -- 45 s
+  XMovePick     : A 29, AL 29, RD 30 (of 30)
+  XMoveBendPick : A 26, AL 26, RD 29 (of 30)
+  BendPick      : A 3, AL 3, RD 3 (of 30)
+  TabletopGrasp : A 0, AL 0, RD 0 (of 30)
+  all           : A 58, AL 58, RD 62 (of 120)
+  -- official
+  XMovePick     : A 29, AL 29, RD 30 (of 30)
+  XMoveBendPick : A 26, AL 26, RD 29 (of 30)
+  BendPick      : A 0, AL 0, RD 0 (of 30)
+  TabletopGrasp : A 0, AL 0, RD 0 (of 30)
+  all           : A 55, AL 55, RD 59 (of 120)
+
+== 4. decision set (pre-split failures over half out; A >= 24 / 30 'ceiling' out)
+  45 s     XMovePick     : A 29 / 30 -> out (ceiling)
+  45 s     XMoveBendPick : A 26 / 30 -> out (ceiling)
+  45 s     BendPick      : A 3 / 30 -> in
+  45 s     TabletopGrasp : A 0 / 30 -> in
+  official XMovePick     : A 29 / 30 -> out (ceiling)
+  official XMoveBendPick : A 26 / 30 -> out (ceiling)
+  official BendPick      : A 0 / 30 -> in
+  official TabletopGrasp : A 0 / 30 -> in
+
+== gate (sh_gate.sh's rule): XMovePick PASS, XMoveBendPick PASS, BendPick FAIL, TabletopGrasp FAIL
+
+== 5. paired tests (R_D vs A); revision 1: the four tasks together is the main comparison, the gate-passed tasks together beside it, every task with its gate
+  main R_D vs A 45 s     all four tasks: 62 / 120 vs 58 / 120 (+3.3 pp [-0.8, +8.3] by layout); layouts + 6 / - 2 of 40, sign test p 0.2891; episodes + 6 / - 2, McNemar p 0.2891
+       R_D vs A 45 s     gate-passed ['XMovePick', 'XMoveBendPick']: 59 / 60 vs 55 / 60 (+6.7 pp [+1.7, +13.3] by layout); layouts + 4 / - 0 of 20, sign test p 0.125; episodes + 4 / - 0, McNemar p 0.125
+  main R_D vs A official all four tasks: 59 / 120 vs 55 / 120 (+3.3 pp [+0.8, +6.7] by layout); layouts + 4 / - 0 of 40, sign test p 0.125; episodes + 4 / - 0, McNemar p 0.125
+       R_D vs A official gate-passed ['XMovePick', 'XMoveBendPick']: 59 / 60 vs 55 / 60 (+6.7 pp [+1.7, +13.3] by layout); layouts + 4 / - 0 of 20, sign test p 0.125; episodes + 4 / - 0, McNemar p 0.125
+  P1 R_D vs A 45 s     decision set ['BendPick', 'TabletopGrasp']: 3 / 60 vs 3 / 60 (+0.0 pp [-6.7, +6.7] by layout); layouts + 2 / - 2 of 20, sign test p 1; episodes + 2 / - 2, McNemar p 1
+     R_D vs A 45 s     XMovePick      [gate PASS]: 30 / 30 vs 29 / 30 (+3.3 pp [+0.0, +10.0] by layout); layouts + 1 / - 0 of 10, sign test p 1; episodes + 1 / - 0, McNemar p 1
+     R_D vs A 45 s     XMoveBendPick  [gate PASS]: 29 / 30 vs 26 / 30 (+10.0 pp [+0.0, +20.0] by layout); layouts + 3 / - 0 of 10, sign test p 0.25; episodes + 3 / - 0, McNemar p 0.25
+     R_D vs A 45 s     BendPick       [gate FAIL]: 3 / 30 vs 3 / 30 (+0.0 pp [-13.3, +13.3] by layout); layouts + 2 / - 2 of 10, sign test p 1; episodes + 2 / - 2, McNemar p 1
+     R_D vs A 45 s     TabletopGrasp  [gate FAIL]: 0 / 30 vs 0 / 30 (+0.0 pp [+0.0, +0.0] by layout); layouts + 0 / - 0 of 10, sign test p 1; episodes + 0 / - 0, McNemar p 1
+     R_D vs A 45 s     all four      : 62 / 120 vs 58 / 120 (+3.3 pp [-0.8, +7.5] by layout); layouts + 6 / - 2 of 40, sign test p 0.2891; episodes + 6 / - 2, McNemar p 0.2891
+     R_D vs A official decision set ['BendPick', 'TabletopGrasp']: 0 / 60 vs 0 / 60 (+0.0 pp [+0.0, +0.0] by layout); layouts + 0 / - 0 of 20, sign test p 1; episodes + 0 / - 0, McNemar p 1
+     R_D vs A official XMovePick      [gate PASS]: 30 / 30 vs 29 / 30 (+3.3 pp [+0.0, +10.0] by layout); layouts + 1 / - 0 of 10, sign test p 1; episodes + 1 / - 0, McNemar p 1
+     R_D vs A official XMoveBendPick  [gate PASS]: 29 / 30 vs 26 / 30 (+10.0 pp [+0.0, +20.0] by layout); layouts + 3 / - 0 of 10, sign test p 0.25; episodes + 3 / - 0, McNemar p 0.25
+     R_D vs A official BendPick       [gate FAIL]: 0 / 30 vs 0 / 30 (+0.0 pp [+0.0, +0.0] by layout); layouts + 0 / - 0 of 10, sign test p 1; episodes + 0 / - 0, McNemar p 1
+     R_D vs A official TabletopGrasp  [gate FAIL]: 0 / 30 vs 0 / 30 (+0.0 pp [+0.0, +0.0] by layout); layouts + 0 / - 0 of 10, sign test p 1; episodes + 0 / - 0, McNemar p 1
+     R_D vs A official all four      : 59 / 120 vs 55 / 120 (+3.3 pp [+0.8, +6.7] by layout); layouts + 4 / - 0 of 40, sign test p 0.125; episodes + 4 / - 0, McNemar p 0.125
+
+== 6. mechanism: each stage's palm miss (cm, median), D_heft's error of the sent command at the stage's end (palm, cm, median), reaches with a table contact (hits)
+  XMovePick      pregrasp (n 30): miss A 2.69, RD 0.82 | D_heft's error AL 0.48, RD 0.84 | table contact A 1, RD 0
+  XMovePick      entry    (n 30): miss A 1.97, RD 0.28 | D_heft's error AL 0.43, RD 0.28 | table contact A 1, RD 0
+  XMoveBendPick  pregrasp (n 30): miss A 1.98, RD 1.51 | D_heft's error AL 1.75, RD 1.44 | table contact A 2, RD 0
+  XMoveBendPick  entry    (n 30): miss A 2.33, RD 1.05 | D_heft's error AL 0.96, RD 1.02 | table contact A 13, RD 2
+  BendPick       pregrasp (n 30): miss A 3.65, RD 6.53 | D_heft's error AL 3.98, RD 6.46 | table contact A 22, RD 10
+  BendPick       entry    (n 30): miss A 7.06, RD 4.79 | D_heft's error AL 3.69, RD 4.79 | table contact A 22, RD 17
+  TabletopGrasp  pregrasp (n 30): miss A 34.73, RD 31.90 | D_heft's error AL 28.10, RD 31.87 | table contact A 30, RD 30
+  TabletopGrasp  entry    (n 30): miss A 30.67, RD 28.26 | D_heft's error AL 24.12, RD 28.23 | table contact A 30, RD 30
+  AL XMovePick      model / direct (13 cm point, both stages): 0.132 [0.116, 0.142]; model 0.45 cm, direct 3.41 cm
+  AL XMoveBendPick  model / direct (13 cm point, both stages): 0.386 [0.313, 0.513]; model 1.40 cm, direct 3.63 cm
+  AL BendPick       model / direct (13 cm point, both stages): 0.635 [0.421, 0.694]; model 4.37 cm, direct 6.87 cm
+  AL TabletopGrasp  model / direct (13 cm point, both stages): 0.771 [0.743, 0.789]; model 31.36 cm, direct 40.66 cm
+  AL all            model / direct (13 cm point, both stages): 0.447 [0.230, 0.630]; model 2.49 cm, direct 5.58 cm
+
+== 7. F1 on R_D's commands (AL's for reference): (a) D_heft's error / 3.204 cm > 1.3, (b) F1-0 share < 80 %, (c) the sent commands' IK > 2 cm share >= AL's + 10 pp -> not trustworthy
+  AL XMovePick     : (a) 0.141x, (b) 100.0 %, (c) IK > 2 cm   0.0 % -> trustworthy
+  RD XMovePick     : (a) 0.159x, (b) 100.0 %, (c) IK > 2 cm   0.0 % -> trustworthy
+  AL XMoveBendPick : (a) 0.438x, (b) 100.0 %, (c) IK > 2 cm   0.0 % -> trustworthy
+  RD XMoveBendPick : (a) 0.428x, (b) 100.0 %, (c) IK > 2 cm   0.0 % -> trustworthy
+  AL BendPick      : (a) 1.363x, (b)  91.7 %, (c) IK > 2 cm   0.0 % -> NOT trustworthy ((a) ratio > 1.3)
+  RD BendPick      : (a) 1.870x, (b)  91.7 %, (c) IK > 2 cm   0.0 % -> NOT trustworthy ((a) ratio > 1.3)
+  AL TabletopGrasp : (a) 9.786x, (b) 100.0 %, (c) IK > 2 cm   0.0 % -> NOT trustworthy ((a) ratio > 1.3)
+  RD TabletopGrasp : (a) 11.785x, (b) 100.0 %, (c) IK > 2 cm   0.0 % -> NOT trustworthy ((a) ratio > 1.3)
+
+== 8. the commands
+  RD pregrasp: n 120, sent IK > 2 cm 0; correction median 5.00 cm, max 16.16; shrunk candidates 0 of 0; fallbacks 0; plan_same 120; think median 3.4 s, max 6.9
+  RD entry   : n 120, sent IK > 2 cm 0; correction median 2.83 cm, max 19.46; shrunk candidates 0 of 0; fallbacks 0; plan_same 120; think median 1.1 s, max 2.5
+```
+
+### HA 有没有被拖慢（阶段 R 跑完后再看一次）
+
+`checks/ha_speed.py` 只读 HA 采集的日志。第一行是阶段 A 开跑前 30 分钟对开跑以后，第二行是阶段 A 期间对阶段 R 以后：
+
+```
+$ ha_speed.py 2026-11-26T12:36:26 30
+window 30 min before 2026-11-26T12:36:26 vs after (to 13:39:20Z)
+  controller Hz  before n 3429 mean  13.49 median  13.46 | after n 7025 mean  13.55 median  13.49
+  s per reset    before n 259 mean  66.80 median  62.00 | after n 533 mean  66.23 median  63.00
+$ ha_speed.py 2026-11-26T13:15:43 39
+window 39 min before 2026-11-26T13:15:43 vs after (to 13:39:20Z)
+  controller Hz  before n 4080 mean  13.40 median  13.38 | after n 2368 mean  13.94 median  13.83
+  s per reset    before n 307 mean  66.80 median  63.00 | after n 182 mean  65.30 median  63.50
+```
+
+- 显存：`checks/mem.log` 每 5 s 记一次，12:38:50Z 到 13:38:47Z。阶段 R 期间 1、2、3 号卡的峰值是 16 402、16 466、16 411 MiB。0 号卡不是我们的，14 614 MiB。
+- 读法：控制器频率和每次重置的秒数都没变慢，显存离 20 GB 远。
 
 ## 意外
 
+1. **"那一眼相同"里有一项不是那一眼。**
+   - 登记把 `cloud`、`score`、`seen_cm` 三项都当成"那一眼"，要求和主指标 ScaleBFM A 栏逐局相同，不同就停下查清。
+   - 阶段 A 的结果：`cloud` 和 `score` 120/120 相同，`seen_cm` 有 29 局不同。其中 TabletopGrasp 25 局、BendPick 2 局、XMovePick 和 XMoveBendPick 各 1 局。差的中位数 0.04 cm，最大 0.31 cm（XMoveBendPick 第 11 局）。
+   - 查清的结果：`seen_cm` 是缓存观测里物体点云的中位数到开始时物体真实位置的距离（simple_bench.py 第 530 行）。点云是缓存的，两边相同；物体的真实位置是控制器复位、仿真走过的那几步之后的位置，HEFT 和 ScaleBFM 复位不同，物体就停得略有不同。所以它是一项记录，不是机器人看到的东西。机器人的输入（点云、抓取和分数）两边相同。
+   - **协调方 11-26 定**：HEFT 的 A 进主指标，作为新的一行。判断依据同上。
+2. **HEFT 的 A 比预测好得多。** 预测 45 s 内 0–30/120，实际 58/120。
+   - 预测是照开发局两局写的。开发树里只有 TabletopGrasp 有缓存好的那一眼，所以这两局只能是 TabletopGrasp。
+   - 测试局的 TabletopGrasp 确实和开发局一样：30 局全失败，60 下伸手都碰到桌子，手掌差约 30 cm。
+   - 另外三个任务在开发局上跑不起来，我把 TabletopGrasp 的情况推到了它们身上。实际 XMovePick 29/30、XMoveBendPick 26/30，两个都到顶，不进判定集。
+   - 结果是判定集只剩 BendPick 和 TabletopGrasp，P1 几乎没有可比的成功（A 3/60）。
+3. **走到站位以后，D_heft 在不碰桌子的伸手上很准。**
+   - 预测：F1-0 每个任务 40–85 %，不碰桌子的伸手误差是 val 的 1.0–1.6 倍。
+   - 实际：F1-0 91.7–100 %；不碰桌子的伸手（119 下）是 0.21 倍。
+   - 一个可能的原因：这两个任务是站着伸手，动作小，而 LML 的 val 里有更难的伸手（看过结果以后的猜测，没验证）。
+   - BendPick 不过闸门，主要差在进入那一下（1.38 倍）。它进入时的起点有 13.3 %（A）和 16.7 %（R_D）右髋 roll 超出范围。下蹲伸手在 D_heft 的边缘上。
+4. **BendPick 的预抓取，R_D 让手掌偏差变大了**：3.65 → 6.53 cm。进入那一下变小了：7.06 → 4.79 cm。
+   - D_heft 在 R_D 的预抓取命令上误差 6.38 cm（1.99 倍），在 A 的命令上是 3.95 cm。修正把命令推到了模型更不准的地方。
+   - 成功数没变：3 对 3，布局 +2/−2。
+5. **XMoveBendPick 进入时碰桌子的伸手，从 13 下降到 2 下。** 这没预测到。它可能是这个任务多成功 3 局的一部分原因，但没有单独分开。
+
+## 四类陷阱检查
+
+1. **benchmark 选择**：
+   - 四个任务、120 局就是主指标的测试局。任务、局号和种子在登记时定，和 ScaleBFM 那一格相同，没有挑。
+   - 过闸门的两个任务恰好是 A 已经到顶的两个，能涨的余地本来就小（最多 +1 和 +4）。
+2. **数据泄漏**：
+   - D_heft 只用 LML 的数据训练（train3b），没见过 SIMPLE 的任何局。
+   - 闸门用的训练范围也是它自己的 LML 训练划分。测试局没有进过训练或 norm stats。
+3. **指标误用**：
+   - 主比较按修订 1 报：四个任务合计，旁边是过闸门任务的合计。修订 1 在算闸门、跑 R_D 之前就提交了（0ef9ae62）。
+   - 登记的 P1（判定集上的布局符号检验）照报，结果 3/60 对 3/60，不成立，没删。
+   - 两个时限都报了。45 s 合计的区间含 0，官方时限的不含 0；两个的符号检验都不显著。
+4. **事后挑选**：
+   - A、AL、R_D 每组只跑了一次。局、模型、R 规则都在登记时定，没换 checkpoint，没重跑。
+   - "意外"第 3–5 条的原因分析是看过结果以后写的，都标了没验证。
+
 ## 结论与下一步
 
+**报给协调方的三样数**（更新主指标）：
+
+| | 45 s，四个任务合计 | 官方时限，四个任务合计 | TabletopGrasp（45 s / 官方） |
+|---|---|---|---|
+| HEFT A | 58/120 | 55/120 | 0/30 / 0/30 |
+| HEFT R_D | 62/120 | 59/120 | 0/30 / 0/30 |
+
+按任务，45 s（官方时限）：
+
+| | XMovePick | XMoveBendPick | BendPick | TabletopGrasp |
+|---|---|---|---|---|
+| A | 29 (29) | 26 (26) | 3 (0) | 0 (0) |
+| R_D | 30 (30) | 29 (29) | 3 (0) | 0 (0) |
+| 闸门 | 过 | 过 | 不过 | 不过 |
+| R_D 上的 F1 | 可信 | 可信 | 不可信 | 不可信 |
+
+**结论**：
+
+1. **HEFT 的 A**：45 s 内 58/120，官方时限内 55/120（`eval.txt` 第 3 节）。
+   - 没有在两组分开之前失败的局（第 2 节）。
+   - A = AL 120/120。协调方 11-26 定 A 进主指标，见"意外"第 1 条。
+2. **闸门 GATE PASS**（`gate.txt` 最后几行）：
+   - XMovePick、XMoveBendPick 过。
+   - BendPick（F1(a) 1.36 倍）和 TabletopGrasp（9.79 倍）不过。
+   - TabletopGrasp 60 下伸手全碰到桌子。D_heft 在不碰桌子的伸手上误差 0.21 倍。
+3. **主比较（修订 1）**：R_D 对 A，四个任务合计，R_D 多 4 局，两个时限都不显著（`eval.txt` 第 5 节）。
+   - 45 s：62 对 58，+3.3 个百分点 [−0.8, +8.3]，布局 +6/−2（共 40 个），符号检验 p 0.29。
+   - 官方时限：59 对 55，+3.3 个百分点 [+0.8, +6.7]，布局 +4/−0，p 0.125。
+   - 旁边，过闸门两个任务合计：59/60 对 55/60，+6.7 个百分点 [+1.7, +13.3]，布局 +4/−0（共 20 个），p 0.125。两个时限一样。
+   - 登记的 P1（判定集 BendPick + TabletopGrasp，45 s）：3/60 对 3/60，p 1，不成立。
+   - 对照判据表，落在"P1 不成立"一行：照实报各任务的差和区间，不合并成"赢"。没有任务 R_D − A ≤ −3。
+4. **多出来的 4 局在哪儿**：都在闸门和 F1 都判"可信"的两个任务上，XMovePick +1，XMoveBendPick +3，没有一局变差（第 5、7 节）。
+   - 这两个任务的手掌偏差明显降了（第 6 节，中位数）：
+     - XMovePick：预抓取 2.69 → 0.82 cm，进入 1.97 → 0.28 cm；
+     - XMoveBendPick：预抓取 1.98 → 1.51 cm，进入 2.33 → 1.05 cm。
+   - 按判据，这 4 局可以记到 D_heft 名下。但只有 4 个布局不同，双侧符号检验最小也只能到 p 0.125，这个样本撑不起显著。
+5. **BendPick 和 TabletopGrasp**：模型在这两个任务上不可信，闸门和 F1 都不过，成功数也没变。
+   - TabletopGrasp 是手腕碰到桌沿，R_D 以后偏差还是约 30 cm。一次性修正改不了。按闸门一节的理由，采数据也改不了。
+
+**证据强度**：每组 120 局各跑一次，共 40 个布局。A、AL、R_D 同机、同卡、按局配对。过闸门两个任务的 +4 只来自 4 个不一致的布局。
+
+**其他可能的解释**：
+- XMoveBendPick 的 +3 可能主要来自进入时少碰桌子（13 → 2 下），不全是"落点对得更准"。两者都是修正后的命令带来的，但增益的机制不一定是模型预测得准。
+- 这两个任务 A 已经接近全成功，失败的 5 局可能本来就在成败的边缘。任何把手挪近一点的改动，都可能翻过来其中几局。
+
+**下一步**：
+- 把上面三样数报协调方，请协调方安排独立复核。复核回来，原样贴进下一节。
+- 这一格不再往下做：
+  - TabletopGrasp 的问题在桌沿，不在模型。
+  - BendPick 下蹲伸手的模型误差偏大，要改就得采下蹲的数据，超出"每个控制器跑一次"的范围，等协调方定。
+
 ## 独立复核
+
+（等协调方安排。）
