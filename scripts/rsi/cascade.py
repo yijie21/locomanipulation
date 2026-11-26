@@ -164,7 +164,13 @@ def check_candidate(n: int, it_dir: Path, cand: Path) -> dict:
         B.outcomes(d), B.outcomes(base)
     )  # TODO 54: verdict.py, the same function as the gate's and the sealed set's
     v = V.decide(
-        t, "check", dict(check_min_net=int(S.cap("check_min_net", 1)), alpha_task=S.cap("alpha_task_check", None))
+        t,
+        "check",
+        dict(
+            check_min_net=int(S.cap("check_min_net", 1)),
+            check_alpha=S.cap("check_alpha", None),
+            alpha_task=S.cap("alpha_task_check", None),
+        ),
     )
     out = dict(n=f["n"], fixed=len(f["fixed"]), broken=len(f["broken"]), net=len(f["fixed"]) - len(f["broken"]),
                ok=f["ok"], incumbent_ok=f["incumbent_ok"], sent=v["decision"], reasons=v["reasons"],

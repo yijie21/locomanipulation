@@ -213,7 +213,7 @@ def pools_part(spec: dict, caps: dict) -> str:
         bits.append(f"acceptance pool {pools['accept'].get('n')} (hidden)")
     if "sealed" in pools:
         bits.append(f"sealed pool {pools['sealed'].get('n')} (hidden)")
-    cap_keys = ("p_max", "alpha_task", "alpha_task_check", "check_min_net", "stop_no_progress")
+    cap_keys = ("p_max", "alpha_task", "alpha_task_check", "check_min_net", "check_alpha", "stop_no_progress")
     cs = ", ".join(f"{k} {caps[k]}" for k in cap_keys if caps.get(k) not in (None, False, 0))
     return "## Pools and caps\n" + "; ".join(bits) + ("." if bits else "") + (f" Caps: {cs}." if cs else "")
 

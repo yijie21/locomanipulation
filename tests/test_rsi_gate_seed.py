@@ -55,3 +55,14 @@ def test_the_bench_layout_names_the_seed_package():
     BB = importlib.import_module("backend_bench")
     fam = BB.load("simple_art")
     assert BB.layout(fam)["seed"] == BB.base_dir(fam)
+
+
+def test_benchmark_families_have_no_sentinel_and_scene_families_keep_it():
+    if str(RSI) not in sys.path:
+        sys.path.insert(0, str(RSI))
+    BB = importlib.import_module("backend_bench")
+    BK = importlib.import_module("backend")
+    for name in ("simple_art", "simple_q", "lml_q_bench", "bigym2_reach_drawer", "humanoidarena_pp_box"):
+        caps = BB.layout(BB.load(name))["caps"]
+        assert caps["sentinel"] is False and caps["check_alpha"] == 0.1, name
+    assert BK.SCENE_CAPS["sentinel"] is True and BK.SCENE_CAPS["check_alpha"] is None

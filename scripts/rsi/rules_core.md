@@ -179,7 +179,9 @@ class and per task.
 ### [check-half] The check half (code)
 Half of each task's diagnostic starts, chosen by a hash of the start's name, is kept from the roles in the hidden tree. The
 candidate the Composer sends first runs there beside the incumbent, start by start, and goes to the gate only when it wins by
-at least `check_min_net` (4 on the benchmarks) and the per-task test ([gate], alpha 0.10) does not reject it. The ledger's
+more than it loses with a one-sided sign test p of at most `check_alpha` (0.10 on the benchmarks: 4:0 is sent, 6:2 is not;
+two runs of one code differ on 8-17 % of starts, so a small net is noise) and the per-task test ([gate], alpha 0.10) does
+not reject it. The ledger's
 `check` row gives counts only. Late candidates gained 17-35 visible starts net and nothing at the gate: what the visible
 half shows no longer carries to starts the roles have not seen.
 

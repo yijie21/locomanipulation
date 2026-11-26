@@ -41,6 +41,8 @@ SCENE_CAPS = {
     "alpha_task": None,  # per-task regression test (verdict.py): a task whose losses are significant at this level, Holm across tasks, rejects at the gate and the sealed set
     "alpha_task_check": None,  # the same at the check half (looser: 15 starts a task)
     "check_min_net": 1,  # the check half sends a candidate whose net on the hidden half reaches this
+    "check_alpha": None,  # and, when set, whose one-sided sign test on the hidden half is at most this (verdict.py)
+    "sentinel": True,  # the gate re-runs the incumbent on one start a task and voids the call when it no longer repeats
     # TODO 54 (rsi-lean): the lean iteration is the benchmark default; a scene family keeps the old one through these
     "manager": "llm",  # "llm": the Manager role chooses what is built; "program": the Reviewer's hypotheses go to the Engineers in order
     "measure_claims": True,  # False: no `measure` field in the Reviewer's schema

@@ -14,7 +14,11 @@ or the tally dict the gate already writes (`b`, `c`, `per_task`, falls and drops
     alpha_task   per-task regression test: a task rejects the candidate when its one-sided exact sign test on that
                  task's discordant pairs (losses c of b + c, more than half) is significant after the Holm correction
                  across the tasks, at this level (0.05 gate and sealed, 0.10 check half); None: no per-task rule
-    check_min_net  the check half's send threshold
+    check_min_net  the check half's net floor (1: it must win more than it loses)
+    check_alpha  the check half sends only when the one-sided sign test on its pairs is at most this (0.10 on the
+                 benchmarks; None: the net floor alone). 60 starts flip 8-17 % between two runs of one code, so a net of
+                 4 is noise (simple_art_r3 iteration 1: 6:2 sent, 8:11 at the gate); 4:0 (p .0625) is sent, 6:2 (p .145)
+                 is not, 13:2 and 19:5 (both accepted later) are.
 Output (`decide`): {decision, reasons, per_task (n, b, c, net, p_regress, p_holm, regress), b, c, n, net,
 p_one_sided}. `kind`: "stage1" (rejects only on net < 0), "check", "gate", "sealed".
 """
@@ -106,6 +110,9 @@ def decide(t: dict, kind: str = "gate", params: dict | None = None) -> dict:
             floor = int(params.get("check_min_net", 1))
             if net < floor:
                 why.append(f"net wins {net} < {floor}")
+            alpha = params.get("check_alpha")
+            if alpha is not None and net >= floor and p > alpha:
+                why.append(f"sign test p {p} > {alpha} (wins {b}, losses {c})")
         elif p_max is None:  # the scene rule; with p_max the net floor can never bind (smallest p <= 0.05: 5:0)
             floor = int(params.get("min_net", MIN_NET))
             if net < floor:

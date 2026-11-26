@@ -147,7 +147,7 @@ def test_the_appendix_is_generated_from_the_family_file_and_the_guard():
     assert "OpenOvenTeleop (limit 20 s)" in eng and "skill.py, handover.py, pick.py, camera_view.py" in eng
     assert "locomani.bench.simple" in eng and "400 lines" in eng and "`feed_torque`" in eng
     rev = RB.rules_for("reviewer", spec, lay["caps"], lay["rules"], lay.get("class_suggest"))
-    assert "`comply`" in rev and "Pools and caps" in rev and "check_min_net 4" in rev
+    assert "`comply`" in rev and "Pools and caps" in rev and "check_alpha 0.1" in rev
 
 
 def test_the_driver_cites_ids_not_numbers():

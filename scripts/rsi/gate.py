@@ -285,18 +285,27 @@ def main(argv=None) -> int:
     snapshot(a.candidate, work / "cand")
     inc_dir, inc_rounds = Path(inc["dir"]), Path(inc["rounds"])
     log = work / "run.log"
+    # The sentinel (the incumbent re-run on one start a task must repeat its stored rounds) only where rounds repeat: the
+    # scene families. A benchmark's rounds do not (8-17 % of starts flip between two runs of one code), so there a sentinel
+    # voids good calls (simple_art_r3 iteration 2, 2026-11-25: 2 noise flips voided a candidate nobody judged); a change of
+    # the bed or its switches already changes the bed signature, which re-runs the incumbent's rounds.
+    sentinel = bool(caps.get("sentinel", True))
     jobs = [
         B.Job(inc_dir / "skills", inc_rounds, overrides(inc_dir)),  # the incumbent's own rounds, once per incumbent
-        B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(sentinel_labels(labels))),
+        *(
+            [B.Job(inc_dir / "skills", work / "sentinel", overrides(inc_dir), tuple(sentinel_labels(labels)))]
+            if sentinel
+            else []
+        ),
         B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"), tuple(stage1_labels(labels))),
     ]
     B.run_jobs(jobs, a.family, a.pool, a.procs, log, a.gpus, where="gate")
     inc_out = B.outcomes(inc_rounds)
-    again = B.outcomes(work / "sentinel")
-    miss = incomplete(sentinel_labels(labels), inc_out, again)
+    again = B.outcomes(work / "sentinel") if sentinel else {}
+    miss = incomplete(sentinel_labels(labels), inc_out, again) if sentinel else []
     if miss:
         return void("sentinel or incumbent", miss)
-    drift = sentinel_drift(again, inc_out, caps["sentinel_exact"])
+    drift = sentinel_drift(again, inc_out, caps["sentinel_exact"]) if sentinel else []
     if len(drift) > caps.get("sentinel_flips", 0):  # a noisy bed's caps tolerate that many flips of the sentinel
         # TODO 54 (review verify.md 8): void=True, as `void()` sets it. Without it the hash was blacklisted for good and
         # the call counted against MAX_GATE_CALLS: an environment fault judged a candidate nobody had measured.

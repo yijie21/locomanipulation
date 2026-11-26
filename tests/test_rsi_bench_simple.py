@@ -260,7 +260,11 @@ def test_load_real_family(tmp_path, monkeypatch):
     lay = BB.layout(fam)
     assert lay["caps"] == {**C.DEFAULT_CAPS, **fam["caps"]} and "repeat" not in lay["caps"]
     assert (
-        lay["caps"]["check_min_net"] == 4 and lay["caps"]["alpha_task"] == 0.05 and lay["caps"]["manager"] == "program"
+        lay["caps"]["check_min_net"] == 1
+        and lay["caps"]["check_alpha"] == 0.1
+        and lay["caps"]["sentinel"] is False
+        and lay["caps"]["alpha_task"] == 0.05
+        and lay["caps"]["manager"] == "program"
     )
     assert lay["caps"]["stop_no_progress"] == 2 and "probe_parallel" not in lay["caps"] and "min_net" not in fam["caps"]
     assert set(lay["class_suggest"]) == set(S.CLASS_SUGGEST) and lay["plan"] is None

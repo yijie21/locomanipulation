@@ -115,3 +115,13 @@ def test_the_scene_rule_gives_the_recorded_verdict(row):
               candidate_ok=cok, incumbent_ok=iok)  # fmt: skip
     t["p_one_sided"] = round(V.sign_p(b, c), 5)
     assert V.decide(t, "gate", dict(min_net=3, p_max=None, alpha_task=None))["decision"] is acc
+
+
+def test_the_check_half_sends_by_the_sign_test_on_the_recorded_tallies():
+    """simple_art r2 / r3 (2026-11-24/25): the sign test at 0.10 sends what the gate later accepted (19:5, 13:2) and keeps
+    the two the gate rejected (6:4, and 6:2 which went 8:11 at the gate); 4:0 (p .0625) is sent."""
+    params = dict(check_min_net=1, check_alpha=0.10, alpha_task=None)
+    for b, c, sent in ((19, 5, True), (13, 2, True), (4, 0, True), (6, 2, False), (6, 4, False), (5, 3, False)):
+        v = V.decide(dict(b=b, c=c, n=60), "check", params)
+        assert v["decision"] is sent, (b, c, v["reasons"])
+    assert V.decide(dict(b=6, c=2, n=60), "check", dict(check_min_net=4))["decision"]  # the old net floor sent it
