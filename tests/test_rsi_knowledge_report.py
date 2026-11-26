@@ -200,6 +200,12 @@ class KnowledgeSharing(unittest.TestCase):
         self.assertIn('<span class="tag synced">synced</span> <code>02_hsync</code>', table)
         self.assertIn('<span class="tag accepted">accepted</span> <code>02_hb2</code>', table)
 
+    def test_results_table_marks_both_ways_in_order(self):
+        col = dict(label="Iteration 1", name="02_hsa", how="accepted + synced", acc={"t": [2, 2]}, seal={})
+        data = dict(alt={}, report=dict(families=[dict(family="fa", cols=[col])]))
+        self.assertIn('<span class="tag accepted">accepted</span> + <span class="tag synced">synced</span> '
+                      "<code>02_hsa</code>", KR.results_table(data))  # fmt: skip
+
     def test_main_writes_the_page_next_to_the_run(self):
         with mock.patch.object(RR, "PROJECTS", Path(self.tmp.name) / "projects"), mock.patch("builtins.print"):
             self.assertEqual(KR.main([str(self.run)]), 0)

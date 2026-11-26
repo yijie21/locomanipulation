@@ -20,6 +20,8 @@ session transcripts under ~/.claude/projects (their tokens; the build events car
 
 An iteration's incumbent is the last version accepted by then: its own gate, or in mode 3 the sync from the other
 family in the same iteration. An iteration that accepted nothing keeps the previous incumbent (column marked "kept").
+One that accepted both shows the later version, marked with both in the order they happened: "accepted + synced"
+(the family's own gate, then the sync after its half) or "synced + accepted" (the sync before its half, then its gate).
 A candidate rejected at the gate's stage 1 ran only STAGE1 starts, so it has no per-object numbers of its own; the
 notes under Table 1 give its stage-1 tally.
 """
@@ -326,9 +328,9 @@ def family_report(sandbox: Path, family: str, alt: dict | None, syncs: list[dict
     for it in its:
         mine = [v for v in vs if v["label"] <= it["label"]]
         v = mine[-1] if mine else None
-        new = [x for x in vs if x["label"] == it["label"]]
-        cols.append(dict(label=f"Iteration {it['label']}", name=v["name"] if v else "seed",
-                         how=(new[-1]["how"] if new else "kept"),
+        new = [x["how"] for x in vs if x["label"] == it["label"]]  # in the order they were accepted
+        how = " + ".join(h for i, h in enumerate(new) if i == 0 or h != new[i - 1]) or "kept"
+        cols.append(dict(label=f"Iteration {it['label']}", name=v["name"] if v else "seed", how=how,
                          accept=v["accept"] if v else cols[0]["accept"],
                          sealed=hidden / "sealed" / (v["name"] if v else "seed"), notes=notes(it, syncs, family)))  # fmt: skip
     for c in cols:
@@ -400,6 +402,11 @@ def e(x) -> str:
     return html.escape(str(x))
 
 
+def how_tags(how: str) -> str:
+    """A column's tags: one per way a version came in during the iteration, in order ("accepted + synced")."""
+    return " + ".join(f'<span class="tag {e(h)}">{e(h)}</span>' for h in how.split(" + "))
+
+
 def fmt_tok(n: int) -> str:
     return f"{n / 1e6:.2f} M" if n >= 1e6 else (f"{n / 1e3:.1f} k" if n >= 1e3 else str(n))
 
@@ -422,7 +429,7 @@ def pool_table(rep: dict, key: str) -> str:
     cols = [c for c in rep["cols"] if key == "acc" or c[key]]
     tasks = rep["tasks"] or sorted({t for c in cols for t in c[key]})
     h1 = "".join(f'<th colspan="2" class="{"kept" if c["how"] == "kept" else ""}">{e(c["label"])}<br>'
-                 f'<span class="tag {e(c["how"])}">{e(c["how"])}</span>'
+                 + how_tags(c["how"])
                  + (f' <code>{e(c["name"])}</code>' if c["name"] else "") + "</th>" for c in cols)  # fmt: skip
     h2 = "<th>Wins</th><th>Rate</th>" * len(cols)
     body = []

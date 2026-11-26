@@ -406,7 +406,7 @@ xdg-open $R/rsi_report.html
 
 报告里有什么：
 - 只读运行自己的记录：不跑仿真，不调用模型，几秒钟出页面，页面是英文。运行目录按 `alternate.json` 找单手的 `a/` 和双手的 `b/`；沙盒按 `outputs/scene_rsi_20261016/*/loop/ledger.jsonl` 找任务族。`--family F` 只出某个任务族（可重复），`--out FILE` 换输出位置。
-- **Table 1.n**（每个任务族一张）：每一列是一轮结束时的现任在验收池上的成绩。每件物体一行，给成功局数 / 局数和成功率；最后一行 Total 是整个池。第一列 Seed 是起点技能。某一轮没接受任何候选，那一列标 kept，沿用上一轮的现任；模式 3 里从另一方同步过来的版本标 synced。表下逐轮写验收门的结论：接受时成功局数的变化，在第一阶段（30 局）就被拒时第一阶段的局数，作废的轮，同步的结果，最后是停下的原因。
+- **Table 1.n**（每个任务族一张）：每一列是一轮结束时的现任在验收池上的成绩。每件物体一行，给成功局数 / 局数和成功率；最后一行 Total 是整个池。第一列 Seed 是起点技能。某一轮没接受任何候选，那一列标 kept，沿用上一轮的现任；模式 3 里从另一方同步过来的版本标 synced。同一轮里自己的候选和同步都通过时，按发生顺序标两个，列里是后一个版本：A 先跑自己的半轮、再收 B 的同步，标 accepted + synced；B 先收 A 的同步、再跑自己的半轮，标 synced + accepted。两次都是现任，后一次是在前一次的基础上合并、和它比较的，所以不用二选一。表下逐轮写验收门的结论：接受时成功局数的变化，在第一阶段（30 局）就被拒时第一阶段的局数，作废的轮，同步的结果，最后是停下的原因。
 - **Table 2.n**：同样的表，换成封存集（第 3 步）。不加 `--all` 只有种子和最终版的局，其余列略去，表上方写明缺哪几列。
 - **Table 3**：每一轮每一步的墙钟分钟数、模型调用次数、token（input、cache write、cache read、output、合计）和费用。步骤依次是 Diagnosis（诊断池、补抽、知识查找）、Reviewer、Probe、Manager、Engineers（3 个并行，记最慢那个的时间）、Composer、Gate；模式 3 每半轮再加 Knowledge build 和 Sync gate。每轮一行小计，附这一轮现任的验收和封存成功率；最后一行 Run total 是整个运行的时间、调用次数、token 和费用，附最终成功率。
 - **Table 4**：只取 Table 3 每轮的小计，每一轮一行，每个任务族一组 Time (min)、Total tokens、Cost (USD) 并排，模式 3 再加一组 All families（两族相加；半轮是先后跑的，所以就是墙钟时间）。某个任务族没跑这一轮记 —。最后一行 Run total 和 Table 3 的相同。
@@ -429,7 +429,7 @@ xdg-open $R/rsi_knowledge_sharing.html
 ```
 
 页面是英文，和 `rsi_report.html` 同一个样式，也只读运行自己的记录（不跑仿真，不调用模型）；`--out FILE` 换输出位置。里面有：
-- **Table 1**：两个任务族每一轮的现任，验收池和封存集的成绩并排；每一版标明来路：自己的验收门接受（accepted）、从另一方同步过来（synced）或沿用上一轮（kept）。
+- **Table 1**：两个任务族每一轮的现任，验收池和封存集的成绩并排；每一版标明来路：自己的验收门接受（accepted）、从另一方同步过来（synced）或沿用上一轮（kept），两个都通过时按顺序标两个（同 Table 1.n）。
 - **Table 2**：两条共享渠道各存在哪里、怎样到达另一方。知识库是 `knowledge/knowledge.jsonl`、`INDEX.md` 和 `usage.jsonl`；代码同步是 `sync/`、`knowledge/sync.jsonl` 和 `logs/*_sync_tests.log`。
 - **Table 3**：库里的每个条目，包括 standing、引用次数（其中几次是另一方引用的）、涉及的物体数、带它的改动在自己任务族的验收门上过没过，以及 reads as 的前几句。
 - **Table 4 和 cases**：Table 4 列出另一方 Reviewer 的每一次跨族引用。之后每个引用了对方条目的假设各占一段，依次是：条目的机制和修复，假设的 claim 和提议，正文里点名这个条目的那句话，Prober 的结论，Manager 选了哪些假设，草稿和 Composer 的处理，最后是这一轮的验收门。

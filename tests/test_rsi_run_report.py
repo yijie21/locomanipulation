@@ -334,5 +334,70 @@ class Alternating(unittest.TestCase):
                       "<td>4.25</td></tr>", RR.family_table(short))  # fmt: skip
 
 
+class BothInOneIteration(unittest.TestCase):
+    """Mode 3, one iteration in which each family accepts its own candidate and a sync. fa's half comes first: its gate
+    accepts ha1, then fb's sync into fa (hsa, after fb's half). fb first takes fa's sync (hsb, before its half), then
+    its gate accepts hb1. Each column shows the later version and both tags in the order they happened."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        run = Path(self.tmp.name) / "run"
+        a, b = run / "a", run / "b"
+        family(a, "fa", ["pick_a"], {"obj_a": "Mug"})
+        family(b, "fb", ["lift_c"], {"obj_c": "Carton"})
+        write_jl(a / RR.OUT_REL / "fa" / "loop" / "ledger.jsonl", [
+            dict(t=at(10), step="gate", iter=0, hash="ha1", accepted=True, reason="accepted",
+                 result=dict(incumbent_ok=0, candidate_ok=1, n=2))])  # fmt: skip
+        write_jl(b / RR.OUT_REL / "fb" / "loop" / "ledger.jsonl", [
+            dict(t=at(30), step="gate", iter=0, hash="hb1", accepted=True, reason="accepted",
+                 result=dict(incumbent_ok=1, candidate_ok=2, n=2))])  # fmt: skip
+        ha, hb = a / RR.HIDDEN_REL / "fa", b / RR.HIDDEN_REL / "fb"
+        write_jl(ha / "gate" / "ledger.jsonl", [
+            dict(call=1, hash="ha1", accepted=True, reason="accepted", started=at(5)),
+            dict(call=2, hash="hsa", accepted=True, reason="accepted (non-inferior)", started=at(35))])  # fmt: skip
+        write_jl(hb / "gate" / "ledger.jsonl", [
+            dict(call=1, hash="hsb", accepted=True, reason="accepted (non-inferior)", started=at(12)),
+            dict(call=2, hash="hb1", accepted=True, reason="accepted", started=at(25))])  # fmt: skip
+        rounds(ha / "gate" / "incumbent_seed_rounds", {"pick_a": (0, 2)})
+        rounds(ha / "gate" / "01_ha1" / "candidate", {"pick_a": (1, 2)})
+        rounds(ha / "gate" / "02_hsa" / "candidate", {"pick_a": (2, 2)})
+        rounds(hb / "gate" / "incumbent_seed_rounds", {"lift_c": (0, 2)})
+        rounds(hb / "gate" / "01_hsb" / "candidate", {"lift_c": (1, 2)})
+        rounds(hb / "gate" / "02_hb1" / "candidate", {"lift_c": (2, 2)})
+        write(run / "alternate.json", dict(families=["fa", "fb"], ref="abc123", events=[
+            dict(t=at(11), iter=1, family="fa", step="loop", stop=None),
+            dict(t=at(12), iter=1, family="fa", step="build", entries=1, cost_usd=0.1),
+            dict(t=at(14), iter=1, family="fa", step="sync", accepted=True),
+            dict(t=at(31), iter=1, family="fb", step="loop", stop=None),
+            dict(t=at(32), iter=1, family="fb", step="build", entries=1, cost_usd=0.1),
+            dict(t=at(36), iter=1, family="fb", step="sync", accepted=True),
+            dict(t=at(37), iter=2, step="end", why="1 iterations done")]))  # fmt: skip
+        write_jl(run / "knowledge" / "sync.jsonl", [
+            dict(iter=1, **{"from": "fa"}, to="fb", accepted=True, hash="hsb",
+                 result=dict(incumbent_ok=0, candidate_ok=1, n=2)),
+            dict(iter=1, **{"from": "fb"}, to="fa", accepted=True, hash="hsa",
+                 result=dict(incumbent_ok=1, candidate_ok=2, n=2))])  # fmt: skip
+        with mock.patch.object(RR, "PROJECTS", Path(self.tmp.name) / "projects"):
+            self.fa, self.fb = RR.collect(run, None)["families"]
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_both_tags_in_order_and_the_later_version(self):
+        self.assertEqual([(c["label"], c["name"], c["how"]) for c in self.fa["cols"]],
+                         [("Seed", "", "start"), ("Iteration 1", "02_hsa", "accepted + synced")])  # fmt: skip
+        self.assertEqual([(c["label"], c["name"], c["how"]) for c in self.fb["cols"]],
+                         [("Seed", "", "start"), ("Iteration 1", "02_hb1", "synced + accepted")])  # fmt: skip
+        self.assertEqual(self.fa["cols"][1]["acc"], {"pick_a": [2, 2]})  # the later version's rounds
+        self.assertEqual(self.fb["cols"][1]["acc"], {"lift_c": [2, 2]})
+
+    def test_the_header_shows_both_tags(self):
+        self.assertIn('<span class="tag accepted">accepted</span> + <span class="tag synced">synced</span> '
+                      "<code>02_hsa</code>", RR.pool_table(self.fa, "acc"))  # fmt: skip
+        self.assertIn('<span class="tag synced">synced</span> + <span class="tag accepted">accepted</span> '
+                      "<code>02_hb1</code>", RR.pool_table(self.fb, "acc"))  # fmt: skip
+        self.assertNotIn('class="kept"', RR.pool_table(self.fa, "acc"))
+
+
 if __name__ == "__main__":
     unittest.main()

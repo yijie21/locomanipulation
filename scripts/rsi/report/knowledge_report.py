@@ -216,7 +216,7 @@ def results_table(data: dict) -> str:
                 ]
                 continue
             col = r["cols"][k]
-            tag = f'<span class="tag {e(col["how"])}">{e(col["how"])}</span>'
+            tag = RR.how_tags(col["how"])
             row += [rate(col["acc"]), rate(col["seal"]), f"{tag} {c(col['name'])}" if col["name"] else tag]
         rows.append(row)
     left = {0} | {3 * j + 3 for j in range(len(reps))}
@@ -382,7 +382,9 @@ def render(data: dict) -> str:
         section("Table 1: both families per iteration",
                 muted("Each iteration's incumbent on the acceptance pool and on the sealed pool (sealed.py --all; "
                       "&mdash; when a version has no sealed rounds). synced: the version came from the other family "
-                      "by the code sync; kept: nothing was accepted in that iteration."), results_table(data)),
+                      "by the code sync; kept: nothing was accepted in that iteration. An iteration that accepted "
+                      "both is marked with both in the order they happened, and shows the later version."),
+                results_table(data)),
         section("Table 2: what is shared and where",
                 muted(f"Paths are relative to the run directory. {c('alternate.py publish')} copies the run's "
                       f"library into the repository's {c('scripts/rsi/knowledge/')}."), channels_table()),
