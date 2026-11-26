@@ -1,0 +1,298 @@
+# selfmodel_nowalk_20261126：自身模型的数据要不要"先走、停下、再伸手"，只采原地伸手够不够
+
+- **日期**：2026-11-26。在任何正式训练之前写好，单独提交。冒烟和划分检查在提交之前做完，结果写在"开跑前的准备"里；正式训练在提交之后。
+- **用户的决定**（11-26，协调人转达，最高优先级）：做一个数据消融，回答一个问题——采自身模型的数据时，"先走一段、停下、等稳、再伸手"的重置是不是必须的，还是只采原地伸手就够。如果只采原地伸手就够，以后采数据会快很多：SIMPLE 里原地重置中位 7.5 s，先走后伸 12.0 s（simpledata 修订 1 的冒烟）。
+- **机器**：新的 H20 机器（`ssh -p 27840 root@14.103.60.188`，4 张 H20，每张 96 GB）。
+  - 训练只用 0、1 号卡。按用户的规定，每张卡总显存不超过 80 GB，所以每张卡最多同时跑我们的 2 个训练；每次开训练前看 nvidia-smi，要求已用显存加 12 GB 不超过 80 GB，不满足就等。2、3 号卡不碰。
+  - tmux `keepalive` 覆盖 4 张卡，不停它、不动它。
+  - 评估只用 CPU，nice 10，每个进程 4 个线程，同时最多 8 个进程。
+  - 启动方式和 4090b 一样：`/usr/bin/python3.10 -S …/py4090b.py`，加 `LOCOMANI_WORKSPACE`、`SONIC_POLICY` 和 simpledata 的 `asrun/repo_b`。在 H20 上验证过能用 CUDA（torch 2.6.0+cu124，H20 是 sm_90）。
+- **代码**：`selfwm`。新目录 `scripts/experiments/selfmodel_nowalk_20261126/`：
+  - `nw_split.py`：从 D 的训练数据里做出各组的训练集，做所有划分检查和训练前的输入检查；
+  - `nw_train.py`：包一层 train3b 冻结的 `t3b_train.py`，只在 `data.load` 之后改两处（见"做法"），其余一行不改；
+  - `nw_eval.py`：几组模型在同一批段上打分，配对比较；
+  - `nw_range.py`：包一层 simpledata 冻结的 `sd_range.py`（评估 4），把训练集换成 N 的；
+  - `nw_run.sh`：正式的训练和评估流程。
+
+  共用的代码全部取 simpledata 冻结的 `asrun/repo_b`：`data.py`（174071cb，FDVEL 版）、`train.py`（8acdaea1）、`models.py`（0ac27f6b），train3b 冻结的 `t3b_train.py`（c7ecf581），simpledata 的 `sd_range.py`（1276163a）。正式运行前把本实验的脚本拷进 `asrun/code/`，md5 记在 `asrun/MD5.check`。
+- **输出**：`/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/`，下面简称"本目录"。simpledata 的输出和共用的代码树都只读。
+- **关联**：
+  - [selfmodel_simpledata_20261126](selfmodel_simpledata_20261126.md)：SIMPLE 里的 ScaleBFM 数据、模型 D、120 局真实局；复核指出的 crc32 奇偶问题和按任务的读法；
+  - [selfmodel_train3_20261125](selfmodel_train3_20261125.md) 更正 3：LML 上只比第一下伸手，先走后伸的误差是原地的 1.2–1.3 倍；
+  - [selfmodel_train3b_20261125](selfmodel_train3b_20261125.md)：配方 D；
+  - [selfmodel_lmlreal_20261125](selfmodel_lmlreal_20261125.md)：LML 的真实任务局（第二阶段用）。
+
+## 背景
+
+自身模型预测：冻结的控制器收到一条伸手命令后，手最后停在哪。任务局里每一下伸手都发生在机器人走到桌前、停下之后。这时关节还在微动，髋有扭转，站姿也和默认站姿不同。所以现在采数据时混了两种重置：
+- **原地伸手**：出生后直接伸手，起点只加了 0.007 rad 的关节扰动；
+- **先走后伸**：约 1/3 的重置先走 0.3–1.5 m，停下、等稳，再伸手。在 SIMPLE 里，这些重置一半用"任务式"走法（不转身，位移落在 APPROACH_BOX 里），一半照 d3 的规则（转、走、转，走完髋扭 30–70°）。
+
+已有的证据：
+- LML 上第一下伸手，先走后伸的误差是原地的 1.2–1.3 倍（train3 更正 3）。这是两种起点都训过的模型，说的是"难"，不是"没见过"。
+- SIMPLE 的 D：原地第一下 0.80 cm；任务式走法后的第一下 1.03 cm（test_iid）；d3 走法后的第一下 1.95 cm（val）。
+- **还没有人训过不含先走后伸数据的模型，再拿真实任务局去测。** 这就是本实验要补的。
+
+## 假设
+
+**只用原地伸手的数据训出来的模型（N），在真实 SIMPLE 任务局上的预测误差，和用同样多、但含先走后伸数据训出来的模型（C）差不多。** 理由：
+1. 真实局的第一下，都在任务式走法之后。任务式走法不转身，髋扭不超过 15°（simpledata check 第 8 项，100 %）。训练前的输入检查（见"开跑前的准备"第 3 条）显示，真实局第一下的起点，有 84.5 % 的段 29 个关节都落在 N 的训练集 p0.5–p99.5 之内（C 是 100 %）；按 N 的标准化，真实段 x0 的最大 |z| 是 21.2，按 C 是 18.6，差得不多。也就是说，任务式走法之后的起点离原地伸手的分布不远。
+2. 真实局的第二下（进入）从预抓取的姿态出发，是一段连续伸手。原地重置里的连续伸手覆盖这种起点。
+
+反方向的理由：
+- 两种起点都训过的模型里，先走后伸的第一下也比原地难 1.2–1.3 倍；没见过这种起点，误差可能更大。
+- SIMPLE 的 ScaleBFM 走完以后第一条命令时，关节还在动（0.1 s 差分速度 0.28 rad/s，LML 是 0.02），原地重置里没有这种状态。
+- 真实局第一下有 15.5 % 的段至少一个关节落在 N 的训练范围外，最多的是 S 的第 1 个关节（7.7 %）。
+
+## 做法
+
+### 第一阶段：SIMPLE，ScaleBFM（先做）
+
+**各组**。都是配方 D：data3 + data3b + 两个中间点文件，`REACHWM_GOAL_REF=1 REACHWM_APPROACH=1 REACHWM_QFIX=1 REACHWM_FDVEL=1`，不开 X0_REF；E3_ensemble，frac 1.0，30 000 步，迭代数、batch、学习率、评估网格都用 train.py 的缺省值，和 simpledata 的 `sd_run.sh` 一样。
+
+| 组 | 训练数据 | 走路标志 | 种子 |
+|---|---|---|---|
+| **N**（不走） | 去掉所有先走后伸重置：它们在 data3、data3b 里的全部段（第一下和连续伸手），以及源段属于它们的中间点样本 | 训练和评估都置 0 | 0；1（重复） |
+| **C**（数据量对照） | 按 md5 随机整次去掉重置，不分种类，直到训练段数和 N 相同（±1 %） | 保留 | 0；1（重复） |
+| **C2** | 和 C 同一批重置 | 训练和评估都置 0，和 N 一样 | 0 |
+| **D**（参照） | 全部数据，simpledata 已训好的模型，不重训 | 保留 | 0（在 4090b 上训的） |
+
+- **主比较是 N 对 C**：两者训练段数相同，只差"有没有先走后伸的数据"和走路标志。学习曲线还在降（frac 1.0 对 0.3 是 0.734），所以不能拿 N 直接和 D 比。
+- **C2** 把走路标志的作用单独拿出来：N 对 C2 只差数据，C2 对 C 只差标志。一个训练在 H20 上只要十来分钟，所以加上。
+- **种子 1 的 N 和 C** 是我加的重复，看训练本身的波动有多大。用户的设计只要求种子 0；判据以种子 0 为准，种子 1 只用来判断结论稳不稳（见判据）。两张卡、每张两个训练，加这两组不多花墙钟。
+
+**训练集怎么做**（`nw_split.py`，正式数据上已跑过，检查全部通过，见"开跑前的准备"）
+- **哪些是先走后伸的重置**：读采集日志（`data3/data`、`data3b/data` 的 `w*_log.json`，每次重置一条）的 `walked`。data3 有 9927 次，data3b 有 4960 次，共 14 887 次。再和每一段的 `walked` 标志对一遍：data3、data3b、两个中间点文件的全部 851 294 段都一致；中间点样本的重置编号和走路标志，经 `mid_*_src.npz` 查到的源段也都一致。
+- **怎么去掉**：被去掉的重置，它们所有段的桶号改成 10。这样 `data.splits` 不会把它们放进训练、验证、测试的任何一份。band 和 edge 本来就不参与训练。
+- **N**：去掉全部 14 887 次先走后伸的重置。
+- **C**：
+  1. 先去掉验证桶（桶 8）里先走后伸的重置，让 C 的验证集和 N 的一样；
+  2. 训练重置（桶 0–7）按 `md5("nowalk_c:<重置编号>")` 从小到大排，按这个顺序保留，直到保留的训练段数第一次不少于 N 的训练段数，其余的去掉。
+  
+  不用 crc32：simpledata 里 crc32 取余偶数和划分的桶号相关，md5 和它们无关。
+- **C2**：去掉的重置和 C 完全相同。
+- **挑 checkpoint 用的验证集**：N、C、C2 都只用桶 8 里的原地重置（4260 段，2534 次重置）。理由：
+  - N 要是一个只采原地数据就能部署的模型，它选 checkpoint 时就不能用先走后伸的数据；
+  - C 和 C2 用同一份验证集，这样三组的差别只来自训练数据。
+  
+  D 当时用的是完整的验证集（6266 段），这一点只影响和 D 的比较。D 的 val 曲线在 8k 步以后很平（1.856–1.877 cm），挑 checkpoint 带来的差别应该很小。
+
+**走路相关的输入怎么处理**
+- x0 有 278 列。和走路有关的是两处：
+  - 第 204 列 `walked`（data.py 里 x0 的 `D["walked"]`，已核对逐段等于走路标志）；
+  - 最后 4 列 274–277，是 `REACHWM_APPROACH` 的走路特征。本实验所有数据文件里都没有 `walk` 这个数组，`data.load` 填的是 0，所以这 4 列在训练和真实局里处处为 0（已核对）。D 也一样，这 4 列对 D 本来就是常数。
+- 所以实际会变的只有第 204 列。N 的训练数据里它恒为 0，标准化后均值 0、标准差取下限 1e-3。真实局全部是先走后伸，`walked = 1`，如果不处理，标准化后会变成 1000。
+- **登记的做法**：N 和 C2 在训练和所有评估里都把第 204 列置 0。对 N 来说训练时是空操作，评估时等于"部署的人不知道、也不告诉模型刚才走没走过"。这正是只采原地数据以后能部署的模型。`nw_eval.py` 加载 N 和 C2 时会核对：每个成员第 204 列的标准化均值是 0、标准差是 1e-3。
+- **别的零方差列**：按 N 的训练集算，标准差低于 1e-3 的列只有第 204 列和 274–277 列，没有别的；按 C、D 算只有 274–277 列。
+
+**怎么训**（`nw_train.py`）
+- 包一层 train3b 冻结的 `t3b_train.py`：把 `data.load` 换成"先照原样读，再把这一组去掉的重置改成桶 10；N、C2 再把第 204 列置 0"。
+- 读完以后核对：训练段数、验证段数等于 `splits.npz` 里记的；N 的训练段里没有一段 `walked = 1`。`t3b_train` 看到的是同一个 data 模块（有断言）。
+- 其余全照 `t3b_train` 和 `train.train`：划分、种子、bootstrap、学习率表、按 val 挑 checkpoint、存模型。
+
+### 评估
+
+所有评估都在 CPU 上跑（`nw_eval.py`）。误差的定义和 sd_eval、sx_eval 一样：预测的最终手点到真实手点的距离（cm，起点朝向系），另报姿态误差（度）。保留的段也和 simpledata 一样：没摔、末端停稳（settled）；"ended"指只要没摔。
+
+**主评估：120 局真实 SIMPLE 局，主标签，settled，235 段**
+- 就是 simpledata 评估 3 的那批段，四个抓取任务各 30 局，全部先走后伸（任务式走法）。
+- 每组报误差中位数，总体、按任务各报一次，附 95 % 区间。
+- **区间按布局重抽**：布局是（任务，局号 % 10），局号取自重置编号（90 000 000 + 1000 × 任务 + 100 × 难度 + 局号），共 40 个布局，每个布局 3 局（三个难度）、6 段。重抽 4000 次。理由是 simpledata 的复核发现，同一个局号的三个难度抓取点和走位几乎相同，不是独立样本。
+- **配对比值**：N/C 是登记的主指标，同时报 N/C2、C2/C、N/D、C/D、C2/D。每次重抽都在同一批段上算两组的中位数再相除。
+- 还要分开报：第一下（预抓取，chain 0，116 段）、第二下（进入，chain 1，119 段）、每个任务、去掉 TabletopGraspMP 的三个任务（180 段，30 个布局）。
+- **TabletopGraspMP 单独看**：它被桌沿挡住的那批段是接触造成的失败，不是起点的问题。每组模型在这些段上都会有 28–40 cm 的误差。
+- 也报 p90。
+
+**次要评估**
+1. **留出集**：用 data.py 自己的桶（crc32），按重置重抽 2000 次，各组配对：
+   - data3：原地第一下、原地连续伸手（val + test_iid）；任务式走法后的第一下和连续伸手（只在 test_iid 里有）；d3 走法后的第一下和连续伸手（只在 val 里有）；data3 val 全部（simpledata 的分母）；test_iid 全部；
+   - data3b：预抓取第一下加进入第二下，分任务式走法（test_iid）、原地（val + test_iid）、d3 走法（val）。
+2. **补充标签**（任务原本的节奏）：ended（simpledata 补充标签的主口径）和 settled；主标签的 ended 也报。
+3. **起点在不在 N 的训练范围里**（`nw_range.py`）：simpledata 的 `sd_range.py` 原样跑，只把训练集换成 N 的（同样的去掉重置，标志置 0），模型换成 N。报真实局的段落在 N 训练范围里的比例，以及 N 在范围内外的误差。D 的同一项在 simpledata 的 `train/eval4.txt` 里。
+4. **核对**：`nw_eval.py` 用 D 重算 simpledata 记过的四个中位数（真实局主标签 settled 0.7053、补充标签 ended 0.8208、data3 val 1.8860、data3 test_iid 1.5756，都是 CPU 上的数），差超过 2e-4 cm 就算失败、停下。
+
+**和 D 比的时候要记住**：D 是在 4090b 上训的，N、C、C2 在 H20 上训。同一配方、同一冒烟数据、300 步，两种卡的 best val 不一样（见"开跑前的准备"第 1 条）。所以 N/D、C/D 里混着换卡的差别；N/C、N/C2、C2/C 都在 H20 上，没有这个问题。
+
+### 第二阶段：LocoManiLab，三个控制器（第一阶段之后，GPU 有空就做）
+
+ScaleBFM、SONIC、HEFT 各做同样的 N/C 消融：
+- 训练数据是 train3b 的 D（`selfmodel_data3_20261125`、`selfmodel_data3b_20261125` 加中间点，见 `selfmodel_train3b_20261125`）；
+- 评估用 `selfmodel_lmlreal_20261125` 的真实 LML 任务局；
+- 对 SONIC 最重要：它的先走后伸采得最慢、最不稳。
+
+数据文件、局的布局怎么定义、按什么重抽，在开跑前写成一个修订，单独提交。这里先把方向性的预测和判据写下来，修订里只补实现细节，不改数字。
+
+## 开跑前的准备（2026-11-26，正式训练之前）
+
+1. **H20 和 4090b 的对照**（协调人要求）：用 simpledata 的 D 配方、它的冒烟数据（smoke/d3、smoke/d3b 加 dev_b/runtest 的两个中间点文件）、seed 0、300 步，在 H20 的 0 号卡上跑。
+   - **不一致**，原因是显卡型号不同。原文：
+
+```
+H20   (smoke/h20_equiv.log):   E3_ensemble 1.0 {"it": 300, "train": 0.07785685360431671, "val_median_cm": 1.878440022468567, "s": 16.7}
+4090b (simpledata dev_b/runtest/logs/train_D_s0_f1.log):
+                               E3_ensemble 1.0 {"it": 300, "train": 0.07601235061883926, "val_median_cm": 1.8745638132095337, "s": 10.2}
+model.pt md5: H20 f24a7430 (h20_equiv, h20_equiv2, h20_conc_a, h20_conc_b), 4090b 35c9d5df
+```
+
+   - H20 自己是确定的：同样的命令再跑一次，model.pt 逐字节相同（md5 f24a7430）；同一张卡上同时跑两个，也都是 f24a7430。
+   - 所以照协调人的安排：N、C、C2 都在 H20 上训，彼此配对比较；D 用现有的模型，标明是在 4090b 上训的。
+2. **划分检查**（`splits/split.log`，原文）：
+
+```
+  [ok] every segment's reset is in the collection logs
+  [ok] segment walked == the log's walked, all 851294 segments (data3, data3b, mid)
+  [ok] mid_data3_src rows 480254 == mid_data3 segments 480254
+  [ok] mid_data3: reset and walked equal to the source segment's (mid_*_src.npz)
+  [ok] mid_data3b_src rows 280150 == mid_data3b segments 280150
+  [ok] mid_data3b: reset and walked equal to the source segment's (mid_*_src.npz)
+  [ok] x0 column 204 == walked
+  [ok] x0 column 205 == chain
+  [ok] x0 columns 274-277 (REACHWM_APPROACH) zero everywhere
+  [ok] D's training split 809804 == 809804 (simpledata run.log)
+
+arms (training split after the arm's drop; val = data.splits' val, fell excluded as train.train does):
+  D : train 809804 segments (29260 resets; first 306654, chained 503150), walk-first 267345 segments / 9737 resets (task 134411, d3 132934); per file {'data3': 25691, 'data3b': 23709, 'mid_data3': 480254, 'mid_data3b': 280150}; val 6266 (3727 resets, walk-first 2006); test_iid 6130; drop 0 resets; zero walk flag False
+  N : train 542459 segments (19523 resets; first 204207, chained 338252), walk-first 0 segments / 0 resets (task 0, d3 0); per file {'data3': 17218, 'data3b': 15672, 'mid_data3': 323457, 'mid_data3b': 186112}; val 4260 (2534 resets, walk-first 0); test_iid 4130; drop 14887 resets; zero walk flag True
+  C : train 542494 segments (19673 resets; first 206561, chained 335933), walk-first 177597 segments / 6521 resets (task 88803, d3 88794); per file {'data3': 17332, 'data3b': 15759, 'mid_data3': 323308, 'mid_data3b': 186095}; val 4260 (2534 resets, walk-first 0); test_iid 6130; drop 10979 resets; zero walk flag False
+  C2: train 542494 segments (19673 resets; first 206561, chained 335933), walk-first 177597 segments / 6521 resets (task 88803, d3 88794); per file {'data3': 17332, 'data3b': 15759, 'mid_data3': 323308, 'mid_data3b': 186095}; val 4260 (2534 resets, walk-first 0); test_iid 6130; drop 10979 resets; zero walk flag True
+  [ok] N's training split 542459 == D's training segments of in-place resets 542459
+  [ok] N: 0 walk-first segments / resets in training
+  [ok] N: walked flag 0 on every training segment
+  [ok] N, C: val (checkpoint pick) in place only
+  [ok] N and C pick on the same val segments
+  [ok] C's training split 542494 vs N's 542459: +0.006 % (tolerance 1 %)
+  [ok] real main: x0 columns 274-277 zero
+  [ok] real main settled: walked flag 1 on every segment
+SPLIT CHECK PASS
+```
+
+   - C 里先走后伸的段占 177 597 / 542 494 = 32.7 %，D 是 267 345 / 809 804 = 33.0 %；C 里任务式和 d3 式各一半（88 803 对 88 794）。md5 的抽法没有偏向哪种重置。
+   - `splits.npz` 的 md5 是 4a47e698。
+3. **训练前的输入检查**（不用模型，只看起点；同一份 `split.log`）：真实局主标签 settled 的 235 段，起点（S[k0]）的 39 个量落在各组训练集 p0.5–p99.5 之内的比例，以及按各组的标准化，真实段 x0 的 |z|：
+
+```
+input check, real main settled (235 segments; first 116, second 119): share inside the arm's training p0.5 / p99.5 (sd_range's 39 quantities), and x0 columns under Norm's floor
+  D : joints 86.8 % (first 100.0, second 73.9); pelvis 98.7 % (first 100.0, second 97.5); hands 100.0 % (first 100.0, second 100.0); all 39 86.8 % (first 100.0, second 73.9)
+      joints most often outside (S index, share): [(24, 0.10212765957446808), (26, 0.02127659574468085), (10, 0.01276595744680851), (9, 0.01276595744680851), (4, 0.0), (5, 0.0)]
+      x0 columns with training sd < 1e-3 (col, sd, max |z| on real): [(274, 0.0, 0.0), (275, 0.0, 0.0), (276, 0.0, 0.0), (277, 0.0, 0.0)]
+      |z| on real under this arm's normalisation: max 18.5, p99 of row max 6.3, median row max 1.9; top columns [(33, 18.463206301912887), (61, 13.318411546538945), (98, 11.867081785074493), (32, 11.296596975778511), (108, 10.523581116587037), (101, 9.821011898174845)]
+  N : joints 78.7 % (first 84.5, second 73.1); pelvis 98.7 % (first 100.0, second 97.5); hands 100.0 % (first 100.0, second 100.0); all 39 78.7 % (first 84.5, second 73.1)
+      joints most often outside (S index, share): [(24, 0.10212765957446808), (1, 0.07659574468085106), (26, 0.02127659574468085), (9, 0.01276595744680851), (10, 0.01276595744680851), (3, 0.00851063829787234)]
+      x0 columns with training sd < 1e-3 (col, sd, max |z| on real): [(204, 0.0, 0.0), (274, 0.0, 0.0), (275, 0.0, 0.0), (276, 0.0, 0.0), (277, 0.0, 0.0)]
+      |z| on real under this arm's normalisation: max 21.2, p99 of row max 6.3, median row max 2.3; top columns [(33, 21.19269788680051), (98, 14.427299971819712), (61, 13.637086470156119), (32, 13.073588954904237), (101, 10.568726779943292), (63, 10.449772051466056)]
+  C : joints 87.2 % (first 100.0, second 74.8); pelvis 98.7 % (first 100.0, second 97.5); hands 100.0 % (first 100.0, second 100.0); all 39 87.2 % (first 100.0, second 74.8)
+      joints most often outside (S index, share): [(24, 0.10212765957446808), (26, 0.01702127659574468), (10, 0.01276595744680851), (9, 0.01276595744680851), (4, 0.0), (5, 0.0)]
+      x0 columns with training sd < 1e-3 (col, sd, max |z| on real): [(274, 0.0, 0.0), (275, 0.0, 0.0), (276, 0.0, 0.0), (277, 0.0, 0.0)]
+      |z| on real under this arm's normalisation: max 18.6, p99 of row max 6.3, median row max 1.9; top columns [(33, 18.581140523878407), (61, 13.46825480056895), (98, 11.991599749039873), (32, 11.428561059289173), (108, 10.552259699889099), (101, 9.842305189679708)]
+```
+
+   - 第 204 列在 N 下的 max |z| 是 0，因为真实段的这一列也已置 0；没有置 0 的话它是 1000。
+   - 输入文件的 md5（`split.log` 第 2 行）：data3 b92cd560、data3b ed71649d、mid_data3 7a7c947f、mid_data3b 4b09df50。
+
+   这一条是在写预测之前看的，只看了输入，没有任何模型的输出。
+
+4. **整条流程的冒烟**（`# notebook: skip smoke`）：正式数据、300 步，N 在 0 号卡、C 在 1 号卡、C2 在 CPU 上，接着跑 nw_eval（含 D 的核对）和 nw_range。输出在 `smoke/run/`，数字没有意义，不记。结果：
+
+   - **训练**：三组都跑完 300 步。`nw_train` 的核对都通过：N 训练 542 459 段、验证 4260 段、训练段里 `walked = 1` 的 0 段、第 204 列均值 0；C、C2 训练 542 494 段。H20 上 300 步约 6 s（N 6.0 s、C 5.9 s），CPU 上 29.3 s。
+   - **评估**：`nw_eval` 输出 `REPRODUCTION PASS`，D 的四个中位数和 simpledata 记的到小数点后 5 位都相同：
+
+```
+  reproduction: D median 0.70526 vs simpledata 0.70526 (+0.00000)
+  reproduction: D median 0.82076 vs simpledata 0.82076 (+0.00000)
+  reproduction: data3 val all D median 1.88601 vs simpledata 1.88601 (+0.00000)
+  reproduction: data3 test_iid all D median 1.57564 vs simpledata 1.57564 (+0.00000)
+```
+
+   - **各格的段数**和 simpledata 一致：主标签 settled 235 段、40 个布局（第一下 116 段，39 个布局；第二下 119 段）；去掉 TabletopGraspMP 180 段、30 个布局；data3 任务式走法后的第一下 517 段、d3 走法后的第一下 543 段、原地第一下 2205 段（1125 + 1080）；data3b 任务式走法的预抓取 + 进入 140 段、86 次重置（复核里"最可比"的那一层）。
+   - **nw_range** 跑通。它报的"落在 N 训练范围里的比例"只取决于训练集，不取决于模型，所以这个数在冒烟里已经是定数：主标签 settled 的 "all three" 是 78.7 % [73.8, 83.3]（185 / 50 out），和第 3 条的 39 个量的结果相同，最近邻和伸手表两项没有多排除任何段。范围内外的误差要等正式模型。
+   - 冒烟模型的误差和比值我看到了，但那是 300 步的模型（val 4.3 cm，正式的 D 是 1.9 cm），不拿来写预测。
+   - 冒烟的 tmux 会话 `nowalk_smoke` 跑完以后自己结束了。
+
+5. **冻结**：本实验的脚本拷进 `asrun/code/`，md5 记在 `asrun/MD5.check`（连同 `splits.npz`），冻结时刻 `asrun/FROZEN_UTC` = 2026-11-26T09:05:49Z。`nw_run.sh` 开跑前核对它，以及 simpledata 的 `asrun/MD5.check`、`MD5_r2.check` 和 `t3b_train.py` 的 c7ecf581。
+
+| 文件 | md5 |
+|---|---|
+| nw_split.py / nw_train.py / nw_eval.py | 474a4b0b / f000197d / acd4c564 |
+| nw_range.py / nw_run.sh | bdc2985a / 47cdc03c |
+| splits/splits.npz | 4a47e698 |
+
+6. **正式运行的跑法**（`asrun/code/nw_run.sh`，H20 上 tmux `nowalk`，输出 `run/`）：
+   - 训练按顺序开：N s0（0 号卡）、C s0（1 号卡）、C2 s0（0 号卡）、N s1（1 号卡）、C s1（等有空位的那张卡）。每张卡最多同时 2 个，开之前查 nvidia-smi（已用 + 12 GB ≤ 80 GB），每次的 nvidia-smi 记进 `run/run.log`；
+   - 全部训完以后在 CPU 上跑：`eval_s0`（D、N、C、C2）、`eval_s1`（D、N s1、C s1）、`range_N`；
+   - 进度登记在 `~/.claude/longjobs/nowalk.json`。
+
+## 预测（启动前写，首次启动后锁定）
+
+**训练**
+- 每个训练在 H20 上 10–20 分钟（300 步约 6 s，按比例 30 000 步约 10 分钟，加上验证；一张卡两个同时跑会慢一些）。显存每个 5–9 GB。
+- 挑 checkpoint 用的原地 val 上，N 不比 C 差：N/C 在 0.88–1.02 之间。N 的原地数据是 C 的约 1.5 倍（C 只有 2/3 是原地重置）。
+
+**主评估：真实局主标签 settled，235 段，种子 0**
+
+| 比值 | 预测（点估计） | 理由 |
+|---|---|---|
+| **N/C，全部** | **1.00–1.20**，最可能 1.05–1.10 | 任务式走法后的起点大多在原地数据的范围里（第一下 84.5 %），离群程度和 C 差不多；但没见过"刚走完、关节还在动"这种起点，第一下会差一点 |
+| N/C，第一下 | 1.00–1.30 | 走路的影响集中在第一下 |
+| N/C，第二下 | 0.95–1.15 | 第二下从预抓取出发，原地数据里的连续伸手覆盖这种起点 |
+| N/C，两个 XMove 任务 | 各 0.95–1.35 | 误差本来只有 0.36–0.40 cm，绝对值上的一点偏差在比值上会被放大 |
+| N/C，BendPickMP | 0.95–1.20 | |
+| N/C，TabletopGraspMP | 0.90–1.15 | 被挡的段每组都错 28–40 cm，比值主要看没被挡的段 |
+| C2/C | 0.95–1.08 | 走路标志和起点状态是重复的信息，模型从关节和速度就看得出走没走过 |
+| C/D | 1.00–1.25 | C 只有 D 2/3 的数据。按 val 上的学习曲线（frac 0.3 对 1.0 是 0.734，指数约 0.26），2/3 的数据误差约高 11 %；再加上换卡的差别 |
+
+- N/C 的 95 % 区间：宽度约 ±0.10–0.15。两组在同一批段上配对，误差高度相关。
+- 落在判据各行的把握：第一行（≤ 1.10 且上限 ≤ 1.25）约 50 %，中间约 35 %，> 1.25 约 15 %。
+
+**次要评估**
+
+| 项 | N/C 预测 |
+|---|---|
+| data3 原地第一下（val + test_iid） | 0.88–1.02 |
+| data3 原地连续伸手 | 0.90–1.02 |
+| data3 任务式走法后的第一下（test_iid） | 1.05–1.40 |
+| data3 任务式走法后的连续伸手（test_iid） | 1.00–1.25 |
+| data3 d3 走法后的第一下（val） | 1.40–3.00：髋扭 30–70°，远在原地数据的范围外 |
+| data3 d3 走法后的连续伸手（val） | 1.10–1.80 |
+| data3b 预抓取 + 进入，任务式走法（test_iid） | 1.00–1.30 |
+| 补充标签 ended | 和主标签的 N/C 相差不超过 0.05 |
+
+- **起点范围**（nw_range）：落在 N 训练范围里的比例已经知道（78.7 %，见冒烟），不再预测。预测：N 在范围外的段误差比范围内高，第一下尤其如此。
+- **种子 1**：N/C 和种子 0 相差不超过 0.08。
+
+**第二阶段（LML，方向性的预测）**：真实 LML 任务局上，N/C 是 ScaleBFM 1.00–1.35，HEFT 1.00–1.40，SONIC 0.95–1.35。LML 的先走后伸只有 d3 式走法（转、走、转），起点和任务局的走到站位不一定像，所以 C 里的走路数据对真实局的帮助可能比 SIMPLE 里小，N/C 未必更大；但 LML 的模型误差大（val 3–4 cm），起点的影响也可能更大，所以区间放宽。
+
+## 判据（什么结果会让我放弃或修改假设）
+
+判据看主评估：真实局主标签 settled，全部 235 段，种子 0 的 N/C 和它按布局重抽的 95 % 区间。
+
+| 结果 | 结论和下一步 |
+|---|---|
+| 核对失败（D 的四个中位数对不上），或 N 的训练集里出现先走后伸的段 | 停下查清，不看比较结果 |
+| **N/C ≤ 1.10 且区间上限 ≤ 1.25** | 对 SIMPLE 里的 ScaleBFM，先走后伸的数据不需要。建议以后只采原地伸手，接着做第二阶段，看另外两个控制器和 LML 是否也成立 |
+| **N/C > 1.25** | 先走后伸的数据要保留 |
+| 其余（1.10 < N/C ≤ 1.25，或 N/C ≤ 1.10 但上限 > 1.25） | 试一个更省的中间方案，比如只采短距离的任务式走法，另行登记 |
+
+附加规则（都在看结果之前定下）：
+1. **种子 1 必须落在同一行**（按它的点估计 N/C 和区间判断）。如果两个种子落在不同的行，结论降为"中间那一行"：先补训种子 2、3，再决定。
+2. **去掉 TabletopGraspMP 的三个任务**要单独按同样的阈值判一次。如果它和全部 235 段落在不同的行，结论也降为中间那一行。TabletopGraspMP 本身单独报，不单独判。
+3. **单个任务**：如果三个没被挡的任务里有一个 N/C > 1.25 且区间下限 > 1.0，即使总体过线，"只采原地"的建议也要写明这类任务不适用。
+4. **d3 走法的 val 不进判据**：任务里没有这种走法。它只说明 N 在远离训练范围的起点上会怎样。
+5. **C2/C**：如果 C2/C > 1.10 且区间下限 > 1.0，说明走路标志本身有用，那么 N 的"标志置 0"是 N 的一个额外的不利条件；结论里要把"N 对 C2"一起写上，说明数据和标志各占多少。
+
+第二阶段用同样的阈值，每个控制器单独判。
+
+## 预测修订
+<!-- 首次启动后如需修改预测，只能追加在这里，写明时间和原因。 -->
+
+## 结果（贴原始输出，不转述）
+<!-- 取指标的命令 + 原始输出；完整日志、checkpoint、评测输出的路径。 -->
+
+## 意外
+<!-- 预测和结果哪里对不上？有什么没想到的现象？ -->
+
+## 结论与下一步
+<!-- 每个论断引用上面的证据；写明证据强度（运行次数、种子、episode 数）；至少一个其他解释；
+     四类陷阱检查：benchmark 选择 / 数据泄漏 / 指标误用 / 事后挑选；结果落在判据哪一侧、下一步做什么。 -->
+
+## 独立复核
+<!-- 结论要写进论文、用来否掉或投入一个方向、或作为发现报告时必须做。贴独立 agent 的原始回复。 -->
