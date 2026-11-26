@@ -69,6 +69,100 @@
 
 ## 预测修订
 
+2026-11-26，正式运行之前补记实现、复现核对和冒烟（预测和判据没改）。
+
+### 开关
+
+- **bench 选项 `sonic_vr_frame`**，取值 `robot`（默认）或 `reference`，用 `--bench-set sonic_vr_frame=reference` 打开，`bench_via.sh` 经 `BENCH_SET` 传入，`bench_via.sh` 本身没改。
+  - 签名：只有不是 `robot` 时才变，末尾成 `.../sonic-vr-reference`；默认的签名不变。
+  - 只对 SONIC 有效：别的控制器给 `reference` 直接报错。
+  - 每行的 `bench.options` 多一个键 `sonic_vr_frame`。没有这个键的旧记录读进来是 `robot`。
+- **改的文件**（Mac 和 4090 都只加这一处）：
+  - `src/locomani/bench/options.py`：字段、签名、一致性检查。
+  - `src/locomani/bench/spec.py`：能力表加一轴。
+  - 四个 bench 的能力表：SIMPLE 两个值都是 ready；LocoManiLab 只有 `robot`，planned；BiGym 2.0、HumanoidArena 没有 SONIC，空。
+  - `scripts/experiments/simple_eval_20261112/simple_bench.py`：解析开关，交给 `env.Env`。
+  - `scripts/experiments/selfwm_20261029/env.py`：`Env` 加可选参数 `sonic_vr_frame`，是 SONIC 时替换 `SonicMotorConfig.vr_frame`；默认 None，不动电机。
+  - Mac 上另有 `tests/test_bench_options.py` 新加 5 条，`docs/reference/config_fields.md` 新加一行。
+- **为什么放在 `env.py`**：
+  - `simple_bench` 的电机是 `env.Env` 建的（经 `capability_probe.Probe`），`SonicMotorConfig` 也只在 `Env` 里设（`REACH_SONIC_IFACE` 改 `interface` 就在这里）。所以开关作为显式参数交给建电机的地方，第一拍之前就生效。
+  - 也可以不碰 `env.py`：在 `simple_bench` 里建完 `Env` 以后再替换 `env.m.sonic`。这次没这样做。
+  - 02:34Z 同步到 4090 运行树的 `env.py` 在 lmlcmp3 的冻结清单里，触发了那边的 md5 核对，正式运行被拦下。协调方已让 lmlcmp3 改用私有副本。同一次同步还改了 `src/locomani/bench/locomanilab/__init__.py`，也属 locomanilab 目录，只加了能力表的一行。
+- **4090 同步**：
+  - 4090 上 `options.py`、`simple/__init__.py`、`env.py` 比 Mac 旧，缺 Mac 上别人没提交的 heft 改动，4090 上也没有自己独有的改动。
+  - 所以只把开关这一处逐处补上去（`tools/vrref_patch.py`），没带过去 heft 的改动。补完和 Mac 版逐行对过，差的只有原来就差的那些行。
+  - 同步前的原文件备份在 `backup_pre_switch/`。
+- **测试**：Mac 版本的 `tests/test_bench_options.py` 28 条全过。Mac 上没有测试环境，是在 4090 的临时目录里跑的。
+
+### 复现核对（`"robot"`，开关不给）
+
+- 8 局：每个任务第 3、24 局，A，进程在 2、3 号卡上，任务到卡的分配和 bench_rgbd_20261124 相同。
+- 和 `bench_rgbd_20261124/sonic` 比，两次都是行 8 / 8 相同、录像 8 / 8 逐位相同：
+  - 行相同指逐键相同，只去掉 `wall_s` 和新键 `sonic_vr_frame`；新键的值是 `robot`。
+  - 第一次 02:35Z 在共享运行树上跑；第二次 02:42Z 在下面的冻结副本里跑。
+
+```
+rows the same 8/8, films the same 8/8
+```
+
+### 冒烟（`"reference"`）
+
+- 2 局：BendPick 第 3 局、TabletopGrasp 第 3 局，A。这两局属于测试局，正式运行会原样再跑一遍。
+- 跑通了，0 个进程失败，签名是 `simple/perception-rgbd/pose-odometry/root-odometry/sonic-vr-reference`。
+- **信号确实变了**：
+  - `tools/vr_check.py`：同一次重置以后站 3 秒，发给 SONIC 的 VR 三点目标，两种坐标从第 0 拍起就差 2.8–4.7 cm。
+  - 合手前 0.5 s 的手速：BendPick 0.71 cm/s，TabletopGrasp 0.50 cm/s；同局在 `"robot"` 下是 3.67 和 2.29 cm/s。
+  - TabletopGrasp 第 3 局抓起来了（12.36 s），`"robot"` 下没抓起来。
+  - BendPick 第 3 局没抓起来，预抓取停偏 25.2 cm；`"robot"` 下是 5.4 cm，抓起来了。
+- **记录参考骨盆**：
+  - A、J 都带 `--film-ref`，只多记录电机的参考位姿，用来量"骨盆高度和参考之差"。
+  - 冒烟的两局带和不带 `--film-ref` 各跑一次：去掉 `--film-ref` 多出的键（各段的 `S3`、`t_cmd`、`W`、`J`，录像的 `ref`）以后，行逐键相同、录像逐位相同（2 / 2）。
+  - `"robot"` 一侧取 `films_JR` 里的参考：JR 就是 J 带 `--film-ref`，selfmodel_s_jr_20261124 已证明和 J 逐局相同；下蹲局都没有路线，A、J、JR 发的指令相同，取用前逐局核对录像逐位相同。
+  - 不用行里的 `pz`：`pz` 是要求全身 IK 达到的骨盆高度，冒烟里它和参考骨盆差 2.4–3.9 cm。
+
+### J 的路线：重新规划
+
+- **原因**：规划的起点是本目录 A 录像里预抓取开始那一帧（`prep2.py`），障碍物按 A 录像的第一帧放。冒烟里这一帧两种坐标差得很远：
+  - 骨盆差 8.4 cm（BendPick）、25.6 cm（TabletopGrasp）。
+  - 是走到站位的结果不一样：TabletopGrasp 第 3 局横向停偏 `"robot"` −33.5 cm，`"reference"` −10.4 cm。
+
+  沿用旧路线，起点就对不上，所以照流程从新的 A 录像重新规划：A，然后规划，然后 J，和 simple_rgbd_20261124 一样。
+- **规划器噪声**：cuRobo 同样的输入每次规划也不一样（selfmodel_sfull_20261125 意外 3），J 两种坐标的差里会混进规划器的噪声。
+- **会报出的路线变化**：
+  - 两边各有多少局有路线，哪些局只有一边有；
+  - 两边都有路线的局里，关节路径相同的局数；
+  - 规划起点的骨盆差和关节差，路径终点的关节差。
+
+### 正式运行
+
+- **输出**：4090 `/wuji-vefps-D/wuji-il/yijie/loco_outputs/simple_sonic_vrref_20261126/reference/`。
+- **设置**：
+  - `BENCH_SET="sensor=rgbd sonic_vr_frame=reference"`，`BENCH_EXTRA=--film-ref`，`REACH_SONIC_NETS=gpu`；
+  - `BENCH_GPU=2`，`BENCH_GPUS="2 3"`；
+  - 依次跑 A、plan、J，同时最多 4 个进程。
+- **冻结副本**：从 `asrun/repo` 跑，它是 4090 运行树 `src`、`configs`、`scripts` 的副本，照 selfmodel_simpledata_20261126 的做法；`third_party`、`assets` 和只读的 `outputs` 是链接。开跑前先用 `asrun/MD5.check` 核对。
+- **评估**：`tools/vrref_eval.py`，只用 CPU，按"度量"逐条输出；另外用 `bench_jref_table.py` 出主表。和 `bench_rgbd_20261124/sonic` 的 A、J 逐局配对。
+
+### 冻结
+
+- `FROZEN_UTC` 2026-11-26T02:44:54Z。
+- `asrun/MD5.check`：1669 个文件，它自己的 md5 是 `b6611b945cf1d42dc160b9c670fb6048`。
+- 主要文件的 md5（4090 冻结副本）：
+
+| 文件 | md5 |
+|---|---|
+| `simple_bench.py` | `9ec4fe2e3280b248a77edb7cb6ebcdbc`（和 Mac 相同） |
+| `bench_via.sh`（没改） | `82cd6dc26e91ec4721d53ea7bff1b3cb` |
+| `bench_jref_table.py`（没改） | `8c4cc0d2fab53005fbffb57b967ecb19` |
+| `selfwm_20261029/env.py` | `be6a6f8a7ef22718ecba51b2311115a6`（Mac `d48f0ccf…`，多 heft 的改动） |
+| `bench/options.py` | `0318691d60d27b7e1a1a675e00bbafd1`（Mac `a2a9d6d7…`，多 heft） |
+| `bench/simple/__init__.py` | `10fa6f3645741e01d89f52934097723c`（Mac `4433b81f…`，多 heft 和注释） |
+| `bench/spec.py` | `1b2ddb58cbaae93188e45b8be731c10e`（和 Mac 相同） |
+| `sonic_onnx/motor.py`（没改） | `6d51d28f3d19c9c2c05d49b0d1293bfc` |
+| `curobo_avoid_20261120/plan2.py`（没改） | `3161d616875f6c4a238a3c79fa29b115` |
+| `run_formal.sh` | `9c159551844ec5b78bc8e380dd26ee70` |
+| `tools/vrref_eval.py` | `3be733c2ad518d5d9835d2b64ac1354b` |
+
 ## 结果
 
 ## 意外
