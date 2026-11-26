@@ -12,7 +12,8 @@ arms split (pre-split) or when A >= 24 / 30 there (ceiling).
 Arms (<run>/rows): A (direct), AL (dryR: must equal A), RD (R_D; absent before phase R). Printed: 1 the consistency (AL =
 A; the look: cloud, score, seen_cm of every A row against the main metric's ScaleBFM A row of the episode); 2 the
 pre-split failures; 3 success per task and limit; 4 the decision set; 5 the paired tests (P1 R_D vs A at 45 s on the
-decision set, the official limit, per task, all four); 6 the mechanism (each stage's palm miss for A and R_D, D_heft's
+decision set, the official limit, per task, all four; revision 1: the four tasks together as the main comparison and the
+gate-passed tasks together beside it, each task with its gate verdict from --gate, sh_gate.sh's rule); 6 the mechanism (each stage's palm miss for A and R_D, D_heft's
 error of the sent command, the reaches whose wrist or hand touched a table, AL's model / direct from --gate's
 err_D_heft.json); 7 F1 on R_D per task from --f1 (sh_err.py's err_RD.json and ss_f1pre.py's f1pre_RD.json; (a) ratio >
 1.3, (b) F1-0 share < 80 %, (c) the sent commands' IK > 2 cm share >= AL's + 10 pp); 8 the commands (correction, shrink,
@@ -101,9 +102,31 @@ def main() -> None:
         dsets[lab] = keep
     out["decision_set"] = dsets
 
+    gate = {}
+    if g.gate and (g.gate / "f1pre_D_heft.json").exists() and (g.gate / "err_D_heft.json").exists():
+        f0 = json.loads((g.gate / "f1pre_D_heft.json").read_text())["cells"]
+        fa = json.loads((g.gate / "err_D_heft.json").read_text())["sets"]["AL"]["rows"]
+        for t in TASKS:  # sh_gate.sh's verdict
+            a_, b_ = f0.get(f"{t}/both"), fa.get(f"{t}/both")
+            gate[t] = bool(a_ and b_ and a_["share"] >= 0.80 and b_["ratio"] <= 1.3)
+        print("\n== gate (sh_gate.sh's rule): " + ", ".join(f"{SHORT[t]} {'PASS' if gate[t] else 'FAIL'}" for t in TASKS))
+    out["gate"] = gate
+
     if have_rd:
-        print("\n== 5. paired tests (R_D vs A)")
+        print("\n== 5. paired tests (R_D vs A); revision 1: the four tasks together is the main comparison, the gate-passed "
+              "tasks together beside it, every task with its gate")  # fmt: skip
         res = {}
+        for lab, col in LIMITS:
+            o = SE.paired(rows["A"], rows["RD"], eps, col, rng)
+            res[f"main | {lab} | all four"] = o
+            print(f"  main R_D vs A {lab:8s} all four tasks: {SE.fmt_pair(o)}")
+            gp = [t for t in TASKS if gate.get(t)]
+            if gp:
+                o = SE.paired(rows["A"], rows["RD"], [k for k in eps if k[0] in gp], col, rng)
+                res[f"gate-passed | {lab}"] = o
+                print(f"       R_D vs A {lab:8s} gate-passed {[SHORT[t] for t in gp]}: {SE.fmt_pair(o)}")
+            else:
+                print(f"       R_D vs A {lab:8s} gate-passed: no task passed")
         for lab, col in LIMITS:
             ds = [k for k in eps if k[0] in dsets[lab]]
             o = SE.paired(rows["A"], rows["RD"], ds, col, rng)
@@ -112,7 +135,8 @@ def main() -> None:
             for t in TASKS:
                 o = SE.paired(rows["A"], rows["RD"], [k for k in eps if k[0] == t], col, rng)
                 res[f"{lab} | {t}"] = o
-                print(f"     R_D vs A {lab:8s} {SHORT[t]:14s}: {SE.fmt_pair(o)}")
+                gt = "" if t not in gate else (" [gate PASS]" if gate[t] else " [gate FAIL]")
+                print(f"     R_D vs A {lab:8s} {SHORT[t]:14s}{gt}: {SE.fmt_pair(o)}")
             o = SE.paired(rows["A"], rows["RD"], eps, col, rng)
             res[f"{lab} | all"] = o
             print(f"     R_D vs A {lab:8s} {'all four':14s}: {SE.fmt_pair(o)}")
