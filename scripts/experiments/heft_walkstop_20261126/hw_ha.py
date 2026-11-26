@@ -59,6 +59,9 @@ def parser():
     p.add_argument("--probe", action="store_true")
     p.add_argument("--shards", type=int, default=1)
     p.add_argument("--shard", type=int, default=0)
+    p.add_argument("--gait-check", type=Path, default=None,
+                   help="revision 3 (smoke only): a copy of hadata's hr_real_gait.py; hw_gaitcheck.install compares the first "
+                        "gait_heft walk with its heft_walk_frames bit for bit")
     return p
 
 
@@ -247,6 +250,10 @@ def run(a) -> int:
             h.step()
         probe(a, sim, h, body)
         return 0
+    if a.gait_check is not None:
+        import hw_gaitcheck
+
+        hw_gaitcheck.install(a.gait_check, a.out, H, L, HW, "hw_ha")
     G = H.gaits()
     arms = a.arms.split(",")
     cells = H.rng_of(a.cells)

@@ -512,6 +512,54 @@ lc3_run 的 `code_check` 要求载入过自身模型的 `env.py`，这个跑局�
   - 修订 2 写的"镜像场景 xml 拷进本轮副本"不对：拷进去的其实是共享树，`CODE_MD5_REV2` 里也没有这个文件（find 不进符号链接）。
   - 现在 HA 用的镜像场景只来自 code_b 的真目录，`code` 不再往 outputs 写任何东西。
 
+### 修订 3（2026-11-26 10:35Z，HA 空地测试开跑之前：加 P4，核对步态）
+
+**为什么改**：另一条预注册的实验 [heft_reanchor2x2_20261126](heft_reanchor2x2_20261126.md) 在 LML 里跑完了。P4 的做法是：补走时按机器人自己用 FK 算出的当前脚尖重新定骨盆目标。结果 P4 达到了本条目的判据 1：0.05–1.50 m 直行每格 10/10，原来的 11 个格 0 越线，0 摔。协调人 10:3xZ 同意把 P4 加进 HA 空地测试。P4 暂时不进任务局，等 HA 的结果和独立复核出来再定。
+
+**加什么**：
+- 程序：HEFT 的 P4，hw_run 的 `p4`（src = 里程计，aim = 脚尖）。
+- 格子和局数：和 P0 / P2 一样，直行 0.05 / 0.20 / 0.50 / 1.00 m，每格 5 局（rep 0–4）。
+- 顺序：HEFT 的 P0 + P2 → P4 → SONIC 的 Q0 / Q2（有余力时）。
+- 冒烟里加 P4 在 0.20 / 0.50 m 各 1 局（rep 100）。
+
+**步态**：HA 里 HEFT 的任务局现在走它自己的步态 gait_heft，也就是 hadata 换步态冒烟里 `hr_real_gait.py --heft-gait` 的 `heft_walk_frames`（该文件 md5 7dfaa816，10:05–10:26Z 在 4090b 0 号卡上跑的）。空地测试里 HEFT 的 P0、P2、P4 也都走 gait_heft（hw_run 的 gait `p0` = `gait_heft.HEFT`），和任务局一致。核对分两层：
+- **静态核对**（已做）：步态用到的文件在 hadata 冒烟用的树和 code_b 之间逐个相同：
+  - `selfmodel_lmlcmp_20261126/heft_gait/gait_heft.py`（5398ff8d）
+  - `heft_gait/gait.py`（83d9942b）
+  - `hardgrasp_20261125/hg_walk.py`（fc3a5693，提供 BLEND_S）
+  - `locomanilab_20261117/lml_selfmodel.py`（f5168f31，提供 minjerk、DEFAULT_Q、FPS）
+  - `selfmodel_lmlcmp3_20261126/lc3_run.py`（eca94321）
+  - 两边都是 lc3_run.walk_ctrl 的 HEFT 分支：gait_heft 的脚步，上身 12 号以后的关节在 BLEND_S 内用 min-jerk 过渡到 DEFAULT_Q。
+- **运行时核对**（冒烟里 1 局）：新文件 `hw_gaitcheck.py`，hw_ha.py 的 `--gait-check` 调用它。
+  - 冒烟的第一局（P0，0.20 m，rep 100），第一次走的步态参考先用 hw_run.walk 算，再用 hadata 的 `heft_walk_frames` 在同样的输入上算一次，逐位比较，结果写到 `gait_check.json`。
+  - hadata 那份函数的源码，取自我拷到 `$O/ref/hr_real_gait.py` 的副本：从共享树只读拷来，md5 要求是 7dfaa816。执行时用 code_b 自己的模块，不从共享树导入任何东西。
+  - 不相同就停下，先报协调人，不跑正式的。
+  - 这一局单独起一个进程，后面的局不受这次额外调用的影响。
+
+**代码**：
+- code_b 换上：
+  - 这一轮的 `hw_run.py`：2×2 的开关，取默认值时 P2 不变，LML 里逐位核对过 110/110；
+  - `hw_ha.py`：加了 `--gait-check`；
+  - 新文件 `hw_gaitcheck.py`。
+- md5 记在 `asrun/CODE_MD5_B3`（788 个文件，md5 0e1eb30c）：和 CODE_MD5_B 比，只有 `hw_run.py`、`hw_ha.py` 变了，另外多一个 `hw_gaitcheck.py`；`hw_run.py` 和 2×2 副本里的那份逐字节相同。`hw_ha_b.sh` 改成按 CODE_MD5_B3 核对。`$O/ref/hr_real_gait.py` 的 md5 是 7dfaa8166dddae49fb5339cd9fa45792。
+- 冒烟脚本 `$O/hw_ha_smoke_b.sh`（仓库里同名一份）：probe → gait（步态核对那一局）→ heft（P0 / P2 / P4 在 0.20 / 0.50 m）→ p0hg → sonic。每一步开跑前要求 0 号卡已用 ≤ 12000 MiB。输出 `$O/ha_smoke/`。
+
+**HA 里 P4 的预测**：按 LML 的结果写，区间放宽，因为 HA 的里程计误差和脚尖前移量可能和 LML 不同。
+- 前提是修订 2 的预测：P0 用 gait_heft 在 HA 里会迈步。如果 HA 里 P0 不迈步，P4 也救不了，下面的数都作废。
+- 成功（每格 5 局）：0.05 m 2–5，0.20 m 2–5，0.50 m 2–5，1.00 m 1–5。
+- 越线：4 格合计，P4 的越线局数 ≤ P2 的。
+- 失败的原因：P4 在 HA 里失败的局，主要是间隙 > 5 cm 或横向 > 3 cm，不是越线的可能约 60 %。
+- 数值：HA 里 1.00 m 的里程计误差 0.5–4 cm（LML 1.4 cm）；收步脚尖前移 0–4 cm（LML 约 2 cm）。
+- P4 在 HA 里达到判据 1（0.20 / 0.50 / 1.00 m 每格 5/5，不摔）的可能约 30 %。
+- 步态核对：逐位相同（同一份代码、同样的输入），把握约 95 %。
+
+**用时和资源**：
+- 冒烟：probe、步态核对 1 局、HEFT 5 局、p0hg 2 局、SONIC 1 局，共 5 个进程依次跑，约 10 分钟。
+- 正式：HEFT P0+P2 40 局约 13 分钟，P4 20 局约 8 分钟，SONIC 40 局约 26 分钟，合计约 50 分钟（含启动）。
+- 只开一个进程。0 号卡开跑前 8.6 GB，加我们的约 7.8 GB，合计约 16.4 GB，在 20 GB 以内。4090b 上我们自己的进程合计 < 30 核。
+- SAM 3 用不上（空地没有物体）。
+- 跑完删掉 hold_b0b。
+
 ## 结果
 
 **运行**：
