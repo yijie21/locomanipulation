@@ -377,6 +377,69 @@
 - **为什么**：代码出错的局不能算成"A 失败"。不然一个代码错误就可能误触换主指标的规则。开发局里已经出过一次这种错误，见下面"开发局里查出的错误"。
 - **正式运行同样处理**：以"错误"结束的局先修代码、再重跑，不当作失败进统计。
 
+**7. 正式运行用 asrun2：只改续跑逻辑和 `--arms`**（协调方 11-26 的三个条件；冒烟照旧用 asrun）
+- **为什么要改**：第 5 条说"一对 A、R 必须在同一个进程里跑"，但 asrun 的 ht_task 续跑时，看到 A 的记录在就只跑 R，会把一对拆到两个进程。
+- **条件 1：和 asrun 的差别只有这两处**。`asrun2` 是 asrun 原样拷过来的，只换了 ht_task.py，其余 652 个文件的 md5 和两个链接都和 asrun 相同。
+  - 冻结时间 FROZEN_UTC 2026-11-26T14:23:37Z，653 个文件，MD5 文件本身的 md5 是 2055f665。
+  - ht_task.py 从 ca022a11 变成 0fab517e。
+  - `diff -r` 只报这一个文件不同，另外报 asrun 里多出的几个 `__pycache__`：
+    - 冒烟进程以 root 跑，只读权限挡不住 root，Python 在 asrun 里写了字节码缓存；
+    - 这些缓存不在 MD5 里，`md5sum -c` 照常通过；
+    - asrun2 拷过来时删掉了它们。
+  - asrun2 里的 ht_freeze.sh 没改，它的 `check` 只核对 asrun。所以从 asrun2 跑之前，直接在 asrun2 里 `md5sum -c --quiet MD5`。
+  - diff 全文（`loco_outputs/selfmodel_hatask_20261126/asrun2_ht_task.diff`）：
+
+```diff
+@@ -762,7 +762,7 @@
+     elif a.controller in HR.CLEAR_BY:
+         B.CLEAR = HR.CLEAR_BY[a.controller]
+     arms = [s for s in a.arms.split(",") if s]
+-    assert set(arms) <= set(ARM_ID) and arms == sorted(arms), arms  # A before R
++    assert arms in (["A"], ["A", "R"]), arms  # A before R, in one process (R replays A's looks)
+     seeds, repeats = HR.rng_list(a.seeds), HR.rng_list(a.repeats)
+     for sd in seeds:
+         ha_sim.check_seed(sd)
+@@ -818,12 +818,22 @@
+     for sd in seeds:
+         for rp in repeats:
+             name = f"{a.ha_task}_s{sd}_r{rp}"
+-            for arm in arms:
+-                if (a.out / arm / "log" / f"{name}.json").exists():
+-                    continue
+-                if arm == "R" and not (a.out / "A" / "log" / f"{name}.json").exists():
+-                    print(f"{tag} {name}: R needs A's looks; A missing", flush=True)
++            done = {arm: (a.out / arm / "log" / f"{name}.json").exists() for arm in arms}
++            if all(done.values()):
++                continue
++            for arm in arms:  # revision 2 section 5: a pair runs in one process; whatever an earlier process left of
++                # this pair (a finished arm, or the partial looks / data of one cut short) is moved aside, both run here
++                d = a.out / arm
++                old = [p for p in [d / "log" / f"{name}.json", *sorted((d / "data").glob(f"{name}.*")),
++                                   *sorted((d / "data" / "arm").glob(f"{name}.*")), *sorted((d / "looks").glob(f"{name}_*"))] if p.exists()]  # fmt: skip
++                if not old:
+                     continue
++                stale = a.out / arm / "stale" / f"{name}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
++                stale.mkdir(parents=True)
++                for p in old:
++                    p.rename(stale / (p.parent.name + "__" + p.name))
++                print(f"{tag} {name}: {arm}: {len(old)} records from an earlier process moved to {stale}; {'/'.join(arms)} run here", flush=True)
++            for arm in arms:
+                 lg = episode(a, ctx, arm, sd, rp)
+                 if arm == "R":
+                     la = json.loads((a.out / "A" / "log" / f"{name}.json").read_text())
+```
+
+- **新的规则**：
+  - 一对的两个臂都有记录，就跳过；
+  - 只要有一个臂没跑完，这一对在之前进程里留下的所有东西都挪到 `<臂>/stale/<局名>_<时间>/`，然后两个臂在这个进程里重跑。挪的东西包括跑完那个臂的记录，以及被打断那个臂已经存下的眼和数据。
+  - `--arms` 只允许 A 或 A,R。
+- **条件 2：人为中断测试**（结果补在这里，之后才开正式运行）：
+  - 在开发种子上用 asrun2 跑一对，在 R 跑到一半时按 pid 杀掉进程，再续跑；
+  - 要确认两个臂都在新进程里重跑，而且前缀 A == R；
+  - 成功率不读。
+  - 冒烟的槽位一空出来就做，大约 10 分钟，做完再把槽位还给采集。
+- **条件 3**：冒烟只跑 A，继续用 asrun。
+
 ## 偏离
 
 **偏离 1：开发局的成功和抓起并举高被看到了**（2026-11-26 约 14:35Z，协调方要求如实记下）

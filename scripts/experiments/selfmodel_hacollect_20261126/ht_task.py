@@ -762,7 +762,7 @@ def run(a) -> int:
     elif a.controller in HR.CLEAR_BY:
         B.CLEAR = HR.CLEAR_BY[a.controller]
     arms = [s for s in a.arms.split(",") if s]
-    assert set(arms) <= set(ARM_ID) and arms == sorted(arms), arms  # A before R
+    assert arms in (["A"], ["A", "R"]), arms  # A before R, in one process (R replays A's looks)
     seeds, repeats = HR.rng_list(a.seeds), HR.rng_list(a.repeats)
     for sd in seeds:
         ha_sim.check_seed(sd)
@@ -818,12 +818,22 @@ def run(a) -> int:
     for sd in seeds:
         for rp in repeats:
             name = f"{a.ha_task}_s{sd}_r{rp}"
+            done = {arm: (a.out / arm / "log" / f"{name}.json").exists() for arm in arms}
+            if all(done.values()):
+                continue
+            for arm in arms:  # revision 2 section 5: a pair runs in one process; whatever an earlier process left of
+                # this pair (a finished arm, or the partial looks / data of one cut short) is moved aside, both run here
+                d = a.out / arm
+                old = [p for p in [d / "log" / f"{name}.json", *sorted((d / "data").glob(f"{name}.*")),
+                                   *sorted((d / "data" / "arm").glob(f"{name}.*")), *sorted((d / "looks").glob(f"{name}_*"))] if p.exists()]  # fmt: skip
+                if not old:
+                    continue
+                stale = a.out / arm / "stale" / f"{name}_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+                stale.mkdir(parents=True)
+                for p in old:
+                    p.rename(stale / (p.parent.name + "__" + p.name))
+                print(f"{tag} {name}: {arm}: {len(old)} records from an earlier process moved to {stale}; {'/'.join(arms)} run here", flush=True)
             for arm in arms:
-                if (a.out / arm / "log" / f"{name}.json").exists():
-                    continue
-                if arm == "R" and not (a.out / "A" / "log" / f"{name}.json").exists():
-                    print(f"{tag} {name}: R needs A's looks; A missing", flush=True)
-                    continue
                 lg = episode(a, ctx, arm, sd, rp)
                 if arm == "R":
                     la = json.loads((a.out / "A" / "log" / f"{name}.json").read_text())
