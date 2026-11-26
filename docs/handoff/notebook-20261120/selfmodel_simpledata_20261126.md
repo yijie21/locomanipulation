@@ -99,6 +99,94 @@
 
 ## 预测修订
 
+### 修订 1：采集的实现细节和冒烟，正式采集之前（2026-11-26，冻结于 2026-11-26T02:17:20Z）
+
+预测和判据一行不改。这里只写登记里没写到的实现细节，以及冒烟看到了什么。训练和评估的实现细节另写修订 2，在开训之前提交。
+
+**任务式走法**（`sc_collect.py` 的 `task_walk()`、`walk_plan()`、`walk_s()`）
+- **哪一半**：先走后伸的重置里，按 `crc32("taskwalk:<重置编号>") % 2` 分。偶数走任务式，奇数照 d3 规则（转、走、转）。
+  - 这个分法不用随机数，和其他抽样无关；
+  - d3 那份走路抽样照样抽，伸手命令因此和不分时完全一样；
+  - 抽出的 d3 走法记在日志的 `walk.d3` 里。
+- **位移**：在 gen_reach 的 `APPROACH_BOX` 里均匀抽：前后 −0.40 到 1.00 m，左右 −0.30 到 0.30 m。随机数用 `default_rng([seed + i, 2])`，自成一路。
+  - simple_bench 在 1.0 m 处分段，箱子里的位移都不超过 1.0 m，所以只走一段。
+- **怎么走**：直接调 simple_bench 走到站位时用的 `gen_reach.open_walk(m, 前后, 左右, 0.0)`。
+  - 它调 `Motor.walk_to`，参数是 `face="fixed"`，终点朝向取当前测得的朝向；
+  - 所以 walk_to 里没有原地转身段，走前不转、走完也不转（a2 = 0）。原来的 `--walk-face fixed` 末尾还要转到 d3 抽的朝向，这里没有这一段。
+  - 停步修正关闭，和 BFM_ROOT=odo 下 env.py 的设置相同。
+  - `walk_cmd` 记 (前后, 左右, 0)。
+- **data3b 也一样**：data3b 的先走后伸重置也一半照 d3 规则，一半任务式，分法和 data3 相同。data3b 的抽样里同样有先走后伸。2026-11-26 和协调方确认过，修订 2 里再记一笔。
+- **新增的记录**：每次重置的日志里，`walk` 加了几个字段：
+  - `kind`：d3 或 task；
+  - `ref_yaw_span_deg`：走路参考在整段走路里的朝向变化范围。任务式应为 0；
+  - `hip_yaw_end_deg`：walk_to 返回时最后一行的左右髋偏航关节角；
+  - `hip_yaw_cmd_deg`：第一下伸手命令那一行的左右髋偏航关节角。
+
+  每次重置还有 `hip_yaw_first_deg`，即第一下命令时的髋偏航，原地重置也记。每段多了一个标量 `walk_task`。data.py 读入不受影响。
+- **扭转的口径**：两个髋偏航关节角绝对值取较大的那个。站姿里两个都是 0°。预测里"走完"指 walk_to 返回的那一行，第一下命令那一行同时报。
+
+**起始扰动**：ScaleBFM 正式用 0.007 rad，这是 `PERTURB` 的缺省值。冒烟和正式采集都没另传 `--perturb`。
+
+**检查新增第 8 项**（`sc_collect.py check`）
+- 每个先走后伸重置的 `kind` 和 `task_walk(重置编号)` 一致；
+- 任务式的位移在箱子里，转角为 0；
+- 参考朝向范围不超过 1e-6°。
+
+以上任何一处不对都记为检查失败。扭转比例只报出来，不算检查项，它属于登记里的判据。
+
+**冒烟**（4090，8 个进程，nice 10，只用 CPU；2026-11-26 02:10:58–02:12:16Z）
+- **怎么选的重置**：data3 和 data3b 各 20 次，从正式编号段的前面挑，每种 10 次任务式、4 次 d3 走法、6 次原地。
+  - data3 编号：0–14、27、30–33；data3b 编号：0–7、11、12、15、22、23、29、34、37、54、57、61、63。
+  - 输出在 `loco_outputs/selfmodel_simpledata_20261126/smoke/`，不并进正式数据。正式采集会把这些编号按同样的种子重新跑一遍。
+- **检查**：两种都是 `CHECK PASSED` 和 `SIMPLE CHECK PASSED`。第 8 项两种都是：分法不一致 0，越出箱子或有转角 0，参考朝向范围最大 0.00e+00。
+- **摔倒、丢失、跳过**：两种都没有摔倒或丢失。等不到静止被跳过的伸手，data3 1/40，data3b 1/80。
+- **走路本身**：任务式走完的朝向变化在 ±2.6° 以内，是测得的漂移；走路参考本身朝向不变。
+- **髋偏航扭转**（`check.txt` 原文）：
+
+  ```
+  data3:  task walk end 10/10 = 100.0 % <= 15 deg, median 5.0, max 7.3; first command 10/10 = 100.0 % <= 15 deg, median 5.9, max 8.4
+          d3 walk end 0/4 = 0.0 % <= 15 deg, median 57.2, max 68.3; first command 0/4 = 0.0 % <= 15 deg, median 59.8, max 65.9; in place first command 6/6 <= 15 deg, max 2.4
+  data3b: task walk end 10/10 = 100.0 % <= 15 deg, median 4.3, max 10.8; first command 10/10 = 100.0 % <= 15 deg, median 4.5, max 11.1
+          d3 walk end 0/4 = 0.0 % <= 15 deg, median 50.9, max 56.0; first command 0/4 = 0.0 % <= 15 deg, median 53.1, max 56.2; in place first command 6/6 <= 15 deg, max 2.6
+  ```
+
+  合起来，任务式 20/20 不超过 15°，最大 11.1°；d3 走法 0/8。
+- **用时**（4090，8 个进程）：data3 每次重置中位 9.5 s，其中原地 7.5 s、先走后伸 12.0 s；data3b 中位 11.5 s。
+
+**冻结**：`/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/asrun/`，FROZEN_UTC 2026-11-26T02:17:20Z。
+- **两份代码**：
+  - `repo/` 给 4090 用，`repo_b/` 给 4090b 用，都是开发阶段那两份的拷贝；
+  - src、scripts、configs、pyproject 是实拷，assets 和 third_party 链到原处；
+  - 两份的代码逐个文件相同。`repo_b/outputs/scene` 里的 simple_g1_sonic 和 walk_mars 是把 `/workspace/` 换成 vePFS 真实路径的副本。
+- **4090b 的启动**：
+  - 环境不改。`py4090b.py` 已移进实验目录 `scripts/experiments/selfmodel_simplecollect_20261126/`，它按 vePFS 的真实路径重建 sys.path；
+  - 另设 `LOCOMANI_WORKSPACE`、`SONIC_POLICY` 两个环境变量和 `SX_REPO=asrun/repo_b`。
+- `MD5.check` 一共 2369 个文件，包括 `asrun/tools/` 里的启动脚本。
+
+| 文件 | md5 |
+|---|---|
+| selfmodel_simplecollect_20261126/sc_collect.py | f69baf4b |
+| selfmodel_simplecollect_20261126/py4090b.py / sc_start.py | 23664f5d / f19b7921 |
+| selfmodel_xfer_20261125/sx_collect.py | cd290c2e |
+| selfmodel_data3_20261125/d3_collect.py | dc92703a |
+| locomanilab_20261117/lml_selfmodel.py | f5168f31 |
+| selfwm_20261029/env.py | 62b8856f |
+| reachwm_20261030/gen_reach.py / leg_odo.py / data.py | 63f6d90d / 5905796f / 174071cb（fdvel 的 FDVEL 版） |
+| src/locomani/backends/scalebfm/motor.py | 23269ad1 |
+| tools/formal.sh / finish.sh | 795a7ff2 / 79174b77 |
+
+- **冒烟和冻结版的关系**：冒烟用的 sc_collect 是 f67027ef。它和冻结版 f69baf4b 只差检查里一行打印（站姿髋偏航取关节的下标顺序），驱动部分完全相同。
+- **核对**：冻结版在两台机器上各重跑了冒烟的一个分片（data3 5 次、data3b 5 次重置），比较结果在 `tools/asrun_test/`：
+  - 4090 和 4090b 的输出逐字节相同；
+  - data3b 和冒烟的分片逐字节相同（SAME）；
+  - data3 和冒烟共有的 4 次重置，日志和每段数组都相同。第 5 次重置是核对时编号敲错了（30，冒烟里是 31），不在比较之内。
+
+**正式采集的跑法**（`tools/formal.sh`，跑完用 `tools/finish.sh`）
+- **分片**：data3 和 data3b 各分 40 片。4090b 跑第 0–31 片，32 个进程；4090 跑第 32–39 片，8 个进程。
+- **每个进程**：先跑完自己那片 data3（750 次重置），再跑同号的 data3b（375 次）。nice 10，只用 CPU，`CUDA_VISIBLE_DEVICES` 为空。
+- **输出**：`loco_outputs/selfmodel_simpledata_20261126/{data3,data3b}/`；日志在 `logs/{d3,d3b}_w<k>.log`；每个进程结束写 `logs/done_<k>`，里面是两次运行的退出码。
+- **收尾**：40 个都结束以后，在 4090 上用冻结版对两种数据各跑 merge、check、summary，输出到各自目录的 `{merge,check,summary}.txt`。
+
 ## 结果
 
 ## 意外
