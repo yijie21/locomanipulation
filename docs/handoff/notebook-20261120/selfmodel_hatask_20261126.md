@@ -579,6 +579,28 @@ A's success: 0/20 -> <= 1/20: revision 1, the main metric is grasp-and-lift
 
 - **槽位**：冒烟（15:12Z 前）和中断测试（15:08:27Z）都做完了，15:13:11Z 撤掉 hold_2b 和 hold_3a，两个槽位还给了采集。冒烟和中断测试的灵动岛登记都已归档。
 
+### ScaleBFM：R 的模型和闸门（hadata 评估 3，正式运行之前）
+
+- **R 的模型**：S_f1_s0（从头训，seed 0，数据 100 %，`train/scalebfm/models_S_s0`，model.pt 的 md5 是 d585348f）。照登记的规则选出：47 下干净伸手上，真实局误差中位数 S 是 4.36 cm，T 是 6.50 cm，选较低的那个。没有改。
+- **闸门**（只作标注，用户 11-26）：
+  - (a) 通过：干净伸手 47 下，来自 36 局。
+  - (b) 倍数 0.689 ≤ 1.3，区间上限 1.672 > 1.5，第一行两个条件只满足一个。
+    - 原数：`ratio to HA val S_f1_s0 0.689 [0.509, 1.672] (val resampled too [0.488, 1.758])`。
+    - 双手段一行（val，kept）：S_f1_s0 双手段 9.07 cm [7.52, 11.88]，单手段 6.16 cm [5.70, 6.95]，双手是单手的 1.473 倍 [1.164, 1.994]。
+  - (c) 通过：三项范围检查都在训练范围内的比例是 97.9 % [93.6, 100.0]（46 下在内，1 下在外）。
+  - 原文在 hadata 条目的"结果"一节和 `train/scalebfm/eval/eval3.txt`。
+- **观察**（协调方 11-26 要求写下，不据此做任何事）：S 和 T 在两个任务上差得很多。R 在 hatask 里修正的是预抓取（reach_no 1），抬手中间点（reach_no 0）两组都直接执行。预抓取上 T − S 的区间跨 0。原数：
+
+```
+  task doubledesk: n 22 (18 episodes); S_f1_s0 median 13.37 [10.58, 15.00] cm; T_f1_s0 median 6.82 [5.15, 8.52] cm; ratio to HA val S_f1_s0 2.114 [1.672, 2.372]; T_f1_s0 1.119 [0.846, 1.399]; T - S -6.55 [-7.77, -5.04] cm
+  task ppbox: n 25 (18 episodes); S_f1_s0 median 2.93 [2.61, 3.64] cm; T_f1_s0 median 5.80 [4.84, 7.77] cm; ratio to HA val S_f1_s0 0.463 [0.413, 0.575]; T_f1_s0 0.953 [0.795, 1.276]; T - S 2.88 [1.35, 5.08] cm
+  reach_no 1: n 11 (10 episodes); S_f1_s0 median 4.15 [2.72, 5.11] cm; T_f1_s0 median 3.50 [3.26, 4.24] cm; ratio to HA val S_f1_s0 0.655 [0.430, 0.807]; T_f1_s0 0.575 [0.536, 0.695]; T - S -0.65 [-1.04, 0.69] cm
+  task x reach_no doubledesk 0: n 18 (18 episodes); S_f1_s0 median 14.08 [12.69, 15.59] cm; T_f1_s0 median 7.32 [5.78, 9.08] cm; T - S -6.76 [-7.67, -5.76] cm
+  task x reach_no doubledesk 1: n 4 (4 episodes); S_f1_s0 median 3.67 [2.66, 4.36] cm; T_f1_s0 median 3.19 [2.10, 3.50] cm; T - S -0.47 [-1.28, 0.31] cm
+  task x reach_no ppbox 0: n 18 (18 episodes); S_f1_s0 median 2.91 [2.60, 3.32] cm; T_f1_s0 median 7.32 [5.80, 8.77] cm; T - S 4.41 [2.75, 6.07] cm
+  task x reach_no ppbox 1: n 7 (6 episodes); S_f1_s0 median 4.92 [2.67, 5.33] cm; T_f1_s0 median 3.89 [3.33, 4.26] cm; T - S -1.03 [-1.08, 1.08] cm
+```
+
 ## 意外
 
 - 冒烟 A 的 3 倍时限成功是 0/20，落在预测"0–4 局，一半以上可能 ≤ 1/20"的范围里，修订 1 触发。
