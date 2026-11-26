@@ -23,6 +23,8 @@
     - `relook_eval.py`：评估；`j0_eval.py`：J0 对照的评估；
     - `run.sh`：正式运行，一个控制器一份；
     - `py4090b_rl.py`、`mkrepo_b.sh`：在 4090b 上跑，见下。
+    - `resume_scalebfm.sh`：ScaleBFM 的手动续跑（运行中加的，见"预测修订"第 1 条）；
+    - `posthoc.py`：看到结果以后写的事后分析，见"结果"。
   - 4090 上只在私有副本 `/wuji-vefps-D/wuji-il/yijie/loco_outputs/simple_relook_20261126/repo`、`repo2` 里改，共享运行树没动。正式运行只从冻结副本 `asrun/` 跑。
   - **开关只在命令行**：`simple_bench.py --relook` 及其参数，没升成 `locomani.bench` 的选项（协调人的决定 3）。
 - **关联**：
@@ -458,13 +460,730 @@ kin_rr: rows the same 2/2, films the same 2/2
 
 ## 预测修订
 
+预测和判据都没改。下面是运行中的改动和查证，只影响怎么跑，不影响结果。
+
+**1. ScaleBFM 手动续跑，显存门槛按实测改**（协调人同意，2026-11-26 10:07Z）
+- **起因**：`run.sh` 在 SF、kin_rr 这一步之前，要求 1、3 号卡各空出 2.9 GB。两卡当时已用 17.7、17.9 GB（HA 和 lmlroute 的进程），从 09:26:54Z 起一直等。这个门槛定得偏保守。
+- **实测的需要**（都在本条的开发中量的）：
+  - 一个 cuRobo 规划进程约 1.0 GB：4090b 0 号卡跑一次 `plan2.py`，整卡用量 8493 → 9527 MiB；
+  - 一个 ScaleBFM 仿真进程 0.82–0.95 GB：带第二眼的 A 跑着时，nvidia-smi 列出的四个进程是 858、878、818、953 MiB。
+- **按实测定的门槛**：
+  - SF、kin_rr 这一步：规划所在的卡 2.3 GB（两个规划进程，外加状态重建和 `shifts2` 的 torch）；另一张卡 1.0 GB（`ARM_PAR=2`，SF 在第一张卡，kin_rr 在第二张卡，每张卡一次一个仿真进程）；
+  - J0 的规划：一张卡 2.3 GB；
+  - J0 的 JR：四个仿真进程，每个按 1.0 GB，按 1、3 号卡的余量分。
+- **规则**：每一步开跑前重读 nvidia-smi，按"当前已用 + 这一步要用 ≤ 20480 MiB"判断；较重的部分优先放 3 号卡；不够就等，每 2 分钟看一次；0 号卡不碰，不动别人的进程。
+- **怎么做的**：按 pid 停掉了在等待中的 `run.sh`（1115146 和它的子 shell 1115153），这时它没有任何子进程在跑。随后起 `resume_scalebfm.sh`（md5 `d87d546e`，在 `$X/` 和 `scripts/experiments/simple_relook_20261126/` 下）。它用的是 `run.sh` 的原命令、冻结副本 `asrun/repo`、`RL_scalebfm` 和同样的环境变量，只换了显存门槛，冻结的 `run.sh` 没改。
+- **结果**：10:07:13Z 起跑，SF、kin_rr 一步的卡是 "3 1"，规划在 3 号卡。
+
+**2. 共享场景文件被误改的查证**（协调人要求，只读）
+- **事件**：另一个实验在 09:53:17–09:55:38Z 误改了共享树 `outputs/scene` 下的 5 个文件，把 `/workspace` 改成 vePFS 路径，之后已逐字节恢复。
+- **ScaleBFM**：这段时间没有进程在跑，`run.sh` 在等显存。
+- **SONIC**：
+  - 当时在跑不带第二眼组和 J0 组的 JR，以及带第二眼组的规划；
+  - 每局的场景由 SIMPLE 自带的机器人生成，写在 `outputs/simple_eval_20261112/scene/`；
+  - `asrun/repo_b` 的 `simple_g1_sonic`、`walk_mars` 是 simpledata 冻结的副本，修改时间 01:39:46Z，没被动过；
+  - `nv_g1_43dof`、`simple_g1_gap` 这条流程不用。
+- **核对**：10:04Z 手动核对 `MD5.check`，全部一致；没有失败记录，日志里没有 Traceback。
+- **结论**：两组都不受影响。
+
 ## 结果（贴原始输出，不转述）
+
+**运行记录**
+- **ScaleBFM**：4090 的 1、3 号卡，2026-11-26 08:29:21Z 起跑，11:10:22Z 跑完（`STATUS` 为 done）。10:07Z 起手动续跑，见"预测修订"第 1 条。
+- **SONIC**：4090b 的 CPU，08:31:55Z 起跑，11:23:04Z 跑完（`STATUS` 为 done）。
+- **核对**：两边开始和结束时 `MD5.check` 都是 ok；没有 `FAILED` 文件；评估输出里没有 Traceback。
+- **sfull 日志里的 `FAIL table_sfull`**：`table_sfull` 只认五列齐全，本条只跑 SF、kin_rr 两列，所以这行是预料中的，`sfull_run.sh` 照常返回 0。
+- **显存**：每一步开跑前都核对过。4090 上的最高值是 3 号卡 19544 MiB（10:12:56Z，sfull 规划中）和 1 号卡 19688 MiB（11:05Z，J0 的 JR 有 3 个仿真进程在 1 号卡上），都没超过 20480 MiB。这两个峰值是会话里手动读 nvidia-smi 得到的，不在 `run.log` 里；`run.log` 只记了每一步开跑时的读数。0 号卡没用。
+- **原始输出**（`$X = /wuji-vefps-D/wuji-il/yijie/loco_outputs/simple_relook_20261126`）：
+  - `$X/scalebfm/eval_relook.txt`、`eval_j0.txt`、`run.log`；
+  - `$X/sonic/eval_relook.txt`、`eval_look_only.txt`、`eval_j0.txt`、`eval_cpu_vs_gpu.txt`、`run.log`；
+  - 事后分析 `$X/sonic/posthoc.txt`（不在预注册里，见下）。
+- **每局的行**：
+  - ScaleBFM：`$X/scalebfm/{relook,j0}/bench/rows/`、`$X/scalebfm/relook/sfull/rows/`；
+  - SONIC：`$X/sonic/{none,relook,look_only,j0}/bench/rows/`、`$X/sonic/{none,relook}/sfull/rows/`。
+- **评估命令**：照 `run.sh` 和 `resume_scalebfm.sh`，从 `asrun/repo` 用 `.venv_sim/bin/python -I` 跑：
+  - `relook_eval.py scalebfm $X/scalebfm/relook/bench $X/scalebfm/relook/sfull $OLD/bench_rgbd_20261124/scalebfm $OLD/sfull_20261125/scalebfm J`
+  - `j0_eval.py $X/scalebfm/j0/bench $OLD/bench_rgbd_20261124/scalebfm J`
+  - `relook_eval.py sonic $X/sonic/relook/bench $X/sonic/relook/sfull $X/sonic/none/bench $X/sonic/none/sfull JR`
+  - `relook_eval.py sonic $X/sonic/look_only/bench $X/sonic/none/sfull_absent $X/sonic/none/bench $X/sonic/none/sfull JR`
+  - `j0_eval.py $X/sonic/j0/bench $X/sonic/none/bench JR`
+  - `relook_eval.py sonic $X/sonic/none/bench $X/sonic/none/sfull $OLD/bench_rgbd_20261124/sonic $OLD/sfull_20261125/sonic J`
+  - 其中 `$OLD = /wuji-vefps-D/wuji-il/yijie/ws/code/loco/outputs/simple_eval_20261112`。
+- **怎么读输出**：
+  - 第 1 节每格是"带第二眼 vs 对照"，括号里依次是"只有带第二眼成功 / 只有对照成功"的局数和 McNemar p，再是布局层面"升 / 降"的个数和符号检验 p。
+  - 第 4 节 `stance<loc<` 指补步后真实站位误差 ≤ 10 cm 且最后一眼定位误差 ≤ 2 cm，`>` 是超过。
+  - SONIC 的 S、kin_rr 只在 JR 给了路线的局上跑，其余局取 J；ScaleBFM 同样。
+
+### ScaleBFM（带第二眼 vs 主指标的老记录）
+
+`eval_relook.txt` 第 1 节：
+
+```
+1. successes, relook vs old (only relook / only old, McNemar p over episodes; layouts up/down, sign p)
+  45 s
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop           28 vs  28 (0/0 p 1.000; 0/0 p 1.000)    28 vs  28 (0/0 p 1.000; 0/0 p 1.000)    28 vs  28 (0/0 p 1.000; 0/0 p 1.000)    28 vs  28 (0/0 p 1.000; 0/0 p 1.000)
+    XMoveBendPickTeleop       25 vs  27 (0/2 p 0.500; 0/2 p 0.500)    25 vs  27 (0/2 p 0.500; 0/2 p 0.500)    25 vs  27 (0/2 p 0.500; 0/2 p 0.500)    25 vs  27 (0/2 p 0.500; 0/2 p 0.500)
+    BendPickMP                10 vs  10 (0/0 p 1.000; 0/0 p 1.000)    10 vs  10 (0/0 p 1.000; 0/0 p 1.000)    10 vs  10 (0/0 p 1.000; 0/0 p 1.000)    10 vs  10 (0/0 p 1.000; 0/0 p 1.000)
+    TabletopGraspMP           17 vs  18 (0/1 p 1.000; 0/1 p 1.000)    30 vs  30 (0/0 p 1.000; 0/0 p 1.000)    29 vs  29 (0/0 p 1.000; 0/0 p 1.000)    30 vs  30 (0/0 p 1.000; 0/0 p 1.000)
+    all                       80 vs  83 (0/3 p 0.250; 0/3 p 0.250)    93 vs  95 (0/2 p 0.500; 0/2 p 0.500)    92 vs  94 (0/2 p 0.500; 0/2 p 0.500)    93 vs  95 (0/2 p 0.500; 0/2 p 0.500)
+    episodes missing in the relook run: {'A': 0, 'J': 0, 'S': 0, 'kin_rr': 0}
+  official limit
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop           28 vs  28 (0/0 p 1.000; 0/0 p 1.000)    28 vs  28 (0/0 p 1.000; 0/0 p 1.000)    28 vs  28 (0/0 p 1.000; 0/0 p 1.000)    28 vs  28 (0/0 p 1.000; 0/0 p 1.000)
+    XMoveBendPickTeleop       25 vs  27 (0/2 p 0.500; 0/2 p 0.500)    25 vs  27 (0/2 p 0.500; 0/2 p 0.500)    25 vs  27 (0/2 p 0.500; 0/2 p 0.500)    25 vs  27 (0/2 p 0.500; 0/2 p 0.500)
+    BendPickMP                 0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    TabletopGraspMP           17 vs  18 (0/1 p 1.000; 0/1 p 1.000)    26 vs  26 (0/0 p 1.000; 0/0 p 1.000)    23 vs  23 (0/0 p 1.000; 0/0 p 1.000)    26 vs  27 (0/1 p 1.000; 0/1 p 1.000)
+    all                       70 vs  73 (0/3 p 0.250; 0/3 p 0.250)    79 vs  81 (0/2 p 0.500; 0/2 p 0.500)    76 vs  78 (0/2 p 0.500; 0/2 p 0.500)    79 vs  82 (0/3 p 0.250; 0/3 p 0.250)
+    episodes missing in the relook run: {'A': 0, 'J': 0, 'S': 0, 'kin_rr': 0}
+```
+
+第 2 节（只贴 `all`）：
+
+```
+2. localization and stance (record only; cm, deg): median [90th percentile] max
+  all  n 120, steps taken [120, 0, 0]
+    odometry xy         0.10 [  0.57]   0.78 (n 120)   yaw   0.19 [  0.46]   0.65 (n 120)
+    first look xy       0.05 [  0.11]   1.92 (n 120)   yaw   0.01 [  0.03]   0.10 (n 120)
+    last look xy        0.05 [  0.11]   1.92 (n 120)   yaw   0.01 [  0.03]   0.10 (n 120)
+    stance before       1.91 [  7.79]  10.10 (n 120)   yaw   0.25 [  1.31]   2.74 (n 120)
+    stance after        1.91 [  7.79]  10.10 (n 120)   yaw   0.25 [  1.31]   2.74 (n 120)
+    off (robot's own)   2.06 [  7.92]  11.65 (n 120) ->   2.06 [  7.92]  11.65 (n 120)
+    time added, s       0.00 [  0.00]   0.00 (n 120)
+    registration: inliers   0.99 [  1.00]   1.00 (n 240), rms mm   5.04 [  5.30]   5.54 (n 240), sd y cm   0.11 [  0.14]   0.16 (n 240)
+```
+
+第 3–6 节：
+
+```
+3. checks
+  JR: the relook record and final belief equal A's in 120/120 episodes
+  SF: the relook record and final belief equal A's in 28/28 episodes
+  kin_rr: the relook record and final belief equal A's in 28/28 episodes
+  old rows carrying a relook record: 0; relook A rows without one: 0
+  falls: relook []; old []
+
+4. failures of the relook arm (45 s), by the true stance error after the steps (> 10 cm) and the last look's error (> 2 cm): fail / episodes
+  A: XMovePickTeleop: stance<loc< 2/30 | XMoveBendPickTeleop: stance<loc< 5/30 | BendPickMP: stance<loc< 20/30 | TabletopGraspMP: stance<loc< 11/27 stance>loc< 2/3 | all: stance<loc< 38/117 stance>loc< 2/3
+  J: XMovePickTeleop: stance<loc< 2/30 | XMoveBendPickTeleop: stance<loc< 5/30 | BendPickMP: stance<loc< 20/30 | TabletopGraspMP: stance<loc< 0/27 stance>loc< 0/3 | all: stance<loc< 27/117 stance>loc< 0/3
+  S: XMovePickTeleop: stance<loc< 2/30 | XMoveBendPickTeleop: stance<loc< 5/30 | BendPickMP: stance<loc< 20/30 | TabletopGraspMP: stance<loc< 1/27 stance>loc< 0/3 | all: stance<loc< 28/117 stance>loc< 0/3
+  kin_rr: XMovePickTeleop: stance<loc< 2/30 | XMoveBendPickTeleop: stance<loc< 5/30 | BendPickMP: stance<loc< 20/30 | TabletopGraspMP: stance<loc< 0/27 stance>loc< 0/3 | all: stance<loc< 27/117 stance>loc< 0/3
+
+5. routes (J ran a plan)
+  relook 28, old 28, both 28, only relook [], only old []
+
+6. the target and the scene during the looks and steps (truth, record only; cm since the first look)
+  XMovePickTeleop  n 30, stepped 0; target moved > 1 cm in 0
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): 
+  XMoveBendPickTeleop  n 30, stepped 0; target moved > 1 cm in 0
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): 
+  BendPickMP  n 30, stepped 0; target moved > 1 cm in 0
+    other bodies moved > 1 cm: 1 [(24, [3.96, 'blue_screwdriver'])]
+    touched in the relook phase (body: episodes): 
+  TabletopGraspMP  n 30, stepped 0; target moved > 1 cm in 0
+    other bodies moved > 1 cm: 2 [(4, [1.04, 'tape']), (23, [1.04, 'tape'])]
+    touched in the relook phase (body: episodes): 
+  all  n 120, stepped 0; target moved > 1 cm in 0
+    other bodies moved > 1 cm: 3 [(24, [3.96, 'blue_screwdriver']), (4, [1.04, 'tape']), (23, [1.04, 'tape'])]
+    touched in the relook phase (body: episodes):
+```
+
+`eval_j0.txt`（只重规划，对主指标的 J）：
+
+```
+J0 rows 120, old J rows 120, common 120
+  45 s
+    XMovePickTeleop        n  30  J0  28  old  28  only J0  0  only old  0  McNemar p 1.000
+    XMoveBendPickTeleop    n  30  J0  27  old  27  only J0  0  only old  0  McNemar p 1.000
+    BendPickMP             n  30  J0  10  old  10  only J0  0  only old  0  McNemar p 1.000
+    TabletopGraspMP        n  30  J0  30  old  30  only J0  0  only old  0  McNemar p 1.000
+    all                    n 120  J0  95  old  95  only J0  0  only old  0  McNemar p 1.000
+  official limit
+    XMovePickTeleop        n  30  J0  28  old  28  only J0  0  only old  0  McNemar p 1.000
+    XMoveBendPickTeleop    n  30  J0  27  old  27  only J0  0  only old  0  McNemar p 1.000
+    BendPickMP             n  30  J0   0  old   0  only J0  0  only old  0  McNemar p 1.000
+    TabletopGraspMP        n  30  J0  26  old  26  only J0  0  only old  0  McNemar p 1.000
+    all                    n 120  J0  81  old  81  only J0  0  only old  0  McNemar p 1.000
+  routes: J0 28, old 28, both 28, only J0 [], only old []
+```
+
+### SONIC（CPU，`relook` vs `none`，同一次运行里配对）
+
+`eval_relook.txt` 第 1 节：
+
+```
+1. successes, relook vs old (only relook / only old, McNemar p over episodes; layouts up/down, sign p)
+  45 s
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop          10 vs   7 (10/7 p 0.629; 6/3 p 0.508)   10 vs   7 (10/7 p 0.629; 6/3 p 0.508)   10 vs   7 (10/7 p 0.629; 6/3 p 0.508)   10 vs   7 (10/7 p 0.629; 6/3 p 0.508)
+    XMoveBendPickTeleop        4 vs   4 (2/2 p 1.000; 2/2 p 1.000)     4 vs   4 (2/2 p 1.000; 2/2 p 1.000)     4 vs   4 (2/2 p 1.000; 2/2 p 1.000)     4 vs   4 (2/2 p 1.000; 2/2 p 1.000)
+    BendPickMP                14 vs   6 (8/0 p 0.008; 6/0 p 0.031)    14 vs   6 (8/0 p 0.008; 6/0 p 0.031)    14 vs   6 (8/0 p 0.008; 6/0 p 0.031)    14 vs   6 (8/0 p 0.008; 6/0 p 0.031)
+    TabletopGraspMP           3 vs  13 (3/13 p 0.021; 3/7 p 0.344)    13 vs  11 (9/7 p 0.804; 4/4 p 1.000)   11 vs  16 (7/12 p 0.359; 3/6 p 0.508)    12 vs  16 (4/8 p 0.388; 3/6 p 0.508)
+    all                    31 vs  30 (23/22 p 1.000; 17/12 p 0.458) 41 vs  28 (29/16 p 0.072; 18/9 p 0.122) 39 vs  33 (27/21 p 0.471; 17/11 p 0.345) 40 vs  33 (24/17 p 0.349; 17/11 p 0.345)
+    episodes missing in the relook run: {'A': 0, 'J': 0, 'S': 0, 'kin_rr': 0}
+  official limit
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop            0 vs   7 (0/7 p 0.016; 0/4 p 0.125)     0 vs   7 (0/7 p 0.016; 0/4 p 0.125)     0 vs   7 (0/7 p 0.016; 0/4 p 0.125)     0 vs   7 (0/7 p 0.016; 0/4 p 0.125)
+    XMoveBendPickTeleop        2 vs   4 (0/2 p 0.500; 0/2 p 0.500)     2 vs   4 (0/2 p 0.500; 0/2 p 0.500)     2 vs   4 (0/2 p 0.500; 0/2 p 0.500)     2 vs   4 (0/2 p 0.500; 0/2 p 0.500)
+    BendPickMP                 0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    TabletopGraspMP           0 vs  13 (0/13 p 0.000; 0/7 p 0.016)     1 vs   9 (1/9 p 0.021; 0/7 p 0.016)    0 vs  11 (0/11 p 0.001; 0/8 p 0.008)    0 vs  13 (0/13 p 0.000; 0/9 p 0.004)
+    all                      2 vs  24 (0/22 p 0.000; 0/13 p 0.000)   3 vs  20 (1/18 p 0.000; 0/13 p 0.000)   2 vs  22 (0/20 p 0.000; 0/14 p 0.000)   2 vs  24 (0/22 p 0.000; 0/15 p 0.000)
+    episodes missing in the relook run: {'A': 0, 'J': 0, 'S': 0, 'kin_rr': 0}
+```
+
+第 2 节：
+
+```
+2. localization and stance (record only; cm, deg): median [90th percentile] max
+  XMovePickTeleop  n 30, steps taken [0, 5, 25]
+    odometry xy         0.60 [  1.22]   4.83 (n 30)   yaw   0.58 [  1.24]   2.15 (n 30)
+    first look xy       0.20 [  0.36]   0.47 (n 30)   yaw   0.08 [  0.19]   0.53 (n 30)
+    last look xy        0.24 [  0.61]   0.87 (n 30)   yaw   0.07 [  0.26]   0.32 (n 30)
+    stance before      20.00 [ 25.02]  26.90 (n 30)   yaw   2.59 [  5.57]   9.10 (n 30)
+    stance after       12.11 [ 42.66]  51.83 (n 30)   yaw   3.07 [  8.19]  11.62 (n 30)
+    off (robot's own)  20.10 [ 24.92]  27.15 (n 30) ->  12.14 [ 41.11]  52.63 (n 30)
+    time added, s      12.43 [ 13.21]  13.34 (n 30)
+    registration: inliers   0.98 [  1.00]   1.00 (n 60), rms mm   5.07 [  5.39]   5.99 (n 60), sd y cm   0.13 [  0.18]   0.30 (n 60)
+  XMoveBendPickTeleop  n 30, steps taken [10, 5, 15]
+    odometry xy         2.53 [ 13.35]  21.13 (n 30)   yaw   0.56 [  1.66]   6.57 (n 30)
+    first look xy       0.34 [  0.50]   0.66 (n 30)   yaw   0.08 [  0.18]   0.54 (n 30)
+    last look xy        0.29 [  0.43]   0.54 (n 30)   yaw   0.05 [  0.12]   0.37 (n 30)
+    stance before      15.33 [ 26.74]  43.95 (n 30)   yaw   2.97 [  5.79]   8.04 (n 30)
+    stance after        9.99 [ 24.81]  39.77 (n 30)   yaw   3.36 [  7.02]   8.79 (n 30)
+    off (robot's own)  14.84 [ 27.06]  47.33 (n 30) ->   9.30 [ 22.80]  40.34 (n 30)
+    time added, s       8.82 [ 12.73]  14.04 (n 30)
+    registration: inliers   0.98 [  0.99]   1.00 (n 60), rms mm   5.24 [  5.52]   6.35 (n 60), sd y cm   0.13 [  0.18]   0.43 (n 60)
+  BendPickMP  n 30, steps taken [13, 8, 9]
+    odometry xy         0.29 [  1.38]   2.02 (n 30)   yaw   0.40 [  0.86]   1.11 (n 30)
+    first look xy       0.28 [  0.69]   0.98 (n 30)   yaw   0.07 [  0.23]   0.34 (n 30)
+    last look xy        0.22 [  0.52]  30.74 (n 30)   yaw   0.04 [  0.21]   1.44 (n 30)
+    stance before      12.90 [ 23.75]  26.05 (n 30)   yaw   3.57 [  9.29]  13.57 (n 30)
+    stance after        5.96 [ 12.95]  59.85 (n 30)   yaw   3.26 [  7.95]  10.83 (n 30)
+    off (robot's own)  15.76 [ 26.90]  31.28 (n 30) ->   6.08 [ 13.12]  23.65 (n 30)
+    time added, s       6.59 [ 12.26]  12.38 (n 30)
+    registration: inliers   0.99 [  1.00]   1.00 (n 60), rms mm   4.83 [  5.15]   6.05 (n 60), sd y cm   0.12 [  0.15]   1.07 (n 60)
+  TabletopGraspMP  n 30, steps taken [1, 7, 22]
+    odometry xy         2.51 [  9.79]  20.58 (n 30)   yaw   1.06 [  1.53]   2.95 (n 30)
+    first look xy       0.12 [  1.67]  14.49 (n 30)   yaw   0.06 [  0.17]   5.62 (n 30)
+    last look xy        0.17 [ 20.73]  60.60 (n 30)   yaw   0.08 [  1.78]  49.44 (n 30)
+    stance before      27.46 [ 35.80]  38.57 (n 30)   yaw   6.19 [ 10.43]  12.01 (n 30)
+    stance after       12.64 [ 32.28]  67.98 (n 30)   yaw   2.03 [  7.69]  13.56 (n 30)
+    off (robot's own)  29.95 [ 40.00]  41.97 (n 30) ->  12.54 [ 28.70]  44.90 (n 30)
+    time added, s      12.31 [ 13.48]  13.86 (n 30)
+    registration: inliers   0.96 [  0.99]   1.00 (n 60), rms mm    nan [   nan]    nan (n 60), sd y cm   0.18 [  0.77]    inf (n 60)
+  all  n 120, steps taken [24, 25, 71]
+    odometry xy         0.97 [  7.52]  21.13 (n 120)   yaw   0.53 [  1.46]   6.57 (n 120)
+    first look xy       0.23 [  0.55]  14.49 (n 120)   yaw   0.07 [  0.21]   5.62 (n 120)
+    last look xy        0.22 [  0.63]  60.60 (n 120)   yaw   0.06 [  0.28]  49.44 (n 120)
+    stance before      19.46 [ 29.00]  43.95 (n 120)   yaw   3.43 [  9.10]  13.57 (n 120)
+    stance after        9.76 [ 29.17]  67.98 (n 120)   yaw   3.18 [  7.89]  13.56 (n 120)
+    off (robot's own)  19.41 [ 33.62]  47.33 (n 120) ->   9.33 [ 26.06]  52.63 (n 120)
+    time added, s      11.58 [ 13.16]  14.04 (n 120)
+    registration: inliers   0.98 [  1.00]   1.00 (n 240), rms mm    nan [   nan]    nan (n 240), sd y cm   0.13 [  0.24]    inf (n 240)
+```
+
+第 3–5 节：
+
+```
+3. checks
+  JR: the relook record and final belief equal A's in 120/120 episodes
+  SF: the relook record and final belief equal A's in 18/18 episodes
+  kin_rr: the relook record and final belief equal A's in 18/18 episodes
+  old rows carrying a relook record: 0; relook A rows without one: 0
+  falls: relook [('TabletopGraspMP', 17)]; old []
+
+4. failures of the relook arm (45 s), by the true stance error after the steps (> 10 cm) and the last look's error (> 2 cm): fail / episodes
+  A: XMovePickTeleop: stance<loc< 7/11 stance>loc< 13/19 | XMoveBendPickTeleop: stance<loc< 13/16 stance>loc< 13/14 | BendPickMP: stance<loc< 10/22 stance>loc< 5/7 stance>loc> 1/1 | TabletopGraspMP: stance<loc< 11/13 stance>loc< 9/10 stance>loc> 7/7 | all: stance<loc< 41/62 stance>loc< 40/50 stance>loc> 8/8
+  J: XMovePickTeleop: stance<loc< 7/11 stance>loc< 13/19 | XMoveBendPickTeleop: stance<loc< 13/16 stance>loc< 13/14 | BendPickMP: stance<loc< 10/22 stance>loc< 5/7 stance>loc> 1/1 | TabletopGraspMP: stance<loc< 2/13 stance>loc< 9/10 stance>loc> 6/7 | all: stance<loc< 32/62 stance>loc< 40/50 stance>loc> 7/8
+  S: XMovePickTeleop: stance<loc< 7/11 stance>loc< 13/19 | XMoveBendPickTeleop: stance<loc< 13/16 stance>loc< 13/14 | BendPickMP: stance<loc< 10/22 stance>loc< 5/7 stance>loc> 1/1 | TabletopGraspMP: stance<loc< 4/13 stance>loc< 9/10 stance>loc> 6/7 | all: stance<loc< 34/62 stance>loc< 40/50 stance>loc> 7/8
+  kin_rr: XMovePickTeleop: stance<loc< 7/11 stance>loc< 13/19 | XMoveBendPickTeleop: stance<loc< 13/16 stance>loc< 13/14 | BendPickMP: stance<loc< 10/22 stance>loc< 5/7 stance>loc> 1/1 | TabletopGraspMP: stance<loc< 2/13 stance>loc< 9/10 stance>loc> 7/7 | all: stance<loc< 32/62 stance>loc< 40/50 stance>loc> 8/8
+
+5. routes (J ran a plan)
+  relook 18, old 29, both 16, only relook [('BendPickMP', 10), ('BendPickMP', 24)], only old [('TabletopGraspMP', 2), ('TabletopGraspMP', 5), ('TabletopGraspMP', 6), ('TabletopGraspMP', 9), ('TabletopGraspMP', 16), ('TabletopGraspMP', 17), ('TabletopGraspMP', 18), ('TabletopGraspMP', 19), ('TabletopGraspMP', 22), ('TabletopGraspMP', 25), ('TabletopGraspMP', 26), ('TabletopGraspMP', 28), ('XMovePickTeleop', 24)]
+```
+
+第 6 节（最后一行 `all` 截断）：
+
+```
+6. the target and the scene during the looks and steps (truth, record only; cm since the first look)
+  XMovePickTeleop  n 30, stepped 30; target moved > 1 cm in 9 (ep, cm at each later look, relook A ok, old A ok): [(1, [0.0, 17.06], False, True), (6, [0.0, 10.88], False, True), (8, [0.0, 1.52], True, False), (9, [0.0, 17.58], False, True), (10, [0.0, 17.25], False, False), (12, [0.0, 17.54], False, False), (21, [0.0, 17.12], False, False), (25, [0.0, 16.16], False, False), (26, [67.99], False, False)]
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): table 13
+  XMoveBendPickTeleop  n 30, stepped 20; target moved > 1 cm in 5 (ep, cm at each later look, relook A ok, old A ok): [(7, [17.15, 17.15], False, False), (10, [], False, False), (13, [0.11, 14.66], False, False), (17, [3.27, 15.18], False, False), (26, [0.0, 17.14], False, False)]
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): table 7
+  BendPickMP  n 30, stepped 17; target moved > 1 cm in 5 (ep, cm at each later look, relook A ok, old A ok): [(2, [17.14, 17.13], False, False), (15, [18.49, 18.49], False, False), (20, [18.41, 18.41], False, False), (24, [0.0, 53.11], False, False), (25, [14.48, 14.49], False, False)]
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): table 3
+  TabletopGraspMP  n 30, stepped 29; target moved > 1 cm in 1 (ep, cm at each later look, relook A ok, old A ok): [(26, [2.38, 2.61], False, True)]
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): table 29
+  all  n 120, stepped 96; target moved > 1 cm in 20 (ep, cm at each later look, relook A ok, old A ok): [(2, [17.14, 17.13], False, False), (15, [18.49, 18.49], False, False), (20, [18.41, 18.41], False, False), (24, [0.0, 53.11], False, False), (25, [14.48, 14.49], False, False), (26, [2.38, 2.61], False, True), (7, [17.15, 17.15], False, False), (10, [], False, False), (13, [0.11, 14.66], False, False), (17, [3.27, 15.18], False, False), (26, [0.0, 17.14], False, False), (1, [0.0, 17.06], False, True), (6, [0.0, 10.88], False, True), (8, [0.0, 1.52], True, False), (9, [0.0, 17.58], False, True), (10, [0.0, 17.25], False, False), (12, [0.0, 17.54], False, False), (21, [0.0, 17.12], False, F …
+    other bodies moved > 1 cm: 0 
+    touched in the relook phase (body: episodes): table 52
+```
+
+**只看不补**（`eval_look_only.txt`，只有 A 列有数，J、S、kin_rr 这一组没跑）。第 1 节：
+
+```
+1. successes, relook vs old (only relook / only old, McNemar p over episodes; layouts up/down, sign p)
+  45 s
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop           10 vs   7 (3/0 p 0.250; 3/0 p 0.250)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    XMoveBendPickTeleop        8 vs   4 (5/1 p 0.219; 3/1 p 0.625)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    BendPickMP                 9 vs   6 (4/1 p 0.375; 3/1 p 0.625)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    TabletopGraspMP            9 vs  13 (1/5 p 0.219; 0/4 p 0.125)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    all                      36 vs  30 (13/7 p 0.263; 9/6 p 0.607)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    episodes missing in the relook run: {'A': 0, 'J': 120, 'S': 120, 'kin_rr': 120}
+  official limit
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop           10 vs   7 (3/0 p 0.250; 3/0 p 0.250)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    XMoveBendPickTeleop        8 vs   4 (5/1 p 0.219; 3/1 p 0.625)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    BendPickMP                 0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    TabletopGraspMP            9 vs  13 (1/5 p 0.219; 0/4 p 0.125)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    all                       27 vs  24 (9/6 p 0.607; 6/5 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    episodes missing in the relook run: {'A': 0, 'J': 120, 'S': 120, 'kin_rr': 120}
+```
+
+第 2 节的 `all`：
+
+```
+  all  n 120, steps taken [120, 0, 0]
+    odometry xy         0.97 [  7.52]  21.13 (n 120)   yaw   0.53 [  1.46]   6.57 (n 120)
+    first look xy       0.23 [  0.55]  14.49 (n 120)   yaw   0.07 [  0.21]   5.62 (n 120)
+    last look xy        0.23 [  0.55]  14.49 (n 120)   yaw   0.07 [  0.21]   5.62 (n 120)
+    stance before      19.46 [ 29.00]  43.95 (n 120)   yaw   3.43 [  9.10]  13.57 (n 120)
+    stance after       19.46 [ 29.00]  43.95 (n 120)   yaw   3.43 [  9.10]  13.57 (n 120)
+    off (robot's own)  19.41 [ 33.62]  47.33 (n 120) ->  19.41 [ 33.62]  47.33 (n 120)
+    time added, s       0.00 [  0.00]   0.00 (n 120)
+    registration: inliers   0.98 [  1.00]   1.00 (n 240), rms mm   5.04 [  5.45]   6.35 (n 240), sd y cm   0.13 [  0.20]   2.88 (n 240)
+```
+
+**只重规划**（`eval_j0.txt`，对 `none` 的 JR）：
+
+```
+J0 rows 120, old JR rows 120, common 120
+  45 s
+    XMovePickTeleop        n  30  J0   7  old   7  only J0  0  only old  0  McNemar p 1.000
+    XMoveBendPickTeleop    n  30  J0   4  old   4  only J0  0  only old  0  McNemar p 1.000
+    BendPickMP             n  30  J0   6  old   6  only J0  0  only old  0  McNemar p 1.000
+    TabletopGraspMP        n  30  J0  10  old  11  only J0  2  only old  3  McNemar p 1.000
+    all                    n 120  J0  27  old  28  only J0  2  only old  3  McNemar p 1.000
+  official limit
+    XMovePickTeleop        n  30  J0   7  old   7  only J0  0  only old  0  McNemar p 1.000
+    XMoveBendPickTeleop    n  30  J0   4  old   4  only J0  0  only old  0  McNemar p 1.000
+    BendPickMP             n  30  J0   0  old   0  only J0  0  only old  0  McNemar p 1.000
+    TabletopGraspMP        n  30  J0  10  old   9  only J0  3  only old  2  McNemar p 1.000
+    all                    n 120  J0  21  old  20  only J0  3  only old  2  McNemar p 1.000
+  routes: J0 29, old 29, both 29, only J0 [], only old []
+```
+
+**CPU 的 `none` 对 GPU 的老记录**（`eval_cpu_vs_gpu.txt`，只作记录，不进判据；这里"relook"一栏是 CPU 的 `none`，"old"是 GPU 的老记录）。第 1 节：
+
+```
+1. successes, relook vs old (only relook / only old, McNemar p over episodes; layouts up/down, sign p)
+  45 s
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop            7 vs   5 (7/5 p 0.774; 4/3 p 1.000)     7 vs   5 (7/5 p 0.774; 4/3 p 1.000)     7 vs   5 (7/5 p 0.774; 4/3 p 1.000)     7 vs   5 (7/5 p 0.774; 4/3 p 1.000)
+    XMoveBendPickTeleop        4 vs   3 (4/3 p 1.000; 4/2 p 0.688)     4 vs   3 (4/3 p 1.000; 4/2 p 0.688)     4 vs   3 (4/3 p 1.000; 4/2 p 0.688)     4 vs   3 (4/3 p 1.000; 4/2 p 0.688)
+    BendPickMP                 6 vs  11 (3/8 p 0.227; 2/5 p 0.453)     6 vs  11 (3/8 p 0.227; 2/5 p 0.453)     6 vs  11 (3/8 p 0.227; 2/5 p 0.453)     6 vs  11 (3/8 p 0.227; 2/5 p 0.453)
+    TabletopGraspMP           13 vs  10 (6/3 p 0.508; 4/2 p 0.688)    11 vs  15 (4/8 p 0.388; 1/4 p 0.375)    16 vs  14 (8/6 p 0.791; 4/3 p 1.000)    16 vs  17 (6/7 p 1.000; 3/2 p 1.000)
+    all                    30 vs  29 (20/19 p 1.000; 14/12 p 0.845) 28 vs  34 (18/24 p 0.441; 11/14 p 0.690) 33 vs  33 (22/22 p 1.000; 14/13 p 1.000) 33 vs  36 (20/23 p 0.761; 13/12 p 1.000)
+    episodes missing in the relook run: {'A': 0, 'J': 0, 'S': 0, 'kin_rr': 0}
+  official limit
+    task                                                         A                                       J                                       S                                  kin_rr
+    XMovePickTeleop            7 vs   5 (7/5 p 0.774; 4/3 p 1.000)     7 vs   5 (7/5 p 0.774; 4/3 p 1.000)     7 vs   5 (7/5 p 0.774; 4/3 p 1.000)     7 vs   5 (7/5 p 0.774; 4/3 p 1.000)
+    XMoveBendPickTeleop        4 vs   3 (4/3 p 1.000; 4/2 p 0.688)     4 vs   3 (4/3 p 1.000; 4/2 p 0.688)     4 vs   3 (4/3 p 1.000; 4/2 p 0.688)     4 vs   3 (4/3 p 1.000; 4/2 p 0.688)
+    BendPickMP                 0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)     0 vs   0 (0/0 p 1.000; 0/0 p 1.000)
+    TabletopGraspMP           13 vs  10 (6/3 p 0.508; 4/2 p 0.688)     9 vs  12 (4/7 p 0.549; 2/4 p 0.688)    11 vs   9 (7/5 p 0.774; 4/3 p 1.000)    13 vs  15 (6/8 p 0.791; 2/2 p 1.000)
+    all                    24 vs  18 (17/11 p 0.345; 12/7 p 0.359) 20 vs  20 (15/15 p 1.000; 10/9 p 1.000) 22 vs  17 (18/13 p 0.473; 12/8 p 0.503) 24 vs  23 (17/16 p 1.000; 10/7 p 0.629)
+    episodes missing in the relook run: {'A': 0, 'J': 0, 'S': 0, 'kin_rr': 0}
+```
+
+第 3 节：
+
+```
+3. checks
+  JR: the relook record and final belief equal A's in 120/120 episodes
+  SF: the relook record and final belief equal A's in 29/29 episodes
+  kin_rr: the relook record and final belief equal A's in 29/29 episodes
+  old rows carrying a relook record: 0; relook A rows without one: 120
+  falls: relook []; old []
+```
+
+### 事后分析（不在预注册里，只作记录）
+
+- `posthoc.py`（`scripts/experiments/simple_relook_20261126/posthoc.py`，md5 `a0f2164a`，副本在 `$X/posthoc.py`）是看到结果以后写的，命令是 `posthoc.py $X/sonic/relook/bench $X/sonic/none/bench $X/sonic/look_only/bench`。
+- 第 1 部分拆开"走路时撞动"和"补步时撞动"。起因：行里的 `target_moved_true_cm` 是从走路之前的起始一眼量起的，不是从走到后的第一眼量起。所以第 6 节列出的 20 局里，含一局是走路时被撞动的（XMoveBendPick 第 10 局，只看不补组里同样 2.47 cm）。第 6 节标题里"since the first look"的说法不对。
+- 第 2 部分比较下令的补步和真实的站位变化。
+- 第 3 部分把伸手的误差和成功局数按补步后的真实站位误差分组。
+
+```
+1. the target's displacement: the walk vs the correction steps (truth, record only)
+  relook    XMovePickTeleop      moved by the walk 0 
+                                 moved by the steps 9 (ep, cm per step, relook A ok, none A ok): [(1, [0.0, 17.06], False, True), (6, [0.0, 10.88], False, True), (8, [0.0, 1.52], True, False), (9, [0.0, 17.58], False, True), (10, [0.0, 17.25], False, False), (12, [0.0, 17.54], False, False), (21, [0.0, 17.12], False, False), (25, [0.0, 16.16], False, False), (26, [67.99], False, False)]
+  relook    XMoveBendPickTeleop  moved by the walk 1 [(10, 2.47)]
+                                 moved by the steps 4 (ep, cm per step, relook A ok, none A ok): [(7, [17.15, 0.0], False, False), (13, [0.11, 14.55], False, False), (17, [3.27, 11.91], False, False), (26, [0.0, 17.14], False, False)]
+  relook    BendPickMP           moved by the walk 0 
+                                 moved by the steps 5 (ep, cm per step, relook A ok, none A ok): [(2, [17.14, -0.01], False, False), (15, [18.49, 0.0], False, False), (20, [18.41, 0.0], False, False), (24, [0.0, 53.11], False, False), (25, [14.48, 0.01], False, False)]
+  relook    TabletopGraspMP      moved by the walk 0 
+                                 moved by the steps 1 (ep, cm per step, relook A ok, none A ok): [(26, [2.34, 0.23], False, True)]
+  relook    all                  moved by the walk 1 
+                                 moved by the steps 19
+  look_only XMovePickTeleop      moved by the walk 0 
+                                 moved by the steps 0
+  look_only XMoveBendPickTeleop  moved by the walk 1 [(10, 2.47)]
+                                 moved by the steps 0
+  look_only BendPickMP           moved by the walk 0 
+                                 moved by the steps 0
+  look_only TabletopGraspMP      moved by the walk 0 
+                                 moved by the steps 0
+  look_only all                  moved by the walk 1 
+                                 moved by the steps 0
+
+2. correction steps as executed (relook A): commanded vs the true stance change
+  XMovePickTeleop      steps  55  commanded  20.6 cm  along / commanded 1.30 [p10 0.17, p90 2.25]  across  11.2 cm  |true - commanded|  19.1 [p90  44.5] cm
+  XMoveBendPickTeleop  steps  35  commanded  20.4 cm  along / commanded 1.21 [p10 0.55, p90 2.07]  across  10.8 cm  |true - commanded|  18.3 [p90  40.7] cm
+  BendPickMP           steps  26  commanded  17.5 cm  along / commanded 1.14 [p10 0.42, p90 1.65]  across   4.8 cm  |true - commanded|  11.7 [p90  19.9] cm
+  TabletopGraspMP      steps  51  commanded  26.9 cm  along / commanded 1.18 [p10 0.40, p90 2.18]  across   8.6 cm  |true - commanded|  16.9 [p90  42.4] cm
+  all                  steps 167  commanded  21.6 cm  along / commanded 1.19 [p10 0.33, p90 2.17]  across   8.6 cm  |true - commanded|  16.4 [p90  42.6] cm
+
+3. the reach after the steps: pregrasp hand error (cm), median [p90], and successes, by the true stance error after
+   the steps (relook; none has no looks, so its stance error is the relook's first look, the same walk)
+  XMovePickTeleop      none   10-20: n 15 ok  4 err   5.6 [  8.7] | >20: n 15 ok  3 err   3.5 [  7.1]
+  XMovePickTeleop      relook <=10: n 11 ok  4 err   4.4 [  9.2] | 10-20: n 10 ok  5 err   3.8 [  5.2] | >20: n  9 ok  1 err  17.9 [ 31.3]
+  XMoveBendPickTeleop  none   <=10: n  7 ok  2 err   7.2 [ 10.4] | 10-20: n 14 ok  1 err   8.4 [ 10.8] | >20: n  9 ok  1 err   8.0 [ 16.0]
+  XMoveBendPickTeleop  relook <=10: n 16 ok  3 err   7.6 [ 12.2] | 10-20: n  9 ok  0 err   7.3 [ 13.0] | >20: n  5 ok  1 err   3.9 [ 15.7]
+  BendPickMP           none   <=10: n 12 ok  3 err   4.1 [  6.4] | 10-20: n 10 ok  1 err   3.7 [  5.8] | >20: n  8 ok  2 err   6.9 [ 10.2]
+  BendPickMP           relook <=10: n 22 ok 12 err   4.2 [  6.4] | 10-20: n  6 ok  2 err   4.2 [  5.5] | >20: n  2 ok  0 err   8.7 [ 12.0]
+  TabletopGraspMP      none   10-20: n  7 ok  0 err  15.0 [ 24.1] | >20: n 23 ok 13 err   4.8 [ 22.9]
+  TabletopGraspMP      relook <=10: n 13 ok  2 err   4.0 [  9.3] | 10-20: n  8 ok  1 err   5.8 [  9.6] | >20: n  9 ok  0 err  11.5 [ 17.5]
+  all                  none   <=10: n 19 ok  5 err   6.1 [  8.3] | 10-20: n 46 ok  6 err   6.1 [ 14.4] | >20: n 55 ok 19 err   4.9 [ 13.7]
+  all                  relook <=10: n 62 ok 21 err   5.1 [  9.3] | 10-20: n 33 ok  8 err   4.7 [ 11.3] | >20: n 25 ok  2 err  12.3 [ 25.1]
+```
+
+**另外几项只读查询**（在 4090 上对上面的行和规划输出直接算，都不在预注册里）：
+- **补步后那几眼里配准误差超过 5 cm 的**：167 眼中有 11 眼（6.6 %）；其中 9 眼在 TabletopGrasp（51 眼里的 17.6 %）。第一眼超过 2 cm 的：120 局中 3 局（4.24、4.81、14.49 cm）。
+- **配准退化**：只有 1 眼的内点为 0、残差为 nan，是 TabletopGrasp 第 17 局的第二眼。这一局在补步时摔倒（8.1 s），也是第 3 节记的那次摔倒。
+- **TabletopGrasp 上的 cuRobo 规划**：
+  - `relook`：30 局里 15 局规划成功、1 局 `GRAPH_FAIL` 也给了路线，12 局 `IK_FAIL`，1 局 `FINETUNE_TRAJOPT_FAIL`，1 局没有抓取；
+  - `none`：28 局成功，2 局 `IK_FAIL`；
+  - `relook` 里规划失败的 13 局，补步后的真实站位误差中位数 19.5 cm，目标离骨盆中位数 54.7 cm；规划成功的 16 局，站位误差中位数 6.8 cm。
+- **TabletopGrasp 上 J 列的成功，按有没有路线分**：
+  - `relook`：有路线的 16 局里 J 13 局、A 3 局；没路线的 14 局里 J 0 局、A 0 局；
+  - `none`：有路线的 28 局里 J 10 局、A 12 局；没路线的 2 局里 J 1 局、A 1 局。
+- **补步时机器人哪个部件碰了桌子**（行里 `hits` 的 relook 段，按局计）：
+  - TabletopGrasp：右手食指 28 局、右腕 26 局、左腕 25 局，收手以后双手仍贴着桌面；
+  - XMovePick：右髋 7 局、左手中指 6 局；
+  - XMoveBendPick：右膝 6 局、右髋 4 局；
+  - BendPick：右膝 3 局。
+  - `hits` 不记机器人和目标的接触，所以撞动目标的是哪个部件，记录里看不出来。
+- **伸手时碰桌**：TabletopGrasp 的 A 在 pregrasp 阶段碰桌，`none` 30/30 局，只看不补 30/30 局，`relook` 28/30 局。三组都差不多，所以这一项分不出三组的差别。
 
 ## 意外
 
+**先对照预测**（✓ 落在预测区间内，✗ 落在区间外）
+
+| 预测 | 结果 |
+|---|---|
+| ScaleBFM 补步 0–5 局 | 0 局 ✓ |
+| ScaleBFM 配准误差中位数 ≤ 0.3 cm，90 分位 ≤ 1 cm，转角 ≤ 0.2° | 第一眼 0.05 cm，90 分位 0.11 cm，转角最大 0.10° ✓（位置最大 1.92 cm） |
+| ScaleBFM A 79–87，差 ±4 以内，p > 0.05 | 80，−3（0/3），p 0.250 ✓ |
+| ScaleBFM J 90–98、S 89–97、kin_rr 90–98 | 93、92、93 ✓ |
+| ScaleBFM 官方时限内各列差 ±5 以内 | −3、−2、−2、−3 ✓ |
+| ScaleBFM J0 90–98，和旧 J 差 ±4 以内 | 95，差 0（0/0）✓ |
+| SONIC `none` A 22–36、J 26–42、S 25–41、kin_rr 28–44；官方 A 12–24 | 30、28、33、33；官方 24 ✓（官方在上沿） |
+| SONIC 至少补一步 70–110 局 | 96 局 ✓ |
+| SONIC 补步后真实站位误差中位数 5–15 cm，≤ 10 cm 的 40–95 局 | 9.76 cm，62 局 ✓；补步前 19.46 cm，和旧的 19.6 cm 相近 ✓ |
+| SONIC 第一眼配准误差中位数 ≤ 0.5 cm，超过 2 cm 的 ≤ 5 % | 0.23 cm，3/120（2.5 %）✓ |
+| SONIC 补步后那几眼超过 5 cm 的 0–25 % | 11/167（6.6 %）✓ |
+| SONIC A：`relook` 比 `none` 多 −3 到 +18 | +1（31 vs 30）✓ |
+| 分任务：TabletopGrasp −5 到 +12 | −10（3 vs 13）✗ |
+| 分任务：XMovePick 0 到 +8 | +3 ✓ |
+| 分任务：BendPick −3 到 +4 | +8（14 vs 6）✗ |
+| 分任务：XMoveBendPick −3 到 +4 | 0 ✓ |
+| SONIC J、S、kin_rr 各多 −5 到 +18 | +13、+6、+7 ✓ |
+| SONIC 官方时限内 A 少 12 局到多 3 局 | −22（2 vs 24）✗ |
+| SONIC 补步时撞动目标 0–12 局，多数在 TabletopGrasp | 19 局（第 6 节列 20 局，其中 1 局是走路时撞动的），多数在 XMovePick（9 局），TabletopGrasp 只有 1 局 ✗ |
+| ScaleBFM 补步时撞动目标 0–2 局 | 0 局 ✓ |
+| SONIC 只看不补的 A 多 −3 到 +6 | +6（36 vs 30，p 0.263）✓（在上沿） |
+| SONIC J0 和 `none` 的 J 差 ±6 以内 | 27 vs 28，差 −1（2/3）✓ |
+
+**意外和没想到的现象**
+
+1. **TabletopGrasp 上补步帮倒忙，但只在 A 列**。
+   - A 从 13 局掉到 3 局（3/13，p 0.021）；按布局是 3 升 7 降，p 0.344，不显著。
+   - 同一批局的 J 列是 13 vs 11，没掉。
+   - 分开看：
+     - 只重新定位、不补步，已经是 9 vs 13（−4，p 0.219）；
+     - cuRobo 给了路线的 16 局（补步后真实站位误差中位数 6.8 cm，其中 4 局超过 10 cm）：J 成功 13 局，直接伸手的 A 只有 3 局。按站位分：≤ 10 cm 的 12 局 J 成功 11 局，> 10 cm 的 4 局 J 成功 2 局；同样这 16 局，`none` 的 J 只成功 4 局（独立复核指出原写法"落得准的 16 局"不对，已改）；
+     - 规划失败的 13 局（站位误差中位数 19.5 cm，目标离骨盆 54.7 cm）：12 局 `IK_FAIL`、1 局 `FINETUNE_TRAJOPT_FAIL`，没有路线；再加上补步时摔倒的第 17 局，这 14 局 A、J 都是 0。
+     - 规划失败不只是因为偏得多：`none` 的站偏中位数 27.5 cm，比这 13 局还大，却有 28/30 局规划成功。差别在偏的方向（独立复核查的 `grasp_h`）：这 13 局补步横向冲过了计划站位，目标落到骨盆右侧 24–58 cm，水平距离中位数 54.9 cm；`none` 的目标在正前方附近，水平距离中位数 39.4 cm（34.5–49.7 cm）。
+   - `none` 里，站偏超过 20 cm 的 23 局，A 反而成功 13 局。SONIC 走路时横向停偏约 25 cm（[B58] 也记过）。对直接伸手来说，这个偏出来的位置不比规划的站位差。
+2. **BendPick 上补步帮得多**：14 vs 6（8/0，p 0.008），按布局 6 升 0 降，p 0.031，四列一样。预测是 −3 到 +4。只看不补是 9 vs 6（+3）。
+3. **`none` 组里，站偏不能预测失败**。
+   - 站偏 ≤ 10 cm 的成功 5/19，10–20 cm 的 6/46，> 20 cm 的 19/55。
+   - 假设 3 的出发点（旧 GPU 主指标里 ≤ 10 cm 成功 39 %，> 10 cm 成功 20 %）在这次运行里不成立。
+4. **补步撞动目标比预测多，而且不在预测的任务上**。
+   - 19 局：XMovePick 9 局，BendPick 5 局，XMoveBendPick 4 局，TabletopGrasp 1 局。
+   - 位移多在 14–19 cm（19 局里 13 局）。像是被碰倒，没有查。
+   - 19 局里只有 XMovePick 第 8 局（1.52 cm）A 成功。
+   - 开发局只有 TabletopGrasp，所以开发时没看到这一点。
+   - 只看不补的组里，补步撞动 0 局。
+5. **官方时限内的损失比预测大得多**。A 是 2 vs 24。补步加收手中位数多花 11.58 s。XMovePick 在官方时限内 0 vs 7。
+6. **补步本身走不准**。
+   - 下令的步长中位数 21.6 cm，真实位移和下令之差中位数 16.4 cm，90 分位 42.6 cm。
+   - 沿下令方向走出的比例中位数 1.19，10–90 分位 0.33–2.17。
+   - 例：XMovePick 第 1 局，下令向后 14 cm、向侧 15 cm，实际向后走了 55 cm，侧向几乎没动。
+   - 正式局整体像开发局的第 3 级：开发局 sK 第 3 级之差中位数 14.8 cm，90 分位 40.6 cm。
+7. **收手以后，补步时双手仍贴着桌子**。TabletopGrasp 30 局里，右手食指碰桌 28 局，左、右腕 25、26 局。
+8. **`relook_eval.py` 第 6 节的位移起点标错了**。
+   - 写的是"从第一眼起"，实际是从走路前的起始一眼起，所以列出的 20 局里有 1 局是走路时撞动的。
+   - 冻结代码没改，事后分析里拆开了。
+9. **ScaleBFM 的 3 局翻转方向一致**（0/3，p 0.25）。
+   - 三局是 XMoveBendPick 第 17、28 局（布局相近）和 TabletopGrasp 第 16 局，老记录里都是勉强抓住。
+   - 新旧两次的手位置只差约 1 mm，合手阶段的碰触也相同，新的一次没抬起来。
+   - J0 一局都没翻。所以位姿估计变 1–2 mm，就足以翻转这种勉强抓住的局。
+10. **补步加收手相对"只看不补"是净负**：`relook` 对只看不补，A 是 17/22（31 vs 36）。分任务：TabletopGrasp 3/9，XMoveBendPick 1/5，BendPick 5/0，XMovePick 8/8。A 列那 1 局的增量来自"看"，不来自补步（独立复核指出，原结论漏了这组预注册的拆分）。
+11. **站偏只在中位数上减半**：90 分位 29.00 → 29.17 cm，没变；最大值 43.95 → 67.98 cm，变差。补过步的 96 局里有 19 局补完更偏。
+12. **SONIC 每局本身变化很大**：CPU 和 GPU 之间，什么都不改，A 也有 20/19 局翻转，BendPick 是 6 vs 11。分任务差 ±5 局以内，可能就是这种翻转。
+
 ## 结论与下一步
 
+（初稿经独立复核后改过：原论断 5"限制收益的是补步走不准，不是定位"是事后分析，和判据的读法冲突，已撤回，改成下面第 5 条；J 列增量的噪声尺度、"落准的局"的写法、预测落空的几项都按复核意见改了。）
+
+**论断和证据**
+
+1. **家具配准的第一眼定得准；在 ScaleBFM 上不帮倒忙**。假设 1 在第一眼成立，假设 2 成立。
+   - ScaleBFM：第一眼误差中位数 0.05 cm，90 分位 0.11 cm（ScaleBFM eval_relook 第 2 节）。120 局都没补步。四列分别差 −3、−2、−2、−2 局，p 都 ≥ 0.25（第 1 节）。J0 没有翻转。
+   - SONIC：第一眼误差中位数 0.23 cm，90 分位 0.55 cm，3/120 局超过 2 cm；同期里程计中位数 0.97 cm，90 分位 7.52 cm（SONIC eval_relook 第 2 节 `all`）。
+   - 补步以后的那几眼没那么可靠：TabletopGrasp 9/51 眼超过 5 cm；最后一眼超过 2 cm 的 8 局，A 全部失败，其中 3 局 `none` 是成功的（复核核对）。
+2. **SONIC 补步把站偏的中位数减半，但 A 列不涨**。
+   - 站位误差中位数 19.46 → 9.76 cm。90 分位 29.00 → 29.17 cm 没变，最大值 43.95 → 67.98 cm 变差（第 2 节 `all`）。
+   - A 是 31 vs 30（23/22，p 1.000；按布局 17/12，p 0.458）。
+   - 拆开看：只看不补 36 vs 30（+6，p 0.263）；带第二眼相对只看不补是 17/22，即 −5。所以 A 列这点增量来自"看"，补步加收手相对只看是净负（eval_relook、eval_look_only 第 1 节）。
+3. **J 列的 +13 多半不是规划带来的**。
+   - J 41 vs 28（29/16，p 0.072）。没有路线的局里 J 行和 A 行逐局相同（复核核对：`relook` 102/102，`none` 91/91），所以 +13 里有 +11 是三个非 TabletopGrasp 任务上 A 的变化。
+   - TabletopGrasp 上 J 只是 13 vs 11（9/7，p 0.804）。
+   - 合适的噪声尺度是两次等价运行之间的逐局分叉：CPU 对 GPU 的老记录，A 列 20/19、J 列 18/24 局翻转。J0 只量了"同一段录像重新规划"的噪声（5 局翻转），偏小。
+   - S 39 vs 33（p 0.471），kin_rr 40 vs 33（p 0.349），都不显著。
+4. **官方时限内补步是净损失；补步还撞动目标**。
+   - 官方时限内 A 是 2 vs 24（0/22，p 0.000），四列都一样。补步加收手中位数多花 11.58 s。
+   - 45 秒内没有一局是因为超时失败（`relook` 最长 33.8 s），所以 45 秒内的比较不受多花时间的影响。
+   - 撞动目标：按预注册第 6 节的度量是 20 局；去掉走路时撞的 1 局，补步时撞的是 19 局（事后分析第 1 部分）。这 19 局里 `relook` 的 A 只成功 1 局，而 `none` 原来成功 4 局，所以撞动最多解释 A 少 3 局。
+5. **事后看到的现象（不作结论，原因没定）**：
+   - 补步执行误差中位数 16.4 cm，90 分位 42.6 cm（事后分析第 2 部分）。
+   - 按补步后的站偏分组，同一批局 A 成功是：
+     - ≤ 10 cm 的 62 局，`relook` 21 局，`none` 11 局；
+     - 10–20 cm 的 33 局，`relook` 8 局，`none` 12 局；
+     - > 20 cm 的 25 局，`relook` 2 局，`none` 7 局。
+   - 这些增益全在三个非 TabletopGrasp 任务上；TabletopGrasp 上落准的局是 2 vs 3。分组用的是处理之后才出现的变量，不能当因果证据。
+   - TabletopGrasp 上，计划站位让目标落在骨盆右侧约 21 cm（`stand 0.3`、`side_off -0.2`）。SONIC 不补步时横向走不够，目标反而在正前方，A 成功 13/30。补准了也不涨，可能是计划站位本身不适合 SONIC 直接伸手。
+
+**证据强度**：
+- 每组一次运行，每组 120 局（4 个任务 × 30 局），按局配对，种子和主指标相同。
+- 第 0、1 级共用布局，按局的 McNemar 会高估显著性，所以同时报了按布局的符号检验。
+- SONIC 在 CPU 上跑，基线是同次的 CPU `none`。
+
+**其他可能的解释**
+1. **分任务的差别部分是混沌翻转**：补一步以后，整局都和对照分叉了。BendPick 是 8/0、按布局 6/0，不太像纯翻转；TabletopGrasp 按布局是 3/7（p 0.344），证据弱。
+2. **TabletopGrasp 的损失可能来自计划站位的几何**，不是补步扰动了机器人（见论断 5）。
+3. **收手后的起手姿势可能是独立因素**。正式局里分不开：TabletopGrasp 30 局里 29 局补过步，补步前都收了手。
+
+**四类陷阱**
+- **benchmark 选择**：
+  - 四个任务各 30 局，和主指标相同，全部报了，没剔除任务或局，撞动目标的局也没剔除。
+  - 收手、idle 结束、12 cm 阈值都是在开发局 30–49 上定的，而开发局只有 TabletopGrasp 的第 3、4 级；"从收手姿势伸手"在开发局里没试过。
+  - CPU 的 `none` 和 GPU 的老记录只是总数接近（30 vs 29），逐局有 39 局翻转。假设 3 的前提来自 GPU（站偏 ≤ 10 cm 成功 39 %，> 10 cm 20 %），在 CPU 的 `none` 上不成立（26 % 对 25 %）。
+- **数据泄漏**：没有训练。复核读了冻结代码：补步命令和停步判断只用配准估计和是否摔倒，真值只写进 `_true` 字段。开发局和正式局不重合；看到正式结果以后没改参数。
+- **指标误用**：
+  - 45 秒内和官方时限内都报了，四列、分任务都报了。
+  - "站偏减半"只说中位数，尾部没变好，已补上。
+  - 第 6 节的标签错误在事后分析里更正，冻结输出原样贴出。
+  - J 列的噪声尺度原先用错了（只用了 J0），已改。
+- **事后挑选**：
+  - 每组只跑一次，没有重跑；ScaleBFM 的手动续跑只改了显存门槛。
+  - 初稿的论断 5 建立在事后分析上，并改读了判据。复核指出后已撤回，降为"事后看到的现象"。
+  - 预注册里对带第二眼组不利的那组拆分（相对只看不补少 5 局），已写进论断 2。
+
+**对照判据**（结果落在三行）
+- **"补步后站位误差中位数 ≤ 10 cm，但 A 多 < 3 局"**：**落在这一行**（9.76 cm，+1）。
+  - 按判据：站位不是瓶颈，假设 3 不成立；停止在站位上投入，转去查 SONIC 的手（vrref 的手速结果）。
+  - 9.76 cm 贴着 10 cm 的线；补准了会不会涨，现有数据定不了，见下一步第 3 条。
+- **"某个任务 relook 的 A 比 none 少 ≥ 4 局"**：**落在这一行**，TabletopGrasp −10。判据要查的三样：
+  - 接触：补步时双手、手腕贴桌 25–28/30 局；伸手时三组都碰桌，分不出差别。
+  - 配准误差：补步后那几眼里 9/51 眼超过 5 cm；最后一眼超过 2 cm 的 7 局在这个任务上，全部失败。
+  - 伸手起始姿势（收手）：**没法查**，正式局里收手和补步总是一起出现（29/30 局）。只看不补组不收手、不补步，也已经少 4 局。
+  - 阈值和步法不在正式局上调。
+- **"补步时撞动目标 ≥ 10 局"**：**落在这一行**。按预注册度量 20 局，补步时撞的 19 局。
+  - 撞动的局没剔除。`hits` 不记和目标的接触，看不出是哪个部件撞的；同一阶段碰桌的，XMovePick 主要是右髋和左手，XMoveBendPick 主要是右膝和右髋。
+  - 按判据，下一步回开发局试补步时离目标保持距离（先退后再横移，或补步路线避开目标的方位），和 LML 诊断的结论合并考虑。
+- 其余各行都没落在：
+  - 各项核对通过：同一局各列第二眼的记录相同；旧记录里没有第二眼字段；SONIC 带第二眼组摔倒 1 局（TabletopGrasp 第 17 局）。
+  - ScaleBFM 只差 −3 局。
+  - SONIC A 没多 10 局，也不在多 3–9 局的区间。
+  - 站偏中位数没超过 12 cm。
+  - 补步后配准误差超过 5 cm 的是 6.6 %，没到 20 %（TabletopGrasp 单独是 17.6 %）。
+  - A 不显著，J0 那一行不适用。
+- **落空的预测**：TabletopGrasp A（预测 −5 到 +12，实际 −10）、BendPick A（−3 到 +4，实际 +8）、官方时限内 A（−12 到 +3，实际 −22）、补步撞动目标（0–12 局，实际 19 局）。详见"意外"的对照表。
+
+**下一步**（给协调人定）
+1. **按判据，主指标不给 SONIC 加"走后再看"那一行**。现在的补步在 45 秒内 A 列不涨，官方时限内是净损失，还会撞动目标。
+2. **按判据，SONIC 上转去查手**（vrref 的手速结果）。
+3. **用户的补步思路如果还想留，先用一个诊断实验定"补准了会不会涨"**（复核提的 E1）：
+   - **做法**：SONIC 正式 120 局，补步改用仿真真值下令、按真值判停，直到真实站偏 ≤ 3 cm（最多 4 步），收手和不收手各一列，按 A 伸手，和 `none`、只看不补配对。
+   - 这一组用了真值，只作天花板，不进主表。
+   - **怎么读**：
+     - 站准了 A 仍多不到 3 局，或不超过只看不补的 36 局：补步这条路停掉。
+     - 多 10 局以上，且 TabletopGrasp 不再少 4 局以上：值得回开发局做步法。
+   - **配套**：TabletopGrasp 的站位几何对照（复核提的 E2：用真值放到计划站位，和左移 20 cm 让目标在正前方的站位比），看 TabletopGrasp 是不是计划站位的问题。
+4. **撞动目标**：按判据，回开发局试补步时离目标保持距离。开发局要加上 XMovePick 和 BendPick，撞动目标多在这两个任务上。
+5. **第二眼的配准本身**：第一眼准，ScaleBFM 上不帮倒忙，SONIC 只看不补 +6（p 0.263，不显著）。要不要单独作为定位手段进主指标，需要另测。
+
 ## 独立复核
+
+2026-11-26 11:31–11:45Z，一个独立的 general-purpose agent 做的。它只拿到假设、组别、度量、预测、判据、"结果"一节和初稿结论里的论断清单，以及原始输出和代码的路径，没有拿到推理过程。下面是它的回复原文，只把它的二级标题降成了三级。它的意见已经用来改"意外"第 1、10、11 条和整个"结论与下一步"：初稿的论断 5 撤回，改成"事后看到的现象"。
+
+我对照远程原始输出和每局的行做了独立核对，四部分结论如下。数字核对过的部分基本都对得上。问题主要出在后半句论断的解读上，还有判据表的读法。
+
+### 一、数字核对
+
+**1. 贴出来的原始输出是原文。** 材料里贴的 271 行输出，我逐行在远程原文里都找到了（`eval_*.txt`、`posthoc.txt`、`run.log`）。唯一的例外是第 6 节 `all` 那行，作者自己标了截断。
+
+**2. 必做的四项，我从每局的行重算，全部一致。** 算法是用 venv 的 python 通过 ssh 标准输入跑，远程没有写任何文件。
+
+| 项 | 我重算的结果 | 是否一致 |
+|---|---|---|
+| SONIC A 列，45 秒内（relook / none / 只看不补） | XMovePick 10/7/10，XMoveBendPick 4/4/8，BendPick 14/6/9，TabletopGrasp 3/13/9，合计 31/30/36；官方时限内 relook 2、none 24 | 一致 |
+| TabletopGrasp 有路线 / 没路线 | relook：有路线 16 局，J 13、A 3；没路线 14 局，J 0、A 0。none：有路线 28 局，J 10、A 12；没路线 2 局，J 1、A 1 | 一致 |
+| 撞动目标（> 1 cm） | 任一眼超过 1 cm 的有 20 局。其中走路时撞的 1 局（XMoveBendPick 第 10 局，2.47 cm），补步时撞的 19 局（XMovePick 9、BendPick 5、XMoveBendPick 4、TabletopGrasp 1）。这 19 局里 relook 的 A 只成功 1 局（XMovePick 第 8 局） | 一致 |
+| 补步后那几眼，配准误差 > 5 cm | 167 眼里 11 眼（6.6 %）。TabletopGrasp 9/51（17.6 %），XMovePick 1/55，BendPick 1/26，XMoveBendPick 0/35。第一眼超过 2 cm 的 3 局：4.24、4.81、14.49 cm | 一致 |
+
+另外核对了一个前提：none、relook、只看不补三组的 `walk_err_cm` 和 `odo_cm` 在 120/120 局里逐位相同。relook 第一眼的站位误差和 none 的 `walk_err_cm` 最大差 0.0。所以事后分析第 3 部分"none 的站偏取 relook 第一眼"这个做法成立。
+
+**3. "另外几项只读查询"都对得上。** 包括：
+- 配准退化：TabletopGrasp 第 17 局第二眼，内点 0，残差 nan，8.1 s 摔倒；
+- cuRobo 状态：relook 是 15 局成功 + 1 局 GRAPH_FAIL 也给了路线 + 12 局 IK_FAIL + 1 局 FINETUNE + 1 局没有抓取；none 是 28 局成功 + 2 局 IK_FAIL；
+- 规划失败的局站偏中位数 19.48 cm、目标离骨盆 54.7 cm；规划成功的局站偏中位数 6.80 cm；
+- 补步时碰桌的部件统计；
+- pregrasp 阶段碰桌：30/30、30/30、28/30。
+
+运行时间、`MD5.check`、没有 FAILED 文件、评估输出里没有 Traceback，也都核对过。只有一处找不到出处：显存峰值 19544 / 19688 MiB，在 `run.log` 和 `logs/` 里都没有记录。
+
+**4. 逐条看论断，数字都对，但有以下问题。**
+
+- **论断 1**：引用的数字没错，但"定位准"只对第一眼成立。
+  - 补步后，TabletopGrasp 有 17.6 % 的眼误差超过 5 cm。
+  - 最后一眼误差超过 2 cm 的有 8 局（7 局在 TabletopGrasp），这 8 局 A 全部失败。
+  - 其中 TabletopGrasp 第 17、23、26 局在 none 里是成功的。
+- **论断 2，"J 的 +13 超过了 J0 的噪声"，拿错了噪声尺度。**
+  - relook 没路线的 102 局里，J 行和 A 行的成败和结束时刻 `t` 完全相同（none 里 91/91 也一样）。
+  - 所以 J 的 +13 里，有 +11 其实是 A 在三个非 TabletopGrasp 任务上的变化；TabletopGrasp 上 J 只是 13 vs 11（9/7，p 0.804）。
+  - J0 量的只是"同一段录像重新规划"的噪声。合适的尺度是两次等价运行之间的逐局分叉：CPU 对 GPU 的老记录，A 是 20/19 局翻转，J 是 18/24 局翻转。
+- **论断 2 漏了预注册里专门用来拆分贡献的那组对比。**
+  - 只看不补比 none 多 6 局（13/7）。
+  - relook 比只看不补少 5 局（17/22，p ≈ 0.52）。分任务：TabletopGrasp 3/9，XMoveBendPick 1/5，BendPick 5/0，XMovePick 8/8。
+  - 也就是说，A 列那一点点增量来自"看"，补步加收手相对只看是净负。
+- **论断 3**：2 vs 24 是对的，但预测区间是"少 12 局到多 3 局"，实际少 22 局，预测落空了，结论里没写。另外，45 秒内的失败局没有一局是超时（relook 最长 33.8 s），所以 45 秒内的对比不受补步多花的时间影响。
+- **论断 4**：19 局没错，但按预注册的第 6 节度量是 20 局。19 是事后修正，修正本身合理，需要写明。撞动的直接代价也有上限：这 19 局里 none 只成功过 4 局，所以撞动最多解释 A 净少 3 局。预测是 0–12 局，也落空了。
+- **论断 5**：
+  - 6.6 % 和 16.4 cm 都对。我改用 `step_h_cm` / `step_done_true_cm` 在起始朝向的坐标系里重算是 15.8 cm，结论不受坐标系影响。
+  - **"落准的局，有路线的 J 成功 13/16"写法不对**：有路线的 16 局里有 4 局站偏超过 10 cm（13.4、16.6、29.0、42.8 cm）。准确的说法是：站偏在 10 cm 内且有路线的 12 局，J 成功 11 局；站偏超过 10 cm 的 4 局，J 成功 2 局。同样这 16 局，none 的 J 只成功 4 局。
+  - **"落偏就够不着"也说得不准**：none 在 TabletopGrasp 上站偏中位数 27.5 cm，比 relook 规划失败局的 19.5 cm 还大，却有 28/30 局规划成功。
+    - 差别在偏的方向：失败局里，目标落到骨盆右侧 24–58 cm（`grasp_h`），水平距离中位数 54.9 cm；none 是 39.4 cm（范围 34.5–49.7 cm）。
+    - 也就是补步横向冲过了计划站位，把目标甩出了够得着的范围。
+
+### 二、四类陷阱
+
+**1. benchmark 选择**
+- CPU 自成一组是预注册时定好的，这一点没问题。但 CPU 的 none 和 GPU 老记录只是总数接近（30 vs 29），逐局有 39 局翻转。
+- 假设 3 的前提来自 GPU：站偏 ≤ 10 cm 的成功 11/28（39 %），> 10 cm 的成功 18/92（20 %）。在 CPU 的 none 上这个关系不存在：5/19（26 %）对 25/101（25 %）。TabletopGrasp 甚至反过来：站偏 10–20 cm 的 0/7，> 20 cm 的 13/23。
+- 开发局只用了 TabletopGrasp 的第 3、4 级。收手、idle 结束、12 cm 阈值这些参数都来自这一个任务，再用到四个任务上；"从收手姿势伸手"在开发局里没试过。
+- 第 0、1 级共用布局，按局做的 McNemar 会高估显著性。TabletopGrasp A 少 10 局：按局 p 0.021，按布局只有 3/7，p 0.344。
+
+**2. 数据泄漏：没发现。**
+- 读了冻结副本的 `simple_bench.py`（md5 adb4af64）：补步命令由配准估计 `p_c` 和计划站位算出；停不停步只看 `off`（来自估计）和是否摔倒；真值只写进 `_true` 结尾的记录字段。
+- `step_walk` 用仿真骨盆和 `m.yaw()` 拼出世界坐标目标，和主流程 `open_walk` 的约定一样，作者也写明了，影响很小。
+- 开发局 30–49 和正式局 0–29 不重合。
+
+**3. 指标误用**
+- **"站偏减半"只看了中位数**（19.46 → 9.76 cm）。90 分位没变（29.00 → 29.17 cm），最大值变差（43.95 → 67.98 cm），补过步的 96 局里有 19 局反而更偏。
+- **"站偏"被当成"难度"用，但在 TabletopGrasp 上这不成立。**
+  - 计划站位的参数是 `stand 0.3`、`side_off -0.2`，站准时目标在骨盆右侧约 21 cm。
+  - SONIC 不补步时横向走不够，目标反而落在正前方（`grasp_h` 的 y 在 −6 到 +14 cm），A 成功 13/30。
+  - relook 落在 10 cm 内的 13 局，A 只成功 2 局；同样这些局，none 成功 3 局。
+- J 的增量用 J0 当噪声尺度，问题见第一部分。
+
+**4. 事后挑选**
+- 论断 5 完全建立在事后分析（`posthoc.py` 和那几项查询）上，而且推翻了预注册判据的读法，见第四部分。
+- 预注册的"只看不补"拆分结果对 relook 不利（相对只看不补少 5 局），结论里没提。
+- 我自己补做了一个按局配对、按补步后站偏分组的对比（同样是事后分析）：
+
+  | 补步后站偏 | 局数 | relook A | 同样这些局 none A |
+  |---|---|---|---|
+  | ≤ 10 cm | 62 | 21 | 11 |
+  | 10–20 cm | 33 | 8 | 12 |
+  | > 20 cm | 25 | 2 | 7 |
+
+  这对"补准了就有用"有一定支持，但增益全在三个非 TabletopGrasp 任务上；TabletopGrasp 落准时是 2 vs 3。而且分组用的是处理之后才出现的变量：落准的 62 局里也有 7 局撞动目标、23 局碰桌，不能当因果证据。
+
+### 三、可能推翻主要结论的实验
+
+**E1：真值补步（主实验）**
+- **做法**：SONIC，CPU，正式 120 局，同样的种子。
+  - 新列 P：走到后和 relook 一样收手（0.8 s + 1.0 s），然后补步改用仿真真值：每步按真实骨盆下令、按真值判断，直到真实站偏 ≤ 3 cm 或走满 4 步。最终的位姿估计也用真值，然后按 A 伸手。
+  - 再加一列 P-notuck：同上，但不收手。
+  - P 是诊断用的天花板，用了真值，不进主表。
+  - 和 none、只看不补、relook 按局配对，做 McNemar 加布局符号检验，同时记录撞动目标和碰桌。
+- **算推翻**：P 的真实站偏中位数 ≤ 3 cm（确实补准了），但 A(P) − A(none) < +3，或者 A(P) ≤ 只看不补的 36 局。这说明站准了也不涨，"限制收益的是补步走不准"不成立，回到预注册"站位不是瓶颈"的读法。
+- **算支持**：A(P) − A(none) ≥ +10，并且 TabletopGrasp 不再少 4 局以上。
+- **附带**：P 和 P-notuck 差 5 局以上，说明收手后的起手姿势是一个独立因素。
+
+**E2：TabletopGrasp 的站位几何**
+- **做法**：只跑 TabletopGrasp 30 局，用真值把机器人放到两个站位，A 直接伸手，收手和不收手各跑一遍：
+  - (a) 计划站位；
+  - (b) 计划站位往左移 20 cm，让目标在正前方，模拟 none 的落点。
+- **算推翻**：如果 (b) 比 (a) 多 6 局以上，且 (a) ≤ none 的 13 局，那 TabletopGrasp 上 A 少的那 10 局是计划站位不适合 SONIC 直接伸手造成的，补得再准也没用。下一步应该改 SONIC 的站位目标，而不是改步法。
+
+**E3（较便宜）：只在 TabletopGrasp 上用真值替换最后一眼的估计**
+- **算推翻**：A 比 relook 多 3 局以上，就推翻"不是定位"。
+
+### 四、判定
+
+- **前半句"补步把站偏减半，但 A 列不涨"：支持。** 中位数 19.46 → 9.76 cm；A 是 31 vs 30（23/22，p 1.000；布局 17/12，p 0.458）。但要注明尾部没有改善。
+- **后半句"限制收益的是补步走不准，不是定位"：不支持作为结论，证据不足，而且和预注册读法冲突。**
+  - 它全部来自事后分析，分组用的是处理之后的变量。
+  - 在决定 A 列结果的 TabletopGrasp 上，数据和它相反：落准时 A 没有涨（2 vs 3）；定位失败直接让 none 成功过的 3 局失败；只看不补在这个任务上也少 4 局。
+  - CPU 的 none 本身就看不出站偏和成功率有关系。
+  - 补步加收手相对只看不补是净 −5。
+- **整体判定：证据不足。**
+
+**判据表：结果落在三行。**
+1. **"补步后站位误差中位数 ≤ 10 cm，但 A 多不到 3 局"**：9.76 cm，多 1 局。预注册写的结论是"站位不是瓶颈，假设 3 不成立；停止在站位上投入，转去查 SONIC 的手"。
+2. **"某个任务 relook 的 A 比 none 少 ≥ 4 局"**：TabletopGrasp 少 10 局。
+3. **"补步撞动目标 ≥ 10 局"**：19 局（按预注册度量是 20 局）。
+
+没落在的行：各项核对都通过；ScaleBFM 只差 −3 局；A 没有多 10 局，也不在多 3–9 局的区间；站偏中位数不超过 12 cm；补步后配准误差超过 5 cm 的是 6.6 %，没到 20 %（但 TabletopGrasp 单独是 17.6 %）；J0 那一行不适用。
+
+**作者读错的地方：**
+- **第 1 行**：结论没写"假设 3 不成立"，论断 5 反而把它改读成"补步走不准"，等于继续在站位上投入。这是事后改判据。
+- **第 2 行**：要求查的三项里，"伸手起始姿势（收手）"没有查。而且现有数据也分不开：TabletopGrasp 30 局里 29 局补了步，都收过手。
+- **第 3 行**：只报了局数，没写规定的下一步（回开发局试补步时离目标保持距离），也没说预测落空了。
+
+**落空的预测**（结论里都没点出来）：
+
+| 预测项 | 预测（relook 减 none） | 实际 |
+|---|---|---|
+| TabletopGrasp A | −5 到 +12 | −10 |
+| BendPick A | −3 到 +4 | +8 |
+| 官方时限内 A | −12 到 +3 | −22 |
+| 补步撞动目标 | 0–12 局 | 19 局 |
+
+**建议论断 5 改写为**："按预注册，结果落在'站位 ≤ 10 cm 但 A 多不到 3 局'这一行，假设 3 不成立。事后看到：补步执行误差中位数 16 cm；落在 10 cm 内的局 A 配对多 10 局，落偏的局少 9 局；但 TabletopGrasp 上落准也不涨。是否'补准就会涨'，留给真值补步实验（E1）来定。"
+
+本地留有核对用的副本：`/tmp/relook_rev_raw/raw.txt`（远程原始输出）、`/tmp/relook_rev_raw/frozen/simple_bench.py`（冻结代码），分析脚本是同目录下的 `an1.py`–`an7.py`。
 
 ## 协调人的决定（11-26，看过草稿后）
 
