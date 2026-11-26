@@ -705,6 +705,41 @@ cuRobo 规划时假设身体已经是预抓取的姿态，起点的手臂构型�
   - 在 H20 上用 `lrt_run.py release` 试跑过一次，导入和环境都正常。
   - 等协调人说开再开。
 
+**跨机器核对**（搭环境的 agent 做的，用的是本轮的冻结副本；输出在它自己的目录里，没碰本轮的认领和记录）：
+- 内容：在 H20 上重跑 ScaleBFM 的 candle 和 apple 第 30 局，每局四组，和 4090 正式运行的记录逐项比对。
+- 范围：除了墙钟时间、缓存标记和机器名，其余字段都比，91 个分段数组也都比。
+- apple 第 30 局走了路线。H20 发出的路线请求和 4090 的 md5 相同：两局记录里都是 `req_match: true`，apple 的是 `7272784b…`，candle 的是 `1f97825e…`。
+
+`h20_bringup_20261126/lml/lrt/cmp_lmlroute.txt`（md5 16c01685）原样：
+```
+scalebfm IThorBathroomLiftCandleFromFloor alone ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success False/False steps 685/685 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorBathroomLiftCandleFromFloor reachable ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success True/True steps 655/655 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorBathroomLiftCandleFromFloor route ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success False/False steps 685/685 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorBathroomLiftCandleFromFloor route_reachable ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success True/True steps 655/655 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorKitchenApproachTableAndLiftApple alone ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success False/False steps 1453/1453 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorKitchenApproachTableAndLiftApple reachable ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success False/False steps 1468/1468 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorKitchenApproachTableAndLiftApple route ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success False/False steps 1680/1680 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+scalebfm IThorKitchenApproachTableAndLiftApple route_reachable ep+0030: IDENTICAL (record fields except ['cached', 'host', 'think_s', 'think_wall_s', 'wall_s', 'wall_wait_s']; 91 segment arrays) success False/False steps 1679/1679 host di-20261023170751-nd9kr/di-20261118145956-zf4sr
+lrt check: 8 episodes, identical 8, differing 0
+```
+
+**H20 开跑**（09:36，协调人说开）：
+- 用的是 `dev/h20_start.sh`：守护 75 / 71 核，不管规划进程；队列是 `lrt_queue.sh extra h20`。
+- 环境和 4090 的 worker 相同，多一个 `LOCOMANI_WORKSPACE`；`CUDA_VISIBLE_DEVICES` 留空，nice 19；直接从冻结副本跑。
+- 先开 50 个（`dev/maxp_h20`），nowalk 第二阶段训练结束后加到 65。
+- 两台机器的 worker 都往同一个 `$O/routes/req` 写路线请求，由 4090 1–3 号卡上的规划进程出路线。
+- 第一个 H20 worker 启动时，ScaleBFM 认领了 117 局，完成 95 局。
+
+**H20 上的路径**：
+- H20 上 `/wuji-vefps-D/wuji-il` 是指向 `/wuji-vefps-D` 的符号链接，所以 H20 worker 的代码自检打印的是解析后的路径（`/wuji-vefps-D/yijie/…/code/…/env.py`），"副本以外的模块"是 0。文件是同一份。
+- 收尾时 `lrt_queue.sh` 只按 4090 的写法数"用副本里 env.py 启动的次数"，所以会漏掉 H20 的；到时两种写法分开数，贴进"结果"。
+
+**规划进程跟不跟得上**（09:37）：
+- 排队 0 个，在算的 1 个，没有错误。
+- 已答 92 个请求：51 个算了路线，41 个直接通过检查不用算路线。
+- 算了路线的请求，规划进程用时中位数 4.6 s、平均 5.4 s、最长 15.6 s；全部请求平均 3.0 s。
+- 三个规划进程一分钟大约能答 60 个，两台机器合起来最多一分钟完成约 20 局，所以不用加规划进程。
+
 ### 10. 意外：苹果换成真值 mask 后，"看完后规划失败"反而变多
 
 **现象**：苹果的"看完后规划失败"，SAM 3 下 8 局，真值 mask 下 15 局。其中 12 局是 SAM 3 能过、真值不能过；5 局反过来。协调人问原因是哪一种：
