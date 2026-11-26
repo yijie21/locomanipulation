@@ -828,6 +828,472 @@ SIMPLE val (data3 val, all, kept settled): 3252 segments, D median 2.654 cm
 - `eval_s0/eval.json`（md5 1330c526）、`eval_s1/eval.json`（md5 9963a0d9），以及每段误差的 `per_segment.npz`；
 - `range_N.json`。
 
+### 第二阶段（LocoManiLab；ScaleBFM、SONIC、HEFT）
+
+**运行**
+- H20 的 0、1 号卡，2026-11-26T09:27:52Z–10:33:21Z。18 个训练各跑满 30 000 步，每个 497–825 s。
+- 每次开训练前看的 nvidia-smi：0、1 号卡最多用到 5827 MiB。2、3 号卡一直是 912 MiB（只有 keepalive），我们没用。
+- 挑 checkpoint 只用 N 和 C 共用的原地 val，和第一阶段一样。
+- `lml/run/run.log` 节选。去掉了 18 组"nvidia-smi before / train … on GPU / nw_train arm"启动行和评估打出的 PRIMARY 行，后者见下面的 eval.txt；`$P` = `/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126`：
+
+```
+2026-11-26T09:27:52Z code ok (test 0); code $P/asrun2/code; out $P/lml/run; controllers scalebfm sonic heft; seeds 0 1 2
+scalebfm: SPLIT CHECK PASS
+sonic: SPLIT CHECK PASS
+heft: SPLIT CHECK PASS
+2026-11-26T09:27:52Z train
+train_heft_C_s0.log:E3_ensemble frac 1.0: best val median 3.408 cm (786.2 s) -> heft/models_C_s0/E3_ensemble_f1
+train_heft_C_s1.log:E3_ensemble frac 1.0: best val median 3.455 cm (811.0 s) -> heft/models_C_s1/E3_ensemble_f1
+train_heft_C_s2.log:E3_ensemble frac 1.0: best val median 3.383 cm (723.8 s) -> heft/models_C_s2/E3_ensemble_f1
+train_heft_N_s0.log:E3_ensemble frac 1.0: best val median 3.258 cm (801.7 s) -> heft/models_N_s0/E3_ensemble_f1
+train_heft_N_s1.log:E3_ensemble frac 1.0: best val median 3.246 cm (825.0 s) -> heft/models_N_s1/E3_ensemble_f1
+train_heft_N_s2.log:E3_ensemble frac 1.0: best val median 3.224 cm (820.5 s) -> heft/models_N_s2/E3_ensemble_f1
+train_scalebfm_C_s0.log:E3_ensemble frac 1.0: best val median 2.460 cm (518.0 s) -> scalebfm/models_C_s0/E3_ensemble_f1
+train_scalebfm_C_s1.log:E3_ensemble frac 1.0: best val median 2.425 cm (515.7 s) -> scalebfm/models_C_s1/E3_ensemble_f1
+train_scalebfm_C_s2.log:E3_ensemble frac 1.0: best val median 2.434 cm (708.0 s) -> scalebfm/models_C_s2/E3_ensemble_f1
+train_scalebfm_N_s0.log:E3_ensemble frac 1.0: best val median 2.408 cm (497.4 s) -> scalebfm/models_N_s0/E3_ensemble_f1
+train_scalebfm_N_s1.log:E3_ensemble frac 1.0: best val median 2.399 cm (544.5 s) -> scalebfm/models_N_s1/E3_ensemble_f1
+train_scalebfm_N_s2.log:E3_ensemble frac 1.0: best val median 2.375 cm (608.9 s) -> scalebfm/models_N_s2/E3_ensemble_f1
+train_sonic_C_s0.log:E3_ensemble frac 1.0: best val median 3.344 cm (638.8 s) -> sonic/models_C_s0/E3_ensemble_f1
+train_sonic_C_s1.log:E3_ensemble frac 1.0: best val median 3.373 cm (662.2 s) -> sonic/models_C_s1/E3_ensemble_f1
+train_sonic_C_s2.log:E3_ensemble frac 1.0: best val median 3.373 cm (671.4 s) -> sonic/models_C_s2/E3_ensemble_f1
+train_sonic_N_s0.log:E3_ensemble frac 1.0: best val median 3.348 cm (632.4 s) -> sonic/models_N_s0/E3_ensemble_f1
+train_sonic_N_s1.log:E3_ensemble frac 1.0: best val median 3.351 cm (660.9 s) -> sonic/models_N_s1/E3_ensemble_f1
+train_sonic_N_s2.log:E3_ensemble frac 1.0: best val median 3.338 cm (703.3 s) -> sonic/models_N_s2/E3_ensemble_f1
+2026-11-26T10:30:23Z eval scalebfm
+2026-11-26T10:31:26Z eval sonic
+2026-11-26T10:32:32Z eval heft
+2026-11-26T10:33:21Z done
+```
+
+- 挑 checkpoint 用的原地 val，N/C（种子 0 / 1 / 2）：ScaleBFM 0.979 / 0.989 / 0.976，SONIC 1.001 / 0.993 / 0.990，HEFT 0.956 / 0.940 / 0.953。
+
+**主评估：lmlreal 真实局，保留的段**（没摔、没丢、末端停稳；三个种子各自配对，再取平均；按局重抽 4000 次）
+
+- ScaleBFM（`lml/run/scalebfm/eval.txt`，md5 e0f10033），原文：
+
+```
+== lmlreal scalebfm (PRIMARY): 226 kept segments (not fallen, settled end) of 316, 129 episodes; reach_no 1 117, 2 82, 0 27; walked 174
+  all (via points included): n 226 (129 episodes)
+    median cm: D0 1.961 [1.548, 3.020] | D1 1.856 [1.320, 2.809] | D2 2.220 [1.540, 3.079] | N0 2.180 [1.769, 3.064] | N1 2.344 [1.823, 3.019] | N2 2.198 [1.732, 3.217] | C0 2.094 [1.622, 2.667] | C1 2.214 [1.619, 3.322] | C2 2.066 [1.634, 2.659]
+    p90 cm:    D0 30.90 | D1 30.71 | D2 30.61 | N0 30.64 | N1 30.62 | N2 30.53 | C0 30.81 | C1 30.75 | C2 30.64
+    attitude deg median: D0 3.07 | D1 3.58 | D2 3.35 | N0 3.93 | N1 3.61 | N2 4.05 | C0 3.50 | C1 3.37 | C2 3.51
+    N/C: mean over seeds 1.055 [0.954, 1.229]; per seed N0/C0 1.041 [0.949, 1.253], N1/C1 1.059 [0.873, 1.327], N2/C2 1.064 [0.934, 1.312]
+    C/D: mean over seeds 1.064 [0.909, 1.207]; per seed C0/D0 1.068 [0.810, 1.230], C1/D1 1.192 [0.991, 1.459], C2/D2 0.930 [0.813, 1.130]
+    N/D: mean over seeds 1.122 [0.968, 1.345]; per seed N0/D0 1.112 [0.875, 1.313], N1/D1 1.263 [1.025, 1.657], N2/D2 0.990 [0.877, 1.256]
+  第一下 (reach_no 1): n 117 (117 episodes)
+    median cm: D0 1.336 [0.991, 1.480] | D1 1.224 [1.063, 1.352] | D2 1.240 [1.084, 1.450] | N0 1.679 [1.201, 2.184] | N1 1.823 [1.221, 2.334] | N2 1.626 [1.278, 2.043] | C0 1.420 [1.215, 1.593] | C1 1.212 [1.022, 1.526] | C2 1.339 [1.070, 1.600]
+    p90 cm:    D0 30.57 | D1 29.78 | D2 29.37 | N0 29.48 | N1 29.70 | N2 28.79 | C0 29.28 | C1 29.71 | C2 29.82
+    attitude deg median: D0 2.29 | D1 2.74 | D2 2.33 | N0 2.81 | N1 2.79 | N2 3.20 | C0 2.32 | C1 2.34 | C2 2.34
+    N/C: mean over seeds 1.300 [1.045, 1.540]; per seed N0/C0 1.182 [0.943, 1.444], N1/C1 1.504 [1.060, 1.859], N2/C2 1.215 [1.023, 1.529]
+    C/D: mean over seeds 1.044 [0.944, 1.181]; per seed C0/D0 1.063 [0.936, 1.330], C1/D1 0.990 [0.879, 1.186], C2/D2 1.080 [0.883, 1.265]
+    N/D: mean over seeds 1.353 [1.107, 1.586]; per seed N0/D0 1.257 [0.999, 1.550], N1/D1 1.489 [1.092, 1.802], N2/D2 1.312 [1.119, 1.587]
+  第二下 (reach_no 2): n 82 (82 episodes)
+    median cm: D0 2.985 [2.186, 3.800] | D1 2.543 [1.899, 3.494] | D2 2.793 [2.231, 3.756] | N0 2.517 [1.918, 3.552] | N1 2.793 [1.827, 3.655] | N2 2.588 [1.956, 3.913] | C0 2.632 [2.115, 3.602] | C1 3.155 [2.577, 3.991] | C2 2.659 [2.233, 3.568]
+    p90 cm:    D0 9.26 | D1 8.08 | D2 8.50 | N0 8.07 | N1 8.13 | N2 8.77 | C0 9.18 | C1 9.15 | C2 8.62
+    attitude deg median: D0 4.23 | D1 4.35 | D2 3.95 | N0 4.32 | N1 4.57 | N2 4.54 | C0 4.49 | C1 3.91 | C2 3.98
+    N/C: mean over seeds 0.938 [0.801, 1.114]; per seed N0/C0 0.956 [0.823, 1.168], N1/C1 0.885 [0.679, 1.051], N2/C2 0.973 [0.796, 1.285]
+    C/D: mean over seeds 1.025 [0.932, 1.143]; per seed C0/D0 0.882 [0.766, 1.055], C1/D1 1.241 [1.043, 1.461], C2/D2 0.952 [0.850, 1.074]
+    N/D: mean over seeds 0.956 [0.862, 1.132]; per seed N0/D0 0.843 [0.742, 1.020], N1/D1 1.098 [0.884, 1.361], N2/D2 0.927 [0.747, 1.245]
+  walked: n 174 (96 episodes)
+    median cm: D0 2.308 [1.578, 3.467] | D1 2.180 [1.359, 3.249] | D2 2.404 [1.736, 3.319] | N0 2.318 [1.934, 3.322] | N1 2.629 [2.088, 3.383] | N2 2.400 [1.972, 3.554] | C0 2.245 [1.849, 3.282] | C1 2.653 [1.634, 3.717] | C2 2.292 [1.805, 3.202]
+    p90 cm:    D0 31.35 | D1 31.31 | D2 31.43 | N0 31.44 | N1 31.17 | N2 31.21 | C0 31.62 | C1 31.57 | C2 32.07
+    attitude deg median: D0 3.36 | D1 4.03 | D2 3.63 | N0 4.16 | N1 3.93 | N2 4.60 | C0 4.21 | C1 3.55 | C2 3.80
+    N/C: mean over seeds 1.024 [0.934, 1.240]; per seed N0/C0 1.033 [0.926, 1.280], N1/C1 0.991 [0.843, 1.370], N2/C2 1.047 [0.906, 1.358]
+    C/D: mean over seeds 1.048 [0.892, 1.217]; per seed C0/D0 0.973 [0.783, 1.244], C1/D1 1.217 [0.984, 1.479], C2/D2 0.954 [0.799, 1.067]
+    N/D: mean over seeds 1.070 [0.933, 1.351]; per seed N0/D0 1.005 [0.829, 1.288], N1/D1 1.206 [0.968, 1.684], N2/D2 0.999 [0.833, 1.271]
+  in place: n 52 (33 episodes)
+    median cm: D0 1.059 [0.770, 2.724] | D1 0.876 [0.549, 2.822] | D2 1.214 [0.749, 2.700] | N0 1.093 [0.764, 2.896] | N1 1.099 [0.915, 2.847] | N2 1.508 [0.831, 2.715] | C0 1.065 [0.726, 2.373] | C1 1.112 [0.737, 2.719] | C2 0.904 [0.745, 2.183]
+    p90 cm:    D0 29.88 | D1 29.33 | D2 28.90 | N0 28.60 | N1 29.02 | N2 28.39 | C0 28.40 | C1 29.11 | C2 29.28
+    attitude deg median: D0 1.73 | D1 1.62 | D2 1.67 | N0 1.74 | N1 2.14 | N2 1.70 | C0 2.33 | C1 1.64 | C2 1.88
+    N/C: mean over seeds 1.228 [0.920, 1.369]; per seed N0/C0 1.026 [0.722, 1.329], N1/C1 0.988 [0.774, 1.315], N2/C2 1.669 [0.904, 1.923]
+    C/D: mean over seeds 1.007 [0.855, 1.523]; per seed C0/D0 1.006 [0.782, 1.591], C1/D1 1.270 [0.963, 1.936], C2/D2 0.744 [0.733, 1.294]
+    N/D: mean over seeds 1.177 [0.913, 1.617]; per seed N0/D0 1.032 [0.717, 1.547], N1/D1 1.256 [0.988, 1.779], N2/D2 1.242 [0.787, 1.922]
+  reproduction: D0 median 1.96050 vs train3b lml_real.json 1.96050 (+0.00001); n 226 vs 226
+  reproduction: D1 median 1.85640 vs train3b lml_real.json 1.85640 (+0.00000); n 226 vs 226
+  reproduction: D2 median 2.22039 vs train3b lml_real.json 2.22039 (+0.00000); n 226 vs 226
+```
+
+- SONIC（`lml/run/sonic/eval.txt`，md5 4969186d），原文：
+
+```
+== lmlreal sonic (PRIMARY): 129 kept segments (not fallen, settled end) of 295, 90 episodes; reach_no 1 70, 2 39, 0 20; walked 97
+  all (via points included): n 129 (90 episodes)
+    median cm: D0 1.841 [1.680, 2.104] | D1 1.833 [1.657, 1.988] | D2 1.853 [1.794, 2.094] | N0 2.146 [1.849, 2.427] | N1 1.994 [1.778, 2.229] | N2 2.078 [1.740, 2.318] | C0 1.962 [1.754, 2.139] | C1 2.176 [1.873, 2.400] | C2 2.067 [1.781, 2.315]
+    p90 cm:    D0 4.66 | D1 4.24 | D2 4.92 | N0 5.02 | N1 4.82 | N2 5.30 | C0 4.86 | C1 4.92 | C2 5.54
+    attitude deg median: D0 4.90 | D1 4.32 | D2 4.61 | N0 5.01 | N1 5.01 | N2 4.64 | C0 4.51 | C1 5.01 | C2 4.56
+    N/C: mean over seeds 1.005 [0.928, 1.100]; per seed N0/C0 1.094 [0.953, 1.222], N1/C1 0.916 [0.837, 1.057], N2/C2 1.005 [0.873, 1.147]
+    C/D: mean over seeds 1.123 [1.021, 1.171]; per seed C0/D0 1.065 [0.947, 1.146], C1/D1 1.187 [1.036, 1.307], C2/D2 1.115 [0.964, 1.187]
+    N/D: mean over seeds 1.125 [1.021, 1.184]; per seed N0/D0 1.166 [0.978, 1.289], N1/D1 1.087 [0.998, 1.183], N2/D2 1.121 [0.961, 1.186]
+  第一下 (reach_no 1): n 70 (70 episodes)
+    median cm: D0 1.994 [1.571, 2.203] | D1 1.866 [1.572, 2.324] | D2 1.900 [1.687, 2.214] | N0 2.213 [1.827, 2.524] | N1 2.090 [1.851, 2.474] | N2 2.064 [1.676, 2.539] | C0 2.175 [1.781, 2.457] | C1 2.325 [1.803, 2.730] | C2 2.133 [1.802, 2.814]
+    p90 cm:    D0 4.56 | D1 4.16 | D2 4.91 | N0 5.01 | N1 4.80 | N2 5.31 | C0 4.86 | C1 4.91 | C2 5.36
+    attitude deg median: D0 4.74 | D1 4.30 | D2 4.55 | N0 4.67 | N1 4.76 | N2 4.44 | C0 4.30 | C1 5.45 | C2 4.65
+    N/C: mean over seeds 0.961 [0.848, 1.080]; per seed N0/C0 1.017 [0.864, 1.157], N1/C1 0.899 [0.776, 1.116], N2/C2 0.968 [0.753, 1.143]
+    C/D: mean over seeds 1.153 [1.053, 1.283]; per seed C0/D0 1.091 [0.992, 1.303], C1/D1 1.246 [1.010, 1.423], C2/D2 1.123 [0.975, 1.387]
+    N/D: mean over seeds 1.105 [1.008, 1.227]; per seed N0/D0 1.110 [0.957, 1.361], N1/D1 1.120 [0.949, 1.271], N2/D2 1.087 [0.929, 1.237]
+  第二下 (reach_no 2): n 39 (39 episodes)
+    median cm: D0 1.979 [1.484, 2.223] | D1 1.746 [1.494, 2.342] | D2 1.843 [1.547, 2.342] | N0 1.894 [1.590, 2.475] | N1 1.746 [1.470, 2.194] | N2 1.770 [1.571, 2.250] | C0 1.811 [1.455, 2.084] | C1 1.998 [1.534, 2.422] | C2 1.833 [1.540, 2.356]
+    p90 cm:    D0 3.48 | D1 3.82 | D2 3.57 | N0 3.82 | N1 3.81 | N2 3.94 | C0 3.39 | C1 3.42 | C2 3.73
+    attitude deg median: D0 5.06 | D1 4.28 | D2 4.92 | N0 5.16 | N1 5.01 | N2 4.64 | C0 4.25 | C1 4.55 | C2 4.45
+    N/C: mean over seeds 0.962 [0.863, 1.123]; per seed N0/C0 1.046 [0.878, 1.361], N1/C1 0.874 [0.669, 1.039], N2/C2 0.966 [0.809, 1.178]
+    C/D: mean over seeds 1.018 [0.921, 1.145]; per seed C0/D0 0.915 [0.810, 1.075], C1/D1 1.144 [0.960, 1.317], C2/D2 0.995 [0.856, 1.203]
+    N/D: mean over seeds 0.973 [0.880, 1.144]; per seed N0/D0 0.957 [0.858, 1.280], N1/D1 1.000 [0.773, 1.172], N2/D2 0.961 [0.854, 1.173]
+  walked: n 97 (69 episodes)
+    median cm: D0 1.896 [1.685, 2.204] | D1 1.960 [1.721, 2.213] | D2 1.884 [1.800, 2.288] | N0 2.321 [1.880, 2.505] | N1 2.194 [1.970, 2.510] | N2 2.220 [1.852, 2.665] | C0 2.031 [1.771, 2.403] | C1 2.272 [1.815, 2.546] | C2 2.128 [1.823, 2.395]
+    p90 cm:    D0 5.51 | D1 5.83 | D2 5.53 | N0 6.65 | N1 6.06 | N2 5.94 | C0 5.64 | C1 5.97 | C2 6.46
+    attitude deg median: D0 5.52 | D1 4.84 | D2 5.43 | N0 5.36 | N1 5.49 | N2 4.90 | C0 5.18 | C1 5.66 | C2 5.15
+    N/C: mean over seeds 1.051 [0.957, 1.169]; per seed N0/C0 1.143 [0.934, 1.267], N1/C1 0.966 [0.881, 1.155], N2/C2 1.043 [0.916, 1.244]
+    C/D: mean over seeds 1.120 [0.998, 1.178]; per seed C0/D0 1.071 [0.962, 1.175], C1/D1 1.159 [0.972, 1.284], C2/D2 1.129 [0.940, 1.226]
+    N/D: mean over seeds 1.174 [1.049, 1.253]; per seed N0/D0 1.225 [0.996, 1.351], N1/D1 1.119 [1.005, 1.251], N2/D2 1.178 [1.000, 1.293]
+  in place: n 32 (21 episodes)
+    median cm: D0 1.729 [1.348, 2.129] | D1 1.516 [1.109, 1.878] | D2 1.757 [1.348, 2.142] | N0 1.833 [1.465, 2.259] | N1 1.628 [1.325, 1.881] | N2 1.680 [1.302, 2.097] | C0 1.707 [1.368, 2.142] | C1 1.989 [1.630, 2.603] | C2 1.808 [1.591, 2.386]
+    p90 cm:    D0 3.00 | D1 2.60 | D2 2.78 | N0 3.26 | N1 2.64 | N2 2.76 | C0 2.85 | C1 2.88 | C2 3.33
+    attitude deg median: D0 3.70 | D1 3.87 | D2 3.38 | N0 3.78 | N1 3.71 | N2 3.76 | C0 3.24 | C1 3.81 | C2 3.80
+    N/C: mean over seeds 0.941 [0.824, 1.011]; per seed N0/C0 1.074 [0.884, 1.251], N1/C1 0.819 [0.662, 0.948], N2/C2 0.930 [0.725, 1.065]
+    C/D: mean over seeds 1.109 [1.017, 1.277]; per seed C0/D0 0.987 [0.817, 1.221], C1/D1 1.312 [1.129, 1.583], C2/D2 1.029 [0.897, 1.312]
+    N/D: mean over seeds 1.030 [0.931, 1.128]; per seed N0/D0 1.060 [0.838, 1.315], N1/D1 1.074 [0.896, 1.195], N2/D2 0.956 [0.804, 1.158]
+  reproduction: D0 median 1.84118 vs train3b lml_real.json 1.84117 (+0.00000); n 129 vs 129
+  reproduction: D1 median 1.83337 vs train3b lml_real.json 1.83337 (+0.00000); n 129 vs 129
+  reproduction: D2 median 1.85337 vs train3b lml_real.json 1.85337 (-0.00000); n 129 vs 129
+```
+
+- HEFT（`lml/run/heft/eval.txt`，md5 3b636f21），原文：
+
+```
+== lmlreal heft (PRIMARY): 69 kept segments (not fallen, settled end) of 166, 44 episodes; reach_no 1 27, 2 21, 0 21; walked 40
+  all (via points included): n 69 (44 episodes)
+    median cm: D0 24.310 [2.297, 26.934] | D1 23.654 [2.380, 26.137] | D2 24.721 [2.719, 26.994] | N0 24.470 [2.374, 26.500] | N1 24.549 [2.063, 26.730] | N2 24.819 [2.372, 27.404] | C0 22.293 [2.540, 25.874] | C1 23.656 [1.959, 26.649] | C2 23.178 [2.466, 26.676]
+    p90 cm:    D0 36.76 | D1 36.78 | D2 37.10 | N0 37.79 | N1 38.32 | N2 38.96 | C0 36.58 | C1 35.16 | C2 35.87
+    attitude deg median: D0 44.89 | D1 44.38 | D2 44.72 | N0 43.59 | N1 43.31 | N2 42.72 | C0 42.74 | C1 43.49 | C2 45.20
+    N/C: mean over seeds 1.069 [0.748, 1.098]; per seed N0/C0 1.098 [0.735, 1.132], N1/C1 1.038 [0.769, 1.074], N2/C2 1.071 [0.754, 1.113]
+    C/D: mean over seeds 0.952 [0.913, 1.197]; per seed C0/D0 0.917 [0.881, 1.171], C1/D1 1.000 [0.824, 1.255], C2/D2 0.938 [0.886, 1.145]
+    N/D: mean over seeds 1.016 [0.896, 1.036]; per seed N0/D0 1.007 [0.838, 1.039], N1/D1 1.038 [0.876, 1.049], N2/D2 1.004 [0.833, 1.034]
+  第一下 (reach_no 1): n 27 (27 episodes)
+    median cm: D0 28.987 [1.887, 34.397] | D1 29.068 [1.499, 34.492] | D2 29.957 [1.702, 36.142] | N0 30.235 [1.772, 36.785] | N1 30.386 [1.682, 36.870] | N2 30.248 [1.524, 36.235] | C0 28.753 [1.621, 34.776] | C1 28.373 [1.895, 33.387] | C2 28.752 [2.195, 34.062]
+    p90 cm:    D0 37.95 | D1 37.56 | D2 38.04 | N0 37.97 | N1 38.37 | N2 39.15 | C0 37.27 | C1 37.12 | C2 37.13
+    attitude deg median: D0 45.83 | D1 38.66 | D2 39.83 | N0 38.13 | N1 43.71 | N2 28.93 | C0 41.63 | C1 40.15 | C2 46.70
+    N/C: mean over seeds 1.058 [0.830, 1.396]; per seed N0/C0 1.052 [0.884, 1.502], N1/C1 1.071 [0.851, 1.323], N2/C2 1.052 [0.674, 1.381]
+    C/D: mean over seeds 0.976 [0.762, 1.256]; per seed C0/D0 0.992 [0.722, 1.239], C1/D1 0.976 [0.842, 1.321], C2/D2 0.960 [0.721, 1.238]
+    N/D: mean over seeds 1.033 [0.925, 1.120]; per seed N0/D0 1.043 [0.895, 1.170], N1/D1 1.045 [1.011, 1.190], N2/D2 1.010 [0.758, 1.022]
+  第二下 (reach_no 2): n 21 (21 episodes)
+    median cm: D0 2.228 [1.902, 2.335] | D1 2.233 [1.859, 2.392] | D2 2.516 [1.893, 2.729] | N0 2.277 [1.855, 2.387] | N1 1.964 [1.628, 2.095] | N2 2.104 [1.905, 2.383] | C0 2.486 [2.298, 2.608] | C1 1.832 [1.748, 2.015] | C2 2.313 [2.161, 2.475]
+    p90 cm:    D0 29.40 | D1 31.46 | D2 35.76 | N0 35.43 | N1 38.12 | N2 36.69 | C0 27.68 | C1 30.02 | C2 30.42
+    attitude deg median: D0 1.26 | D1 1.44 | D2 1.81 | N0 2.06 | N1 2.42 | N2 1.87 | C0 1.50 | C1 1.09 | C2 2.06
+    N/C: mean over seeds 0.966 [0.806, 1.009]; per seed N0/C0 0.916 [0.769, 0.966], N1/C1 1.072 [0.867, 1.140], N2/C2 0.910 [0.745, 0.987]
+    C/D: mean over seeds 0.952 [0.926, 1.153]; per seed C0/D0 1.116 [1.062, 1.223], C1/D1 0.820 [0.770, 1.075], C2/D2 0.919 [0.863, 1.154]
+    N/D: mean over seeds 0.912 [0.885, 0.976]; per seed N0/D0 1.022 [0.917, 1.058], N1/D1 0.879 [0.811, 0.920], N2/D2 0.836 [0.771, 1.073]
+  walked: n 40 (26 episodes)
+    median cm: D0 28.792 [26.839, 30.376] | D1 28.318 [25.983, 31.457] | D2 28.620 [26.943, 35.760] | N0 27.982 [25.997, 35.429] | N1 27.886 [26.499, 36.870] | N2 28.314 [27.117, 36.235] | C0 27.605 [25.623, 29.548] | C1 28.151 [26.637, 30.020] | C2 27.575 [26.439, 30.417]
+    p90 cm:    D0 46.15 | D1 47.92 | D2 43.11 | N0 44.30 | N1 49.70 | N2 46.87 | C0 40.03 | C1 38.88 | C2 38.86
+    attitude deg median: D0 71.76 | D1 71.92 | D2 72.79 | N0 70.74 | N1 71.34 | N2 69.89 | C0 70.53 | C1 72.07 | C2 71.57
+    N/C: mean over seeds 1.010 [0.960, 1.255]; per seed N0/C0 1.014 [0.958, 1.259], N1/C1 0.991 [0.919, 1.249], N2/C2 1.027 [0.972, 1.255]
+    C/D: mean over seeds 0.972 [0.912, 1.001]; per seed C0/D0 0.959 [0.920, 0.979], C1/D1 0.994 [0.954, 1.026], C2/D2 0.963 [0.799, 1.018]
+    N/D: mean over seeds 0.982 [0.942, 1.146]; per seed N0/D0 0.972 [0.914, 1.200], N1/D1 0.985 [0.906, 1.240], N2/D2 0.989 [0.978, 1.031]
+  in place: n 29 (18 episodes)
+    median cm: D0 1.887 [1.728, 2.193] | D1 1.633 [1.439, 2.006] | D2 1.820 [1.673, 2.123] | N0 1.772 [1.605, 2.167] | N1 1.628 [1.467, 1.943] | N2 1.574 [1.327, 2.008] | C0 2.215 [2.010, 2.326] | C1 1.783 [1.610, 1.833] | C2 2.161 [1.932, 2.287]
+    p90 cm:    D0 3.75 | D1 4.06 | D2 4.23 | N0 3.98 | N1 4.09 | N2 3.78 | C0 4.42 | C1 4.45 | C2 4.46
+    attitude deg median: D0 1.30 | D1 1.28 | D2 1.38 | N0 1.54 | N1 1.61 | N2 1.58 | C0 1.47 | C1 0.91 | C2 1.74
+    N/C: mean over seeds 0.814 [0.768, 0.941]; per seed N0/C0 0.800 [0.733, 0.960], N1/C1 0.913 [0.864, 1.060], N2/C2 0.728 [0.658, 0.892]
+    C/D: mean over seeds 1.151 [1.011, 1.200]; per seed C0/D0 1.174 [0.965, 1.275], C1/D1 1.091 [0.902, 1.220], C2/D2 1.188 [1.057, 1.258]
+    N/D: mean over seeds 0.934 [0.891, 1.000]; per seed N0/D0 0.939 [0.884, 1.018], N1/D1 0.997 [0.895, 1.131], N2/D2 0.865 [0.750, 0.992]
+  reproduction: D0 median 24.30997 vs train3b lml_real.json 24.30997 (+0.00000); n 69 vs 69
+  reproduction: D1 median 23.65374 vs train3b lml_real.json 23.65374 (+0.00000); n 69 vs 69
+  reproduction: D2 median 24.72060 vs train3b lml_real.json 24.72060 (+0.00000); n 69 vs 69
+```
+
+- 三份都打出了 `REPRODUCTION PASS`：D0–D2 的中位数和 train3b 的 `lml_real.json` 相差不超过 0.00001 cm，段数相同。
+
+**次要评估：各控制器 data3 的留出集**（val + test_iid，没摔、停稳；按重置重抽 2000 次）。从 eval.txt 里 `grep -E "^== data3|^  (first|chained|all)|N/C:|C/D:"` 取出的行，原文：
+
+```
+[scalebfm]
+== data3 scalebfm held out (val + test_iid, kept settled): 6160 segments
+  first, in place: n 2154 (2154 resets)
+    N/C: mean over seeds 0.964 [0.935, 0.989]; per seed N0/C0 0.956 [0.913, 0.994], N1/C1 0.975 [0.936, 1.015], N2/C2 0.960 [0.917, 0.995]
+    C/D: mean over seeds 1.135 [1.106, 1.170]; per seed C0/D0 1.142 [1.098, 1.191], C1/D1 1.148 [1.102, 1.196], C2/D2 1.114 [1.076, 1.168]
+  first, walk first: n 1016 (1016 resets)
+    N/C: mean over seeds 1.191 [1.148, 1.249]; per seed N0/C0 1.138 [1.083, 1.205], N1/C1 1.221 [1.161, 1.294], N2/C2 1.215 [1.161, 1.290]
+    C/D: mean over seeds 1.179 [1.131, 1.227]; per seed C0/D0 1.204 [1.147, 1.282], C1/D1 1.143 [1.082, 1.212], C2/D2 1.191 [1.117, 1.244]
+  chained, in place: n 2006 (2006 resets)
+    N/C: mean over seeds 0.990 [0.964, 1.013]; per seed N0/C0 0.989 [0.951, 1.023], N1/C1 0.978 [0.950, 1.009], N2/C2 1.003 [0.966, 1.037]
+    C/D: mean over seeds 1.084 [1.063, 1.114]; per seed C0/D0 1.071 [1.036, 1.113], C1/D1 1.100 [1.070, 1.145], C2/D2 1.080 [1.050, 1.119]
+  chained, after a walk: n 984 (984 resets)
+    N/C: mean over seeds 1.012 [0.983, 1.053]; per seed N0/C0 1.003 [0.959, 1.073], N1/C1 1.000 [0.956, 1.052], N2/C2 1.033 [0.983, 1.086]
+    C/D: mean over seeds 1.076 [1.042, 1.108]; per seed C0/D0 1.089 [1.023, 1.152], C1/D1 1.073 [1.019, 1.103], C2/D2 1.067 [1.026, 1.124]
+  all: n 6160 (4505 resets)
+    N/C: mean over seeds 1.027 [1.008, 1.046]; per seed N0/C0 1.022 [0.997, 1.045], N1/C1 1.033 [1.010, 1.059], N2/C2 1.025 [1.000, 1.049]
+    C/D: mean over seeds 1.111 [1.094, 1.128]; per seed C0/D0 1.116 [1.094, 1.144], C1/D1 1.101 [1.075, 1.125], C2/D2 1.118 [1.090, 1.142]
+[sonic]
+== data3 sonic held out (val + test_iid, kept settled): 5940 segments
+  first, in place: n 2115 (2115 resets)
+    N/C: mean over seeds 0.976 [0.954, 0.999]; per seed N0/C0 0.985 [0.955, 1.018], N1/C1 0.970 [0.940, 1.003], N2/C2 0.973 [0.941, 1.001]
+    C/D: mean over seeds 1.097 [1.076, 1.116]; per seed C0/D0 1.088 [1.059, 1.118], C1/D1 1.103 [1.071, 1.127], C2/D2 1.100 [1.068, 1.132]
+  first, walk first: n 1015 (1015 resets)
+    N/C: mean over seeds 1.016 [0.976, 1.056]; per seed N0/C0 1.017 [0.962, 1.065], N1/C1 1.009 [0.956, 1.073], N2/C2 1.021 [0.973, 1.073]
+    C/D: mean over seeds 1.078 [1.043, 1.111]; per seed C0/D0 1.056 [1.014, 1.104], C1/D1 1.065 [1.007, 1.111], C2/D2 1.115 [1.062, 1.159]
+  chained, in place: n 1863 (1863 resets)
+    N/C: mean over seeds 0.970 [0.949, 0.993]; per seed N0/C0 0.966 [0.934, 1.003], N1/C1 0.975 [0.941, 1.006], N2/C2 0.967 [0.944, 1.002]
+    C/D: mean over seeds 1.094 [1.068, 1.119]; per seed C0/D0 1.105 [1.067, 1.140], C1/D1 1.087 [1.054, 1.131], C2/D2 1.089 [1.051, 1.120]
+  chained, after a walk: n 947 (947 resets)
+    N/C: mean over seeds 0.967 [0.934, 1.011]; per seed N0/C0 0.956 [0.912, 1.006], N1/C1 0.979 [0.931, 1.036], N2/C2 0.966 [0.927, 1.029]
+    C/D: mean over seeds 1.098 [1.057, 1.134]; per seed C0/D0 1.084 [1.031, 1.151], C1/D1 1.076 [1.023, 1.122], C2/D2 1.133 [1.073, 1.184]
+  all: n 5940 (4371 resets)
+    N/C: mean over seeds 0.976 [0.962, 0.992]; per seed N0/C0 0.983 [0.959, 1.004], N1/C1 0.971 [0.955, 0.994], N2/C2 0.975 [0.957, 0.993]
+    C/D: mean over seeds 1.100 [1.086, 1.115]; per seed C0/D0 1.096 [1.074, 1.121], C1/D1 1.097 [1.072, 1.117], C2/D2 1.108 [1.089, 1.127]
+[heft]
+== data3 heft held out (val + test_iid, kept settled): 3068 segments
+  first, in place: n 1423 (1423 resets)
+    N/C: mean over seeds 0.954 [0.918, 0.989]; per seed N0/C0 0.942 [0.885, 0.983], N1/C1 0.976 [0.920, 1.022], N2/C2 0.943 [0.897, 1.008]
+    C/D: mean over seeds 1.166 [1.111, 1.207]; per seed C0/D0 1.157 [1.092, 1.210], C1/D1 1.180 [1.083, 1.240], C2/D2 1.160 [1.098, 1.230]
+  first, walk first: n 657 (657 resets)
+    N/C: mean over seeds 1.177 [1.095, 1.284]; per seed N0/C0 1.193 [1.081, 1.295], N1/C1 1.112 [1.021, 1.244], N2/C2 1.226 [1.131, 1.394]
+    C/D: mean over seeds 1.129 [1.057, 1.187]; per seed C0/D0 1.070 [0.988, 1.153], C1/D1 1.171 [1.068, 1.263], C2/D2 1.146 [1.048, 1.219]
+  chained, in place: n 671 (671 resets)
+    N/C: mean over seeds 0.975 [0.923, 1.019]; per seed N0/C0 0.964 [0.880, 1.020], N1/C1 0.964 [0.903, 1.040], N2/C2 0.997 [0.919, 1.057]
+    C/D: mean over seeds 1.076 [1.029, 1.129]; per seed C0/D0 1.061 [0.997, 1.155], C1/D1 1.082 [1.005, 1.139], C2/D2 1.086 [1.021, 1.162]
+  chained, after a walk: n 317 (317 resets)
+    N/C: mean over seeds 0.993 [0.904, 1.067]; per seed N0/C0 0.919 [0.853, 1.041], N1/C1 1.008 [0.883, 1.112], N2/C2 1.050 [0.910, 1.129]
+    C/D: mean over seeds 1.077 [1.003, 1.143]; per seed C0/D0 1.199 [1.029, 1.260], C1/D1 1.036 [0.951, 1.170], C2/D2 0.996 [0.926, 1.139]
+  all: n 3068 (2462 resets)
+    N/C: mean over seeds 1.023 [0.987, 1.056]; per seed N0/C0 1.040 [0.983, 1.083], N1/C1 1.004 [0.960, 1.048], N2/C2 1.024 [0.988, 1.076]
+    C/D: mean over seeds 1.111 [1.089, 1.147]; per seed C0/D0 1.074 [1.041, 1.133], C1/D1 1.115 [1.080, 1.161], C2/D2 1.145 [1.104, 1.188]
+```
+
+**修订 3 的次要分析：真实局走过去后的第一下**（`nw2_walkfit.py`，冻结在 `asrun3/code/`，H20 CPU，三个控制器并行，各 4 线程）。运行命令见 `lml/run/walkfit_launch.sh`，它的第一行是 `# notebook: selfmodel_nowalk_20261126`。从 `lml/run/<控制器>/walkfit/walkfit.txt` 里取误差、比值、range (39)、nearer 这几行，`; nn median` 以后的部分略去：
+
+```
+[scalebfm]
+scalebfm: lmlreal kept 226 segments; models ['D0', 'D1', 'D2', 'N0', 'N1', 'N2', 'C0', 'C1', 'C2']; eval /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/lml/run/scalebfm/eval
+== 1. errors, real first reaches (reach_no 1; kept: not fallen, settled end)
+  第一下, walked: n 85 (85 episodes)
+    N/C mean over seeds 1.362 [1.085, 1.596]; per seed N0/C0 1.209 [1.007, 1.454], N1/C1 1.569 [1.111, 1.972], N2/C2 1.308 [1.048, 1.591]
+    share N_k error > C_k error, mean over seeds 0.545 [0.463, 0.627]; per seed 0.529, 0.494, 0.612
+    C/D mean over seeds 1.027 [0.948, 1.171]
+  第一下, in place: n 32 (32 episodes)
+    N/C mean over seeds 1.134 [0.987, 1.532]; per seed N0/C0 1.174 [0.947, 1.540], N1/C1 1.193 [0.774, 2.216], N2/C2 1.034 [0.807, 1.404]
+    share N_k error > C_k error, mean over seeds 0.510 [0.427, 0.604]; per seed 0.656, 0.594, 0.281
+    C/D mean over seeds 1.104 [0.817, 1.835]
+  第一下 chain 0, walked: n 49 (49 episodes)
+    N/C mean over seeds 1.276 [1.037, 1.742]; per seed N0/C0 1.174 [0.909, 1.475], N1/C1 1.271 [0.936, 1.796], N2/C2 1.384 [1.104, 2.148]
+    share N_k error > C_k error, mean over seeds 0.612 [0.510, 0.707]; per seed 0.592, 0.469, 0.776
+    C/D mean over seeds 0.895 [0.815, 1.025]
+  第一下 chain 0, in place: n 32 (32 episodes)
+    N/C mean over seeds 1.134 [0.983, 1.522]; per seed N0/C0 1.174 [0.943, 1.532], N1/C1 1.193 [0.774, 2.213], N2/C2 1.034 [0.811, 1.410]
+    share N_k error > C_k error, mean over seeds 0.510 [0.417, 0.604]; per seed 0.656, 0.594, 0.281
+    C/D mean over seeds 1.104 [0.834, 1.840]
+== 2. starts: D's training split 847551 segments (data3, data3b, mid_data3, mid_data3b); reference sets all 847551, walk-first 283850, walk-first chain 0 114746, in place (N's set) 563701; neighbour space 273 x0 columns (204 dropped)
+  reference all: 847551 segments, 28786 resets; neighbour p99 20.479
+    第一下, walked (n 85, 85 episodes): joints 0.859 [0.788, 0.929]; pelvis 0.988 [0.965, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.847 [0.765, 0.918]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 32, 32 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference walk-first: 283850 segments, 9698 resets; neighbour p99 24.009
+    第一下, walked (n 85, 85 episodes): joints 0.859 [0.776, 0.918]; pelvis 0.988 [0.965, 1.000]; hands 0.988 [0.965, 1.000]; range (39) 0.835 [0.753, 0.906]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 32, 32 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference walk-first chain 0: 114746 segments, 5771 resets; neighbour p99 18.318
+    第一下, walked (n 85, 85 episodes): joints 0.859 [0.776, 0.918]; pelvis 0.988 [0.965, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.847 [0.765, 0.918]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 32, 32 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference in place (N's set): 563701 segments, 19088 resets; neighbour p99 20.907
+    第一下, walked (n 85, 85 episodes): joints 0.859 [0.788, 0.929]; pelvis 0.988 [0.965, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.847 [0.776, 0.918]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 32, 32 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  nearer: nearest walk-first training segment nearer than the nearest in-place one; base rate 0.335 (walk-first 283850, in place 563701)
+    第一下, walked: 0.082 [0.024, 0.141]
+    第一下, in place: 0.031 [0.000, 0.125]
+[sonic]
+sonic: lmlreal kept 129 segments; models ['D0', 'D1', 'D2', 'N0', 'N1', 'N2', 'C0', 'C1', 'C2']; eval /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/lml/run/sonic/eval
+== 1. errors, real first reaches (reach_no 1; kept: not fallen, settled end)
+  第一下, walked: n 51 (51 episodes)
+    N/C mean over seeds 1.016 [0.868, 1.242]; per seed N0/C0 1.039 [0.839, 1.213], N1/C1 0.980 [0.783, 1.363], N2/C2 1.028 [0.811, 1.367]
+    share N_k error > C_k error, mean over seeds 0.523 [0.425, 0.621]; per seed 0.569, 0.490, 0.510
+    C/D mean over seeds 1.127 [0.982, 1.275]
+  第一下, in place: n 19 (19 episodes)
+    N/C mean over seeds 0.863 [0.772, 1.009]; per seed N0/C0 1.066 [0.783, 1.389], N1/C1 0.704 [0.568, 0.897], N2/C2 0.820 [0.611, 1.052]
+    share N_k error > C_k error, mean over seeds 0.316 [0.246, 0.386]; per seed 0.684, 0.105, 0.158
+    C/D mean over seeds 1.262 [1.116, 1.417]
+  第一下 chain 0, walked: n 31 (31 episodes)
+    N/C mean over seeds 1.126 [0.928, 1.278]; per seed N0/C0 1.052 [0.801, 1.367], N1/C1 1.286 [0.884, 1.599], N2/C2 1.041 [0.789, 1.216]
+    share N_k error > C_k error, mean over seeds 0.559 [0.430, 0.677]; per seed 0.613, 0.516, 0.548
+    C/D mean over seeds 1.057 [0.937, 1.287]
+  第一下 chain 0, in place: n 19 (19 episodes)
+    N/C mean over seeds 0.863 [0.770, 1.014]; per seed N0/C0 1.066 [0.783, 1.389], N1/C1 0.704 [0.563, 0.897], N2/C2 0.820 [0.610, 1.051]
+    share N_k error > C_k error, mean over seeds 0.316 [0.246, 0.386]; per seed 0.684, 0.105, 0.158
+    C/D mean over seeds 1.262 [1.121, 1.422]
+== 2. starts: D's training split 1079768 segments (data3, data3b, mid_data3, mid_data3b); reference sets all 1079768, walk-first 364173, walk-first chain 0 142562, in place (N's set) 715595; neighbour space 273 x0 columns (204 dropped)
+  reference all: 1079768 segments, 28492 resets; neighbour p99 23.372
+    第一下, walked (n 51, 51 episodes): joints 0.941 [0.863, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.941 [0.863, 1.000]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 19, 19 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference walk-first: 364173 segments, 9624 resets; neighbour p99 25.419
+    第一下, walked (n 51, 51 episodes): joints 0.941 [0.863, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.941 [0.863, 1.000]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 19, 19 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference walk-first chain 0: 142562 segments, 5719 resets; neighbour p99 17.202
+    第一下, walked (n 51, 51 episodes): joints 0.882 [0.784, 0.961]; pelvis 1.000 [1.000, 1.000]; hands 0.980 [0.941, 1.000]; range (39) 0.863 [0.764, 0.941]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 19, 19 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference in place (N's set): 715595 segments, 18868 resets; neighbour p99 25.015
+    第一下, walked (n 51, 51 episodes): joints 0.941 [0.863, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.941 [0.882, 1.000]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 19, 19 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  nearer: nearest walk-first training segment nearer than the nearest in-place one; base rate 0.337 (walk-first 364173, in place 715595)
+    第一下, walked: 0.725 [0.588, 0.843]
+    第一下, in place: 0.000 [0.000, 0.000]
+[heft]
+heft: lmlreal kept 69 segments; models ['D0', 'D1', 'D2', 'N0', 'N1', 'N2', 'C0', 'C1', 'C2']; eval /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/lml/run/heft/eval
+== 1. errors, real first reaches (reach_no 1; kept: not fallen, settled end)
+  第一下, walked: n 13 (13 episodes)
+    N/C mean over seeds 1.030 [1.021, 1.110]; per seed N0/C0 1.011 [1.001, 1.082], N1/C1 1.061 [1.010, 1.138], N2/C2 1.018 [1.008, 1.126]
+    share N_k error > C_k error, mean over seeds 0.949 [0.872, 1.000]; per seed 0.923, 0.923, 1.000
+    C/D mean over seeds 0.986 [0.966, 0.991]
+  第一下, in place: n 14 (14 episodes)
+    N/C mean over seeds 0.882 [0.839, 0.970]; per seed N0/C0 1.074 [0.911, 1.280], N1/C1 0.933 [0.872, 0.994], N2/C2 0.640 [0.553, 0.770]
+    share N_k error > C_k error, mean over seeds 0.405 [0.262, 0.571]; per seed 0.786, 0.286, 0.143
+    C/D mean over seeds 1.076 [0.970, 1.154]
+  第一下 chain 0, walked: no segments
+  第一下 chain 0, in place: n 14 (14 episodes)
+    N/C mean over seeds 0.882 [0.839, 0.971]; per seed N0/C0 1.074 [0.911, 1.303], N1/C1 0.933 [0.869, 0.994], N2/C2 0.640 [0.557, 0.777]
+    share N_k error > C_k error, mean over seeds 0.405 [0.262, 0.571]; per seed 0.786, 0.286, 0.143
+    C/D mean over seeds 1.076 [0.966, 1.154]
+== 2. starts: D's training split 499077 segments (data3, data3b, mid_data3, mid_data3b); reference sets all 499077, walk-first 166848, walk-first chain 0 92249, in place (N's set) 332229; neighbour space 273 x0 columns (204 dropped)
+  reference all: 499077 segments, 23815 resets; neighbour p99 24.574
+    第一下, walked (n 13, 13 episodes): joints 0.385 [0.154, 0.615]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.385 [0.154, 0.692]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 14, 14 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference walk-first: 166848 segments, 7986 resets; neighbour p99 27.937
+    第一下, walked (n 13, 13 episodes): joints 0.385 [0.154, 0.615]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.385 [0.077, 0.617]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 14, 14 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference walk-first chain 0: 92249 segments, 5779 resets; neighbour p99 23.542
+    第一下, walked (n 13, 13 episodes): joints 0.385 [0.154, 0.615]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.385 [0.154, 0.615]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 14, 14 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  reference in place (N's set): 332229 segments, 15829 resets; neighbour p99 25.648
+    第一下, walked (n 13, 13 episodes): joints 0.385 [0.154, 0.692]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 0.385 [0.154, 0.615]; neighbour 1.000 [1.000, 1.000]
+    第一下, in place (n 14, 14 episodes): joints 1.000 [1.000, 1.000]; pelvis 1.000 [1.000, 1.000]; hands 1.000 [1.000, 1.000]; range (39) 1.000 [1.000, 1.000]; neighbour 1.000 [1.000, 1.000]
+  nearer: nearest walk-first training segment nearer than the nearest in-place one; base rate 0.334 (walk-first 166848, in place 332229)
+    第一下, walked: 0.615 [0.385, 0.846]
+    第一下, in place: 0.000 [0.000, 0.000]
+```
+
+- walkfit.txt 的 md5：ScaleBFM 94b623bc，SONIC 4545a5e6，HEFT 4a3ec25d。walkfit.json：738cee1b，ec7c0619，feeced67。
+- 关节里最常超出范围的（S 序号，按 SCALEBFM_ORDER）：ScaleBFM 是 26 号，占 11.8 %；HEFT 也是 26 号，占 61.5 %。26 号是 right_wrist_pitch_joint。SONIC 走过去的段只有 5.9 % 超出范围。
+
+**HEFT 的三件事（协调人 11-26 在看到 eval.txt 以后加问的，事后分析，只读已有记录，没有跑仿真）**
+
+问的是：
+1. 走过去的第一下和原地的第一下误差差多少，走过去的起点有多少在训练范围里；
+2. walked 那一格姿态误差约 71°，是不是量错了，比如模型的输入和标签用的骨盆朝向不对；
+3. lmlcmp 复核里"HEFT 没碰家具、反解收敛的 27 下伸手：4.4 → 1.7 cm"（lmlcmp 第 449 行，论文 rss_status 第 74 行引用了它），这 27 下由哪些伸手组成，只看走过去后的第一下还成不成立。
+
+- 脚本：`code/heft3.py`（md5 0b01057b）、`code/heft3_b27.py`（md5 d6a7298a）。H20 CPU，nice 10。
+- 输出：`lml/run/heft_check/heft3.txt`（md5 95ba92c5）、`b27.txt`（md5 9c45d38c）。
+- 在 heft3.txt 的 A 部分，每格依次是：
+  - 三个模型的误差；
+  - 命令那一行到标签那一行之间骨盆转了多少、移了多少，以及只因为骨盆移动、手在命令时坐标系里显得挪了多少（frame shift）；
+  - 记录里不经过模型的 att_err（落点手的朝向和命令的夹角，世界系）和 jaw_err（落点离 IK 目标）；
+  - 命令那一刻里程计减真值的差；
+  - 伸手期间碰没碰家具，以及 ≥ 50 % 的行都碰着的比例；
+  - 走完到位时离计划站位的误差。
+- B 部分和 b27.txt 是 lmlcmp HEFT 用模型组的 135 次预抓取。
+
+heft3.txt 原文：
+
+```
+== A. heft: lmlreal kept 69 segments (fell 0, settled end); walk = hg_walk (lr_run.py)
+  first walked: n 13 | median err cm D0 36.15 N0 36.92 C0 36.53 | pelvis after the command (command row -> label row): |dyaw| median 5.3 p90 9.2 deg, dxy median 20.3 cm; hand moved by the frame change alone 21.1 cm | record att_err (landing vs command, world) 80.3 deg, jaw_err 38.5 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 1.8 cm | pre_v_pel median 0.8 cm/s, pre_settled 0.77 | furniture contact during the reach: any 1.00, >= 50 % of the rows 1.00 | arrive pos err median 25.6 cm
+  first in place: n 14 | median err cm D0 1.79 N0 1.55 C0 1.45 | pelvis after the command (command row -> label row): |dyaw| median 0.9 p90 2.0 deg, dxy median 6.7 cm; hand moved by the frame change alone 6.6 cm | record att_err (landing vs command, world) 8.5 deg, jaw_err 4.5 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.0 cm | pre_v_pel median 7.8 cm/s, pre_settled 0.00 | furniture contact during the reach: any 0.07, >= 50 % of the rows 0.00 | arrive pos err median nan cm
+  second walked: n 6 | median err cm D0 29.31 N0 30.71 C0 27.67 | pelvis after the command (command row -> label row): |dyaw| median 2.7 p90 4.6 deg, dxy median 5.0 cm; hand moved by the frame change alone 5.3 cm | record att_err (landing vs command, world) 82.4 deg, jaw_err 37.8 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 1.4 cm | pre_v_pel median 2.9 cm/s, pre_settled 0.33 | furniture contact during the reach: any 1.00, >= 50 % of the rows 0.83 | arrive pos err median 25.9 cm
+  second in place: n 15 | median err cm D0 1.93 N0 1.89 C0 2.33 | pelvis after the command (command row -> label row): |dyaw| median 1.1 p90 1.4 deg, dxy median 1.3 cm; hand moved by the frame change alone 1.1 cm | record att_err (landing vs command, world) 8.3 deg, jaw_err 3.1 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.1 cm | pre_v_pel median 0.8 cm/s, pre_settled 0.80 | furniture contact during the reach: any 0.00, >= 50 % of the rows 0.00 | arrive pos err median nan cm
+  via walked: n 21 | median err cm D0 26.25 N0 25.73 C0 25.20 | pelvis after the command (command row -> label row): |dyaw| median 1.7 p90 2.5 deg, dxy median 4.9 cm; hand moved by the frame change alone 4.1 cm | record att_err (landing vs command, world) 77.6 deg, jaw_err 31.3 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 2.0 cm | pre_v_pel median 0.4 cm/s, pre_settled 1.00 | furniture contact during the reach: any 1.00, >= 50 % of the rows 1.00 | arrive pos err median 25.6 cm
+  via in place: n 0
+  HEFT walked first reaches, one per line: task ep chain | err D0 N0 C0 cm | pelvis dyaw after the command deg, dxy cm, frame shift cm | att_err deg | odo-truth dyaw at command deg | arrive yaw err deg, pos err cm | walk asked (x, y, yaw deg) real | pre_v_pel | settle_s | furn rows
+    t1 ep 3 c1 |  38.0  37.4  36.5 |   -9.8  12.6  18.6 | 100.7 |  +0.00 |   5.3  25.6 | (+1.91, +0.43,  +7.4) (+1.74, +0.24, +12.7) |  10.1 | 1.30 | 203
+    t1 ep 5 c1 |  28.4  37.6  20.5 |   -4.0   6.6   9.4 |  22.4 |  +0.00 |   3.6  26.2 | (+1.83, +0.57, +12.0) (+1.67, +0.36, +15.6) |   1.4 | 0.84 | 150
+    t1 ep11 c1 |  35.7  36.8  36.4 |   -6.2  23.8  25.4 |  82.8 |  +0.00 |   3.5  25.9 | (+1.83, +0.62, +13.3) (+1.68, +0.41, +16.8) |   1.5 | 1.10 | 185
+    t1 ep15 c1 |  36.2  36.9  36.6 |   -6.6  20.3  21.7 |  84.1 |  +0.00 |   4.8  25.6 | (+1.88, +0.47,  +8.7) (+1.72, +0.27, +13.5) |   0.4 | 1.30 | 196
+    t1 ep22 c1 |  36.2  36.9  36.6 |   -6.9  21.0  22.5 |  84.0 |  +0.00 |   3.4  25.9 | (+1.84, +0.57, +11.9) (+1.68, +0.37, +15.3) |   0.4 | 1.28 | 193
+    t1 ep25 c1 |  29.6  30.2  29.0 |   -1.0   7.9   8.0 |  62.1 |  +0.00 |   5.5  25.4 | (+1.93, +0.46,  +8.1) (+1.77, +0.26, +13.6) |   0.3 | 0.92 | 161
+    t1 ep28 c1 |  33.7  34.8  34.1 |   -3.6  20.3  21.1 |  80.3 |  +0.00 |   4.5  25.0 | (+1.86, +0.41,  +7.0) (+1.70, +0.22, +11.5) |   0.8 | 1.28 | 188
+    t2 ep12 c1 |  73.1  76.7  75.0 |   +2.0   2.3   2.2 |  21.9 |  +0.00 |   3.0  26.2 | (+1.96, +0.06,  -3.5) (+1.73, -0.07,  -0.5) |  26.5 | 1.26 | 210
+    t2 ep19 c1 |  56.7  58.7  57.7 |  -10.5   7.6   5.0 |  75.1 |  +0.00 |   6.5  25.5 | (+1.90, +0.27,  +2.6) (+1.71, +0.10,  +9.2) |   0.2 | 1.22 | 258
+    t3 ep 0 c1 |  37.9  38.5  38.1 |   -5.6  19.7  20.9 |  85.3 |  +0.00 |   4.7  25.4 | (+1.87, +0.45,  +8.0) (+1.71, +0.25, +12.7) |   0.5 | 1.26 | 194
+    t3 ep11 c1 |  34.4  34.7  34.8 |   -5.3  24.6  25.7 |  77.2 |  +0.00 |   6.5  26.0 | (+1.97, +0.23,  +1.5) (+1.77, +0.06,  +7.9) |   0.8 | 1.20 | 189
+    t3 ep18 c1 |  30.4  30.8  30.7 |   -1.1  27.0  27.0 |  62.7 |  +0.00 |   3.6  25.5 | (+1.93, +0.13,  -1.6) (+1.72, -0.02,  +2.0) |   0.9 | 1.22 | 191
+    t3 ep21 c1 |  36.5  36.8  36.7 |   -4.8  22.6  23.6 |  82.1 |  +0.00 |   5.3  25.5 | (+1.90, +0.50,  +9.4) (+1.74, +0.30, +14.7) |   0.2 | 1.24 | 193
+  corr(err D0, frame shift) -0.618; corr(err D0, |dyaw|) 0.144; median |err D0 - frame shift| 14.5 cm
+== A. scalebfm: lmlreal kept 226 segments (fell 0, settled end); walk = hg_walk (lr_run.py)
+  first walked: n 85 | median err cm D0 1.42 N0 1.74 C0 1.44 | pelvis after the command (command row -> label row): |dyaw| median 10.8 p90 14.8 deg, dxy median 6.1 cm; hand moved by the frame change alone 12.1 cm | record att_err (landing vs command, world) 28.1 deg, jaw_err 11.6 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 2.6 cm | pre_v_pel median 0.5 cm/s, pre_settled 0.80 | furniture contact during the reach: any 0.59, >= 50 % of the rows 0.14 | arrive pos err median 3.2 cm
+  first in place: n 32 | median err cm D0 0.79 N0 0.90 C0 0.77 | pelvis after the command (command row -> label row): |dyaw| median 8.3 p90 14.8 deg, dxy median 8.1 cm; hand moved by the frame change alone 11.7 cm | record att_err (landing vs command, world) 30.0 deg, jaw_err 6.8 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.0 cm | pre_v_pel median 1.8 cm/s, pre_settled 0.00 | furniture contact during the reach: any 0.44, >= 50 % of the rows 0.22 | arrive pos err median nan cm
+  second walked: n 62 | median err cm D0 3.39 N0 3.06 C0 2.98 | pelvis after the command (command row -> label row): |dyaw| median 6.7 p90 11.0 deg, dxy median 1.8 cm; hand moved by the frame change alone 6.6 cm | record att_err (landing vs command, world) 27.4 deg, jaw_err 10.3 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 2.6 cm | pre_v_pel median 0.5 cm/s, pre_settled 0.95 | furniture contact during the reach: any 0.81, >= 50 % of the rows 0.53 | arrive pos err median 3.0 cm
+  second in place: n 20 | median err cm D0 1.74 N0 1.36 C0 1.68 | pelvis after the command (command row -> label row): |dyaw| median 5.8 p90 11.5 deg, dxy median 1.7 cm; hand moved by the frame change alone 5.1 cm | record att_err (landing vs command, world) 15.0 deg, jaw_err 6.2 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.1 cm | pre_v_pel median 0.5 cm/s, pre_settled 0.95 | furniture contact during the reach: any 0.80, >= 50 % of the rows 0.50 | arrive pos err median nan cm
+  via walked: n 27 | median err cm D0 30.35 N0 30.39 C0 30.59 | pelvis after the command (command row -> label row): |dyaw| median 13.9 p90 18.9 deg, dxy median 6.9 cm; hand moved by the frame change alone 5.5 cm | record att_err (landing vs command, world) 48.1 deg, jaw_err 25.7 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 2.7 cm | pre_v_pel median 0.4 cm/s, pre_settled 1.00 | furniture contact during the reach: any 1.00, >= 50 % of the rows 0.78 | arrive pos err median 2.8 cm
+  via in place: n 0
+== A. sonic: lmlreal kept 129 segments (fell 0, settled end); walk = hg_walk (lr_run.py)
+  first walked: n 51 | median err cm D0 2.05 N0 2.50 C0 2.40 | pelvis after the command (command row -> label row): |dyaw| median 1.6 p90 4.8 deg, dxy median 6.3 cm; hand moved by the frame change alone 6.1 cm | record att_err (landing vs command, world) 12.5 deg, jaw_err 7.9 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 1.3 cm | pre_v_pel median 2.5 cm/s, pre_settled 0.22 | furniture contact during the reach: any 0.08, >= 50 % of the rows 0.04 | arrive pos err median 12.6 cm
+  first in place: n 19 | median err cm D0 1.70 N0 1.77 C0 1.66 | pelvis after the command (command row -> label row): |dyaw| median 2.3 p90 9.2 deg, dxy median 7.6 cm; hand moved by the frame change alone 8.3 cm | record att_err (landing vs command, world) 10.2 deg, jaw_err 3.9 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.0 cm | pre_v_pel median 0.8 cm/s, pre_settled 0.00 | furniture contact during the reach: any 0.16, >= 50 % of the rows 0.00 | arrive pos err median nan cm
+  second walked: n 26 | median err cm D0 1.97 N0 1.94 C0 1.78 | pelvis after the command (command row -> label row): |dyaw| median 1.1 p90 2.7 deg, dxy median 1.7 cm; hand moved by the frame change alone 1.7 cm | record att_err (landing vs command, world) 8.2 deg, jaw_err 4.6 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.9 cm | pre_v_pel median 0.8 cm/s, pre_settled 0.58 | furniture contact during the reach: any 0.00, >= 50 % of the rows 0.00 | arrive pos err median 13.9 cm
+  second in place: n 13 | median err cm D0 2.01 N0 1.89 C0 1.87 | pelvis after the command (command row -> label row): |dyaw| median 0.6 p90 3.1 deg, dxy median 0.6 cm; hand moved by the frame change alone 0.9 cm | record att_err (landing vs command, world) 7.2 deg, jaw_err 2.7 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 0.1 cm | pre_v_pel median 0.6 cm/s, pre_settled 0.85 | furniture contact during the reach: any 0.15, >= 50 % of the rows 0.15 | arrive pos err median nan cm
+  via walked: n 20 | median err cm D0 1.70 N0 1.92 C0 1.77 | pelvis after the command (command row -> label row): |dyaw| median 3.5 p90 7.0 deg, dxy median 3.4 cm; hand moved by the frame change alone 3.5 cm | record att_err (landing vs command, world) 15.1 deg, jaw_err 8.4 cm | at the command, odometry - truth: |dyaw| 0.00 deg, dxy 3.6 cm | pre_v_pel median 2.7 cm/s, pre_settled 0.20 | furniture contact during the reach: any 0.70, >= 50 % of the rows 0.20 | arrive pos err median 10.2 cm
+  via in place: n 0
+== B. lmlcmp HEFT selfmodel group, pre-grasps (reach_no 1), jittered eps: 135
+  contact class {'stuck': 48, 'light': 36, 'none': 51}
+  no contact 51: converged by "pred miss <= 1 cm" 27, not 24
+  no contact 51: converged by "not (worse or oscillating)" 5, not 46
+ -- converged = pred miss <= 1 cm
+  the converged no-contact set: n 27, paired with the direct group 27: err_cm median S 2.60 / A 5.29, S < A 0.667 (18/27)
+   walked / in place {'walked': 9, 'in place': 18} | chain (0 = no via point before) {0: 27} | task {0: 17, 4: 1, 5: 6, 6: 3}
+   walked: n 9 err_cm median S 10.25 / A 9.32, S < A 1/9; per item (task ep chain S A): t5 ep5 c0 10.1 7.4; t5 ep8 c0 9.6 9.3; t5 ep17 c0 11.2 8.7; t5 ep25 c0 9.0 5.6; t5 ep26 c0 9.2 10.1; t5 ep28 c0 10.2 8.5; t6 ep0 c0 11.5 11.3; t6 ep10 c0 10.3 10.3; t6 ep16 c0 10.5 10.3
+   in place: n 18 err_cm median S 1.88 / A 4.64, S < A 17/18; per item (task ep chain S A): t0 ep0 c0 1.8 4.8; t0 ep1 c0 1.7 3.7; t0 ep2 c0 2.7 4.8; t0 ep4 c0 2.6 4.5; t0 ep6 c0 1.8 4.5; t0 ep8 c0 1.8 4.5; t0 ep9 c0 2.0 4.9; t0 ep10 c0 2.0 3.3; t0 ep11 c0 1.4 3.1; t0 ep12 c0 1.5 4.4; t0 ep13 c0 4.1 33.4; t0 ep14 c0 2.5 5.3; t0 ep18 c0 1.6 3.6; t0 ep23 c0 1.0 29.8; t0 ep24 c0 2.7 4.8; t0 ep28 c0 1.7 3.7; t0 ep29 c0 2.4 5.3; t4 ep26 c0 78.9 53.2
+ -- converged = not (worse or oscillating)
+  the converged no-contact set: n 5, paired with the direct group 5: err_cm median S 2.70 / A 5.29, S < A 0.800 (4/5)
+   walked / in place {'walked': 1, 'in place': 4} | chain (0 = no via point before) {0: 5} | task {0: 4, 5: 1}
+   walked: n 1 err_cm median S 9.61 / A 9.32, S < A 0/1; per item (task ep chain S A): t5 ep8 c0 9.6 9.3
+   in place: n 4 err_cm median S 2.59 / A 5.06, S < A 4/4; per item (task ep chain S A): t0 ep2 c0 2.7 4.8; t0 ep14 c0 2.5 5.3; t0 ep24 c0 2.7 4.8; t0 ep29 c0 2.4 5.3
+```
+
+b27.txt 原文：
+
+```
+d3 keys with method/ep: ['reset', 'reach_no', 'task_id', 'ep', 'method_id']
+n 27
+all 27 27
+  err_cm at the window end, S / A: n 27 median 2.60 / 5.29; first < second 18/27 = 0.667
+  live_err_cm at the label (vs own command target), S / A: n 27 median 4.17 / 4.32; first < second 11/27 = 0.407
+  |act_h - goal_h|, S / A: n 27 median 1.67 / 4.41; first < second 25/27 = 0.926
+  D predicted miss: chosen / direct command: n 27 median 0.16 / 3.86; first < second 27/27 = 1.000
+  S err_cm / D predicted miss of the direct command: n 27 median 2.60 / 3.86; first < second 16/27 = 0.593
+  D prediction error S / A: n 27 median 1.83 / 1.90; first < second 12/27 = 0.444
+  close_dist_cm S / A: n 26 median 2.15 / 3.30; first < second 17/26 = 0.654
+  S live_err / A live_err (label): n 27 median 4.17 / 5.29; first < second 18/27 = 0.667
+walked 9
+  err_cm at the window end, S / A: n 9 median 10.25 / 9.32; first < second 1/9 = 0.111
+  live_err_cm at the label (vs own command target), S / A: n 9 median 3.52 / 2.95; first < second 2/9 = 0.222
+  |act_h - goal_h|, S / A: n 9 median 1.13 / 2.95; first < second 8/9 = 0.889
+  D predicted miss: chosen / direct command: n 9 median 0.14 / 3.99; first < second 9/9 = 1.000
+  S err_cm / D predicted miss of the direct command: n 9 median 10.25 / 3.99; first < second 0/9 = 0.000
+  D prediction error S / A: n 9 median 1.02 / 1.20; first < second 5/9 = 0.556
+  close_dist_cm S / A: n 9 median 8.86 / 5.30; first < second 0/9 = 0.000
+  S live_err / A live_err (label): n 9 median 3.52 / 9.32; first < second 8/9 = 0.889
+in place 18
+  err_cm at the window end, S / A: n 18 median 1.88 / 4.64; first < second 17/18 = 0.944
+  live_err_cm at the label (vs own command target), S / A: n 18 median 4.44 / 4.44; first < second 9/18 = 0.500
+  |act_h - goal_h|, S / A: n 18 median 1.84 / 4.59; first < second 17/18 = 0.944
+  D predicted miss: chosen / direct command: n 18 median 0.17 / 3.69; first < second 18/18 = 1.000
+  S err_cm / D predicted miss of the direct command: n 18 median 1.88 / 3.69; first < second 16/18 = 0.889
+  D prediction error S / A: n 18 median 1.96 / 2.03; first < second 7/18 = 0.389
+  close_dist_cm S / A: n 17 median 1.87 / 3.05; first < second 17/17 = 1.000
+  S live_err / A live_err (label): n 18 median 4.44 / 4.64; first < second 10/18 = 0.556
+A group contact on the same episodes (furn rows > 0): 2 / 27
+odometry - truth at the pre-grasp command (|xy| cm, yaw deg), S group, the 27:
+  walked: n 9 |xy| median 9.8 cm (min 8.2, max 10.6); |yaw| max 0.000 deg; gait gait_heft.HEFT
+  in place: n 18 |xy| median 0.1 cm (min 0.0, max 0.1); |yaw| max 0.000 deg; gait None
+```
+
+**文件**（`lml/run/` 下）
+- `run.log`、`logs/train_<控制器>_<组>_s<种子>.log`；
+- `<控制器>/models_{N,C}_s{0,1,2}/`；
+- `<控制器>/eval.txt`、`eval/eval.json`、`eval/per_segment.npz`，md5 见下表；
+- `<控制器>/walkfit/walkfit.{txt,json}`；
+- `heft_check/`。
+
+| 控制器 | eval.json | per_segment.npz |
+|---|---|---|
+| ScaleBFM | 1f2158f1 | 58a87241 |
+| SONIC | 381e8b3f | 5ff5de50 |
+| HEFT | ce067333 | c9de8390 |
+
 
 ## 意外
 <!-- 预测和结果哪里对不上？有什么没想到的现象？ -->
@@ -876,6 +1342,56 @@ SIMPLE val (data3 val, all, kept settled): 3252 segments, D median 2.654 cm
    - 不考虑数据量，只问"有没有先走后伸的数据"，会把数据量的影响也算进去。N/D 是 1.44 / 1.45。
 5. **区间比预测的宽得多。** 40 个布局里，有几个布局的误差在两种情况之间切换，比值的区间上侧拉得很长（上限 1.52）。
 6. 运行上：H20 的容器中途重启过一次（修订 1）。之后改在 4090b 上用接管的方式跑两个训练（修订 1b），没有影响数值。
+
+### 第二阶段
+
+**预测和结果对照**
+
+| 项 | 预测 | 结果 | 落在区间里？ |
+|---|---|---|---|
+| 训练时间（登记时写的 H20） | 每个 10–20 分钟 | 497–825 s，即 8–14 分钟 | 大体是，ScaleBFM 有 4 个略快 |
+| **N/C，ScaleBFM**（三个种子平均） | **1.00–1.35** | **1.055** [0.954, 1.229] | 是 |
+| **N/C，SONIC** | **0.95–1.35** | **1.005** [0.928, 1.100] | 是 |
+| **N/C，HEFT** | **1.00–1.40** | **1.069** [0.748, 1.098] | 是 |
+| 修订 3：走过去后的第一下，N/C | ScaleBFM 1.00–1.40，SONIC 0.95–1.40，HEFT 0.85–1.20 | 1.362，1.016，1.030 | 三个都是 |
+| 修订 3：同上，"N 比 C 错得多"的比例 | 0.50–0.70，0.45–0.70，0.40–0.60 | 0.545，0.523，0.949 | HEFT 否 |
+| 修订 3：range (39) 在"先走路"参照集里 | 0.65–0.85，0.70–0.90，0.35–0.65 | 0.835，0.941，0.385 | SONIC 否，偏高 |
+| 修订 3：range (39) 在"原地"参照集里 | 0.70–0.90，0.70–0.90，0.45–0.70 | 0.847，0.941，0.385 | SONIC 否，偏高；HEFT 否，偏低 |
+| 修订 3：nearer（基准约 0.33） | 0.40–0.80，0.40–0.80，0.15–0.45 | 0.082，0.725，0.615 | ScaleBFM 否，远低于基准；HEFT 否，偏高 |
+| 修订 3：HEFT 的 \|N/C − 1\| 小于 ScaleBFM（把握 55 %） | 是 | 0.030 对 0.362，是 | 是，但原因不是预测里写的那个（见意外 3） |
+| 修订 3 的方向：HEFT 的 nearer 不高于基准，ScaleBFM、SONIC 高于基准 | — | HEFT 0.615 高于基准；ScaleBFM 0.082 低于基准；SONIC 0.725 高于基准 | 只有 SONIC 对 |
+
+**意外**
+1. **ScaleBFM 总体过线，但第一下的差距和 SIMPLE 一样大。**
+   - 第一下的 N/C 是 1.300 [1.045, 1.540]，三个种子 1.182 / 1.504 / 1.215。走过去后的第一下是 1.362 [1.085, 1.596]。留出集里"先走后的第一下"是 1.191 [1.148, 1.249]。
+   - 第一阶段 SIMPLE 的第一下是 1.294 / 1.300。两个 benchmark、五个 N/C 配对，第一下都高约 30 %，区间下限都高于 1。
+   - 总体能落在第一行，是因为第二下（0.938）和途经点那几下看不出差别，把第一下的差距冲淡了。
+2. **ScaleBFM 走过去后的起点，离原地的训练段反而更近，N 却在这些段上更差。**
+   - nearer 只有 0.082，基准是 0.335。预测是 0.40–0.80，差得很远。range (39) 对两个参照集一样（83.5 % 对 84.7 %）。
+   - LML 的先走后伸只有 d3 走法（转身、走、再转），起点和任务局里走到站位后的样子不像。但 C 有了这部分数据，第一下还是更准。
+   - 和第一阶段的意外 1 一样：差距用起点姿态在不在训练范围里、离训练段近不近，都解释不了。
+3. **lmlreal 里 HEFT 走的是 hg_walk，不是 gait_heft。修订 3 的前提对这批局不成立。**
+   - `lr_run.py` 走路调用的是 `hg_walk.walk_frames`。gait_heft 是从 lmlcmp 开始才用的（`lc_run.py` 的 `walk_ctrl`）。
+   - 修订 3 写"LML 的任务局里 HEFT 走的是 gait_heft"，说的是 lmlcmp 以后的任务局，不是第二阶段评估用的 lmlreal。这一点在写修订 3 时没有核对。
+   - 所以在 lmlreal 上，HEFT 训练数据的步态和任务局是同一个。nearer 0.615 高于基准，按修订 3 的读法，"对不上"在这批局上不成立。
+4. **HEFT 走过去后的第一下全部卡在家具上，71° 是真的，不是量错。**（事后查的，见结果里的 heft3.txt）
+   - 这 13 段全部在途经点之后（chain 1），全部有 ≥ 50 % 的时间手臂碰着家具。走过去的途经点 21/21、第二下 5/6 也是这样。原地的第一下只有 1/14 碰到过。
+   - 不经过模型，直接看记录：落点手的朝向和命令差 80°，落点离 IK 目标 38.5 cm。原地分别是 8.5° 和 4.5 cm。
+   - 模型的输入和标签都用命令那一刻骨盆的真值位姿（`d3_collect.segments` 的 p0、yaw0）。里程计的朝向和真值每一下都相同（差 0.00°）。命令之后骨盆只转了 5.3°（中位数）。所以没有坐标系问题。
+   - 这几局走完离计划站位中位数差 25.6 cm：要它走约 1.9 m，实际走了约 1.7 m。苹果、碗、盐瓶三个桌子任务都是这样。
+   - 所以 HEFT 的真实局 N/C 说明不了走路数据有没有用：所有模型错的都是"手被桌子挡住"，各模型都差约 36 cm。"N 比 C 错得多"的比例 0.949，是因为 N 在同样的大误差上一致地多错约 0.5 cm，和走路数据合不合适无关。
+   - 协调人那条预测（HEFT 的 |N/C − 1| 更小）应验了，但原因是接触，不是步态。
+5. **HEFT 自己的留出集里，N 在先走后的第一下上明显更差**：1.177 [1.095, 1.284]，三个种子都 > 1.11。这是 HEFT 唯一没被接触干扰的走路格。
+6. **SONIC 哪一格都看不出差别**：真实局 1.005，第一下 0.961，走过去后的第一下 1.016，留出集里先走后的第一下也只有 1.016 [0.976, 1.056]。ScaleBFM 和 HEFT 的这一格是 1.19 和 1.18。SONIC 的先走后伸数据连在它自己的同类段上都没有帮助。
+7. **C/D 比第一阶段小得多**：真实局里 ScaleBFM 1.064、SONIC 1.123、HEFT 0.952；留出集"all"一格是 1.10–1.11。第一阶段 SIMPLE 是 1.24 / 1.33。C/D 里还混着 4090 和 H20 的差别。
+8. **HEFT 的区间不可靠**：点估计 1.069 几乎在区间 [0.748, 1.098] 的上端。69 段里一半左右误差约 2 cm，另一半约 25–30 cm，重抽时中位数在两种之间跳。按登记的规则它落在第一行，但这个区间的意义有限。
+9. **ScaleBFM 主比值的区间上限 1.229，离 1.25 只差 0.021。** "离阈值不到 0.02 不下结论"那条规则是给中间方案定的，第二阶段登记时没有，这里不追溯使用，只记下来。
+10. **lmlcmp 那 27 下，"4.4 → 1.7 cm"只在身体坐标里成立。**（事后查的，见 b27.txt）
+    - 这 27 次全是第一下（预抓取），前面都没有途经点。其中 9 次走过去（哑铃 6、浇水壶 3），18 次原地（蜡烛 17、雕像柜 1）。
+    - 4.41 → 1.67 cm、25/27 是这样算的：落点用命令那一刻骨盆的真值位姿表示，目标用里程计以为的位姿表示，两者相减。按落点离世界里真实目标算（`err_cm`），是 5.29 → 2.60 cm、18/27。
+    - 只看走过去的 9 次：身体坐标 2.95 → 1.13 cm，8/9 更准；世界坐标 9.32 → 10.25 cm，只有 1/9 更准。原因是 gait_heft 走完后里程计的位置差 9.8 cm（8.2–10.6），模型看不到。
+    - 原地的 18 次两种算法都成立：世界坐标 4.64 → 1.88 cm，17/18。
+11. 运行上没有意外：18 个训练一次跑完，两张卡每张同时最多两个，没有中断。
 
 
 ## 结论与下一步
@@ -943,6 +1459,86 @@ SIMPLE val (data3 val, all, kept settled): 3252 segments, D median 2.654 cm
    - 这回答的是"省下的时间拿去多采原地数据，值不值"；
    - 按 val 的学习曲线粗估（指数约 0.26），1.8 倍数据大约能把 N/D 从 1.44 降到 1.24，仍然不如 D。这只是估计，要跑了才算。
 3. 第二阶段（LML，三个控制器）还在 H20 上跑，结论按控制器另写。
+
+### 第二阶段（LocoManiLab；ScaleBFM、SONIC、HEFT）
+
+**结论**
+1. **按登记的判据，三个控制器都落在第一行，种子一致的规则也都满足**（证据见"结果"里三份 eval.txt 的 PRIMARY 段）：
+
+   | 控制器 | N/C 平均 [95 %] | 每个种子 | 判据 |
+   |---|---|---|---|
+   | ScaleBFM | 1.055 [0.954, 1.229] | 1.041 / 1.059 / 1.064 | 第一行 |
+   | SONIC | 1.005 [0.928, 1.100] | 1.094 / 0.916 / 1.005 | 第一行 |
+   | HEFT | 1.069 [0.748, 1.098] | 1.098 / 1.038 / 1.071 | 第一行，但登记的 HEFT 说明适用，见第 4 条 |
+
+   也就是说，在 LML 的真实局上把全部伸手放在一起看，去掉先走后伸的数据，误差的点估计最多大 7 %，三个区间的上限都低于 1.25。
+2. **ScaleBFM 不能就此改成只采原地**：
+   - 走路之后的第一下，两个 benchmark 都稳定地差约 30 %：
+     - LML 第一下 1.300 [1.045, 1.540]，走过去后的第一下 1.362 [1.085, 1.596]；
+     - 留出集里先走后的第一下 1.191 [1.148, 1.249]；
+     - 第一阶段 SIMPLE 的第一下 1.294 / 1.300。
+   - 总体能过线，是因为第二下和途经点那几下没有差别，把它冲淡了（意外 1）。
+   - 判据看的是全部伸手，所以这一条不改判据的结论，但会改建议：对 ScaleBFM，只采原地要以走到站位后的第一下准度为代价，而第一下正是走到站位后要做的事。
+3. **SONIC 看不出先走后伸的数据有任何用处**：真实局、第一下、走过去后的第一下、留出集里先走后的第一下，N/C 都在 0.96–1.02 之间（意外 6）。在这次检验的范围里，SONIC 只采原地就够。
+4. **HEFT 的真实局回答不了这个问题**：
+   - 走过去后的 13 个第一下全部卡在桌子上，所有模型都差约 36 cm。71° 的姿态误差是真的，不是量错，也没有坐标系问题（意外 4）。
+   - 原地的段上，N 比 C 好（0.814）。
+   - HEFT 自己的留出集里，N 在先走后的第一下上差 18 %（1.177 [1.095, 1.284]，意外 5）。这是唯一能看的走路格，它指向"先走后伸的数据对 HEFT 有用"。
+   - 按登记时写好的 HEFT 说明，第一行的结果只能说明：去掉这部分数据，不会让一个本来就错得很远的预测变得更差。不能当成 HEFT 可以只采原地的证据。
+5. **修订 3 的问题（HEFT 的走路数据和任务局对不对得上），在 lmlreal 上不成立**：
+   - lmlreal 里 HEFT 走的就是 hg_walk，和训练数据一样（意外 3）；
+   - 走过去的起点离先走后伸的训练段更近（nearer 0.615，基准 0.334）。
+   - 对用 gait_heft 的任务局（lmlcmp 以后），这次没有检验。
+   - 这一项只作描述，不进判据。
+6. **lmlcmp 那 27 下的"4.4 → 1.7 cm"只在身体坐标里成立**：
+   - 走过去的 9 次，按世界里的真实目标算是 9.32 → 10.25 cm，模型没有帮上忙，误差来自走完后里程计差约 10 cm；
+   - 原地的 18 次，两种算法都成立：4.6 → 1.9 cm，17/18（意外 10）。
+   - 协调人已转给论文那边。
+
+**证据强度**
+- 每个控制器 N、C 各 3 个种子，18 个模型都在 H20 上训，N 和 C 彼此配对。
+- 真实局保留的段：ScaleBFM 226 段 / 129 局，SONIC 129 / 90，HEFT 69 / 44。第一下 117 / 70 / 27 段。
+- HEFT 走过去后的第一下只有 13 段，而且全部卡住，基本没有信息量。
+- D 是在 4090 上训的，所以 C/D、N/D 里混着换卡的差别；N/C 没有。
+
+**其他可能的解释**
+1. **ScaleBFM 第一下的差距是种子噪声**：三个种子分别是 1.182、1.504、1.215，都高于 1.1。加上第一阶段的两个种子，五个配对没有一个低于 1.18，这个解释站不住。
+2. **ScaleBFM 第一下的差距来自 C 多了 d3 走法的"刚停下"状态，而不是姿态覆盖**：nearer 和 range 都显示，走过去后的起点在原地数据里也找得到相近的段（意外 2）。这和第一阶段意外 1 的推测一致：39 个范围量和 x0 的近邻都测不出运动状态上的差别。但这只是推测，这次没有直接测。
+3. **挑 checkpoint 用原地 val，对 C 不利**：C 的 checkpoint 没有按先走后伸的段来挑，所以 N/C 偏保守，和第一阶段一样。
+4. **HEFT 是幸存者样本**：lmlreal 里 HEFT 有 61 局在走路时跑丢，剩下的局本来就偏向走得近、走得稳的那些。
+5. **SONIC 的"没有用"也可能是它的 d3 走路数据和任务局不像**：SONIC 的 nearer 是 0.725，起点像先走后伸的数据，所以这个解释不太可能，但没有排除。
+
+**四类陷阱**
+- **benchmark 选择**：三个控制器、7 个任务、登记的保留规则下所有段都报了。按任务的结果按登记不报，没有挑任务。
+- **数据泄漏**：
+  - 真实局的重置编号从 9 100 000 开始，不在任何训练文件里；
+  - 留出集用 data.py 自己的桶；
+  - 每组的归一化来自它自己的训练集；
+  - checkpoint 按原地 val 挑，没碰真实局。
+- **指标误用**：
+  - 用的是登记的统计量：三个种子各自配对，求 N_k/C_k 的平均，中位数比值。
+  - HEFT 的区间几乎退化（点估计在区间上端），已在意外 8 里标出。
+  - 第一下、走过去后这些分格只报，不进判据。第 2 条结论只改建议，不改判据的结论。
+- **事后挑选**：
+  - 18 个训练全部报了，每个训练只有一个按 val 挑的 checkpoint，看到结果以后没有重跑任何东西；
+  - walkfit 是评估前登记的（修订 3）；
+  - HEFT 的三件事是看到结果以后协调人加问的，结果里已经标为事后分析，也没有用它改判据的结论。
+
+**对照判据**
+- 三个控制器都是第一行，种子一致规则满足，判据结论是"先走后伸的数据不需要"。
+- HEFT 按登记的说明降为"没有证据"。
+- 第一阶段的附加规则 2、3 是 SIMPLE 的任务规则，第二阶段按登记不适用。
+
+**两个阶段合起来，下一步**
+1. 结论按控制器分开：
+   - **ScaleBFM**：SIMPLE 落在中间行，LML 总体落在第一行。但两边走路后的第一下都差约 30 %，所以不建议只采原地。
+   - **SONIC**：只采原地就够。
+   - **HEFT**：真实局没有信息，留出集指向"有用"。
+2. **另行登记两个后续**（新条目，协调人 11-26 已同意设计，用户已同意新采数据）：
+   - 中间方案 Ma / Mb，共用随机对照 Cm，SIMPLE ScaleBFM，6 个训练，在 H20 的 GPU 上跑；
+   - 时间对齐 T：全采原地，新采数据，排在 E2a 之后，用 H20 的 CPU。
+   - 两个都只做 ScaleBFM，因为它是唯一在两个 benchmark 上都有清楚差距的控制器。
+3. 两个阶段的独立复核由协调人安排。
 
 
 ## 独立复核
