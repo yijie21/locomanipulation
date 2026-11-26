@@ -243,6 +243,52 @@
   - 冒烟开始时机器负载约 35。每局 ScaleBFM 30–51 秒，SONIC 68–100 秒，HEFT 22–80 秒，和 lmlcmp2 相近。
   - 估计正式运行约 3 小时：ScaleBFM 约 55 分钟、HEFT 约 25 分钟、SONIC 约 90 分钟。
 
+**修订 1 补记：启动脚本出错、共享代码被改、改用私有副本（约 02:55Z 写下；正式运行之前，没有跑出任何一局）**
+
+**1. 组名表和 bash 自带的数组重名**
+- 02:25:44Z 第一次启动正式运行。`lc3_formal.sh` 里各控制器的组名表起名叫 `GROUPS`，和 bash 自带的只读数组（当前用户的组号）重名，赋值失败，传给各进程的组名成了 "0"。
+- 35 个进程起来后，局一开始就报 "tuple.index(x): x not in tuple"。写下的 6 个局记录全是这种报错，没有一局真的跑起来。02:26Z 发现后，按 pid 停掉了脚本和这 35 个进程。
+- 改法：组名表改叫 `GRP`；另加一道检查，某个控制器取不到组名就中止。
+- 冒烟没发现，是因为设计种子和新种子的冒烟都直接调 `lc3_batch.sh`，没有经过这个脚本。
+
+**2. env.py 被别的实验同步改动**
+- 改完后，02:28–02:35Z 在共享代码树上把整条流程试跑了一次（9 局）。9 局和新种子冒烟逐位相同，但 SONIC 跑完后的 md5 核对报 CHANGED。
+- 原因：02:34:49Z，另一个实验（simple_sonic_vrref）往 4090 的代码树同步了改动。
+  - 改了冻结清单里的 `selfwm_20261029/env.py`（c551fddc → be6a6f8a）：`__init__` 多了一个可选参数 `sonic_vr_frame=None`，只有它不是 None 时才起作用。
+  - 同时改了 `src/locomani/bench/` 下 6 个文件。这一轮的调用链不导入它们。
+- 4090 的代码树现在有三个实验在往里同步（vrref、simpledata、hadata）。靠别人几个小时不碰来保证冻结，不可靠。
+
+**3. 改用私有副本，重新冻结**
+- 把调用链用到的代码整份复制到本轮输出目录下的 `code/`，正式运行只从这里导入。复制的是 02:41Z 时 4090 树上的版本，包括 vrref 加进 env.py 的那个可选参数。
+  - 复制的部分，共 1109 个文件：
+    - `src/`：locomani，另有 gr00t、real_robot；
+    - `scripts/rsi`：env.py 会把它加进导入路径；
+    - `configs/`；
+    - 调用链的 9 个 scripts/experiments 目录：lmlcmp3、lmlcmp2、lmlcmp、lmlreal、hardgrasp、data3、locomanilab、reachwm、selfwm。
+  - 链接到共享树的部分：assets、outputs、third_party、grasp_kit、rsi_kit。这些是数据和第三方的目录，代码按相对仓库的路径去读。如果有进程从这里导入模块，下面的导入检查会让它停下。
+- 启动路径：
+  - `lc3_formal.sh` 的脚本路径和 PYTHONPATH 都指向 `code/`；
+  - 核对环节改成核对副本里每个文件的 md5（`asrun/CODE_MD5`），跑每个控制器之前和之后各核对一次；
+  - 只有评估用的解释器（只用 numpy 和 scipy）仍是共享树里的。
+- 导入检查（`lc3_run.py` 新加的 (k)，不碰局的逻辑）：
+  - 每个跑局进程在驱动和模型加载好以后，打印实际导入的 env.py 路径；
+  - env.py 不在 `code/` 下，或者有任何已加载的模块来自共享树，就中止；
+  - 每局结束后再查一次，覆盖局里才导入的模块；
+  - 正式脚本在每个控制器跑完后，统计这些打印，有一次失败就记一行 "CODE CHECK FAILED"。
+- 副本和 73cdf7a4 的冻结（02:22:49Z）相比，不同的文件：
+  - 别人改的：env.py，以及 `src/locomani/bench/` 下 6 个文件（bigym2、humanoidarena、locomanilab、simple 的 `__init__.py`，options.py，spec.py），都是 02:34:44–02:34:49Z 改的。和预期一致。
+  - 我改的：lc3_run（导入检查）、lc3_batch（代码根目录可以指定）、lc3_formal（GRP、副本路径、核对副本）、lc3_freeze（做副本）。
+  - 其余代码、输入清单和两份"那一眼"清单，都和 02:22:49Z 那次逐行相同。
+  - 从新种子冒烟开始（02:19Z）到复制时，树上改过的文件也只有上面这些。
+- 在副本上把整条流程重跑了一次（`formal_dryrun/`，02:42–02:50Z）：苹果第 30 局，三个控制器各组各 1 局，共 9 局。
+  - 跑局、合并、检查、评估和前后的副本 md5 核对都走通，三个控制器的检查都通过；
+  - 9 局和新种子冒烟里的同一批局逐位相同，包括局记录和每一段的数组。所以 env.py 和 bench 的改动不影响这一轮；
+  - 导入检查：6 个进程启动时、9 局每局结束后，env.py 都在 `code/` 下，来自共享树的模块 0 个。
+- 新的冻结：FROZEN_UTC 2026-11-26T02:41:43Z。
+  - md5：lc3_run eca94321，lc3_batch 082a0091，lc3_formal 05cf547a，lc3_freeze e7b9ae99；lc3_check、lc3_eval、lc3_look 不变。
+  - 清单在 `asrun/`：CODE_MD5（副本的每个文件）、MD5（输入）、LOOKS3_MD5、LOOKS_MD5，以及和 02:22:49Z 冻结的逐项对比 VS_PREV。
+- 作废的东西都放在 `aborted_formal_0225/`，不进入任何统计：第一次启动的记录、02:22:49Z 和 02:27:38Z 的两次冻结、共享树上的那次试跑。
+
 ## 结果
 
 ## 意外
