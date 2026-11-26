@@ -119,7 +119,8 @@ def readings(res: dict) -> dict:
     straight_p4 = all(passes(res, "p4", c) for c in STRAIGHT) and sum(res.get(("p4", c), {}).get("fall", 0) for c in range(len(CELLS))) == 0
     print(f"\nreading (cells {[CELLS[c] for c in LONG]}; pass = success >= 9/10, crossings <= 1, no fall):")
     for a in ARMS:
-        print(f"  {a}: passes all four: {pl[a]}  ({', '.join(f'{res.get((a, c), {}).get('succ', '-')}/10' for c in LONG)})")
+        cells = ", ".join(str(res.get((a, c), {}).get("succ", "-")) + "/10" for c in LONG)
+        print(f"  {a}: passes all four: {pl[a]}  ({cells})")
     print(f"  -> {rd}")
     print(f"P4 as a method (heft_walkstop criterion 1 on straight 0.10-1.50 m, no fall): {straight_p4}")
     return dict(passes_long=pl, reading=rd, p4_criterion1=straight_p4)
