@@ -904,7 +904,112 @@ SONIC 的训练用同一套脚本，采集根目录换成 `selfmodel_hadata_soni
 
 ## 结果
 
+### ScaleBFM：训练和评估 1–3（2026-11-26）
+
+- **训练**：H20b，卡 0、1，15:21:28Z – 16:49:54Z，10 个模型都训完了（`train/scalebfm/run.log`）。开训前的三项检查都是 PASS：剔除接触段、中间数据检查、划分检查。
+- **评估**：从冻结的 eval_code（FROZEN 14:49:35Z，MD5 372876c2）跑，在 4090 的 CPU 上，16:50:13Z – 16:52:35Z。驱动先核对了代码的 MD5，然后：
+  - xfer 记录剔除接触段 PASS（487 段里碰到 29 段，留下 458 段）；
+  - 配对脚本的中位数和段数与 sx_eval 的 json 一致，settled 和 ended 两种取法都是 True；
+  - 两个任务的真实局合并 PASS。
+- **输出**：`loco_outputs/selfmodel_hadata_20261126/train/scalebfm/eval/`，有 eval1_val、eval1_test_iid、eval2_*、eval2_pair、eval3（各有 .txt 和 .json）。
+- 驱动第一次启动（15:24:30Z）时训练还没完，驱动直接报 FAIL 退出，什么都没算。那次留下的 STATUS 和 run.log 挪到了 `logs/stale/eval_scalebfm_early_152512`。之后改由一个等待脚本在训练 STATUS 变成 done 时启动驱动，这一次就是上面那次。
+
+**评估 1（HA val，data3 部分，all | all，kept 170 段，134 次重置）**
+
+```
+position cm, median: direct 12.23 [10.85, 13.58] | S_f1_s0 6.32 [5.68, 7.21] | S_f1_s1 6.54 [5.52, 7.34] | S_f1_s2 6.62 [5.74, 7.57] | T_f1_s0 6.09 [5.64, 7.27] | T_f1_s1 6.36 [5.64, 7.34] | T_f1_s2 6.15 [5.66, 6.89] | S_f0.6_s0 7.17 [6.05, 8.21] | S_f0.3_s0 8.13 [7.42, 9.01] | T_f0.6_s0 6.20 [5.74, 7.33] | T_f0.3_s0 7.30 [6.29, 8.15]
+ratios: S_f1 6.494 [5.697, 7.350] | T_f1 6.203 [5.646, 7.178] | S_f1/D_lml 2.921 [2.563, 3.306] | T_f1/D_lml 2.790 [2.540, 3.229] | 1-T/S 0.045 [-0.058, 0.116] | 1-T/S_s0 0.037 [-0.074, 0.133] | 1-T/S_s1 0.026 [-0.109, 0.128] | 1-T/S_s2 0.070 [-0.039, 0.144] | S 1-f1/f0.6 0.117 [-0.003, 0.210] | S 1-f1/f0.3 0.223 [0.132, 0.295] | T 1-f1/f0.6 0.018 [-0.088, 0.117] | T 1-f1/f0.3 0.165 [0.030, 0.229] | T_f0.3/S_f1_s0 1.154 [1.016, 1.264]
+LML denominators (fixed): D (train3b, seeds 0-2 mean) 2.223 cm (seeds [2.247, 2.228, 2.193]); F (fdvel seed 0) 3.102 cm (fdvel seeds [3.102, 3.053, 3.089], mean 3.082)
+```
+
+test_iid（data3 部分，all | all，kept 180 段，141 次重置）：
+
+```
+ratios: S_f1 6.654 [5.543, 7.633] | T_f1 5.939 [5.093, 6.753] | S_f1/D_lml 2.993 [2.494, 3.434] | T_f1/D_lml 2.672 [2.291, 3.038] | 1-T/S 0.108 [-0.026, 0.192] | 1-T/S_s0 0.109 [-0.018, 0.208] | 1-T/S_s1 0.128 [-0.033, 0.217] | 1-T/S_s2 0.085 [-0.070, 0.215] | S 1-f1/f0.6 0.100 [-0.046, 0.212] | S 1-f1/f0.3 0.152 [0.032, 0.286] | T 1-f1/f0.6 0.087 [-0.026, 0.178] | T 1-f1/f0.3 0.079 [-0.023, 0.189] | T_f0.3/S_f1_s0 0.967 [0.845, 1.157]
+```
+
+闸门 (b) 的双手段一行（val，kept；单手段是 d3 和 d3b 同一划分合起来）：
+
+```
+direct: median one-hand 11.50 [10.54, 12.77] | two-hand 13.62 [11.62, 15.28] | two/one 1.184 [1.015, 1.359]
+S_f1_s0: median one-hand 6.16 [5.70, 6.95] | two-hand 9.07 [7.52, 11.88] | two/one 1.473 [1.164, 1.994]
+T_f1_s0: median one-hand 5.81 [5.39, 6.30] | two-hand 7.33 [6.48, 10.34] | two/one 1.263 [1.118, 1.838]
+```
+
+test_iid 上：S_f1_s0 的双手是单手的 1.525 倍 [1.239, 1.880]，T_f1_s0 是 1.546 倍 [1.256, 1.920]。
+
+**评估 2（xfer HA 记录，`eval2_pair.txt`）**
+
+```
+== keep settled (primary): all reaches, 266 kept of 458 record segments, 188 resets
+  median cm [95 %]: S_f1_s0 4.865 [4.241, 5.604] | S_f1_s1 5.096 [4.590, 5.795] | S_f1_s2 4.918 [4.363, 5.612] | T_f1_s0 4.870 [4.341, 5.425] | T_f1_s1 4.980 [4.385, 5.585] | T_f1_s2 4.854 [4.344, 5.391] | F 8.167 [7.301, 8.860]
+  1 - S/F: mean over seeds 0.393 [0.291, 0.466]; per seed s0 0.404 [0.294, 0.489], s1 0.376 [0.277, 0.451], s2 0.398 [0.295, 0.470]
+  1 - T/F: mean over seeds 0.400 [0.315, 0.472]; per seed s0 0.404 [0.323, 0.480], s1 0.390 [0.298, 0.468], s2 0.406 [0.324, 0.478]
+== keep ended (supplement): all reaches, 349 kept of 458 record segments, 252 resets
+  1 - S/F: mean over seeds 0.392 [0.312, 0.464]
+  1 - T/F: mean over seeds 0.409 [0.349, 0.477]
+```
+
+**评估 3（真实 HA 局，`eval3.txt`）**
+
+```
+segments 120 from 40 episodes; kept 120 (fallen / lost 0, not settled 0); touching 73; clean 47; light-touch kept 0 (touching kept without a contact record 0)
+== clean reaches (kept, not touching): 47
+  HA val median: S_f1_s0 6.325 cm; T_f1_s0 6.090 cm
+  all tasks: n 47 (36 episodes); S_f1_s0 median 4.36 [3.22, 10.58] cm; T_f1_s0 median 6.50 [5.15, 7.59] cm; ratio to HA val S_f1_s0 0.689 [0.509, 1.672] (val resampled too [0.488, 1.758]); T_f1_s0 1.068 [0.846, 1.246] (val resampled too [0.809, 1.270]); T - S 2.14 [-4.58, 3.98] cm
+  arm chosen: S_f1_s0 (by the lower real median)
+  task doubledesk: n 22 (18 episodes); S_f1_s0 median 13.37 [10.58, 15.00] cm; T_f1_s0 median 6.82 [5.15, 8.52] cm; ratio to HA val S_f1_s0 2.114 [1.672, 2.372]; T_f1_s0 1.119 [0.846, 1.399]; T - S -6.55 [-7.77, -5.04] cm
+  task ppbox: n 25 (18 episodes); S_f1_s0 median 2.93 [2.61, 3.64] cm; T_f1_s0 median 5.80 [4.84, 7.77] cm; ratio to HA val S_f1_s0 0.463 [0.413, 0.575]; T_f1_s0 0.953 [0.795, 1.276]; T - S 2.88 [1.35, 5.08] cm
+  reach_no 0: n 36 (36 episodes); S_f1_s0 median 7.44 [3.25, 13.04] cm; T_f1_s0 median 7.32 [6.15, 8.52] cm; ratio to HA val S_f1_s0 1.177 [0.515, 2.062]; T_f1_s0 1.202 [1.010, 1.399]; T - S -0.12 [-5.54, 4.50] cm
+  reach_no 1: n 11 (10 episodes); S_f1_s0 median 4.15 [2.72, 5.11] cm; T_f1_s0 median 3.50 [3.26, 4.24] cm; ratio to HA val S_f1_s0 0.655 [0.430, 0.807]; T_f1_s0 0.575 [0.536, 0.695]; T - S -0.65 [-1.04, 0.69] cm
+  task x reach_no doubledesk 0: n 18 (18 episodes); S_f1_s0 median 14.08 [12.69, 15.59] cm; T_f1_s0 median 7.32 [5.78, 9.08] cm; ratio to HA val S_f1_s0 2.227 [2.007, 2.465]; T_f1_s0 1.202 [0.949, 1.491]; T - S -6.76 [-7.67, -5.76] cm
+  task x reach_no doubledesk 1: n 4 (4 episodes); S_f1_s0 median 3.67 [2.66, 4.36] cm; T_f1_s0 median 3.19 [2.10, 3.50] cm; ratio to HA val S_f1_s0 0.580 [0.421, 0.689]; T_f1_s0 0.524 [0.345, 0.575]; T - S -0.47 [-1.28, 0.31] cm
+  task x reach_no ppbox 0: n 18 (18 episodes); S_f1_s0 median 2.91 [2.60, 3.32] cm; T_f1_s0 median 7.32 [5.80, 8.77] cm; ratio to HA val S_f1_s0 0.459 [0.410, 0.525]; T_f1_s0 1.202 [0.953, 1.441]; T - S 4.41 [2.75, 6.07] cm
+  task x reach_no ppbox 1: n 7 (6 episodes); S_f1_s0 median 4.92 [2.67, 5.33] cm; T_f1_s0 median 3.89 [3.33, 4.26] cm; ratio to HA val S_f1_s0 0.778 [0.422, 0.843]; T_f1_s0 0.638 [0.547, 0.699]; T - S -1.03 [-1.08, 1.08] cm
+== light-touch group (revision 2a section 10; kept, touching, light_target): 0
+  doubledesk: no light-touch reaches (touching kept without a record 0; clean n 22)
+  ppbox: no light-touch reaches (touching kept without a record 0; clean n 25)
+== range (sd_range's checks)
+  HA val (reference) inside: joints 92.9 %, pelvis 100.0 %, hands 98.2 %, neighbour 100.0 %, table 100.0 %, range (39) 91.8 %, all three 91.8 %
+  clean: 47 reaches from 36 episodes
+    all three             : inside 97.9 % [93.6, 100.0] (46 in / 1 out); error in / out S_f1_s0 4.25 / 14.05 cm; T_f1_s0 6.66 / 4.24 cm
+    cmd_in_range (hr_real): inside 100.0 % [100.0, 100.0] (47 in / 0 out)
+  light-touch: no segments
+```
+
+- **轻触组**：两个任务都是空组（kept 之后 0 段）。这一行照样保留（协调方 11-26）。
+- 接触计数和骨盆位移只作描述，原文在 `eval3.txt` 的最后一节。
+
+**和预测对照（ScaleBFM，100 % 数据，seed 0–2 的平均，val）**
+
+| 指标 | 预测 | 结果 | 落在哪 |
+|---|---|---|---|
+| 从头训：HA val 是 LML 上 D 的 val 的几倍 | 1.7–2.6 倍 | 2.921 [2.563, 3.306] | 高于预测 |
+| 微调：HA val 比从头训低 | 10–35 % | 4.5 % [−5.8 %, 11.6 %] | 低于预测 |
+| xfer：从头训比 F 低 | 10–40 % | 39.3 % [29.1 %, 46.6 %] | 在预测内，靠上沿 |
+| xfer：微调比 F 低 | 25–55 % | 40.0 % [31.5 %, 47.2 %] | 在预测内 |
+| 学习曲线：从头训 60 % → 100 % 再降 | 8–20 % | 11.7 % [−0.3 %, 21.0 %] | 在预测内 |
+| 真实局：预测误差是 HA val 的几倍 | 1.0–2.5 倍 | 选中的 S_f1_s0 0.689 [0.509, 1.672]；T_f1_s0 1.068 [0.846, 1.246] | S 低于预测，T 在预测内 |
+| 真实局：起始状态在范围内的比例 | ≥ 70 % | 97.9 % [93.6, 100.0] | 满足 |
+
+**对照判据表**
+
+- **第 2 行**（较好的臂在真实局上 ≤ 1.3 倍，而且区间上限 ≤ 1.5）：选中的臂是 S_f1_s0，按真实局中位数较低选出。倍数 0.689 ≤ 1.3，区间上限 1.672 > 1.5，第一行两个条件只满足一个。按用户 11-26 的决定，闸门只作标注，hatask 照跑。
+- **第 4 行**（从头训 60 % → 100 % 仍降 ≥ 10 %，而且微调 100 % 仍是 LML 上 D 的 val 的 > 1.3 倍）：按点估计两个条件都满足（11.7 %；2.790 倍 [2.540, 3.229]），第 4 行触发。11.7 % 的区间下沿是 −0.3 %。
+  - **协调方 11-26 推迟**：现在不采第二批，也不做多环境采集器。理由有两条：
+    1. 用户 11-26 定了范围，只做 3×3 表，不做旁支实验；
+    2. HA 正式局是关键路径。
+  - 等正式结果出来，再由用户决定要不要补。
+- **第 5 行**（微调用 30 % 就追平从头训的 100 %）：T_f0.3_s0 / S_f1_s0 在 val 上是 1.154 [1.016, 1.264]，没追平；在 test_iid 上是 0.967 [0.845, 1.157]。
+- **第 6 行**（从头训在 xfer 记录上不比 F 准）：没有触发，S 比 F 低 39.3 % [29.1 %, 46.6 %]。
+
 ## 意外
+
+- （ScaleBFM 评估）从头训的 HA val 误差是 LML 上 D 的 2.9 倍，高于预测的 1.7–2.6 倍。微调只比从头训低 4.5 %，区间跨 0，低于预测的 10–35 %。
+- （ScaleBFM 评估 3）S_f1_s0 在两个任务上差得很多：
+  - 双桌 13.37 cm，是 val 的 2.11 倍；搬箱子 2.93 cm，是 val 的 0.46 倍。
+  - 差别主要在抬手中间点（reach_no 0）：双桌上 S 14.08 cm、T 7.32 cm；搬箱子上 S 2.91 cm、T 7.32 cm。
+  - T 在两个任务上差不多（1.12 倍、0.95 倍）。
 
 - （开发阶段，看正式数据之前）HEFT 在空地上走路只走到要求长度的 0.57–0.81 倍（修订 2a 第 7 节的朝向诊断），短段几乎不迈步，伸手时骨盆在两脚不动的情况下前移，然后补步（修订 2a 第 3、13、14 节）。
 - （开发阶段，看正式数据之前）HEFT 走 hg_walk 不迈步，主要原因是走路参考给错了：LML 的任务局给 HEFT 用的是 gait_heft（heft_walkstop 在 LML 复现）。换成 gait_heft 以后，冒烟里 6 局都走到了站位，误差 0.004–0.092 m；但 18 下伸手全都碰到东西（修订 2a 补记第 5、11、12 条）。
