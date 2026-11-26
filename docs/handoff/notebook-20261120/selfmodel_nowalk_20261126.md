@@ -538,12 +538,412 @@ REPRODUCTION PASS
 ## 结果（贴原始输出，不转述）
 <!-- 取指标的命令 + 原始输出；完整日志、checkpoint、评测输出的路径。 -->
 
+### 第一阶段（SIMPLE，ScaleBFM）
+
+**运行**
+- 4090b 的 0 号卡，2026-11-26T09:21:38Z–10:08:58Z。
+- 前一次在 H20 上的运行被中断，见修订 1；之后接管成两个训练同时跑，见修订 1b。
+- 5 个训练都跑满 30 000 步。挑 checkpoint 只用原地的 val（4260 段，N、C、C2 是同一批）。
+- `run_b/run.log`（去掉了每分钟一行的等待记录）：
+
+```
+2026-11-26T09:21:38Z code ok (test 0); code /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/asrun/code; out /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b; jobs N:0:0 C:0:0 C2:0:0 N:1:0
+SPLIT CHECK PASS
+2026-11-26T09:21:38Z train
+2026-11-26T09:21:38Z nvidia-smi before N s0: 0, 9701 MiB, 83 % 1, 17282 MiB, 93 % 
+2026-11-26T09:21:38Z train N seed 0 on GPU 0: pid 320222
+2026-11-26T09:22:28Z   nw_train arm N: {"arm": "N", "splits": "/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/splits/splits.npz", "splits_md5": "4a47e698", "n_drop_resets": 14887, "zero_walk_flag": true,
+2026-11-26T09:26:14Z code ok (test 0); code /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/asrun/code; out /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b; jobs C:0:0 C2:0:0 N:1:0 C:1:0
+SPLIT CHECK PASS
+2026-11-26T09:26:14Z train
+2026-11-26T09:26:14Z takeover: nw_run_b.sh pid 319991 stopped; N s0 pid 320222 adopted; two of ours at a time on card 0
+2026-11-26T09:26:14Z nvidia-smi before C s0: 0, 4247 MiB, 95 % 1, 18189 MiB, 96 % 
+2026-11-26T09:26:14Z train C seed 0 on GPU 0: pid 328871
+2026-11-26T09:27:04Z   nw_train arm C: {"arm": "C", "splits": "/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/splits/splits.npz", "splits_md5": "4a47e698", "n_drop_resets": 10979, "zero_walk_flag": false
+2026-11-26T09:38:05Z nvidia-smi before C2 s0: 0, 3675 MiB, 53 % 1, 18184 MiB, 93 % 
+2026-11-26T09:38:05Z train C2 seed 0 on GPU 0: pid 339533
+2026-11-26T09:38:55Z   nw_train arm C2: {"arm": "C2", "splits": "/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/splits/splits.npz", "splits_md5": "4a47e698", "n_drop_resets": 10979, "zero_walk_flag": tru
+2026-11-26T09:42:55Z nvidia-smi before N s1: 0, 2778 MiB, 18 % 1, 16370 MiB, 61 % 
+2026-11-26T09:42:55Z train N seed 1 on GPU 0: pid 342464
+2026-11-26T09:43:45Z   nw_train arm N: {"arm": "N", "splits": "/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/splits/splits.npz", "splits_md5": "4a47e698", "n_drop_resets": 14887, "zero_walk_flag": true,
+2026-11-26T09:53:46Z nvidia-smi before C s1: 0, 2778 MiB, 19 % 1, 17438 MiB, 94 % 
+2026-11-26T09:53:46Z train C seed 1 on GPU 0: pid 360913
+2026-11-26T09:54:26Z   nw_train arm C: {"arm": "C", "splits": "/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/splits/splits.npz", "splits_md5": "4a47e698", "n_drop_resets": 10979, "zero_walk_flag": false
+2026-11-26T10:04:38Z N s0 ended; stopped nw_run_b.sh (pid 319991) killed
+E3_ensemble frac 1.0: best val median 1.674 cm (893.3 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_C2_s0/E3_ensemble_f1
+E3_ensemble frac 1.0: best val median 1.695 cm (900.9 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_C_s0/E3_ensemble_f1
+E3_ensemble frac 1.0: best val median 1.698 cm (609.7 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_C_s1/E3_ensemble_f1
+E3_ensemble frac 1.0: best val median 1.658 cm (886.1 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_N_s0/E3_ensemble_f1
+E3_ensemble frac 1.0: best val median 1.684 cm (801.5 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_N_s1/E3_ensemble_f1
+2026-11-26T10:04:38Z eval s0
+2026-11-26T10:06:09Z eval s1
+2026-11-26T10:07:25Z range N
+```
+
+**主评估：真实局主标签 settled，235 段**
+- 种子 0（`run_b/eval_s0.txt`，md5 451044a9），原文：
+
+```
+arms {'D': ('/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/train/models_D_s0', False), 'N': ('/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_N_s0', True), 'C': ('/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_C_s0', False), 'C2': ('/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/run_b/models_C2_s0', True)}; splits /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_nowalk_20261126/splits/splits.npz; FDVEL True; device cpu
+== real main label, kept settled (PRIMARY): 235 segments, 120 episodes, 40 layouts; walked 235
+  all: n 235 (40 layouts)
+    median cm: D 0.705 [0.483, 1.031] | N 1.014 [0.916, 1.239] | C 0.873 [0.635, 1.186] | C2 0.914 [0.723, 1.434]
+    p90 cm:    D 2.95 | N 2.84 | C 3.10 | C2 3.90;  attitude deg median: D 2.38 | N 2.55 | C 2.05 | C2 1.83
+    ratio:     N/C 1.161 [0.976, 1.520] | N/C2 1.110 [0.838, 1.373] | C2/C 1.046 [0.955, 1.292] | N/D 1.438 [1.051, 2.003] | C/D 1.238 [0.995, 1.592] | C2/D 1.296 [1.081, 1.671]
+  first reach (pre-grasp): n 116 (39 layouts)
+    median cm: D 0.720 [0.487, 1.009] | N 1.044 [0.918, 1.380] | C 0.807 [0.651, 1.018] | C2 0.999 [0.728, 1.586]
+    p90 cm:    D 2.58 | N 2.66 | C 2.92 | C2 3.43;  attitude deg median: D 2.39 | N 2.74 | C 2.20 | C2 2.08
+    ratio:     N/C 1.294 [1.071, 1.555] | N/C2 1.045 [0.762, 1.394] | C2/C 1.238 [0.995, 1.669] | N/D 1.451 [1.128, 2.079] | C/D 1.121 [0.905, 1.572] | C2/D 1.388 [1.160, 1.903]
+  second reach (entry): n 119 (40 layouts)
+    median cm: D 0.622 [0.404, 1.096] | N 0.992 [0.901, 1.131] | C 0.896 [0.575, 1.300] | C2 0.863 [0.662, 1.169]
+    p90 cm:    D 3.27 | N 2.82 | C 3.05 | C2 4.09;  attitude deg median: D 1.84 | N 2.50 | C 1.69 | C2 1.37
+    ratio:     N/C 1.107 [0.799, 1.637] | N/C2 1.149 [0.903, 1.426] | C2/C 0.963 [0.743, 1.222] | N/D 1.595 [0.969, 2.332] | C/D 1.441 [1.068, 1.737] | C2/D 1.388 [0.919, 1.779]
+  three tasks (no TabletopGraspMP): n 180 (30 layouts)
+    median cm: D 0.486 [0.440, 0.722] | N 0.924 [0.862, 1.017] | C 0.652 [0.536, 0.895] | C2 0.728 [0.634, 0.922]
+    p90 cm:    D 1.21 | N 1.53 | C 1.37 | C2 1.61;  attitude deg median: D 1.93 | N 2.43 | C 1.82 | C2 1.53
+    ratio:     N/C 1.416 [1.103, 1.685] | N/C2 1.268 [1.040, 1.444] | C2/C 1.117 [0.984, 1.247] | N/D 1.900 [1.379, 2.077] | C/D 1.342 [1.141, 1.535] | C2/D 1.499 [1.245, 1.649]
+  task XMovePickTeleop: n 60 (10 layouts)
+    median cm: D 0.361 [0.331, 0.438] | N 0.924 [0.888, 0.957] | C 0.541 [0.520, 0.601] | C2 0.632 [0.592, 0.663]
+    p90 cm:    D 0.50 | N 1.05 | C 0.69 | C2 0.73;  attitude deg median: D 1.70 | N 2.70 | C 1.73 | C2 1.24
+    ratio:     N/C 1.707 [1.527, 1.761] | N/C2 1.462 [1.383, 1.545] | C2/C 1.168 [1.085, 1.183] | N/D 2.561 [2.092, 2.768] | C/D 1.500 [1.235, 1.657] | C2/D 1.751 [1.388, 1.907]
+  task XMoveBendPickTeleop: n 60 (10 layouts)
+    median cm: D 0.401 [0.294, 0.485] | N 0.691 [0.538, 0.820] | C 0.454 [0.366, 0.706] | C2 0.529 [0.305, 0.862]
+    p90 cm:    D 0.74 | N 1.05 | C 0.87 | C2 1.00;  attitude deg median: D 1.23 | N 1.73 | C 1.86 | C2 1.16
+    ratio:     N/C 1.521 [1.088, 2.004] | N/C2 1.306 [0.937, 1.928] | C2/C 1.165 [0.814, 1.614] | N/D 1.723 [1.349, 2.540] | C/D 1.132 [0.922, 1.548] | C2/D 1.319 [0.958, 2.146]
+  task BendPickMP: n 60 (10 layouts)
+    median cm: D 1.070 [0.994, 1.160] | N 1.363 [1.130, 1.520] | C 1.259 [1.132, 1.339] | C2 1.539 [1.155, 1.612]
+    p90 cm:    D 1.33 | N 1.74 | C 1.59 | C2 1.67;  attitude deg median: D 3.46 | N 2.16 | C 2.13 | C2 2.55
+    ratio:     N/C 1.082 [0.873, 1.260] | N/C2 0.885 [0.799, 1.096] | C2/C 1.223 [0.916, 1.349] | N/D 1.273 [1.009, 1.470] | C/D 1.177 [1.089, 1.240] | C2/D 1.439 [1.064, 1.565]
+  task TabletopGraspMP: n 55 (10 layouts)
+    median cm: D 2.263 [1.988, 30.168] | N 1.773 [1.525, 31.538] | C 2.625 [2.114, 29.308] | C2 2.990 [2.246, 29.784]
+    p90 cm:    D 35.04 | N 35.98 | C 34.49 | C2 35.36;  attitude deg median: D 4.63 | N 5.96 | C 4.71 | C2 4.64
+    ratio:     N/C 0.676 [0.663, 1.110] | N/C2 0.593 [0.586, 1.118] | C2/C 1.139 [0.946, 1.341] | N/D 0.784 [0.752, 1.047] | C/D 1.160 [0.924, 1.226] | C2/D 1.322 [0.931, 1.349]
+  reproduction: D median 0.70526 vs simpledata 0.70526 (+0.00000)
+```
+
+- 种子 1（`run_b/eval_s1.txt`，md5 3ff3fe2d），原文：
+
+```
+== real main label, kept settled (PRIMARY): 235 segments, 120 episodes, 40 layouts; walked 235
+  all: n 235 (40 layouts)
+    median cm: D 0.705 [0.483, 1.031] | N 1.021 [0.971, 1.103] | C 0.940 [0.806, 1.037]
+    p90 cm:    D 2.95 | N 2.62 | C 3.29;  attitude deg median: D 2.38 | N 3.04 | C 1.92
+    ratio:     N/C 1.086 [1.002, 1.276] | N/D 1.447 [1.012, 2.099] | C/D 1.333 [0.979, 1.821]
+  first reach (pre-grasp): n 116 (39 layouts)
+    median cm: D 0.720 [0.487, 1.009] | N 1.147 [1.080, 1.231] | C 0.882 [0.812, 0.990]
+    p90 cm:    D 2.58 | N 2.44 | C 2.89;  attitude deg median: D 2.39 | N 3.15 | C 2.24
+    ratio:     N/C 1.300 [1.157, 1.443] | N/D 1.593 [1.170, 2.374] | C/D 1.226 [0.912, 1.826]
+  second reach (entry): n 119 (40 layouts)
+    median cm: D 0.622 [0.404, 1.096] | N 0.943 [0.880, 0.986] | C 0.978 [0.766, 1.117]
+    p90 cm:    D 3.27 | N 2.61 | C 3.26;  attitude deg median: D 1.84 | N 2.90 | C 1.45
+    ratio:     N/C 0.964 [0.830, 1.227] | N/D 1.518 [0.861, 2.287] | C/D 1.574 [0.993, 1.997]
+  three tasks (no TabletopGraspMP): n 180 (30 layouts)
+    median cm: D 0.486 [0.440, 0.722] | N 0.975 [0.943, 1.025] | C 0.806 [0.761, 0.882]
+    p90 cm:    D 1.21 | N 1.28 | C 1.15;  attitude deg median: D 1.93 | N 2.20 | C 1.71
+    ratio:     N/C 1.209 [1.088, 1.316] | N/D 2.005 [1.363, 2.230] | C/D 1.659 [1.193, 1.784]
+  task XMovePickTeleop: n 60 (10 layouts)
+    median cm: D 0.361 [0.331, 0.438] | N 0.930 [0.905, 0.954] | C 0.774 [0.752, 0.822]
+    p90 cm:    D 0.50 | N 1.12 | C 1.00;  attitude deg median: D 1.70 | N 3.37 | C 1.43
+    ratio:     N/C 1.201 [1.140, 1.241] | N/D 2.577 [2.088, 2.795] | C/D 2.147 [1.777, 2.287]
+  task XMoveBendPickTeleop: n 60 (10 layouts)
+    median cm: D 0.401 [0.294, 0.485] | N 1.001 [0.967, 1.058] | C 0.621 [0.487, 0.809]
+    p90 cm:    D 0.74 | N 1.34 | C 0.98;  attitude deg median: D 1.23 | N 2.12 | C 1.46
+    ratio:     N/C 1.613 [1.217, 2.164] | N/D 2.495 [2.022, 3.578] | C/D 1.547 [1.368, 1.903]
+  task BendPickMP: n 60 (10 layouts)
+    median cm: D 1.070 [0.994, 1.160] | N 1.074 [0.764, 1.146] | C 1.041 [0.975, 1.125]
+    p90 cm:    D 1.33 | N 1.29 | C 1.36;  attitude deg median: D 3.46 | N 1.57 | C 1.92
+    ratio:     N/C 1.032 [0.695, 1.132] | N/D 1.004 [0.686, 1.117] | C/D 0.973 [0.917, 1.056]
+  task TabletopGraspMP: n 55 (10 layouts)
+    median cm: D 2.263 [1.988, 30.168] | N 2.113 [1.635, 30.845] | C 2.419 [1.827, 29.325]
+    p90 cm:    D 35.04 | N 35.57 | C 34.68;  attitude deg median: D 4.63 | N 6.37 | C 4.24
+    ratio:     N/C 0.873 [0.719, 1.111] | N/D 0.934 [0.706, 1.031] | C/D 1.069 [0.914, 1.121]
+  reproduction: D median 0.70526 vs simpledata 0.70526 (+0.00000)
+```
+
+- 两份都打出了 `REPRODUCTION PASS`：D 的四个中位数 0.70526、0.82076、1.88601、1.57564，差都是 +0.00000。
+
+**次要评估**：两份 eval 里其余各表的比值行，原文：
+
+```
+[eval_s0.txt]
+== real main label, kept ended: 240 segments, 120 episodes, 40 layouts; walked 240
+  all: n 240 (40 layouts)
+    ratio:     N/C 1.139 [0.952, 1.511] | N/C2 1.037 [0.820, 1.363] | C2/C 1.098 [0.954, 1.331] | N/D 1.400 [1.040, 1.988] | C/D 1.229 [0.996, 1.578] | C2/D 1.350 [1.076, 1.664]
+  first reach (pre-grasp): n 120 (40 layouts)
+    ratio:     N/C 1.231 [1.062, 1.553] | N/C2 1.007 [0.763, 1.394] | C2/C 1.222 [1.000, 1.682] | N/D 1.429 [1.112, 2.078] | C/D 1.161 [0.902, 1.556] | C2/D 1.419 [1.171, 1.883]
+  second reach (entry): n 120 (40 layouts)
+    ratio:     N/C 1.111 [0.804, 1.641] | N/C2 1.151 [0.892, 1.425] | C2/C 0.965 [0.754, 1.233] | N/D 1.501 [0.966, 2.370] | C/D 1.350 [1.070, 1.742] | C2/D 1.304 [0.931, 1.780]
+  three tasks (no TabletopGraspMP): n 180 (30 layouts)
+    ratio:     N/C 1.416 [1.102, 1.684] | N/C2 1.268 [1.033, 1.437] | C2/C 1.117 [0.990, 1.253] | N/D 1.900 [1.354, 2.073] | C/D 1.342 [1.134, 1.548] | C2/D 1.499 [1.247, 1.654]
+  task XMovePickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.707 [1.538, 1.763] | N/C2 1.462 [1.390, 1.546] | C2/C 1.168 [1.090, 1.183] | N/D 2.561 [2.093, 2.759] | C/D 1.500 [1.237, 1.654] | C2/D 1.751 [1.395, 1.908]
+  task XMoveBendPickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.521 [1.088, 2.008] | N/C2 1.306 [0.938, 1.878] | C2/C 1.165 [0.845, 1.622] | N/D 1.723 [1.356, 2.547] | C/D 1.132 [0.917, 1.553] | C2/D 1.319 [0.962, 2.145]
+  task BendPickMP: n 60 (10 layouts)
+    ratio:     N/C 1.082 [0.859, 1.258] | N/C2 0.885 [0.800, 1.097] | C2/C 1.223 [0.917, 1.343] | N/D 1.273 [1.004, 1.475] | C/D 1.177 [1.085, 1.241] | C2/D 1.439 [1.067, 1.569]
+  task TabletopGraspMP: n 60 (10 layouts)
+    ratio:     N/C 0.875 [0.672, 1.109] | N/C2 0.679 [0.609, 1.091] | C2/C 1.289 [0.948, 1.324] | N/D 0.872 [0.751, 1.046] | C/D 0.997 [0.924, 1.242] | C2/D 1.285 [0.956, 1.322]
+== real task label, kept ended: 240 segments, 120 episodes, 40 layouts; walked 240
+  all: n 240 (40 layouts)
+    ratio:     N/C 1.171 [0.804, 1.677] | N/C2 1.083 [0.773, 1.519] | C2/C 1.081 [0.869, 1.239] | N/D 1.267 [0.930, 2.425] | C/D 1.082 [0.970, 1.741] | C2/D 1.170 [0.954, 1.854]
+  first reach (pre-grasp): n 120 (40 layouts)
+    ratio:     N/C 1.218 [0.869, 1.724] | N/C2 1.033 [0.769, 1.603] | C2/C 1.180 [0.937, 1.460] | N/D 1.416 [1.021, 2.690] | C/D 1.163 [0.883, 1.820] | C2/D 1.372 [1.039, 2.009]
+  second reach (entry): n 120 (40 layouts)
+    ratio:     N/C 1.158 [0.737, 1.721] | N/C2 1.141 [0.794, 1.606] | C2/C 1.014 [0.727, 1.229] | N/D 1.235 [0.826, 2.392] | C/D 1.067 [0.952, 1.683] | C2/D 1.082 [0.809, 1.795]
+  three tasks (no TabletopGraspMP): n 180 (30 layouts)
+    ratio:     N/C 1.563 [1.066, 1.891] | N/C2 1.426 [1.098, 1.736] | C2/C 1.096 [0.889, 1.243] | N/D 2.295 [1.093, 2.574] | C/D 1.469 [1.019, 1.751] | C2/D 1.610 [0.992, 1.821]
+  task XMovePickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.983 [1.691, 2.183] | N/C2 1.890 [1.537, 2.141] | C2/C 1.049 [0.948, 1.184] | N/D 2.825 [2.481, 3.275] | C/D 1.425 [1.339, 1.581] | C2/D 1.495 [1.339, 1.700]
+  task XMoveBendPickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.588 [1.130, 2.124] | N/C2 1.394 [1.086, 1.937] | C2/C 1.139 [0.728, 1.532] | N/D 2.050 [1.513, 2.488] | C/D 1.291 [1.040, 1.517] | C2/D 1.470 [0.906, 1.894]
+  task BendPickMP: n 60 (10 layouts)
+    ratio:     N/C 1.082 [0.701, 1.156] | N/C2 0.974 [0.733, 1.088] | C2/C 1.111 [0.956, 1.157] | N/D 1.293 [0.854, 1.413] | C/D 1.195 [1.142, 1.283] | C2/D 1.328 [1.137, 1.422]
+  task TabletopGraspMP: n 60 (10 layouts)
+    ratio:     N/C 0.877 [0.597, 1.099] | N/C2 0.667 [0.509, 1.089] | C2/C 1.315 [0.992, 1.334] | N/D 0.890 [0.661, 1.048] | C/D 1.015 [0.942, 1.247] | C2/D 1.335 [0.940, 1.409]
+  reproduction: D median 0.82076 vs simpledata 0.82076 (+0.00000)
+== data3 held out (kept settled): val 3252, test_iid 3116 segments
+  val all (simpledata's denominator): n 3252 (2381 resets)
+    ratio:     N/C 1.303 [1.251, 1.373] | N/C2 1.299 [1.240, 1.364] | C2/C 1.003 [0.977, 1.036] | N/D 1.407 [1.350, 1.479] | C/D 1.080 [1.047, 1.114] | C2/D 1.083 [1.045, 1.126]
+  first, in place (val + test_iid): n 2205 (2205 resets)
+    ratio:     N/C 0.903 [0.876, 0.939] | N/C2 0.903 [0.872, 0.938] | C2/C 1.001 [0.970, 1.036] | N/D 1.032 [1.000, 1.072] | C/D 1.142 [1.100, 1.188] | C2/D 1.143 [1.102, 1.189]
+  chained, in place (val + test_iid): n 2066 (2066 resets)
+    ratio:     N/C 0.992 [0.953, 1.026] | N/C2 0.986 [0.948, 1.018] | C2/C 1.006 [0.978, 1.034] | N/D 1.082 [1.045, 1.110] | C/D 1.091 [1.051, 1.129] | C2/D 1.098 [1.057, 1.134]
+  first, task walk (test_iid): n 517 (517 resets)
+    ratio:     N/C 1.460 [1.331, 1.575] | N/C2 1.479 [1.372, 1.620] | C2/C 0.988 [0.917, 1.034] | N/D 1.694 [1.569, 1.836] | C/D 1.160 [1.094, 1.260] | C2/D 1.146 [1.063, 1.217]
+  chained, task walk (test_iid): n 512 (512 resets)
+    ratio:     N/C 1.054 [0.985, 1.150] | N/C2 1.027 [0.962, 1.160] | C2/C 1.026 [0.944, 1.094] | N/D 1.108 [1.044, 1.200] | C/D 1.051 [0.984, 1.127] | C2/D 1.079 [0.967, 1.151]
+  first, d3 walk (val): n 543 (543 resets)
+    ratio:     N/C 2.174 [2.013, 2.348] | N/C2 2.152 [1.951, 2.313] | C2/C 1.010 [0.961, 1.084] | N/D 2.461 [2.281, 2.614] | C/D 1.132 [1.060, 1.194] | C2/D 1.144 [1.068, 1.233]
+  chained, d3 walk (val): n 525 (525 resets)
+    ratio:     N/C 1.481 [1.363, 1.575] | N/C2 1.447 [1.350, 1.551] | C2/C 1.024 [0.966, 1.069] | N/D 1.610 [1.476, 1.690] | C/D 1.087 [1.023, 1.146] | C2/D 1.113 [1.039, 1.159]
+  test_iid all: n 3116 (2251 resets)
+    ratio:     N/C 1.071 [1.032, 1.119] | N/C2 1.090 [1.049, 1.129] | C2/C 0.982 [0.957, 1.019] | N/D 1.194 [1.153, 1.251] | C/D 1.115 [1.069, 1.165] | C2/D 1.095 [1.060, 1.145]
+  reproduction: data3 val all D median 1.88601 vs simpledata 1.88601 (+0.00000)
+  reproduction: data3 test_iid all D median 1.57564 vs simpledata 1.57564 (+0.00000)
+== data3b held out (kept settled): val 2923, test_iid 2920 segments
+  val all: n 2923 (1295 resets)
+    ratio:     N/C 1.201 [1.145, 1.261] | N/C2 1.177 [1.129, 1.237] | C2/C 1.020 [0.990, 1.044] | N/D 1.307 [1.250, 1.373] | C/D 1.088 [1.056, 1.123] | C2/D 1.110 [1.076, 1.141]
+  pre-grasp first + entry chain 1, task walk (test_iid): n 140 (86 resets)
+    ratio:     N/C 1.545 [1.293, 1.744] | N/C2 1.549 [1.288, 1.738] | C2/C 0.998 [0.904, 1.087] | N/D 1.625 [1.354, 1.912] | C/D 1.051 [0.954, 1.207] | C2/D 1.049 [0.965, 1.198]
+  pre-grasp first + entry chain 1, in place (val + test_iid): n 582 (333 resets)
+    ratio:     N/C 0.972 [0.885, 1.066] | N/C2 0.939 [0.859, 1.031] | C2/C 1.034 [0.963, 1.112] | N/D 1.092 [0.997, 1.174] | C/D 1.124 [1.024, 1.189] | C2/D 1.163 [1.063, 1.255]
+  pre-grasp first + entry chain 1, d3 walk (val): n 170 (94 resets)
+    ratio:     N/C 2.147 [1.854, 2.578] | N/C2 2.115 [1.780, 2.524] | C2/C 1.015 [0.933, 1.137] | N/D 2.476 [2.193, 2.984] | C/D 1.154 [1.025, 1.303] | C2/D 1.171 [1.074, 1.337]
+  test_iid all: n 2920 (1316 resets)
+    ratio:     N/C 1.086 [1.043, 1.128] | N/C2 1.090 [1.044, 1.128] | C2/C 0.997 [0.973, 1.028] | N/D 1.198 [1.154, 1.244] | C/D 1.103 [1.068, 1.141] | C2/D 1.099 [1.067, 1.140]
+[eval_s1.txt]
+== real main label, kept ended: 240 segments, 120 episodes, 40 layouts; walked 240
+  all: n 240 (40 layouts)
+    ratio:     N/C 1.081 [0.994, 1.258] | N/D 1.414 [0.996, 2.083] | C/D 1.307 [0.969, 1.815]
+  first reach (pre-grasp): n 120 (40 layouts)
+    ratio:     N/C 1.286 [1.151, 1.434] | N/D 1.567 [1.143, 2.347] | C/D 1.218 [0.907, 1.835]
+  second reach (entry): n 120 (40 layouts)
+    ratio:     N/C 0.960 [0.827, 1.228] | N/D 1.422 [0.860, 2.302] | C/D 1.481 [0.992, 2.023]
+  three tasks (no TabletopGraspMP): n 180 (30 layouts)
+    ratio:     N/C 1.209 [1.091, 1.317] | N/D 2.005 [1.343, 2.210] | C/D 1.659 [1.178, 1.785]
+  task XMovePickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.201 [1.144, 1.240] | N/D 2.577 [2.093, 2.785] | C/D 2.147 [1.779, 2.284]
+  task XMoveBendPickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.613 [1.222, 2.160] | N/D 2.495 [2.024, 3.573] | C/D 1.547 [1.366, 1.922]
+  task BendPickMP: n 60 (10 layouts)
+    ratio:     N/C 1.032 [0.698, 1.139] | N/D 1.004 [0.694, 1.118] | C/D 0.973 [0.912, 1.055]
+  task TabletopGraspMP: n 60 (10 layouts)
+    ratio:     N/C 0.844 [0.719, 1.092] | N/D 0.820 [0.733, 1.030] | C/D 0.973 [0.923, 1.112]
+== real task label, kept ended: 240 segments, 120 episodes, 40 layouts; walked 240
+  all: n 240 (40 layouts)
+    ratio:     N/C 1.189 [0.961, 1.432] | N/D 1.390 [0.966, 2.705] | C/D 1.169 [0.908, 2.077]
+  first reach (pre-grasp): n 120 (40 layouts)
+    ratio:     N/C 1.307 [1.054, 1.569] | N/D 1.547 [1.094, 3.058] | C/D 1.183 [0.849, 2.196]
+  second reach (entry): n 120 (40 layouts)
+    ratio:     N/C 0.954 [0.773, 1.257] | N/D 1.148 [0.747, 2.309] | C/D 1.203 [0.933, 1.981]
+  three tasks (no TabletopGraspMP): n 180 (30 layouts)
+    ratio:     N/C 1.318 [1.020, 1.480] | N/D 2.419 [1.075, 2.801] | C/D 1.836 [0.986, 2.071]
+  task XMovePickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.471 [1.369, 1.609] | N/D 2.922 [2.738, 3.478] | C/D 1.987 [1.873, 2.271]
+  task XMoveBendPickTeleop: n 60 (10 layouts)
+    ratio:     N/C 1.530 [1.270, 2.169] | N/D 2.608 [2.187, 3.335] | C/D 1.705 [1.337, 1.964]
+  task BendPickMP: n 60 (10 layouts)
+    ratio:     N/C 0.929 [0.704, 1.058] | N/D 0.915 [0.709, 1.062] | C/D 0.984 [0.953, 1.062]
+  task TabletopGraspMP: n 60 (10 layouts)
+    ratio:     N/C 0.768 [0.719, 1.078] | N/D 0.830 [0.754, 1.036] | C/D 1.080 [0.909, 1.206]
+  reproduction: D median 0.82076 vs simpledata 0.82076 (+0.00000)
+== data3 held out (kept settled): val 3252, test_iid 3116 segments
+  val all (simpledata's denominator): n 3252 (2381 resets)
+    ratio:     N/C 1.303 [1.238, 1.356] | N/D 1.438 [1.371, 1.506] | C/D 1.104 [1.073, 1.143]
+  first, in place (val + test_iid): n 2205 (2205 resets)
+    ratio:     N/C 0.866 [0.838, 0.902] | N/D 1.030 [0.999, 1.074] | C/D 1.189 [1.149, 1.237]
+  chained, in place (val + test_iid): n 2066 (2066 resets)
+    ratio:     N/C 0.999 [0.969, 1.033] | N/D 1.091 [1.053, 1.123] | C/D 1.092 [1.052, 1.120]
+  first, task walk (test_iid): n 517 (517 resets)
+    ratio:     N/C 1.457 [1.343, 1.538] | N/D 1.749 [1.622, 1.876] | C/D 1.201 [1.136, 1.286]
+  chained, task walk (test_iid): n 512 (512 resets)
+    ratio:     N/C 1.095 [1.008, 1.151] | N/D 1.124 [1.045, 1.191] | C/D 1.026 [0.976, 1.107]
+  first, d3 walk (val): n 543 (543 resets)
+    ratio:     N/C 2.162 [2.022, 2.325] | N/D 2.481 [2.316, 2.655] | C/D 1.148 [1.086, 1.212]
+  chained, d3 walk (val): n 525 (525 resets)
+    ratio:     N/C 1.458 [1.372, 1.551] | N/D 1.579 [1.459, 1.662] | C/D 1.083 [1.013, 1.124]
+  test_iid all: n 3116 (2251 resets)
+    ratio:     N/C 1.062 [1.027, 1.109] | N/D 1.201 [1.163, 1.263] | C/D 1.131 [1.094, 1.179]
+  reproduction: data3 val all D median 1.88601 vs simpledata 1.88601 (+0.00000)
+  reproduction: data3 test_iid all D median 1.57564 vs simpledata 1.57564 (+0.00000)
+== data3b held out (kept settled): val 2923, test_iid 2920 segments
+  val all: n 2923 (1295 resets)
+    ratio:     N/C 1.224 [1.164, 1.265] | N/D 1.333 [1.279, 1.385] | C/D 1.089 [1.066, 1.130]
+  pre-grasp first + entry chain 1, task walk (test_iid): n 140 (86 resets)
+    ratio:     N/C 1.411 [1.194, 1.692] | N/D 1.601 [1.346, 1.940] | C/D 1.134 [1.003, 1.274]
+  pre-grasp first + entry chain 1, in place (val + test_iid): n 582 (333 resets)
+    ratio:     N/C 0.901 [0.837, 0.978] | N/D 1.028 [0.958, 1.108] | C/D 1.141 [1.059, 1.220]
+  pre-grasp first + entry chain 1, d3 walk (val): n 170 (94 resets)
+    ratio:     N/C 2.363 [1.965, 2.701] | N/D 2.591 [2.306, 3.025] | C/D 1.096 [1.032, 1.289]
+  test_iid all: n 2920 (1316 resets)
+    ratio:     N/C 1.106 [1.060, 1.143] | N/D 1.213 [1.171, 1.252] | C/D 1.096 [1.065, 1.140]
+```
+
+**起点在不在 N 的训练范围里**（`run_b/range_N.txt`，md5 a88c045a）
+- 注意：sd_range 的输出里写的"D median"，这里指的是 N s0 的模型。nw_range 换掉的是训练集和模型，没有改输出的字。
+- 原文节选：
+
+```
+nw_range: arm N, zero walk flag True; sd_range /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/asrun/repo/scripts/experiments/selfmodel_simpledata_20261126/sd_range.py
+table /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/asrun/repo_b/scripts/experiments/selfmodel_data3_20261125/d3_reach_table.json md5 9d4c716a5ad271ef92cb05ac83aa976f; device cpu
+nw_range arm N: training split 542459 segments (14887 resets dropped)
+training set: 542459 segments (19523 resets) from /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/data3/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/data3b/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/train/data/mid_data3.npz,/wu
+SIMPLE val (data3 val, all, kept settled): 3252 segments, D median 2.654 cm
+  reference, val inside: joints 59.9 %, pelvis 92.6 %, hands 94.2 %, neighbour 96.1 %, table 100.0 %, range (39) 50.4 %, all three 50.4 %; nearest-neighbour distance median 7.089
+== main label, kept settled (primary): 235 segments from 120 episodes (/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/real/main/data/all.npz); in place 0, walk first 235; D median 1.014 cm = 0.382x SIMPLE val; nearest-neighbour distance median 5.727 (training p99 20.960)
+  joints     : inside 78.7 % [74.1, 83.1] (185 / 50 out); error inside 1.01 cm (0.38x), outside 1.06 cm (0.40x)
+               walk first n 235 inside 78.7 % (err in 1.01 / out 1.06); first reach n 116 inside 84.5 % (err in 1.17 / out 0.54); second reach n 119 inside 73.1 % (err in 0.93 / out 1.32)
+  pelvis     : inside 98.7 % [97.0, 100.0] (232 / 3 out); error inside 1.01 cm (0.38x), outside 35.06 cm (13.21x)
+               walk first n 235 inside 98.7 % (err in 1.01 / out 35.06); first reach n 116 inside 100.0 % (err in 1.04 / out -); second reach n 119 inside 97.5 % (err in 0.98 / out 35.06)
+  neighbour  : inside 99.1 % [97.8, 100.0] (233 / 2 out); error inside 1.01 cm (0.38x), outside 29.36 cm (11.06x)
+               walk first n 235 inside 99.1 % (err in 1.01 / out 29.36); first reach n 116 inside 100.0 % (err in 1.04 / out -); second reach n 119 inside 98.3 % (err in 0.98 / out 29.36)
+  range (39) : inside 78.7 % [73.8, 83.1] (185 / 50 out); error inside 1.01 cm (0.38x), outside 1.06 cm (0.40x)
+               walk first n 235 inside 78.7 % (err in 1.01 / out 1.06); first reach n 116 inside 84.5 % (err in 1.17 / out 0.54); second reach n 119 inside 73.1 % (err in 0.93 / out 1.32)
+```
+
+- 对照：D 在同一批段上的结果是 range (39) 86.8 %，第一下 100.0 %，第二下 73.9 %（simpledata `train/eval4.txt`）。
+
+**文件**（本目录下）
+- `run_b/`：`run.log`、`logs/train_*.log`、`models_{N,C,C2}_s0`、`models_{N,C}_s1`；
+- `eval_s0/eval.json`（md5 1330c526）、`eval_s1/eval.json`（md5 9963a0d9），以及每段误差的 `per_segment.npz`；
+- `range_N.json`。
+
+
 ## 意外
 <!-- 预测和结果哪里对不上？有什么没想到的现象？ -->
+
+### 第一阶段
+
+**预测和结果对照**（种子 0；括号里是种子 1）
+
+| 项 | 预测 | 结果 | 落在区间里？ |
+|---|---|---|---|
+| 训练时间（修订 1 改写的） | 每个 20–45 分钟 | 610–901 s，即 10–15 分钟 | 否，更快：b0a 09:24Z 就走了 |
+| 挑 checkpoint 的原地 val，N/C | 0.88–1.02 | 1.658 / 1.695 = 0.978（1.684 / 1.698 = 0.992） | 是 |
+| **N/C，全部 235 段** | **1.00–1.20** | **1.161**（1.086） | 是 |
+| N/C 的区间宽度 | 约 ±0.10–0.15 | [0.976, 1.520]，即 −0.19 / +0.36 | 否，宽得多，尤其是上侧 |
+| N/C，第一下 | 1.00–1.30 | 1.294（1.300） | 是，种子 1 正好在上限 |
+| N/C，第二下 | 0.95–1.15 | 1.107（0.964） | 是 |
+| N/C，XMovePickTeleop | 0.95–1.35 | 1.707（1.201） | 种子 0 否 |
+| N/C，XMoveBendPickTeleop | 0.95–1.35 | 1.521（1.613） | 否 |
+| N/C，BendPickMP | 0.95–1.20 | 1.082（1.032） | 是 |
+| N/C，TabletopGraspMP | 0.90–1.15 | 0.676（0.873） | 否，偏低 |
+| C2/C | 0.95–1.08 | 1.046 | 是 |
+| C/D | 1.00–1.25 | 1.238（1.333） | 种子 1 否 |
+| 落在判据哪一行 | 第一行 50 %，中间 35 %，第三行 15 % | 中间 | — |
+| data3 原地第一下 | 0.88–1.02 | 0.903（0.866） | 种子 1 略低 |
+| data3 原地连续伸手 | 0.90–1.02 | 0.992（0.999） | 是 |
+| data3 任务式走法后的第一下 | 1.05–1.40 | 1.460（1.457） | 否，偏高 |
+| data3 任务式走法后的连续伸手 | 1.00–1.25 | 1.054（1.095） | 是 |
+| data3 d3 走法后的第一下 | 1.40–3.00 | 2.174（2.162） | 是 |
+| data3 d3 走法后的连续伸手 | 1.10–1.80 | 1.481（1.458） | 是 |
+| data3b 任务式走法，预抓取加进入 | 1.00–1.30 | 1.545（1.411） | 否，偏高 |
+| 补充标签 ended，和主标签相差 | ≤ 0.05 | 1.171 对 1.161，差 0.010（1.189 对 1.086，差 0.103） | 种子 1 否 |
+| 种子 1 和种子 0 相差 | ≤ 0.08 | 0.075 | 是 |
+| N 在自己范围外的段误差更高，第一下尤其如此 | 范围外 > 范围内 | 全部 1.06 对 1.01；第一下 0.54 对 1.17；第二下 1.32 对 0.93 | 第一下反了 |
+
+**意外**
+1. **N 输在第一下，而且输的不是"起点超出范围"。**
+   - 第一下的 N/C 两个种子都是 1.29–1.30；第二下是 0.96–1.11。留出集里"任务式走法后的第一下"N/C 也是 1.46，比预测的上限 1.40 还高。
+   - 但第一下的起点 84.5 % 落在 N 自己的训练范围里，而且 N 在范围外那 15.5 % 的段上误差反而更小（0.54 cm 对 1.17 cm）。
+   - sd_range 的 39 个量只有关节角、骨盆高度和朝向、两个手点，没有速度。刚走完时关节还在动、骨盆还在晃，这些不在 39 个量里。所以更可能的情况是：N 输在没见过"刚停下、还在动"的状态，而不是没见过那些姿势。这和登记时写的理由一致，但 range 检查测不出来。
+2. **差距集中在两个 XMove 任务上。** 种子 0 的 1.71 和 1.52 都超出了预测上限 1.35。BendPickMP 接近 1。TabletopGraspMP 上 N 反而更好（0.68 / 0.87），但这个任务里被桌沿挡住的段误差 28–40 cm，中位数在两种误差之间跳（它的区间上限是 29–31 cm），比值不稳。
+3. **按任务的比值被 C 的种子噪声主导。**
+   - XMovePickTeleop 上，N 两个种子是 0.924 / 0.930，几乎不变；C 却是 0.541 / 0.774。所以同一个任务的 N/C 从 1.71 掉到 1.20。
+   - 两个 C 的 val 几乎一样（1.695 / 1.698）。真实局的中位数在种子之间的波动，比 val 大得多。
+4. **数据量和先走后伸一样重要。**
+   - C 只有 D 2/3 的数据，C/D 是 1.24 / 1.33；N/C 是 1.16 / 1.09。
+   - 不考虑数据量，只问"有没有先走后伸的数据"，会把数据量的影响也算进去。N/D 是 1.44 / 1.45。
+5. **区间比预测的宽得多。** 40 个布局里，有几个布局的误差在两种情况之间切换，比值的区间上侧拉得很长（上限 1.52）。
+6. 运行上：H20 的容器中途重启过一次（修订 1）。之后改在 4090b 上用接管的方式跑两个训练（修订 1b），没有影响数值。
+
 
 ## 结论与下一步
 <!-- 每个论断引用上面的证据；写明证据强度（运行次数、种子、episode 数）；至少一个其他解释；
      四类陷阱检查：benchmark 选择 / 数据泄漏 / 指标误用 / 事后挑选；结果落在判据哪一侧、下一步做什么。 -->
+
+### 第一阶段（SIMPLE，ScaleBFM）
+
+**结论**
+1. **落在判据的中间那一行**：对 SIMPLE 里的 ScaleBFM，去掉先走后伸的数据，真实局的误差变大 9–16 %。两个种子都落在中间那一行，所以既不能说"不需要"，也不能说"必须保留"。
+   - 种子 0：N/C 1.161 [0.976, 1.520]。点估计在 1.10 和 1.25 之间。
+   - 种子 1：N/C 1.086 [1.002, 1.276]。点估计 ≤ 1.10，但区间上限超过 1.25。
+   - 证据见"结果"里两份 eval 的 PRIMARY 段。
+2. **差距几乎全在第一下**：第一下的 N/C 是 1.294 [1.071, 1.555] 和 1.300 [1.157, 1.443]，两个种子的区间下限都高于 1；第二下是 1.107 和 0.964，看不出差别。
+   - 留出集里也一样："任务式走法后的第一下"是 1.460 / 1.457，"原地第一下"是 0.903 / 0.866，N 在原地第一下上反而更好，因为它的原地数据更多。
+3. **第一下输掉的，不是"姿势超出范围"**：
+   - N 的第一下起点 84.5 % 落在 N 自己的训练范围里；
+   - 范围外那些段，N 的误差反而更小（0.54 cm 对 1.17 cm）；
+   - 更可能的原因是刚走完时的运动状态（关节速度、骨盆晃动），39 个范围量里没有这些（意外 1）。
+4. **走路标志本身几乎没用**：C2/C 是 1.046 [0.955, 1.292]。N 的劣势主要来自数据，不来自把标志置 0（N/C2 1.110）。
+5. **省下的采集时间不多**：
+   - D 的训练集里，先走后伸的重置约占 1/3：29 260 个里有 9 737 个。
+   - 按原地 7.5 s、先走后伸 12.0 s 算（simpledata 修订 1 的冒烟），全换成原地重置只省约 17 % 的时间。
+   - 换来的是真实局误差高 9–16 %，第一下高约 30 %。
+
+**证据强度**
+- N、C 各两个种子，C2 和 D 各一个模型。
+- 主评估 235 段，来自 120 局、40 个布局，区间按布局重抽 4000 次。
+- 两个种子的总体 N/C 相差 0.075。
+
+**其他可能的解释**
+1. **C 的种子噪声**：
+   - 两个 C 的 val 几乎一样（1.695 / 1.698），但在真实局三个任务上差了 24 %（0.652 / 0.806 cm）；
+   - 种子 1 的点估计已经低于 1.10；
+   - 再多几个种子，平均值可能落在 1.10 附近，在第一行和中间行之间摇摆。
+   - 第一下的差距在两个种子里都很稳（1.29 / 1.30），这一条不受影响。
+2. **XMove 任务的绝对误差很小**：D 只有 0.36–0.40 cm，N 和 C 差 0.2–0.4 cm 在比值上就是 1.5 倍以上。按 cm 算，差距没有比值看起来那么大。
+3. **挑 checkpoint 只用原地的 val，这一点对 C 不利**：C 的 checkpoint 没有按先走后伸的段来挑。如果按那些段挑，C 可能更好，N/C 会更大。所以这里的 N/C 偏保守。
+
+**四类陷阱**
+- **benchmark 选择**：主评估就是登记的那 235 段、四个任务，TabletopGraspMP 也报了，没有去掉任何东西。
+- **数据泄漏**：
+  - 真实局的重置编号从 90 000 000 开始，不在任何训练文件里；
+  - 留出集用 data.py 自己的桶；
+  - 每组的归一化来自它自己的训练集；
+  - checkpoint 按原地 val 挑，没碰真实局。
+- **指标误用**：用的是登记的中位数比值。p90、姿态、ended 口径、任务标签都报了，方向一致：任务标签 ended 的 N/C 是 1.171 / 1.189。
+- **事后挑选**：
+  - 两个种子都报了；每个训练只有一个按 val 挑的 checkpoint；
+  - H20 那次中断的运行没有产生任何结果；
+  - 接管以后任务不变；
+  - 看到结果以后没有重跑任何东西。
+
+**对照判据**
+- 主判据：中间那一行，结论是"试一个更省的中间方案，另行登记"。
+- 附加规则 1：两个种子同在中间那一行，不改。
+- 附加规则 2：种子 0 去掉 TabletopGraspMP 后的三个任务是 1.416 [1.103, 1.685]，落在 > 1.25 那一行；种子 1 是 1.209 [1.088, 1.316]，落在中间。按规则降为中间，结论本来就在中间。
+- 附加规则 3：XMoveBendPickTeleop 两个种子都 > 1.25 且区间下限 > 1.0（1.521 [1.088, 2.004]；1.613 [1.217, 2.164]）；XMovePickTeleop 只有种子 0 满足（1.707 [1.527, 1.761]）。以后如果建议只采原地，要写明 XMove 这类任务不适用。
+- 附加规则 5：C2/C 1.046，没有触发。
+
+**下一步**
+1. **另行登记中间方案**：只采短距离的任务式走法（走一小段、停下、再伸手），大小和 N、C 一样，看第一下的差距能不能补上。意外 1 说明要补的是"刚停下"的那个状态，不一定需要长距离走路。
+2. **建议加一组时间对齐的比较**：
+   - 用 D 的采集时间全采原地，大约是 N 原地重置数的 1.8 倍，看能不能追上 D；
+   - 这回答的是"省下的时间拿去多采原地数据，值不值"；
+   - 按 val 的学习曲线粗估（指数约 0.26），1.8 倍数据大约能把 N/D 从 1.44 降到 1.24，仍然不如 D。这只是估计，要跑了才算。
+3. 第二阶段（LML，三个控制器）还在 H20 上跑，结论按控制器另写。
+
 
 ## 独立复核
 <!-- 结论要写进论文、用来否掉或投入一个方向、或作为发现报告时必须做。贴独立 agent 的原始回复。 -->
