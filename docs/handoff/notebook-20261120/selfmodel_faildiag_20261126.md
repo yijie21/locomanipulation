@@ -889,6 +889,249 @@ salt visibility check (13x13 window around the object's expected pixel; mask = t
   - "SONIC servo − servopos ≥ 15 个百分点"：错了，10 对 9。
   - "苹果 servo 不比 R 好多少"：错了，+30 和 +40 个百分点。
 
+### 修订 6 的结果（11:37:48Z 跑完 834/834 局，216 个分块都正常退出，无出错）
+
+- **运行**：
+  - 预注册提交 5e3f1739（10:49:37Z），10:50:51Z 开跑，11:37:48Z 跑完。
+  - 4090 CPU，30 个进程。我们这边最多 30.1 核，全机最多 74.6 核（`q1tuck/cpu_watch.log`，约每分钟量一次各进程的 CPU 时间），没有减过进程。
+  - 任务表 `q1tuck/jobs.txt`（md5 1e1dfa2a267f537e2108601225b31371，每块最多 4 局）。`fd_run.py`、`fd_pool.sh`、`fd_tuck_an.py` 的 md5 记在 `q1tuck/md5.txt`，和修订 6 登记的一致。
+- **原始输出**：
+  - `q1tuck/an_tuck.txt`（`fd_tuck_an.py` f822b7319a44ae38ae68759b4172311d，开跑前登记；逐局 `q1tuck/an/tuck_pairs.json`）。
+  - `q1tuck/an_track.txt`（`fd_tuck_track.py` f4700f44103b18a386b95b10eb0cbc86，跑完后写的，只算登记过的"收着手走路时的手点跟踪误差"，算法同冒烟）。
+- **逐位核对**：6 组都是 139/139 在改动开始的那一行为止和原局逐位相同，没有排除的局。
+- **主度量：手到时物体还在原处（2 cm / 15° 以内）**：
+
+| 组 | 哑铃 81 | 浇水壶 58 | 合计 139 | 对原局（McNemar，原局 0 局在原处） | 任务成功（次要，只描述） |
+|---|---|---|---|---|---|
+| 原局 | 0 | 0 | 0（0 %） | — | 1 |
+| T1a | 37（46 %） | 18（31 %） | 55（39.6 %） | p = 5.6e-17 | 11 |
+| T1b | 52（64 %） | 50（86 %） | 102（73.4 %） | p = 3.9e-31 | 4 |
+| T2b | 66（81 %） | 54（93 %） | 120（86.3 %） | p = 1.5e-36 | 3 |
+| N | 55（68 %） | 45（78 %） | 100（71.9 %） | p = 1.6e-30 | 17 |
+| N + T1a | 36（44 %） | 23（40 %） | 59（42.4 %） | p = 3.5e-18 | 10 |
+| N + T1b | 21（26 %） | 13（22 %） | 34（24.5 %） | p = 1.2e-10 | 1 |
+
+- **判据**（`fd_tuck_an.py` 按登记的规则直接算出，原文在下面的原始输出末尾）：
+  - **收手本身**：T1a 39.6 % → 部分有效；T1b 73.4 % → 有效。
+  - **转身还是手臂**：
+    - T1 取 T1a：N 71.9 %，T1a 39.6 %，N − T1a = +32.4 个百分点（只有 N 在原处 47 局，只有 T1a 在原处 2 局，p = 4.4e-12）→ **推翻"收手"这条建议：该改的是修正步里的转身**。
+    - T1 取 T1b：N 71.9 %，T1b 73.4 %，N − T1b = −1.4 个百分点（13 对 15，p = 0.85）；(N + T1b) − N = −47.5 个百分点 → **两样都不能单独定**。"两样一起用比单用好"不成立。
+  - **提议**（照判据的两条分支，各自成立，并排写）：
+    - T1b 有效、又没被推翻 → 提议把 T1b 的收手放进 LML 正式流程。代价按判据要写明：伸手碰家具 71 局，原局 22 局，多 49 局。其中 17 局是手碰到了机器人自己的骨盆刚体（见下面"碰家具"），真碰茶几的是 54 局，多 32 局。站位误差"看不出差别"，跌倒、丢了 0。
+    - T1a 被推翻 → 对 T1a 提议改修正步的转身，不提议 T1a 的收手。读法照登记：N 里 SONIC 几乎不跟挪步，修正步期间骨盆只挪了 6.3 cm（中位数；原局 20.7 cm），所以只能说"不转身、不补走"比"转身补走"好，不能说"不转身的横走"有效。
+- **次要指标**（只描述，不设判据，除站位误差那一条）：
+  - **站位误差**（第一下伸手时，配对差中位数；变差 > 5 cm / 变好 > 5 cm 的局数；按登记规则的结论）：
+
+| 组 | 全部 137 对 | 哑铃 79 对 | 浇水壶 58 对 |
+|---|---|---|---|
+| T1a | +1.4 cm（46 / 19）看不出差别 | +1.4 cm（28 / 8）看不出差别 | +1.4 cm（18 / 11）看不出差别 |
+| T1b | +0.7 cm（26 / 24）看不出差别 | +0.6 cm（12 / 16）看不出差别 | +0.8 cm（14 / 8）看不出差别 |
+| T2b | −8.1 cm（0 / 98）站得更准 | −7.7 cm（0 / 57）站得更准 | −8.3 cm（0 / 41）站得更准 |
+| N | +1.6 cm（44 / 25）看不出差别 | +1.6 cm（24 / 17）看不出差别 | +1.8 cm（20 / 8）看不出差别 |
+| N + T1a | −2.0 cm（19 / 46）看不出差别 | −1.9 cm（12 / 25）看不出差别 | −2.5 cm（7 / 21）看不出差别 |
+| N + T1b | +13.4 cm（108 / 4）站得更偏 | +12.7 cm（61 / 3）站得更偏 | +13.8 cm（47 / 1）站得更偏 |
+
+    - 冒烟里"T1 让浇水壶站位误差变大"那一条，正式跑里没有出现：浇水壶 T1a +1.4 cm、T1b +0.8 cm，都是"看不出差别"。
+    - 站位误差中位数：原局 15.4 cm；T1a 19.5，T1b 16.1，T2b 7.1，N 19.2，N + T1a 16.4，N + T1b 29.6 cm。
+    - 第一次走路结束时离站位：T2b 24.3 cm，原局 27.6 cm（其余组第一次走路和原局逐位相同）。
+  - **修正步期间骨盆挪了多远**（中位数）：原局 20.7 cm；T1a 13.5，T1b 29.7，T2b 13.5，N 6.3，N + T1a 13.7，N + T1b 3.6 cm。
+  - **跌倒、走路时丢了、超时**：6 组都是 0（原局跌倒 2 局）。
+  - **腿碰茶几**（看那一帧到手到）：T1a 13，T1b 128，T2b 12，N 13，N + T1a 13，N + T1b 13（都是 /139）。原局只有按"腿顶茶几"挑出来的 75 局有记录，75/75。
+  - **碰家具**（`hit_furniture`，lmlcmp3 的判法），按第一次接触的刚体分：
+
+| 组 | 合计 | 茶几 | `manipulator_mount` |
+|---|---|---|---|
+| 原局 | 22 | 22 | 0 |
+| T1a | 14 | 14 | 0 |
+| T1b | 71 | 54 | 17 |
+| T2b | 111 | 7 | 104 |
+| N | 28 | 28 | 0 |
+| N + T1a | 12 | 12 | 0 |
+| N + T1b | 24 | 22 | 2 |
+
+    - `manipulator_mount` 是机器人自己的骨盆：robosuite 的 `add_mobile_base` 把整个物理机器人（骨盆几何和惯量）挪到这个刚体下，它的名字没有 `robot0_` 前缀。lmlcmp3 的 `arm_scene_contact` 只排除 `robot0_` 开头的刚体，所以右手、腕、肘碰到自己骨盆也记成碰家具。只有新姿态（手收在骨盆后面）会碰到。
+    - `hit_furniture` 只是失败原因的标签。`classify` 先看成功，碰家具不改变成功与否，也不改变这一局怎么跑。碰 `manipulator_mount` 的那些局都没举起来（T2b 有 1 局 lift10）。
+  - **收着手走路时的手点跟踪误差**（每局中位数的中位数；p90 是每局 p90 的中位数）：T1a 1.4 cm（p90 2.0），T1b 2.1（2.7），T2b 2.1（2.8），N + T1a 1.6（2.4），N + T1b 2.0（2.2）。每局中位数 > 3 cm 的只有浇水壶 reachable 第 92 局。这局没有修正步、没收手，窗口落在了伸手段，五组都是它。
+  - **谁碰的、在哪个阶段**（1 s 窗口，移动局，合计）：
+    - T1a 84 局：第一下伸手右手 58，第一次走路右手 17，修正步右手 7、左手 1，第一次走路没有机器人接触 1。
+    - T1b 63 局：修正步里没有机器人碰物体 37，第一次走路右手 14，第一下伸手右手 11，修正步左腿 1。
+    - T2b 20 局：第一下伸手右手 19、右臂 1。
+    - N 39 局：第一下伸手右手 29，第一次走路右手 10。
+    - N + T1a 81 局：第一下伸手右手 55、右臂 1，第一次走路右手 18、没有机器人接触 3，修正步右手 3，第一下伸手没有机器人接触 1。
+    - N + T1b 106 局：第一下伸手右手 89，第一次走路右手 13、没有机器人接触 4。
+    - 修正步里的左手，原局 35 局（1 s 窗口），各组 0–1 局。
+  - **修正步时左腕离骨盆横向**（中位数）：原局 28.4 cm，T1a 24.1，T1b 9.8，T2b 9.9，N 28.4，N + T1a 24.0，N + T1b 10.0 cm。
+- **读法**（描述，不改上面的判据结论）：
+  - T1a 输给 N，差的不在转身。
+    - T1a 移动的 84 局里，修正步里被弄走的只有 8 局。58 局是第一下伸手时右手把物体推过了 2 cm，手到时偏离中位数只有 3.2 cm。
+    - 也就是说，T1a 的收手也基本消掉了修正步里的扫动，丢分在从 T1a 姿态开始的那一下伸手。N + T1a 也是这样：第一下伸手右手推了 55 局，N 是 29 局。
+    - 所以对 T1a 的"推翻收手"是按判据算出来的；但数据说 T1a 的差距来自伸手，不是来自转身。
+  - N 加上收手反而更差，差在第一下伸手时右手推了物体：N + T1a 55 局，N + T1b 89 局，N 29 局。N + T1b 收着手几乎完全不跟挪步，骨盆只挪 3.6 cm，第一下伸手时离站位 29.6 cm。
+  - T2b 站得最准：收着手走第一次，走过头少了约 3 cm（24.3 对 27.6 cm），第一下伸手时离站位 7.1 cm（原局 15.4 cm；98 局变好 > 5 cm，0 局变差）。它"还在原处"也最高（86 %）。但它的碰家具 111 局里有 104 局是碰到自己骨盆。
+  - T1b 修正步走得更远（29.7 cm 对 20.7 cm），腿碰茶几 128/139；它移动的 63 局里，37 局是修正步里茶几被腿顶、物体没被机器人直接碰。
+  - 每组成功都 ≤ 17/139：物体留在原处并没有让 SONIC 抓成。成功最多的是 N（17）。
+- **预测对照**：
+  - T1a 30–65 %：对（39.6 %）。T1b 50–85 %：对（73.4 %）。T2b 55–90 %：对（86.3 %）。N 45–85 %：对（71.9 %）。
+  - N + T1a、N + T1b 和 N 差不到 15 个百分点：都错了（−29.5、−47.5）。
+  - 判据那一行：N − T1a ≥ 15 个百分点，对（+32.4）；T1b 和 N 差不到 15 个百分点，对（−1.4）。对 T1b "推翻"和"支持"都不成立，对；对 T1a 写的是"不确定"，结果是"推翻"。
+  - 每组成功 ≤ 14/139：N 错了（17），其余对。
+  - 碰家具：T1b 比原局多 ≥ 15，对（+49）；N + T1b 多 ≥ 15，错了（+2）；其余组差不到 10 局：T1a 对（−8），N 对（+6），T2b 错了（+89），N + T1a 错了（正好差 10）。
+  - 跌倒每组 ≤ 5：对（都是 0）。
+  - 站位：T1a、T1b 合起来"看不出差别"，对；浇水壶单看变差，错了；T2b "看不出差别"，错了（站得更准）；N、N + T1a "站得更偏"，错了（看不出差别）；N + T1b "站得更偏"，对。
+- **原始输出**（`q1tuck/an_tuck.txt`，全文）：
+
+```
+== identity before the change (required; a differing episode is left out and reported)
+  tuck1          139/139 identical through the change row; differing: []
+  tuck1b         139/139 identical through the change row; differing: []
+  tuck2b         139/139 identical through the change row; differing: []
+  noturn         139/139 identical through the change row; differing: []
+  noturn_tuck1   139/139 identical through the change row; differing: []
+  noturn_tuck1b  139/139 identical through the change row; differing: []
+
+== dumbbell: 81 episode runs (methods {'alone': 75, 'reachable': 3, 'selfmodel': 3})
+  orig           n 81: in place at the arrival 0 (0 %); moved before it 81; off at the arrival cm p25/50/75 [17.4, 38.5, 50.4]; success 0; hit_furniture 14; reasons {'missed': 64, 'hit_furniture': 14, 'fell_walking': 2, 'dropped': 1}
+                 moved: phase x hitter {('correction walk', 'left hand'): 31, ('correction walk', 'no robot contact'): 22, ('first walk', 'right hand'): 16, ('reach1', 'right hand'): 8, ('first walk', 'no robot contact'): 2, ('reach1', 'no robot contact'): 1, ('reach1', 'left hand'): 1}
+                 stance error at the first reach cm p25/50/75 [11.3, 14.9, 20.9] (n 79); first walk's end cm [25.5, 27.7, 29.3]; pelvis travel over the correction walk cm [14.3, 20.4, 27.1]; correction walks {2: 81}; fell 2, lost 2, timeout 0; legs on the coffee table (look .. arrival) 25 of the 25 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 7.5 cm, side 28.5 cm, z 0.718 m (n 79)
+  tuck1          n 81: in place at the arrival 37 (46 %); moved before it 44; off at the arrival cm p25/50/75 [0.0, 3.1, 7.4]; success 6; hit_furniture 11; reasons {'missed': 57, 'hit_furniture': 11, 'ok': 6, 'dropped': 6, 'stance_or_ik': 1}
+                 moved: phase x hitter {('reach1', 'right hand'): 24, ('first walk', 'right hand'): 16, ('correction walk', 'right hand'): 4}
+                 stance error at the first reach cm p25/50/75 [17.6, 19.7, 21.4] (n 81); first walk's end cm [25.5, 27.7, 29.3]; pelvis travel over the correction walk cm [8.5, 12.8, 17.1]; correction walks {2: 81}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 5 of the 81 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 6.7 cm, side 24.1 cm, z 0.734 m (n 81)
+                 paired with orig: in place gained 37 / lost 0, McNemar p 1.46e-11; success gained 6 / lost 0, p 0.0312; inserted tuck s {1.8: 81}
+                 secondary (stance error at the first reach, tuck1 - orig, n 79): median +1.4 cm, worse > 5 cm 28, better > 5 cm 8 -> no difference seen
+  tuck1b         n 81: in place at the arrival 52 (64 %); moved before it 44; off at the arrival cm p25/50/75 [0.5, 0.9, 7.0]; success 1; hit_furniture 45; reasons {'hit_furniture': 45, 'missed': 34, 'ok': 1, 'stance_or_ik': 1}
+                 moved: phase x hitter {('correction walk', 'no robot contact'): 23, ('first walk', 'right hand'): 13, ('reach1', 'right hand'): 8}
+                 stance error at the first reach cm p25/50/75 [13.4, 15.6, 17.8] (n 81); first walk's end cm [25.5, 27.7, 29.3]; pelvis travel over the correction walk cm [21.7, 29.0, 35.8]; correction walks {2: 81}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 73 of the 81 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -7.9 cm, side 9.8 cm, z 0.705 m (n 81)
+                 paired with orig: in place gained 52 / lost 0, McNemar p 4.44e-16; success gained 1 / lost 0, p 1; inserted tuck s {1.8: 81}
+                 secondary (stance error at the first reach, tuck1b - orig, n 79): median +0.6 cm, worse > 5 cm 12, better > 5 cm 16 -> no difference seen
+  tuck2b         n 81: in place at the arrival 66 (81 %); moved before it 15; off at the arrival cm p25/50/75 [0.0, 0.0, 0.1]; success 2; hit_furniture 65; reasons {'hit_furniture': 65, 'missed': 7, 'stance_or_ik': 7, 'ok': 2}
+                 moved: phase x hitter {('reach1', 'right hand'): 14, ('reach1', 'right arm'): 1}
+                 stance error at the first reach cm p25/50/75 [5.9, 7.1, 8.0] (n 81); first walk's end cm [23.8, 24.4, 25.2]; pelvis travel over the correction walk cm [13.1, 14.0, 20.7]; correction walks {2: 81}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 10 of the 81 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -7.2 cm, side 9.9 cm, z 0.704 m (n 81)
+                 paired with orig: in place gained 66 / lost 0, McNemar p 2.71e-20; success gained 2 / lost 0, p 0.5; inserted tuck s {1.8: 81}
+                 secondary (stance error at the first reach, tuck2b - orig, n 79): median -7.7 cm, worse > 5 cm 0, better > 5 cm 57 -> stands closer
+  noturn         n 81: in place at the arrival 55 (68 %); moved before it 26; off at the arrival cm p25/50/75 [0.0, 0.5, 3.2]; success 10; hit_furniture 21; reasons {'missed': 44, 'hit_furniture': 21, 'ok': 10, 'dropped': 6}
+                 moved: phase x hitter {('reach1', 'right hand'): 16, ('first walk', 'right hand'): 10}
+                 stance error at the first reach cm p25/50/75 [12.9, 18.8, 21.6] (n 81); first walk's end cm [25.5, 27.7, 29.3]; pelvis travel over the correction walk cm [4.9, 6.2, 12.9]; correction walks {2: 81}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 5 of the 81 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 8.3 cm, side 28.4 cm, z 0.737 m (n 81)
+                 paired with orig: in place gained 55 / lost 0, McNemar p 5.55e-17; success gained 10 / lost 0, p 0.00195; inserted tuck s {}
+                 secondary (stance error at the first reach, noturn - orig, n 79): median +1.6 cm, worse > 5 cm 24, better > 5 cm 17 -> no difference seen
+  noturn_tuck1   n 81: in place at the arrival 36 (44 %); moved before it 46; off at the arrival cm p25/50/75 [0.0, 3.3, 8.6]; success 5; hit_furniture 9; reasons {'missed': 62, 'hit_furniture': 9, 'ok': 5, 'dropped': 5}
+                 moved: phase x hitter {('reach1', 'right hand'): 25, ('first walk', 'right hand'): 17, ('correction walk', 'right hand'): 2, ('reach1', 'right arm'): 1, ('reach1', 'no robot contact'): 1}
+                 stance error at the first reach cm p25/50/75 [10.0, 16.3, 17.0] (n 81); first walk's end cm [25.5, 27.7, 29.3]; pelvis travel over the correction walk cm [11.2, 13.7, 15.8]; correction walks {2: 81}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 5 of the 81 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 7.8 cm, side 24.0 cm, z 0.747 m (n 81)
+                 paired with orig: in place gained 36 / lost 0, McNemar p 2.91e-11; success gained 5 / lost 0, p 0.0625; inserted tuck s {1.8: 81}
+                 secondary (stance error at the first reach, noturn_tuck1 - orig, n 79): median -1.9 cm, worse > 5 cm 12, better > 5 cm 25 -> no difference seen
+  noturn_tuck1b  n 81: in place at the arrival 21 (26 %); moved before it 61; off at the arrival cm p25/50/75 [1.6, 7.0, 12.7]; success 1; hit_furniture 18; reasons {'missed': 59, 'hit_furniture': 18, 'dropped': 3, 'ok': 1}
+                 moved: phase x hitter {('reach1', 'right hand'): 47, ('first walk', 'right hand'): 13, ('first walk', 'no robot contact'): 1}
+                 stance error at the first reach cm p25/50/75 [27.4, 29.6, 31.2] (n 81); first walk's end cm [25.5, 27.7, 29.3]; pelvis travel over the correction walk cm [3.3, 3.6, 3.6]; correction walks {2: 81}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 5 of the 81 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -5.4 cm, side 10.0 cm, z 0.735 m (n 81)
+                 paired with orig: in place gained 21 / lost 0, McNemar p 9.54e-07; success gained 1 / lost 0, p 1; inserted tuck s {1.8: 81}
+                 secondary (stance error at the first reach, noturn_tuck1b - orig, n 79): median +12.7 cm, worse > 5 cm 61, better > 5 cm 3 -> stands further off
+
+== wcan: 58 episode runs (methods {'alone': 55, 'reachable': 3})
+  orig           n 58: in place at the arrival 0 (0 %); moved before it 58; off at the arrival cm p25/50/75 [9.7, 13.5, 46.4]; success 1; hit_furniture 8; reasons {'missed': 47, 'hit_furniture': 8, 'dropped': 2, 'ok': 1}
+                 moved: phase x hitter {('correction walk', 'no robot contact'): 46, ('correction walk', 'left hand'): 4, ('first walk', 'no robot contact'): 4, ('reach1', 'right hand'): 3, ('first walk', 'right hand'): 1}
+                 stance error at the first reach cm p25/50/75 [12.8, 16.1, 19.6] (n 58); first walk's end cm [26.6, 27.5, 29.2]; pelvis travel over the correction walk cm [13.0, 20.8, 30.6]; correction walks {2: 57, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 50 of the 50 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 7.6 cm, side 28.4 cm, z 0.721 m (n 57)
+  tuck1          n 58: in place at the arrival 18 (31 %); moved before it 40; off at the arrival cm p25/50/75 [0.8, 3.3, 6.2]; success 5; hit_furniture 3; reasons {'missed': 49, 'ok': 5, 'hit_furniture': 3, 'stance_or_ik': 1}
+                 moved: phase x hitter {('reach1', 'right hand'): 34, ('correction walk', 'right hand'): 3, ('first walk', 'right hand'): 1, ('first walk', 'no robot contact'): 1, ('correction walk', 'left hand'): 1}
+                 stance error at the first reach cm p25/50/75 [16.3, 18.8, 20.5] (n 58); first walk's end cm [26.6, 27.5, 29.2]; pelvis travel over the correction walk cm [11.1, 14.7, 18.3]; correction walks {2: 57, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 8 of the 58 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 6.7 cm, side 24.1 cm, z 0.734 m (n 57)
+                 paired with orig: in place gained 18 / lost 0, McNemar p 7.63e-06; success gained 5 / lost 1, p 0.219; inserted tuck s {1.8: 57, 0.0: 1}
+                 secondary (stance error at the first reach, tuck1 - orig, n 58): median +1.4 cm, worse > 5 cm 18, better > 5 cm 11 -> no difference seen
+  tuck1b         n 58: in place at the arrival 50 (86 %); moved before it 19; off at the arrival cm p25/50/75 [0.6, 0.8, 1.3]; success 3; hit_furniture 26; reasons {'hit_furniture': 26, 'missed': 26, 'ok': 3, 'dropped': 2, 'stance_or_ik': 1}
+                 moved: phase x hitter {('correction walk', 'no robot contact'): 14, ('reach1', 'right hand'): 3, ('correction walk', 'left leg'): 1, ('first walk', 'right hand'): 1}
+                 stance error at the first reach cm p25/50/75 [13.8, 16.9, 20.7] (n 58); first walk's end cm [26.6, 27.5, 29.2]; pelvis travel over the correction walk cm [22.3, 30.4, 38.0]; correction walks {2: 57, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 55 of the 58 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -7.9 cm, side 9.8 cm, z 0.705 m (n 57)
+                 paired with orig: in place gained 50 / lost 0, McNemar p 1.78e-15; success gained 3 / lost 1, p 0.625; inserted tuck s {1.8: 57, 0.0: 1}
+                 secondary (stance error at the first reach, tuck1b - orig, n 58): median +0.8 cm, worse > 5 cm 14, better > 5 cm 8 -> no difference seen
+  tuck2b         n 58: in place at the arrival 54 (93 %); moved before it 5; off at the arrival cm p25/50/75 [0.0, 0.0, 0.0]; success 1; hit_furniture 46; reasons {'hit_furniture': 46, 'missed': 10, 'stance_or_ik': 1, 'ok': 1}
+                 moved: phase x hitter {('reach1', 'right hand'): 5}
+                 stance error at the first reach cm p25/50/75 [6.2, 7.1, 8.1] (n 58); first walk's end cm [23.6, 24.3, 24.7]; pelvis travel over the correction walk cm [12.9, 13.5, 20.6]; correction walks {2: 58}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 2 of the 58 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -7.2 cm, side 9.9 cm, z 0.704 m (n 58)
+                 paired with orig: in place gained 54 / lost 0, McNemar p 1.11e-16; success gained 1 / lost 1, p 1; inserted tuck s {1.8: 58}
+                 secondary (stance error at the first reach, tuck2b - orig, n 58): median -8.3 cm, worse > 5 cm 0, better > 5 cm 41 -> stands closer
+  noturn         n 58: in place at the arrival 45 (78 %); moved before it 13; off at the arrival cm p25/50/75 [0.0, 0.1, 0.7]; success 7; hit_furniture 7; reasons {'missed': 40, 'hit_furniture': 7, 'ok': 7, 'dropped': 4}
+                 moved: phase x hitter {('reach1', 'right hand'): 13}
+                 stance error at the first reach cm p25/50/75 [17.4, 21.0, 22.3] (n 58); first walk's end cm [26.6, 27.5, 29.2]; pelvis travel over the correction walk cm [5.0, 6.5, 13.2]; correction walks {2: 57, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 8 of the 58 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 8.3 cm, side 28.4 cm, z 0.737 m (n 57)
+                 paired with orig: in place gained 45 / lost 0, McNemar p 5.68e-14; success gained 7 / lost 1, p 0.0703; inserted tuck s {}
+                 secondary (stance error at the first reach, noturn - orig, n 58): median +1.8 cm, worse > 5 cm 20, better > 5 cm 8 -> no difference seen
+  noturn_tuck1   n 58: in place at the arrival 23 (40 %); moved before it 35; off at the arrival cm p25/50/75 [0.0, 3.2, 6.9]; success 5; hit_furniture 3; reasons {'missed': 49, 'ok': 5, 'hit_furniture': 3, 'dropped': 1}
+                 moved: phase x hitter {('reach1', 'right hand'): 30, ('first walk', 'no robot contact'): 3, ('correction walk', 'right hand'): 1, ('first walk', 'right hand'): 1}
+                 stance error at the first reach cm p25/50/75 [12.5, 16.5, 16.9] (n 58); first walk's end cm [26.6, 27.5, 29.2]; pelvis travel over the correction walk cm [12.1, 13.8, 16.2]; correction walks {2: 57, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 8 of the 58 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 7.8 cm, side 23.9 cm, z 0.747 m (n 57)
+                 paired with orig: in place gained 23 / lost 0, McNemar p 2.38e-07; success gained 5 / lost 1, p 0.219; inserted tuck s {1.8: 57, 0.0: 1}
+                 secondary (stance error at the first reach, noturn_tuck1 - orig, n 58): median -2.5 cm, worse > 5 cm 7, better > 5 cm 21 -> no difference seen
+  noturn_tuck1b  n 58: in place at the arrival 13 (22 %); moved before it 45; off at the arrival cm p25/50/75 [2.8, 9.3, 11.6]; success 0; hit_furniture 6; reasons {'missed': 52, 'hit_furniture': 6}
+                 moved: phase x hitter {('reach1', 'right hand'): 42, ('first walk', 'no robot contact'): 3}
+                 stance error at the first reach cm p25/50/75 [28.4, 29.7, 31.2] (n 58); first walk's end cm [26.6, 27.5, 29.2]; pelvis travel over the correction walk cm [3.5, 3.6, 3.6]; correction walks {2: 57, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 8 of the 58 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -5.2 cm, side 10.0 cm, z 0.735 m (n 57)
+                 paired with orig: in place gained 13 / lost 0, McNemar p 0.000244; success gained 0 / lost 1, p 1; inserted tuck s {1.8: 57, 0.0: 1}
+                 secondary (stance error at the first reach, noturn_tuck1b - orig, n 58): median +13.8 cm, worse > 5 cm 47, better > 5 cm 1 -> stands further off
+
+== both: 139 episode runs (methods {'alone': 130, 'reachable': 6, 'selfmodel': 3})
+  orig           n 139: in place at the arrival 0 (0 %); moved before it 139; off at the arrival cm p25/50/75 [12.9, 29.4, 48.3]; success 1; hit_furniture 22; reasons {'missed': 111, 'hit_furniture': 22, 'dropped': 3, 'fell_walking': 2, 'ok': 1}
+                 moved: phase x hitter {('correction walk', 'no robot contact'): 68, ('correction walk', 'left hand'): 35, ('first walk', 'right hand'): 17, ('reach1', 'right hand'): 11, ('first walk', 'no robot contact'): 6, ('reach1', 'no robot contact'): 1, ('reach1', 'left hand'): 1}
+                 stance error at the first reach cm p25/50/75 [12.5, 15.4, 20.4] (n 137); first walk's end cm [26.1, 27.6, 29.2]; pelvis travel over the correction walk cm [13.7, 20.7, 28.6]; correction walks {2: 138, 1: 1}; fell 2, lost 2, timeout 0; legs on the coffee table (look .. arrival) 75 of the 75 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 7.6 cm, side 28.4 cm, z 0.719 m (n 136)
+  tuck1          n 139: in place at the arrival 55 (40 %); moved before it 84; off at the arrival cm p25/50/75 [0.2, 3.2, 6.4]; success 11; hit_furniture 14; reasons {'missed': 106, 'hit_furniture': 14, 'ok': 11, 'dropped': 6, 'stance_or_ik': 2}
+                 moved: phase x hitter {('reach1', 'right hand'): 58, ('first walk', 'right hand'): 17, ('correction walk', 'right hand'): 7, ('first walk', 'no robot contact'): 1, ('correction walk', 'left hand'): 1}
+                 stance error at the first reach cm p25/50/75 [17.0, 19.5, 21.0] (n 139); first walk's end cm [26.1, 27.6, 29.2]; pelvis travel over the correction walk cm [10.1, 13.5, 17.2]; correction walks {2: 138, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 13 of the 139 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 6.7 cm, side 24.1 cm, z 0.734 m (n 138)
+                 paired with orig: in place gained 55 / lost 0, McNemar p 5.55e-17; success gained 11 / lost 1, p 0.00635; inserted tuck s {1.8: 138, 0.0: 1}
+                 secondary (stance error at the first reach, tuck1 - orig, n 137): median +1.4 cm, worse > 5 cm 46, better > 5 cm 19 -> no difference seen
+  tuck1b         n 139: in place at the arrival 102 (73 %); moved before it 63; off at the arrival cm p25/50/75 [0.6, 0.9, 2.3]; success 4; hit_furniture 71; reasons {'hit_furniture': 71, 'missed': 60, 'ok': 4, 'stance_or_ik': 2, 'dropped': 2}
+                 moved: phase x hitter {('correction walk', 'no robot contact'): 37, ('first walk', 'right hand'): 14, ('reach1', 'right hand'): 11, ('correction walk', 'left leg'): 1}
+                 stance error at the first reach cm p25/50/75 [13.6, 16.1, 18.8] (n 139); first walk's end cm [26.1, 27.6, 29.2]; pelvis travel over the correction walk cm [22.1, 29.7, 37.0]; correction walks {2: 138, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 128 of the 139 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -7.9 cm, side 9.8 cm, z 0.705 m (n 138)
+                 paired with orig: in place gained 102 / lost 0, McNemar p 3.94e-31; success gained 4 / lost 1, p 0.375; inserted tuck s {1.8: 138, 0.0: 1}
+                 secondary (stance error at the first reach, tuck1b - orig, n 137): median +0.7 cm, worse > 5 cm 26, better > 5 cm 24 -> no difference seen
+  tuck2b         n 139: in place at the arrival 120 (86 %); moved before it 20; off at the arrival cm p25/50/75 [0.0, 0.0, 0.0]; success 3; hit_furniture 111; reasons {'hit_furniture': 111, 'missed': 17, 'stance_or_ik': 8, 'ok': 3}
+                 moved: phase x hitter {('reach1', 'right hand'): 19, ('reach1', 'right arm'): 1}
+                 stance error at the first reach cm p25/50/75 [6.1, 7.1, 8.1] (n 139); first walk's end cm [23.7, 24.3, 25.0]; pelvis travel over the correction walk cm [13.0, 13.5, 20.7]; correction walks {2: 139}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 12 of the 139 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -7.2 cm, side 9.9 cm, z 0.704 m (n 139)
+                 paired with orig: in place gained 120 / lost 0, McNemar p 1.5e-36; success gained 3 / lost 1, p 0.625; inserted tuck s {1.8: 139}
+                 secondary (stance error at the first reach, tuck2b - orig, n 137): median -8.1 cm, worse > 5 cm 0, better > 5 cm 98 -> stands closer
+  noturn         n 139: in place at the arrival 100 (72 %); moved before it 39; off at the arrival cm p25/50/75 [0.0, 0.3, 1.4]; success 17; hit_furniture 28; reasons {'missed': 84, 'hit_furniture': 28, 'ok': 17, 'dropped': 10}
+                 moved: phase x hitter {('reach1', 'right hand'): 29, ('first walk', 'right hand'): 10}
+                 stance error at the first reach cm p25/50/75 [13.4, 19.2, 22.1] (n 139); first walk's end cm [26.1, 27.6, 29.2]; pelvis travel over the correction walk cm [5.0, 6.3, 13.0]; correction walks {2: 138, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 13 of the 139 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 8.3 cm, side 28.4 cm, z 0.737 m (n 138)
+                 paired with orig: in place gained 100 / lost 0, McNemar p 1.58e-30; success gained 17 / lost 1, p 0.000145; inserted tuck s {}
+                 secondary (stance error at the first reach, noturn - orig, n 137): median +1.6 cm, worse > 5 cm 44, better > 5 cm 25 -> no difference seen
+  noturn_tuck1   n 139: in place at the arrival 59 (42 %); moved before it 81; off at the arrival cm p25/50/75 [0.0, 3.3, 7.1]; success 10; hit_furniture 12; reasons {'missed': 111, 'hit_furniture': 12, 'ok': 10, 'dropped': 6}
+                 moved: phase x hitter {('reach1', 'right hand'): 55, ('first walk', 'right hand'): 18, ('correction walk', 'right hand'): 3, ('first walk', 'no robot contact'): 3, ('reach1', 'right arm'): 1, ('reach1', 'no robot contact'): 1}
+                 stance error at the first reach cm p25/50/75 [10.4, 16.4, 17.0] (n 139); first walk's end cm [26.1, 27.6, 29.2]; pelvis travel over the correction walk cm [11.5, 13.7, 16.1]; correction walks {2: 138, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 13 of the 139 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward 7.8 cm, side 24.0 cm, z 0.747 m (n 138)
+                 paired with orig: in place gained 59 / lost 0, McNemar p 3.47e-18; success gained 10 / lost 1, p 0.0117; inserted tuck s {1.8: 138, 0.0: 1}
+                 secondary (stance error at the first reach, noturn_tuck1 - orig, n 137): median -2.0 cm, worse > 5 cm 19, better > 5 cm 46 -> no difference seen
+  noturn_tuck1b  n 139: in place at the arrival 34 (24 %); moved before it 106; off at the arrival cm p25/50/75 [1.6, 8.7, 12.7]; success 1; hit_furniture 24; reasons {'missed': 111, 'hit_furniture': 24, 'dropped': 3, 'ok': 1}
+                 moved: phase x hitter {('reach1', 'right hand'): 89, ('first walk', 'right hand'): 13, ('first walk', 'no robot contact'): 4}
+                 stance error at the first reach cm p25/50/75 [28.0, 29.6, 31.2] (n 139); first walk's end cm [26.1, 27.6, 29.2]; pelvis travel over the correction walk cm [3.4, 3.6, 3.6]; correction walks {2: 138, 1: 1}; fell 0, lost 0, timeout 0; legs on the coffee table (look .. arrival) 13 of the 139 with the support log
+                 left wrist during the correction walk (from the root body, heading frame, median of medians): forward -5.3 cm, side 10.0 cm, z 0.735 m (n 138)
+                 paired with orig: in place gained 34 / lost 0, McNemar p 1.16e-10; success gained 1 / lost 1, p 1; inserted tuck s {1.8: 138, 0.0: 1}
+                 secondary (stance error at the first reach, noturn_tuck1b - orig, n 137): median +13.4 cm, worse > 5 cm 108, better > 5 cm 4 -> stands further off
+
+== revision 6 verdicts (main measure: in place at the arrival, 2 cm / 15 deg; both tasks)
+  tuck1: in place 39.6 % of 139 -> the tuck itself: partly effective
+  tuck1b: in place 73.4 % of 139 -> the tuck itself: effective
+  T1 = tuck1: N 71.9 %, T1 39.6 %, N + T1 42.4 %; N - T1 +32.4 pp (only N 47, only T1 2, n 139, p 4.36e-12); (N + T1) - N -29.5 pp (only N + T1 0, only N 41, n 139, p 9.09e-13) -> overturns the tuck: change the correction walk's turn
+  T1 = tuck1b: N 71.9 %, T1 73.4 %, N + T1 24.5 %; N - T1 -1.4 pp (only N 13, only T1 15, n 139, p 0.851); (N + T1) - N -47.5 pp (only N + T1 3, only N 69, n 139, p 2.64e-17) -> neither alone decides
+```
+
+- **跟踪误差原始输出**（`q1tuck/an_track.txt`）：
+
+```
+tuck1          episodes with a tucked window 139 (none 0): per-episode median hand point error cm p10/50/90 [1.3, 1.4, 1.5]; per-episode p90 cm p10/50/90 [2.0, 2.0, 2.1]; episodes with median > 3 cm 1
+tuck1b         episodes with a tucked window 139 (none 0): per-episode median hand point error cm p10/50/90 [2.0, 2.1, 2.2]; per-episode p90 cm p10/50/90 [2.5, 2.7, 2.8]; episodes with median > 3 cm 1
+tuck2b         episodes with a tucked window 139 (none 0): per-episode median hand point error cm p10/50/90 [2.1, 2.1, 2.1]; per-episode p90 cm p10/50/90 [2.7, 2.8, 2.9]; episodes with median > 3 cm 0
+noturn_tuck1   episodes with a tucked window 139 (none 0): per-episode median hand point error cm p10/50/90 [1.6, 1.6, 1.7]; per-episode p90 cm p10/50/90 [1.9, 2.4, 2.5]; episodes with median > 3 cm 1
+noturn_tuck1b  episodes with a tucked window 139 (none 0): per-episode median hand point error cm p10/50/90 [1.8, 2.0, 2.0]; per-episode p90 cm p10/50/90 [2.1, 2.2, 2.3]; episodes with median > 3 cm 1
+```
+
 ### 独立复核后补的核对和更正（2026-11-26，协调人要求补进"结果"）
 
 - **登记疏漏**：
@@ -928,6 +1171,12 @@ salt visibility check (13x13 window around the object's expected pixel; mask = t
 - **适用范围**：哑铃和浇水壶都是同一个场景 207、同一张茶几，走路距离都约 2.25 m。"SONIC 在修正步里扫倒物体"只在这一种布局上成立。蜡烛、苹果和 HEFT 都没查过手到之前物体有没有被碰。
 
 ## 意外
+
+- **修订 6**：
+  - 预测是 N 加收手和 N 单独差不到 15 个百分点，结果差很多（42 % 和 25 % 对 72 %）。原因是第一下伸手时右手推物体的局变多，N + T1b 还几乎不跟挪步。
+  - T1a 输给 N，原因不在转身，在伸手：T1a 已经基本消掉了修正步里的扫动，丢分在从 T1a 姿态伸手时把物体推过 2 cm。
+  - T2b 收着手走第一次，SONIC 走过头少了约 3 cm，站位误差中位数从 15.4 cm 降到 7.1 cm。没预料到收手会影响走路的准确度。
+  - 新姿态下手会碰到机器人自己的骨盆刚体 `manipulator_mount`。这个刚体名字没有 `robot0_` 前缀，lmlcmp3 的家具检查把它记成碰家具：T2b 104 局、T1b 17 局。
 
 ## 结论与下一步
 
