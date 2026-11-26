@@ -1177,6 +1177,51 @@ noturn_tuck1b  episodes with a tucked window 139 (none 0): per-episode median ha
   - T1a 输给 N，原因不在转身，在伸手：T1a 已经基本消掉了修正步里的扫动，丢分在从 T1a 姿态伸手时把物体推过 2 cm。
   - T2b 收着手走第一次，SONIC 走过头少了约 3 cm，站位误差中位数从 15.4 cm 降到 7.1 cm。没预料到收手会影响走路的准确度。
   - 新姿态下手会碰到机器人自己的骨盆刚体 `manipulator_mount`。这个刚体名字没有 `robot0_` 前缀，lmlcmp3 的家具检查把它记成碰家具：T2b 104 局、T1b 17 局。
+  - **LML 的家具检查把 `manipulator_mount` 当成家具**（修订 6 里发现；协调人要求查已有条目受不受影响。只读盘上已有记录，没改代码、没重跑。`fd_mount_scan.py` md5 c55e5a5653be3e08da17122ec31f6f24，11:54:39Z 读盘，原始输出 `q1tuck/mount_scan.txt`）：
+    - **是什么**：
+      - robosuite 的 `add_mobile_base` 把整个物理机器人（骨盆几何和惯量）挪到一个叫 `manipulator_mount` 的刚体下，这个名字没有 `robot0_` 前缀。
+      - `hg_run.Driver.arm_scene_contact`（`hg_run.py:209`）只排除 `robot0_` 开头的刚体和目标物体，所以右手、腕、肘碰到自己的骨盆，也算"碰家具"。
+    - **哪些条目用这个检查**：
+      - hardgrasp（`hg_run.py`）、lmlreal（`lr_run.py`）、lmlcmp（`lc_run.py`）、lmlcmp2（`lc2_run.py`）、lmlcmp3（`lc3_run.py`）、lmlroute（`lrt_run.py`），还有本条目（`fd_run.py` 调 `lc3_run`）。
+      - 它进两处计数：
+        - 每局的 `n_contacts` / `first_contact`，变成失败原因 `hit_furniture`；
+        - 每段伸手的 `furn_rows`（命令到标签之间有接触的行数），lmlcmp 的接触分档、lmlcmp3 的 M1 机制检查等用它。
+      - HA、BiGym、SIMPLE 用各自的检查，不在内。
+    - **记录里存了什么**：
+      - 每局只存第一次接触那一行的刚体名（`first_contact`）和接触行数（`n_contacts`）。
+      - 每段只存 `furn_rows` 行数，不存刚体名。
+      - 每一行只记 `d.contact` 里找到的第一个非机器人刚体。
+    - **能确定到什么程度**：
+      - 标成 `hit_furniture` 的局：第一次接触不是 mount，就是碰过别的家具，不是"只碰过 mount"；第一次接触是 mount、只有 1 行，就是只碰过 mount；第一次接触是 mount、多于 1 行，不能从记录确定。
+      - 段的 `furn_rows > 0`：不能从记录确定。
+    - **结果**（各条目的正式目录，按控制器）：
+
+| 条目 | 控制器 | 局 | 有接触的局 | 标成碰家具 | 其中第一次接触不是 mount | 只碰过 mount | 不能确定 | 段 | furn_rows > 0 的段 |
+|---|---|---|---|---|---|---|---|---|---|
+| hardgrasp | ScaleBFM | 614 | 306 | 133 | 133 | 0 | 0 | 没记 furn_rows | — |
+| lmlreal | ScaleBFM | 210 | 123 | 67 | 67 | 0 | 0 | 316 | 227 |
+| lmlreal | SONIC | 210 | 70 | 52 | 52 | 0 | 0 | 295 | 92 |
+| lmlreal | HEFT | 210 | 45 | 34 | 34 | 0 | 0 | 166 | 113 |
+| lmlcmp | ScaleBFM | 434 | 211 | 94 | 94 | 0 | 0 | 660 | 403 |
+| lmlcmp | SONIC | 434 | 167 | 114 | 114 | 0 | 0 | 642 | 245 |
+| lmlcmp | HEFT | 434 | 209 | 190 | 190 | 0 | 0 | 627 | 455 |
+| lmlcmp2 | ScaleBFM | 868 | 410 | 191 | 191 | 0 | 0 | 1320 | 784 |
+| lmlcmp2 | SONIC | 868 | 339 | 242 | 242 | 0 | 0 | 1284 | 493 |
+| lmlcmp2 | HEFT | 868 | 414 | 377 | 377 | 0 | 0 | 1252 | 905 |
+| lmlcmp3 | ScaleBFM | 2520 | 1237 | 566 | 566 | 0 | 0 | 3836 | 2428 |
+| lmlcmp3 | SONIC | 1890 | 782 | 504 | 504 | 0 | 0 | 2670 | 1156 |
+| lmlcmp3 | HEFT | 1260 | 630 | 578 | 578 | 0 | 0 | 1832 | 1360 |
+| lmlroute | ScaleBFM | 2520 | 1384 | 920 | 920 | 0 | 0 | 5544 | 2372 |
+| lmlroute | SONIC | 2520 | 1271 | 875 | 875 | 0 | 0 | 5105 | 1859 |
+| lmlroute | HEFT | 2520 | 1560 | 1455 | 1455 | 0 | 0 | 5317 | 3678 |
+
+    - **读法**：
+      - 这六个条目里，没有一局的第一次接触是 mount，标成别的原因的局也没有。
+      - 所以标成 `hit_furniture` 的局，全是碰过别的家具的，"只碰过 mount"的是 0。
+      - 段的 `furn_rows > 0`：不能从记录确定，只能说这些段所在的局，第一次接触都不是 mount。
+      - 一局在别的家具之后又碰到 mount、或者同一行两样都碰着，记录里看不出来。但这样的局本来就碰了别的家具，标签不变。
+    - **本条目**：mount 只在修订 6 的新姿态组出现（第一次接触：T1b 17 局、T2b 104 局、N + T1b 2 局）。修订 6 之前的各组和 lmlcmp3 逐位相同，也是 0。修订 6 各组的 `furn_rows` 同样不能从记录区分。
+    - **提醒**：已有记录里一次都没出现，是因为平时的手臂姿态不会让手碰到自己骨盆；手收到骨盆后面才会碰到。以后再用贴身的姿态，这个检查要先把 `manipulator_mount` 排除掉。这里只描述，没改代码。
 
 ## 结论与下一步
 
