@@ -640,12 +640,229 @@ A's success: 0/20 -> <= 1/20: revision 1, the main metric is grasp-and-lift
   task x reach_no ppbox 1: n 7 (6 episodes); S_f1_s0 median 4.92 [2.67, 5.33] cm; T_f1_s0 median 3.89 [3.33, 4.26] cm; T - S -1.03 [-1.08, 1.08] cm
 ```
 
+### ScaleBFM 正式运行：种子 400–459，两个任务，A 对 R（2026-11-26 17:04:54Z – 22:34:11Z）
+
+**运行**
+- 4 个进程（`formal/launch.txt`），从 asrun2 跑。R 用 S_f1_s0（d585348f），FDVEL 开，3 倍时限。
+- 各进程最后一行的时间：
+  - DoubleDesk：400–429 是 20:28:57Z，430–459 是 20:51:53Z；
+  - P&PBox：400–429 是 22:25:48Z，430–459 是 22:34:11Z。
+- 运行情况：
+  - 4 个进程都打印了 DONE，0 个 Traceback，0 局以"错误"结束；
+  - 没有续跑过，两个任务的 `stale/` 都是空的；
+  - 120 对都打印了"prefix A == R: True"；
+  - 跑完以后 asrun2 和 MD5 相同，没有 `__pycache__`。
+- **槽位**：每个进程结束、核对完它那 30 对都齐了以后，撤掉对应的 hold，槽位还给采集（`selfmodel_hadata_20261126/logs/formal.log`）。撤的时间：2b 20:29:41Z，3b 20:53:00Z，2a 22:26:55Z，3a 22:35:01Z。
+
+**取数**：`ht_formal_stats.py`（8ed77a72，commit 2160c0d7，正式局一局都没读过时写定）。命令如下，其中 RB 是 `selfmodel_simpledata_20261126/asrun/repo_b`，F 是 `selfmodel_hatask_20261126/formal`：
+
+```
+cd $RB && REACHWM_GOAL_REF=1 REACHWM_APPROACH=1 REACHWM_QFIX=1 REACHWM_FDVEL=1 LOCO_REPO=$RB PYTHONDONTWRITEBYTECODE=1 \
+  OMP_NUM_THREADS=2 CUDA_VISIBLE_DEVICES= nice -n 19 $PY $OT/ht_formal_stats.py --runs $F/scalebfm_ppbox,$F/scalebfm_doubledesk \
+  --touch $L/selfmodel_hadata_20261126/asrun_train/selfmodel_hacollect_20261126/hd_touch.py --json $F/scalebfm_report.json 2>&1 | grep -v Warn > $F/scalebfm_report.txt
+```
+
+**原始输出**：全文在 `formal/scalebfm_report.txt`（md5 2234cceb），数值版在 `formal/scalebfm_report.json`。
+
+```
+controller ['scalebfm']; runs .../formal/scalebfm_ppbox,.../formal/scalebfm_doubledesk; reader flags {'FDVEL': True, 'GOAL_REF': True, 'APPROACH': True, 'QFIX': True}
+pairs 120 (ppbox 60, doubledesk 60); ended in error (left out, revision 2 section 6) 0; one arm missing 0 []
+consistency: prefixes identical 120/120; differ 0 (0.0 %): 
+commands through the model, per hand: segments found 720, none recorded 0; frame check (segment target == the log's executed target) 720 equal, 0 differ []; A's executed == goal 360, differ 0
+
+grasp-and-lift (main, revision 1): A 19/120 (15.8 %), R 13/120 (10.8 %), R - A -5.0 points; discordant R only 11, A only 17; McNemar exact p 0.3449
+  ppbox: A 14/60 (23.3 %), R 8/60 (13.3 %), R - A -10.0 points; discordant R only 6, A only 12; McNemar exact p 0.2379
+  doubledesk: A 5/60 (8.3 %), R 5/60 (8.3 %), R - A +0.0 points; discordant R only 5, A only 5; McNemar exact p 1
+  identical prefixes only (120 pairs): A 19/120 (15.8 %), R 13/120 (10.8 %), R - A -5.0 points; discordant R only 11, A only 17; McNemar exact p 0.3449
+
+success within 3x (secondary): A 0/120 (0.0 %), R 0/120 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+  ppbox: A 0/60 (0.0 %), R 0/60 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+  doubledesk: A 0/60 (0.0 %), R 0/60 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+  identical prefixes only (120 pairs): A 0/120 (0.0 %), R 0/120 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+
+success within the official budget (secondary): A 0/120 (0.0 %), R 0/120 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+  ppbox: A 0/60 (0.0 %), R 0/60 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+  doubledesk: A 0/60 (0.0 %), R 0/60 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+  identical prefixes only (120 pairs): A 0/120 (0.0 %), R 0/120 (0.0 %), R - A +0.0 points; discordant R only 0, A only 0; McNemar exact p 1
+
+landing error of the commands through the model (cm; hand point at the end label to the perceived target):
+  ppbox pregrasp_left left: A median 12.51 (n 60), R median 7.35 (n 60); paired R - A median -2.76 [-5.72, -1.25] over 60 seeds
+  ppbox pregrasp_right right: A median 31.13 (n 60), R median 21.05 (n 60); paired R - A median -4.59 [-8.92, -0.22] over 60 seeds
+  ppbox squeeze left: A median 12.26 (n 60), R median 19.48 (n 60); paired R - A median +6.19 [+4.13, +11.00] over 60 seeds
+  ppbox squeeze right: A median 34.87 (n 60), R median 20.67 (n 60); paired R - A median -2.68 [-9.98, +2.32] over 60 seeds
+  doubledesk descend right: A median 8.43 (n 60), R median 9.41 (n 60); paired R - A median +0.71 [+0.05, +1.42] over 60 seeds
+  doubledesk pregrasp_right right: A median 4.27 (n 60), R median 5.53 (n 60); paired R - A median +0.98 [+0.18, +1.89] over 60 seeds
+
+how episodes ended, the furthest step, HA falls (per task and arm):
+  ppbox A (n 60): ends {"timeout": 24, "held (shelf not seen)": 30, "HA fall": 6}; furthest {"carry": 19, "search": 35, "place": 5, "open": 1}; HA fall 6
+  ppbox R (n 60): ends {"held (shelf not seen)": 25, "timeout": 32, "HA fall": 2, "held (sequence done)": 1}; furthest {"search": 27, "carry": 28, "place": 3, "open": 2}; HA fall 2
+  doubledesk A (n 60): ends {"HA fall": 42, "held (basket not seen)": 12, "held (sequence done)": 5, "timeout": 1}; furthest {"carry": 39, "search": 12, "open": 6, "grasp": 1, "place": 2}; HA fall 42
+  doubledesk R (n 60): ends {"HA fall": 46, "held (basket not seen)": 3, "held (sequence done)": 9, "timeout": 2}; furthest {"carry": 43, "search": 3, "open": 9, "place": 4, "grasp": 1}; HA fall 46
+
+revision 3 (1) DoubleDesk max lift per episode, cm (seed: A, R):
+  400: 0.0, 11.45; 401: 10.7, 0.0; 402: 2.36, 20.91; 403: 11.49, 0.0; 404: 0.0, 0.0; 405: 0.0, 0.0; 406: 0.0, 0.0; 407: 0.0, 0.0; 408: 0.0, 0.0; 409: 0.0, 0.0; 410: 0.0, 9.11; 411: 0.0, 0.0; 412: 26.88, 0.0; 413: 0.0, 8.31; 414: 0.0, 3.24; 415: 0.0, 0.0; 416: 0.0, 0.0; 417: 0.0, 0.0; 418: 0.0, 0.0; 419: 0.0, 15.05; 420: 0.0, 1.94; 421: 0.0, 0.0; 422: 11.48, 0.0; 423: 0.0, 0.0; 424: 0.0, 0.0; 425: 0.0, 22.05; 426: 0.0, 0.0; 427: 4.8, 19.92; 428: 0.0, 0.0; 429: 0.0, 0.0; 430: 2.98, 0.0; 431: 1.59, 0.0; 432: 3.01, 0.0; 433: 0.0, 1.11; 434: 0.0, 0.0; 435: 0.0, 0.0; 436: 0.0, 0.0; 437: 0.0, 0.11; 438: 0.0, 6.32; 439: 0.0, 0.0; 440: 0.0, 0.0; 441: 23.75, 0.0; 442: 0.0, 0.0; 443: 0.0, 0.0; 444: 0.0, 0.0; 445: 0.0, 0.0; 446: 0.0, 0.0; 447: 0.46, 0.0; 448: 0.0, 0.0; 449: 0.0, 0.0; 450: 0.0, 14.98; 451: 0.0, 0.0; 452: 0.0, 0.0; 453: 0.0, 5.25; 454: 0.0, 0.0; 455: 0.0, 0.0; 456: 0.0, 0.0; 457: 1.67, 0.0; 458: 12.92, 10.16; 459: 0.0, 0.0
+  episodes with max lift 0.0: A 47/60, R 45/60
+revision 3 (2) P&PBox stuck at find_shelf (sequence 'shelf not seen'): A 30/60, R 25/60
+
+R's commands through the model: 300; with a shrink 4 (1.3 %); correction median 7.29 cm; predicted miss median 1.17 cm (two-hand: the larger hand)
+contacts (hd_touch's rule) and pelvis displacement on the reaches through the model (descriptive):
+  ppbox A: hands 240, touching 229; pelvis forward median -2.8 cm, lateral median -2.5 cm
+  ppbox R: hands 240, touching 196; pelvis forward median -3.4 cm, lateral median -0.8 cm
+  doubledesk A: hands 120, touching 109; pelvis forward median -2.8 cm, lateral median 1.8 cm
+  doubledesk R: hands 120, touching 65; pelvis forward median -1.8 cm, lateral median 1.9 cm
+```
+
+- 第一行里两个运行目录的长路径换成了 `...`，其余照原样。
+
+**主指标：抓起并举高（修订 1）**
+- 合计：A 19/120（15.8 %），R 13/120（10.8 %），R − A −5.0 个百分点，McNemar 精确检验 p 0.3449。不一致的对里，只有 R 抓起的 11 对，只有 A 抓起的 17 对。
+- 按任务：
+  - P&PBox：A 14/60，R 8/60，R − A −10.0 个百分点，p 0.2379；
+  - DoubleDesk：A 5/60，R 5/60，p 1。
+- 120 对的前缀都相同，所以"只用前缀相同的对"那一遍和主分析完全一样。
+- **Holm 校正**：要等 HEFT、SONIC 跑完后三个一起做，现在只有原始 p。Holm 校正后的 p 不会小于原始 p，所以 ScaleBFM 这一格"不显著"的结论，不会因为另外两个控制器的结果而改变。
+
+**次要指标：HA 官方成功**
+- 3 倍时限内和官方时限内，两组都是 0/120。
+
+**落点误差**（经过模型的那几下，单位 cm，每格两组各 60 只手）
+
+| 任务 | 命令 | 手 | A 中位 | R 中位 | R 比 A | 按种子配对 R − A 的中位 [95 %] |
+|---|---|---|---|---|---|---|
+| P&PBox | 预抓取 | 左 | 12.51 | 7.35 | −41 % | −2.76 [−5.72, −1.25] |
+| P&PBox | 预抓取 | 右 | 31.13 | 21.05 | −32 % | −4.59 [−8.92, −0.22] |
+| P&PBox | 夹紧 | 左 | 12.26 | 19.48 | +59 % | +6.19 [+4.13, +11.00] |
+| P&PBox | 夹紧 | 右 | 34.87 | 20.67 | −41 % | −2.68 [−9.98, +2.32] |
+| DoubleDesk | 预抓取 | 右 | 4.27 | 5.53 | +30 % | +0.98 [+0.18, +1.89] |
+| DoubleDesk | 往下到抓取点 | 右 | 8.43 | 9.41 | +12 % | +0.71 [+0.05, +1.42] |
+
+- "R 比 A"是 R 中位数除以 A 中位数再减 1。原始输出里没有这一列，是我按上面的中位数算的。
+- 坐标系核对 720/720 相等；A 实际执行的目标和 goal 360/360 相同。
+- 修订 2 第 4 条要报的夹紧那一下，就是表里第 3、4 行。两组每局都有夹紧那一下，60 局。
+
+**一局怎么结束、摔倒**
+- HA 判摔倒：
+  - P&PBox：A 6/60，R 2/60；
+  - DoubleDesk：A 42/60，R 46/60；
+  - 合计：A 48/120（40 %），R 48/120（40 %）。
+- 下面几项是事后从局记录里数的，原始输出里没有，不进判定：
+  - 摔倒时停在哪个环节：DoubleDesk 大多是带着锤子走向篮子那张桌子的时候（A 42 次里 39 次，R 46 次里 43 次）；P&PBox 大多是找货架时的转身里（A 6 次里 5 次，R 2 次都是）。
+  - DoubleDesk 的摔倒按种子每 10 个一组：A 是 8、6、5、8、9、6，R 是 8、8、7、6、8、9。两个进程（400–429、430–459）A 各 19、23 次，R 各 23、23 次。
+  - 冒烟里 DoubleDesk A 是 3/10 摔倒。它和正式运行 A 的 42/60 比，Fisher 精确检验 p 0.0282。
+
+**修订 3 的两项**
+1. **DoubleDesk 每局锤子的最大抬高**：A 60 局里 47 局是 0.0 cm，R 是 45 局。冒烟是 10 局里 8 局，正式运行"也是这样"，所以按修订 3：**主指标在这个任务上到底**。
+   - 两组都是 5/60，不一致的 10 对一边 5 对，没有一对两组都抓起来。
+   - 修订 3 原文说这时看"修订 2 第 4 条，夹紧那一下"的落点误差。但夹紧只有 P&PBox 有，所以 DoubleDesk 看它自己经过模型的两下，也就是登记的次要指标：
+     - 预抓取和往下到抓取点，R 都比 A 略差：配对差 +0.98 cm 和 +0.71 cm，区间都不含 0。
+     - A 往下那一下的落点误差中位是 8.43 cm。
+2. **P&PBox 卡在 find_shelf 上**：A 30/60，R 25/60。只陈述。find_shelf 没调。
+
+**R 的命令**
+- 经过模型的命令 300 下，其中缩回过的 4 下（1.3 %）。
+- 修正量的中位是 7.29 cm，选中候选的预测偏差中位是 1.17 cm。
+- 事后加看了规划的 IK 误差（局记录的 `ik_err_cm`，不进判定）：
+  - A 经过模型的那几下，每个命令、每只手的中位 ≤ 0.002 cm，最大 1.607 cm，没有一只手 > 2 cm。所以 A 落点误差大，不是因为目标够不着；
+  - R 的夹紧有左右手各 2 只 > 2 cm，最大 63.585 cm。
+
+**接触和骨盆位移**（hd_touch 的规则，只作描述）
+- 碰到东西的手：
+  - P&PBox：A 240 只里 229 只，R 196 只；
+  - DoubleDesk：A 120 只里 109 只，R 65 只。
+- 骨盆位移的中位，两组都在 −3.4 到 +1.9 cm 之间。
+
+**预测和结果**
+
+| 项 | 预测（ScaleBFM） | 结果 | 落在区间里？ |
+|---|---|---|---|
+| 抓起并举高，A | 10–35 % | 15.8 % | 是 |
+| 抓起并举高，R − A | +3 到 +15 个百分点 | −5.0 个百分点（p 0.3449） | 否，低于区间 |
+| 3 倍时限内成功，A | 2–15 % | 0 % | 否，低于区间 |
+| 3 倍时限内成功，R − A | −2 到 +6 个百分点 | 0 | 是 |
+| 官方时限内成功 | P&PBox 两组 0；DoubleDesk 每组 ≤ 5 % | 0；0 | 是 |
+| Holm 校正后 p < 0.05 的可能 | 约 20 % | 原始 p 0.3449，校正后不会更小 | 没发生 |
+| 落点误差，R 比 A | 低 20–50 % | 6 行里 3 行低 32–41 %（其中夹紧右手的区间跨 0），3 行反而高 12–59 % | 一半是 |
+| HA 摔倒 | 5–20 % 的局 | A 40 %，R 40 %（P&PBox 10 %、3.3 %，DoubleDesk 70 %、76.7 %） | 否，高于区间 |
+| 一致性 | ≥ 95 % | 100 % | 是 |
+| 闸门 | 过 (a)；(b) 倍数 1.0–2.5，有不小的可能不过；(c) ≥ 70 % | (a) 过；(b) 倍数 0.689，区间上限 1.672 > 1.5；(c) 97.9 % | (a)(c) 是；(b) 的倍数低于区间，区间上限没过 |
+
+**判据表**（按修订 1 的读法，"成功"读作"抓起并举高"）
+- **第 2 行**（> 5 % 的对前缀不同）：没触发，0 %。
+- **第 3 行**（R − A ≥ +5 个百分点，且 Holm 校正后 p < 0.05）：没触发。
+- **第 5 行**（成功和抓起都分不开）：**触发**，结论是"HA 上没测出差别"。原文接着要看落点：
+  - **决定抓不抓得住的那一下，R 没有更准**：
+    - P&PBox 夹紧，左手 R 差 6.19 cm（区间不含 0），右手分不开；
+    - DoubleDesk 往下到抓取点，R 差 0.71 cm（区间不含 0）。
+    - 照原文读：模型在 HA 的任务状态上修不准。对照闸门：(b) 的区间上限没过，(c) 过了。
+  - **P&PBox 的预抓取，R 更准**：两只手的区间都不含 0。但 P&PBox 的抓起没有更多（−10.0 个百分点，p 0.2379）。照原文读：对预抓取这一下来说，限制抓起的不是它的落点。
+- **第 6 行**（R − A ≤ −5 个百分点，且 p < 0.05）：没触发。R − A 正好是 −5.0，但 p 0.3449。
+  - P&PBox 单独看是 −10.0、p 0.2379，也没触发；而且这一行是按控制器读的。
+- **第 7 行**（A、R 都 ≤ 2/120）：
+  - 抓起并举高 19、13，没触发；
+  - 次要指标官方成功两组都是 0/120，在这一项上到底了。
+- **第 8 行**（闸门 (b) 或 (c) 没过）：触发。注"**模型在 HA 真实局上没过 (b)**"：倍数 0.689 ≤ 1.3，区间上限 1.672 > 1.5，第一行两个条件只满足一个。R 没有赢，所以不存在把赢归到模型准不准的问题。
+- **正式运行开始以后**：没加局，没换种子，没改流程、阈值、站开距离、find_shelf，没换模型或 checkpoint。
+
 ## 意外
 
 - 冒烟 A 的 3 倍时限成功是 0/20，落在预测"0–4 局，一半以上可能 ≤ 1/20"的范围里，修订 1 触发。
 - 一半以上的局（20 局里 9 局）卡在找货架或找篮子上，比"带着东西走、放下"这些环节还多。
 - DoubleDesk 的锤子 10 局里有 8 局最大抬高是 0.0 cm。流程照样走完了 4 局，到篮子上方张了手。
 
+**ScaleBFM 正式运行**
+- **R 抓起反而少了**：预测是 +3 到 +15 个百分点，结果 −5.0（p 0.3449）。少的都在 P&PBox（−10.0），DoubleDesk 持平。
+- **摔倒比预测多很多**：两组都是 40 % 的局，预测 5–20 %。
+  - 几乎都在 DoubleDesk（A 70 %，R 76.7 %），而且大多发生在"带着锤子走向篮子那张桌子"这一段。这一段不管锤子有没有抓起来都会走，多数局的锤子其实没离开桌面。
+  - 冒烟里 DoubleDesk A 只有 3/10 摔倒，和正式运行的 42/60 比，Fisher p 0.0282。
+  - 已经查过、可以排除的：
+    - 摔倒在种子和两个进程之间分布均匀，没有越跑越多；
+    - FDVEL 只进模型的输入特征（data.py 的 x0），不进执行；
+    - asrun2 和 asrun 只差续跑逻辑。
+  - 没查清的：冒烟种子 380–389 的场景本来就容易；或者正式运行里 A 在同一个进程里接在上一个种子的 R 后面跑（冒烟只跑 A）。这次没有加局去分辨，正式运行开始以后不加局。
+- **A 的手离目标很远**：P&PBox 经过模型的那几下，A 的落点误差中位是 12–35 cm，可是规划的 IK 误差几乎是 0（最大 1.607 cm）。
+  - 也就是说，目标够得着，手却没到。这几下 A 的手 240 只里有 229 只碰到了东西。
+  - R 选中候选的预测偏差中位只有 1.17 cm，R 实际的落点误差中位是 7–21 cm。模型预测的偏差比实际小得多。
+  - 闸门 (b) 是在干净伸手（不碰东西）上量的。任务局里经过模型的伸手，绝大多数不是这种。
+- **同一个种子，A 和 R 抓不抓得起来几乎互不相关**：两组都抓起的只有 2 对。如果两组完全独立，按 19/120 和 13/120 算，期望也是 2.06 对。前缀到第一下预抓取都逐位相同，之后的结果却像重新掷了一次。
+- **R 的手碰到东西的少**：P&PBox 240 只里 196 只（A 229 只），DoubleDesk 120 只里 65 只（A 109 只）。
+- **P&PBox 夹紧，左手 R 比 A 差 6.19 cm**（区间 [+4.13, +11.00]），而两只手的预抓取都是 R 更准。
+
 ## 结论与下一步
+
+**ScaleBFM（三个控制器里的第一个）**
+- **结论**：HA 上没测出差别（判据表第 5 行，修订 1 的读法）。
+  - 主指标抓起并举高：A 19/120，R 13/120，R − A −5.0 个百分点，McNemar p 0.3449（"结果 · ScaleBFM 正式运行"的 grasp-and-lift 一行）。
+  - 也不能说 R 有害：第 6 行要求 p < 0.05，没满足。
+  - 次要指标 HA 官方成功，两组 3 倍时限内和官方时限内都是 0/120，到底了。
+- **落点**：决定抓不抓得住的那一下，R 没有更准。
+  - P&PBox 夹紧，左手差 6.19 cm、右手分不开；DoubleDesk 往下那一下差 0.71 cm（落点误差表第 3、4、6 行）。
+  - 照判据第 5 行，这说明模型在 HA 的任务状态上修不准。它和闸门 (b) 没过的那一条（区间上限 1.672 > 1.5）一致。
+  - P&PBox 的预抓取 R 更准（第 1、2 行），抓起却没有更多。
+- **注**：模型在 HA 真实局上没过 (b)。
+- **证据强度**：
+  - 一个控制器，一个模型（seed 0），每对各跑一次；
+  - 60 个种子 × 2 个任务 = 120 对，共 240 局；
+  - 主指标不一致的对只有 28 对，检验只分得出较大的差别。
+- **其他可能的解释**：
+  1. **接触**：任务局里经过模型的伸手几乎都碰到东西（A 在 P&PBox 是 229/240），模型的准确度却只在不碰东西的伸手上量过（闸门 (b)）。所以这次的结果只说明这个模型在这些状态下修不准，不能推出"用自身模型修正"这个做法本身在 HA 上没用。
+  2. **噪声**：同一个种子 A、R 抓起几乎互不相关（两组都抓起 2 对，独立时期望 2.06 对）。抓起与否主要取决于前缀之后每次都不一样的细节，配对几乎没带来额外的灵敏度。
+  3. **P&PBox 少了 6 个抓起的原因没检验**。可能是夹紧左手落得更差，也可能是 R 的手碰到箱子的少（夹紧本来就要压住箱子两侧）。两者都只是描述性的数，没检验过。
+- **四类陷阱**：
+  - **benchmark 选择**：任务（P&PBox、DoubleDesk）、种子（400–459）、局数都在登记里定死；没有丢掉任何局，没有"错误"局。
+  - **数据泄漏**：
+    - HA 模型的训练数据是 d3 采集，重置号从 91,000,000 和 92,000,000 起，HA 局的种子就用重置号，和 400–459 不重叠；
+    - 选臂用的是 200–239 的真实局；
+    - 归一化是模型状态的一部分，只来自训练数据。
+  - **指标误用**：
+    - 主指标换成抓起并举高，是修订 1 在冒烟之前写定的，由冒烟 A 的 0/20 触发，那时 R 一局都没读过；
+    - 三个二值指标、6 行落点误差、修订 3 的两项都照登记全报了。
+  - **事后挑选**：
+    - 一次运行，模型按登记的规则选，没看闸门改；
+    - 取数脚本在读任何正式局之前写定；
+    - 事后加看的几项（IK 误差、摔倒的环节、"R 比 A"一列）都注明了，不进判定。
+- **下一步**：
+  - ScaleBFM 这一格到此为止，照规则不加局。
+  - 照顺序，HEFT 的模型一训好（d3b 采集完以后），就走评估 → 闸门 → 代码检查 → 正式运行；然后是 SONIC。
+  - 三个都跑完以后，在抓起并举高上做 Holm 校正。
 
 ## 独立复核
