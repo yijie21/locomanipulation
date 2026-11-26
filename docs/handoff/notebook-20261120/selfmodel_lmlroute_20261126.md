@@ -806,7 +806,7 @@ lrt check: 8 episodes, identical 8, differing 0
 
 ## 结果
 
-正式运行进行中（2026-11-26T09:14:03Z 开跑）。ScaleBFM 10:06:12Z 评估完，SONIC、HEFT 在跑。下面先放离线算的数，再按控制器贴正式输出。
+正式运行进行中（2026-11-26T09:14:03Z 开跑）。ScaleBFM 10:06:12Z、SONIC 11:01:54Z 评估完，HEFT 在跑。下面先放离线算的数，再按控制器贴正式输出。
 
 ### 碗：GraspGen-X 的抓取里掌心朝下的比例（真值 mask，离线）
 
@@ -1037,4 +1037,169 @@ E8. criteria rows and predictions
 - **只算拆分后局的几项，不含这 11 局**：收口时手到抓取点的距离、E4 / M1 的碰撞统计。例如判定集 A：路上 379 + 目标附近 84 + 没碰 40 = 503 = 540 − 37 局拆分前失败（蜡烛 11、苹果 15、雕像柜 11）。
 - **E5（失败原因）**：这 11 局记为 other，每组的 "other 11" 就是它们。
 - **E6（路线）**：这 11 局没有发路线请求，蜡烛只有 79 局有路线回答。
+
+
+### SONIC（11:01:54Z 评估完）
+
+**运行**：
+- 630 局，H20 跑了 492 局，4090 跑了 138 局；
+- 每局的四组都在同一台机器上，630 局里没有一局混了两台机器；
+- worker 日志里共 2648 行代码核对，FAIL 0，"副本以外的模块"全是 0；
+- 驱动启动 128 次：4090 31 次，H20 97 次（解析后的路径）；
+- 除了蜡烛缺那一眼的记录，日志里没有别的 ERROR 或 Traceback；
+- 收尾时代码的 md5 和 asrun 相同。
+
+**K1 和 ScaleBFM 一样，照字面是 FAIL**，原因相同，见上面 ScaleBFM 的"意外"：
+- 22 条还是蜡烛 C、CR 两组的那 11 局（49、80、86、96、97、100、102、103、108、110、112）；
+- 四组共 44 条带错误的记录，错误全是缺那一眼的文件；
+- 每组 reason 为 other 的记录也只有这 11 局。
+
+`formal.log` 里 SONIC 的收尾几行：
+```
+2026-11-26T10:59:05Z [4090] sonic runs done: 2520 episode records, hosts  492 "host": "di-20261023170751-nd9kr"; 138 "host": "di-20261118145956-zf4sr";
+2026-11-26T10:59:11Z [4090] sonic code check: 31 driver starts with env.py from the copy; failures 0
+2026-11-26T11:01:20Z [4090] sonic merged and checked: CHECK FAIL: K1 missing 0 errors 22
+2026-11-26T11:01:54Z [4090] sonic evaluated
+2026-11-26T11:01:54Z [4090] sonic md5 after: same as asrun
+```
+
+`sonic/check.txt`（md5 a8698246）原样：
+```
+K1 sonic: 1260 records expected; missing 0 []; worker errors 22 [('candle', 'route', 49, "FileNotFoundError: [Errno 2] No such file or directory: '/wuji-vefps-D/wuji-il/y"), ('candle', 'route_reachable', 49, "FileNotFoundError: [Errno 2] No such file or directory: '/wuji-vefps-D/wuji-il/y"), ('candle', 'route', 80, "FileNotFoundError: [Errno 2] No such file or directory: '/wuji-vefps-D/wuji-il/y"), ('candle', 'route_reachable', 80, "FileNotFoundError: [Errno 2] No such file or directory: '/wuji-vefps-D/wuji-il/y")]
+K2 sonic: {'route unrouted = alone': 242, 'route_reachable unrouted = reachable': 242, 'route routed': 377, 'route_reachable routed': 377}; differences 0 []
+K3 sonic: {'no route, same answer': 242, 'route command same': 377}; differences 0 []
+K4 sonic: answers by status {'GATE_CLEAR': 120, 'ROUTED': 377, 'PLAN_FAIL': 4}; request md5 = answer's (C and CR) {True: 501}; planner FK vs ours 0.078 mm median, 0.170 max
+CHECK FAIL: K1 missing 0 errors 22
+```
+
+`sonic/eval.txt`（md5 232e333d）原样：
+```
+== sonic: records {'A': 630, 'R': 630, 'C': 630, 'CR': 630} (A, R from /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_lmlroute_20261126; C, CR from /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_lmlroute_20261126); episodes 30..119; missing 0 []; worker errors 44
+E1. decision set (lmlcmp3's rule on A): pre-split > 50 % -> out; A >= 80 % (72/90) -> ceiling
+  candle     pre-split 11/90 (12 %): perception 0, plan after the look 0, no look 11; the same in A R C CR True | A 74/90 | AT CEILING (A 74) | masks {'sim_gt': 79, 'no look': 11}
+  apple      pre-split 15/90 (17 %): perception 0, plan after the look 15, no look 0; the same in A R C CR True | A 3/90 | decision set | masks {'sim_gt': 90}
+  bowl       pre-split 55/90 (61 %): perception 0, plan after the look 55, no look 0; the same in A R C CR True | A 0/90 | EXCLUDED (pre-split 61 %) | masks {'sim_gt': 90}
+  salt       pre-split 0/90 (0 %): perception 0, plan after the look 0, no look 0; the same in A R C CR True | A 11/90 | decision set | masks {'sim_gt': 90}
+  statue_cab pre-split 13/90 (14 %): perception 0, plan after the look 13, no look 0; the same in A R C CR True | A 0/90 | decision set | masks {'sim_gt': 90}
+  dumbbell   pre-split 0/90 (0 %): perception 0, plan after the look 0, no look 0; the same in A R C CR True | A 1/90 | decision set | masks {'sim_gt': 90}
+  wcan       pre-split 0/90 (0 %): perception 0, plan after the look 0, no look 0; the same in A R C CR True | A 3/90 | decision set | masks {'sim_gt': 90}
+  decision set: ['apple', 'salt', 'statue_cab', 'dumbbell', 'wcan']; pre-split the same everywhere: True
+E2. per task: successes and discordant pairs (y-only / x-only, McNemar exact p)
+  candle     n 90 A 74 R 78 C 74 CR 78 | CvA A-only 0 C-only 0 p 1 | CRvR R-only 0 CR-only 0 p 1 | CRvC C-only 0 CR-only 4 p 0.125 | RvA A-only 0 R-only 4 p 0.125
+  apple      n 90 A  3 R  7 C 12 CR 11 | CvA A-only 2 C-only 11 p 0.0225 | CRvR R-only 5 CR-only 9 p 0.424 | CRvC C-only 10 CR-only 9 p 1 | RvA A-only 1 R-only 5 p 0.219
+  bowl       n 90 A  0 R  3 C  1 CR  4 | CvA A-only 0 C-only 1 p 1 | CRvR R-only 1 CR-only 2 p 1 | CRvC C-only 1 CR-only 4 p 0.375 | RvA A-only 0 R-only 3 p 0.25
+  salt       n 90 A 11 R 20 C 33 CR 29 | CvA A-only 1 C-only 23 p 2.98e-06 | CRvR R-only 8 CR-only 17 p 0.108 | CRvC C-only 11 CR-only 7 p 0.481 | RvA A-only 2 R-only 11 p 0.0225
+  statue_cab n 90 A  0 R  0 C  0 CR  0 | CvA A-only 0 C-only 0 p 1 | CRvR R-only 0 CR-only 0 p 1 | CRvC C-only 0 CR-only 0 p 1 | RvA A-only 0 R-only 0 p 1
+  dumbbell   n 90 A  1 R  7 C  1 CR  8 | CvA A-only 0 C-only 0 p 1 | CRvR R-only 4 CR-only 5 p 1 | CRvC C-only 1 CR-only 8 p 0.0391 | RvA A-only 0 R-only 6 p 0.0312
+  wcan       n 90 A  3 R 13 C  1 CR  7 | CvA A-only 2 C-only 0 p 0.5 | CRvR R-only 7 CR-only 1 p 0.0703 | CRvC C-only 0 CR-only 6 p 0.0312 | RvA A-only 1 R-only 11 p 0.00635
+E3. pooled
+  decision set (apple, salt, statue_cab, dumbbell, wcan): 450 pairs
+    C vs A: C 47 (10.4 %) A 18 (4.0 %) diff +6.4 pp (+29) | A-only 5 C-only 34 McNemar exact p 2.43e-06
+       close-time hand to the grasp point, paired C - A: median +0.00 cm [-0.04, +0.00], n 396, C closer 181, A closer 170, sign p 0.594
+    CR vs R: CR 55 (12.2 %) R 47 (10.4 %) diff +1.8 pp (+8) | R-only 24 CR-only 32 McNemar exact p 0.35
+       close-time hand to the grasp point, paired CR - R: median +0.00 cm [-0.08, +0.00], n 400, CR closer 187, R closer 168, sign p 0.339
+    CR vs C: CR 55 (12.2 %) C 47 (10.4 %) diff +1.8 pp (+8) | C-only 22 CR-only 30 McNemar exact p 0.332
+       close-time hand to the grasp point, paired CR - C: median -1.07 cm [-1.41, -0.89], n 400, CR closer 273, C closer 96, sign p 8.78e-21
+    R vs A: R 47 (10.4 %) A 18 (4.0 %) diff +6.4 pp (+29) | A-only 4 R-only 33 McNemar exact p 1.08e-06
+       close-time hand to the grasp point, paired R - A: median -1.43 cm [-1.72, -1.13], n 397, R closer 284, A closer 96, sign p 1.09e-22
+    [decision set] Holm over P1 (C v A) and P2 (CR v R): raw p 2.43e-06 / 0.35, adjusted 4.86e-06 / 0.35; P1 (C > A and significant) True, P2 (CR > R and significant) False
+  all 7 tasks (candle, apple, bowl, salt, statue_cab, dumbbell, wcan): 630 pairs
+    C vs A: C 122 (19.4 %) A 92 (14.6 %) diff +4.8 pp (+30) | A-only 5 C-only 35 McNemar exact p 1.38e-06
+       close-time hand to the grasp point, paired C - A: median +0.00 cm [+0.00, +0.00], n 496, C closer 198, A closer 174, sign p 0.233
+    CR vs R: CR 137 (21.7 %) R 128 (20.3 %) diff +1.4 pp (+9) | R-only 25 CR-only 34 McNemar exact p 0.298
+       close-time hand to the grasp point, paired CR - R: median +0.00 cm [+0.00, +0.00], n 500, CR closer 203, R closer 173, sign p 0.135
+    CR vs C: CR 137 (21.7 %) C 122 (19.4 %) diff +2.4 pp (+15) | C-only 23 CR-only 38 McNemar exact p 0.0722
+       close-time hand to the grasp point, paired CR - C: median -1.02 cm [-1.23, -0.82], n 500, CR closer 354, C closer 114, sign p 1.15e-29
+    R vs A: R 128 (20.3 %) A 92 (14.6 %) diff +5.7 pp (+36) | A-only 4 R-only 40 McNemar exact p 1.71e-08
+       close-time hand to the grasp point, paired R - A: median -1.25 cm [-1.44, -1.04], n 497, R closer 366, A closer 112, sign p 1.66e-32
+    [all 7 tasks] Holm over P1 (C v A) and P2 (CR v R): raw p 1.38e-06 / 0.298, adjusted 2.77e-06 / 0.298; P1 (C > A and significant) True, P2 (CR > R and significant) False
+  sensitivity: without episodes 30..39 (40..119)
+    [decision set, 40..119] Holm over P1 (C v A) and P2 (CR v R): raw p 3.86e-05 / 0.41, adjusted 7.71e-05 / 0.41; P1 (C > A and significant) True, P2 (CR > R and significant) False
+    CvA: 42 vs 18 of 400 (+6.0 pp), discordant 5 / 29, p 3.86e-05
+    CRvR: 52 vs 45 of 400 (+1.8 pp), discordant 23 / 30, p 0.41
+E4. the first furniture contact: before the first reach / on the way (hand > 10 cm from both targets) / near a target
+  decision set A  way  84 near   4 before 149 unknown 0 none 185
+  decision set R  way 134 near  30 before 149 unknown 0 none 109
+  decision set C  way  88 near   3 before 149 unknown 0 none 182
+  decision set CR way  79 near  43 before 149 unknown 0 none 151
+  apple        A  way   0 near   0 before  70 unknown 0 none 5
+  apple        R  way   0 near   0 before  70 unknown 0 none 5
+  apple        C  way   0 near   0 before  70 unknown 0 none 5
+  apple        CR way   0 near   0 before  70 unknown 0 none 5
+  salt         A  way   1 near   0 before  76 unknown 0 none 13
+  salt         R  way   1 near   0 before  76 unknown 0 none 13
+  salt         C  way   0 near   0 before  76 unknown 0 none 14
+  salt         CR way   0 near   0 before  76 unknown 0 none 14
+  all 7 tasks  A  way  84 near   4 before 170 unknown 0 none 278
+  all 7 tasks  R  way 134 near  31 before 170 unknown 0 none 201
+  all 7 tasks  C  way  88 near   3 before 170 unknown 0 none 275
+  all 7 tasks  CR way  79 near  44 before 170 unknown 0 none 243
+  M1 [decision set] way  C 88 vs A 84 (+5 %): both 79, C only 9, A only 5, McNemar p 0.424
+  M1 [decision set] near C 3 vs A 4 (-25 %): both 0, C only 3, A only 4, McNemar p 1
+  M1 [decision set] way  CR 79 vs R 134 (-41 %): both 77, CR only 2, R only 57, McNemar p 6.14e-15
+  M1 [decision set] near CR 43 vs R 30 (+43 %): both 15, CR only 28, R only 15, McNemar p 0.066
+  M1 [apple] way  C 0 vs A 0 (+nan %): both 0, C only 0, A only 0, McNemar p 1
+  M1 [apple] near C 0 vs A 0 (+nan %): both 0, C only 0, A only 0, McNemar p 1
+  M1 [apple] way  CR 0 vs R 0 (+nan %): both 0, CR only 0, R only 0, McNemar p 1
+  M1 [apple] near CR 0 vs R 0 (+nan %): both 0, CR only 0, R only 0, McNemar p 1
+  M1 [salt] way  C 0 vs A 1 (-100 %): both 0, C only 0, A only 1, McNemar p 1
+  M1 [salt] near C 0 vs A 0 (+nan %): both 0, C only 0, A only 0, McNemar p 1
+  M1 [salt] way  CR 0 vs R 1 (-100 %): both 0, CR only 0, R only 1, McNemar p 1
+  M1 [salt] near CR 0 vs R 0 (+nan %): both 0, CR only 0, R only 0, McNemar p 1
+  (descriptive) C: decision-set episodes with any contact row on the way 217
+  (descriptive) CR: decision-set episodes with any contact row on the way 214
+E5. failure reasons (pregrasp_touch first; hit_furniture by where the first contact was)
+  decision set A  ok 18 perception 0 pregrasp_touch 44 stance_or_ik 61 fell_walking 21 missed 125 dropped 3 other 0 hit_furniture_way 49 hit_furniture_near 4 hit_furniture_before 125
+  decision set R  ok 47 perception 0 pregrasp_touch 48 stance_or_ik 52 fell_walking 21 missed 60 dropped 1 other 0 hit_furniture_way 94 hit_furniture_near 21 hit_furniture_before 106
+  decision set C  ok 47 perception 0 pregrasp_touch 20 stance_or_ik 53 fell_walking 21 missed 137 dropped 3 other 0 hit_furniture_way 63 hit_furniture_near 3 hit_furniture_before 103
+  decision set CR ok 55 perception 0 pregrasp_touch 39 stance_or_ik 54 fell_walking 21 missed 93 dropped 3 other 0 hit_furniture_way 52 hit_furniture_near 32 hit_furniture_before 101
+  all 7 tasks  A  ok 92 perception 0 pregrasp_touch 45 stance_or_ik 119 fell_walking 35 missed 129 dropped 4 other 11 hit_furniture_way 49 hit_furniture_near 4 hit_furniture_before 142
+  all 7 tasks  R  ok 128 perception 0 pregrasp_touch 49 stance_or_ik 110 fell_walking 35 missed 61 dropped 1 other 11 hit_furniture_way 94 hit_furniture_near 21 hit_furniture_before 120
+  all 7 tasks  C  ok 122 perception 0 pregrasp_touch 20 stance_or_ik 111 fell_walking 35 missed 141 dropped 4 other 11 hit_furniture_way 63 hit_furniture_near 3 hit_furniture_before 120
+  all 7 tasks  CR ok 137 perception 0 pregrasp_touch 45 stance_or_ik 112 fell_walking 35 missed 94 dropped 3 other 11 hit_furniture_way 52 hit_furniture_near 32 hit_furniture_before 109
+E6. the routes (episodes after the split): answers, routed, gate clearance, via points, path, route command
+  candle     n 79 routed  0 (0 %) | {'GATE_CLEAR': 79} | gate median 12.33 cm (< 5: 0) | via nan path nan cm time nan s IK end nan / max nan cm | plan nan s
+  apple      n 75 routed 68 (91 %) | {'ROUTED': 68, None: 5, 'GATE_CLEAR': 1, 'PLAN_FAIL': 1} | gate median -1.91 cm (< 5: 69) | via 9 path 106 cm time 6.2 s IK end 0.00 / max 0.00 cm | plan 3.7 s
+  bowl       n 35 routed 21 (60 %) | {'ROUTED': 21, None: 14} | gate median -2.38 cm (< 5: 21) | via 12 path 130 cm time 8.3 s IK end 0.58 / max 0.58 cm | plan 3.7 s
+  salt       n 90 routed 74 (82 %) | {'ROUTED': 74, 'PLAN_FAIL': 3, None: 13} | gate median -1.99 cm (< 5: 77) | via 9 path 107 cm time 6.1 s IK end 0.00 / max 0.00 cm | plan 3.7 s
+  statue_cab n 77 routed 77 (100 %) | {'ROUTED': 77} | gate median -0.55 cm (< 5: 77) | via 7 path 89 cm time 5.5 s IK end 0.16 / max 0.16 cm | plan 2.9 s
+  dumbbell   n 90 routed 65 (72 %) | {'GATE_CLEAR': 22, 'ROUTED': 65, None: 3} | gate median 3.00 cm (< 5: 65) | via 3 path 49 cm time 2.8 s IK end 0.00 / max 0.00 cm | plan 2.6 s
+  wcan       n 90 routed 72 (80 %) | {'ROUTED': 72, 'GATE_CLEAR': 18} | gate median 3.12 cm (< 5: 72) | via 3 path 53 cm time 2.8 s IK end 0.00 / max 0.00 cm | plan 2.8 s
+  decision set: {'ROUTED': 356, None: 21, 'GATE_CLEAR': 41, 'PLAN_FAIL': 4}; planning failures (start IK, plan, error, no inner via) 4/360
+E7. M2 (routed episodes): executed hand vs the route, executed arm vs the look's voxels
+  C, 377 routed episodes: executed hand to the route, largest per episode median 7.9 cm, median per episode median 2.5 cm | executed arm's least clearance to the voxels over the route median 2.4 cm (< 0: 128) vs the plan's 2.1 cm
+  at the first contact (C and CR, routed): arm clearance to the look's voxels median 0.2 cm; {'C seen (<= 1 cm)': 77, 'CR seen (<= 1 cm)': 97, 'C 1-3 cm': 15, 'CR 1-3 cm': 14, 'C unseen (> 3 cm)': 1, 'CR unseen (> 3 cm)': 6}
+E8. criteria rows and predictions
+  row 'P1 and M1 >= 25 % fewer': False
+  row 'not P1 but M1 >= 25 % fewer': False
+  row 'M1 < 10 % fewer': True
+  row 'C - A < 0 and p < 0.05': False
+  row 'P2': False
+  row 'not P2 but P1': True
+  row 'CR - C <= 0': False
+  P1 C - A +6.4 pp (raw p 2.43e-06, Holm 4.86e-06); P2 CR - R +1.8 pp (raw p 0.35, Holm 0.35); M1 way C v A 88 vs 84 (+5 %); CR - C +1.8 pp
+  pre-split per task (predicted, every controller): candle 11 (11-12: True); apple 15 (13-17: True); bowl 55 (53-58: True); salt 0 (0-2: True); statue_cab 13 (10-13: True); dumbbell 0 (0-1: True); wcan 0 (0-1: True)
+  decision set ['apple', 'salt', 'statue_cab', 'dumbbell', 'wcan'] (predicted ['apple', 'salt', 'statue_cab', 'dumbbell', 'wcan']: True)
+  candle A 74 (70-79, at the ceiling >= 72: True); A 4.0 % (3-10: True); R 10.4 % (6-14: True); C - A +6.4 (-2..+4: False); CR - R +1.8 (-2..+4: True)
+```
+
+**读数**：
+- **判定集**：5 个任务，和预测相同。蜡烛 A 74/90，到顶排除；碗拆分前失败 61 %，排除。雕像柜拆分前失败 13 局，ScaleBFM 是 11 局，在预测的 10–13 以内。
+- **P1 成立**：C 10.4 % 对 A 4.0 %，差 +6.4 个百分点，p 2.4e-6（Holm 校正后 4.9e-6）。去掉第 30–39 局也成立（p 3.9e-5）。主要来自盐瓶（C 独成 23 局，A 独成 1 局）和苹果（11 对 2）。
+- **P2 不成立**：CR 12.2 % 对 R 10.4 %，差 +1.8 个百分点，p 0.35。
+- **R − A** +6.4 个百分点（p 1.1e-6）；**CR − C** +1.8 个百分点（p 0.33）。
+- **C 的好处不是路上少碰家具带来的**：
+  - 路上碰家具的局 C 88、A 84，没有变少（+5 %）；
+  - 判定集里有 149 局在第一次伸手之前就已经碰到家具，四组相同；
+  - 和 A 比，C 的失败里少了两类："预抓取位置碰到"（44 → 20），以及"伸手前就碰到家具"（125 → 103）。
+- **CR 比 R 路上少碰 41 %**（79 对 134），但目标附近多碰（43 对 30）。
+- **路线执行**：
+  - 实际的手偏离路线，每局最大值的中位数 7.9 cm（ScaleBFM 6.4 cm）；
+  - 377 局里有 128 局，手臂在路线上穿进了那一眼的家具方块（ScaleBFM 428 局里 57 局）；
+  - 规划失败 4/360，在预测的 ≤ 3 % 以内（判定集）。
+  - E6 里状态为 None 的 35 局，就是行走时摔倒的那 35 局（判定集 21 局），这些局没有发路线请求。
+- **按判据**：对上两行——"M1 少 < 10 %"，和"P2 不成立，但 P1 成立"。
+  - 第一行：路线在规划里绕开了，执行时没少碰。
+  - 第二行：照实报告。CR − R 方向为正（+1.8），但不显著。
+- **没中的预测**：C − A +6.4，预测 −2..+4。其余 SONIC 的预测都中了：蜡烛到顶，A 4.0 %、R 10.4 %，CR − R +1.8。
 
