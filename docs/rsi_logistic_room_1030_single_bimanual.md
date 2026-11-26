@@ -357,7 +357,7 @@ gso-alt-a（7.3 的第一次交替运行）跑完后看两边最终现任的代�
 - **同步规则的变化**见 7.3 第 3 步（两边改同一处时同步失败；先跑包的测试再过验收门）。
 - **第二步，单手改用按目标判的抬升**：`grasp_program.run` 的 recover 阶段和 `pick.pick_top` 的 hold 之后，物体在手里但最低角离支撑面顶不够 c + 余量时，按差额再抬一次、再 hold 一次（参数从双手抄：余量 0.03 m，侧抓夹爪最多比合拢处高 0.45 m，俯抓夹爪不超过 `TOP_JAW_MAX_M`，补抬 1 次；程序仍返回“拿住了”，目标由裁判判）。当作一个候选过单手的不变差验收门（`gate.py --non-inferior`，现任 = 抽取后的包 f236e20d，验收池同上）：**没过，没有提交**。80 起点配对：候选 68 胜、现任 70 胜，候选多赢 0 局、少赢 2 局（规则 sync 要求少赢 ≤ 多赢），没有摔倒增加。候选里 6 局触发了补抬（都在侧抓程序里，抬 1.6–5 cm），3 局成功、3 局失败；少赢的 2 局都是 `gso_0162`：hold 4 秒后物体在手里但离目标差 1.3–1.9 cm，补抬 1.6–1.8 cm 时垫片失去接触（failure_class slip），而现任同样的局没有再动手，裁判按 0.2 m 门槛（不含 0.03 m 余量）判成功——差额都在余量之内，这两次补抬本来就不需要。结论：单手的边缘抓取经不起 hold 之后再动一次；双手的补抬能过是因为两只手压着箱子。这一步的代码（`grasp_program.run` 的 `top_up` 阶段、`pick.pick_top` 的 `top_up` 步骤、各自的单元测试）留在 `outputs/grasp_common_eq/step2_single_lift_goal.patch`（不入库），验收门的账本在 `outputs/grasp_common_eq/step2_gate_ledger.jsonl`，等价运行的逐局比较汇总在同目录 `equivalence_summary.txt`（局记录本身已删）。要再试，先改成只在差额超过某个阈值时补抬，或补抬前再捏紧。
 
-**7.6 跑完之后：一页 HTML 报告（`report/run_report.py`，11-25）**
+**7.6 跑完之后：HTML 报告（`report/run_report.py`、`report/knowledge_report.py`，11-25）**
 
 三种模式都能用。RSI 结束后按下面的顺序做，命令都在主仓库根目录下跑。下面按模式 3 写；模式 1 / 2 只有一个沙盒 `$S1`（7.1）：把 `$R/a`、`$R/b` 和报告命令里的 `$R` 都换成 `$S1`，只跑对应任务族的那一行。
 
@@ -420,6 +420,27 @@ xdg-open $R/rsi_report.html
 | `gso_bimanual_lift` | 4（第 5 轮开始前就到 95 %，停） | 78/80（97.5 %） | 78/80（97.5 %） |
 
 Table 3 的 Run total：538.5 分钟（8.97 h）、80 次模型调用、215.98 美元；Table 4 里单手 326.9 分钟、124.19 美元，双手 211.6 分钟、91.79 美元（第 5 轮没跑）。测试在 `tests/test_rsi_run_report.py`。
+
+第 6 步（只有模式 3）：出知识共享页并打开，看两个任务族之间共享了什么、存在哪里、对彼此有没有帮助：
+
+```bash
+python3 scripts/rsi/report/knowledge_report.py $R
+xdg-open $R/rsi_knowledge_sharing.html
+```
+
+页面是英文，和 `rsi_report.html` 同一个样式，也只读运行自己的记录（不跑仿真，不调用模型）；`--out FILE` 换输出位置。里面有：
+- **Table 1**：两个任务族每一轮的现任，验收池和封存集的成绩并排；每一版标明来路：自己的验收门接受（accepted）、从另一方同步过来（synced）或沿用上一轮（kept）。
+- **Table 2**：两条共享渠道各存在哪里、怎样到达另一方。知识库是 `knowledge/knowledge.jsonl`、`INDEX.md` 和 `usage.jsonl`；代码同步是 `sync/`、`knowledge/sync.jsonl` 和 `logs/*_sync_tests.log`。
+- **Table 3**：库里的每个条目，包括 standing、引用次数（其中几次是另一方引用的）、涉及的物体数、带它的改动在自己任务族的验收门上过没过，以及 reads as 的前几句。
+- **Table 4 和 cases**：Table 4 列出另一方 Reviewer 的每一次跨族引用。之后每个引用了对方条目的假设各占一段，依次是：条目的机制和修复，假设的 claim 和提议，正文里点名这个条目的那句话，Prober 的结论，Manager 选了哪些假设，草稿和 Composer 的处理，最后是这一轮的验收门。
+- **Table 5**：每一次代码同步合并和复制了哪些文件、结论是什么；测试失败时给出日志里的第一条错误。
+
+2026-11-25 对 gso-alt-seed 出的页面：库里 9 个条目，25 次引用中有 4 次跨族。
+- 单手 → 双手 3 次。第 4 轮双手的 H12 引用了单手的 `i01_walk_arm_sweep_tall_objects`，这个改动在单手自己的验收门上没过；它被合并进 c66b2a5bb0a4，验收 74 → 78/80。
+- 双手 → 单手 1 次（第 5 轮），没有过验收门。
+- 10 次代码同步：8 次因为合并包的测试失败而跳过，1 次被接受但没有改变任何一局（164 → 164），1 次没有可合并的内容。
+
+测试在 `tests/test_rsi_knowledge_report.py`。
 
 ## 8. Unreal 关卡与预览图
 
