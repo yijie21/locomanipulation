@@ -560,6 +560,63 @@ lc3_run 的 `code_check` 要求载入过自身模型的 `env.py`，这个跑局�
 - SAM 3 用不上（空地没有物体）。
 - 跑完删掉 hold_b0b。
 
+### 修订 3 补充（2026-11-26 10:50Z，HA 冒烟之后；正式 10:42:42Z 已经开跑）
+
+只补冒烟的原始输出和用时更正，预测、判据、格子、局数都不改。
+
+**冒烟**：
+- 10:30:29–10:40:22Z，4090b 0 号卡，`# notebook: skip`，5 个进程依次跑（probe、gait、heft、p0hg、sonic），退出码全 0。输出在 `$O/ha_smoke/`。
+- 0 号卡开跑前 8640 MiB，我们的进程在跑时合计 16.37–16.50 GB，单进程约 7.7–7.8 GB。4090b 全机 CPU 10 s 实测 10.3 核。
+- 每个进程开头和结尾的代码检查：副本外的模块 0 个。
+
+**步态核对**（`$O/ha_smoke/gait_check.json`，原样）：
+
+```
+"same": true, "shape": [185, 36], "max_abs_diff": 0.0, "hr_real_gait_md5": "7dfaa8166dddae49fb5339cd9fa45792",
+"src": ".../heft_walkstop_20261126/ref/hr_real_gait.py", "gait_is_heft": true,
+"heft_gait_dir": ".../heft_walkstop_20261126/code_b/scripts/experiments/selfmodel_lmlcmp_20261126/heft_gait",
+"goal_xy": [-1.465909544964299, -0.09580208876845221], "pose": [[-1.6801343402208189, -0.09718050727534869], 0.00643436014287214]
+```
+
+第一次走的步态参考和 hadata 冒烟里的 `heft_walk_frames` 逐位相同。
+
+**每局**（hw 的原始行，去掉了墙钟以外的重复字段说明；cross 正 = 越线，lat 负 = 偏右）：
+
+```
+hw p0 c2 r100 d 0.20 lat +0.00: success False gap +2.2 cm cross -2.2 lat -6.5 fwd err -1.4 yaw +1.1 lift 3 reissue 0 settle 3.42 s settled odo 0.0 cm (low: gap +1.7 cross +7.8 right_hip_yaw_link) first: asked 21.4 moved 20.0 cm [26.05 s]
+hw p0 c4 r100 d 0.50 lat +0.00: success False gap +2.7 cm cross -2.5 lat -7.0 fwd err -1.9 yaw -0.0 lift 4 reissue 0 settle 5.76 s timeout odo 0.4 cm (low: gap +2.0 cross +5.9 left_hip_yaw_link) first: asked 51.0 moved 49.1 cm [37.06 s]
+hw p2 c2 r100 d 0.20 lat +0.00: success False gap -0.2 cm cross +0.4 lat -0.5 fwd err +0.5 yaw -1.1 lift 5 reissue 1 settle 7.02 s settled odo 0.0 cm (low: gap -0.5 cross +11.4 left_hip_yaw_link) first: asked 21.4 moved 20.0 cm [42.05 s]
+hw p2 c4 r100 d 0.50 lat +0.00: success False gap -0.3 cm cross +0.7 lat +0.6 fwd err +0.6 yaw -0.4 lift 6 reissue 1 settle 8.66 s settled odo 0.3 cm (low: gap -0.5 cross +11.0 left_hip_yaw_link) first: asked 51.0 moved 49.1 cm [44.28 s]
+hw p4 c2 r100 d 0.20 lat +0.00: success True gap +1.2 cm cross -0.8 lat -0.2 fwd err -1.1 yaw -1.4 lift 5 reissue 1 settle 6.46 s settled odo 0.1 cm (low: gap +1.0 cross +10.9 left_hip_yaw_link) first: asked 21.4 moved 20.0 cm [35.54 s]
+hw p4 c4 r100 d 0.50 lat +0.00: success True gap +1.1 cm cross -0.7 lat +0.3 fwd err -0.7 yaw -0.3 lift 6 reissue 1 settle 9.66 s settled odo 0.2 cm (low: gap +0.8 cross +10.3 left_hip_yaw_link) first: asked 51.0 moved 49.1 cm [46.66 s]
+hw p0hg c2 r100 d 0.20 lat +0.00: success False gap +14.1 cm cross -14.1 lat -1.3 fwd err -17.4 yaw +0.4 lift 1 reissue 0 settle 3.78 s settled odo 0.0 cm (low: gap +14.1 cross -8.0 left_knee_link) first: asked 21.4 moved 4.0 cm [24.87 s]
+hw p0hg c2 r101 d 0.20 lat +0.00: success False gap +18.4 cm cross -18.1 lat -2.1 fwd err -18.9 yaw +0.3 lift 0 reissue 0 settle 3.68 s settled odo 0.0 cm (low: gap +18.4 cross -9.9 left_knee_link) first: asked 20.9 moved 1.9 cm [23.7 s]
+hw q0 c2 r100 d 0.20 lat +0.00: success False gap +23.8 cm cross -23.6 lat -1.0 fwd err -20.3 yaw +0.3 lift 0 reissue 0 settle 5.78 s timeout odo 0.2 cm (low: gap +23.3 cross -16.0 left_knee_link) first: asked 21.4 moved 1.2 cm [40.69 s]
+```
+
+- P0 0.20 m rep 100 只在 gait 那一步跑（核对那一局），heft 那一步按已有记录跳过，所以只有一行。
+- low 那一列（hip_yaw 连杆 +6 到 +11 cm）在 LML 的 2×2 记录里也一样（+9 到 +11 cm），是这个测量本身的问题，只记录，不进判定。
+- 冒烟每格只有 1 局，不下结论。
+
+**probe**（候选 2–6 的 HA 一侧，`$O/ha_smoke/probe.log` 原样摘出）：
+
+```
+control_dt 0.02  physics_dt 0.005  decimation 4
+solver_position_iteration_count 8  solver_velocity_iteration_count 4; actuators: all ImplicitActuator
+stiffness_legs [99.1, 99.1, 40.18, 99.1, 28.5, 28.5] x2   damping_legs [6.309, 6.309, 2.558, 6.309, 1.814, 1.814] x2
+armature_legs 0.0 x12   friction_legs 0.0 x12   effort_legs [100, 110, 100, 150, 40, 40] x2
+mass_total 38.61423435411416   mass_mirror 36.1652352
+robot_material: robot shapes [static, dynamic, restitution] [1.0, 1.0, 0.0] x46; sim_material static 1.0 dynamic 1.0 friction_combine_mode max
+foot collisions: ankle_roll_link/visuals/.../mesh (Mesh, x -1.6658..-1.4576, z 0.0077..0.0667); ankle_roll_link/collisions (Xform, empty box)
+toe_ahead_of_pelvis_mirror_m 0.126727489938812   reach_own_m 0.12672748993881194
+feet_load_N [182.5, 196.2]   dq_legs_abs_mean_at_stand 0.39817762188613415   delay_f 8
+```
+
+**用时更正**（修订 3 的"正式约 50 分钟"估低了）：
+- 冒烟里 HA 每局墙钟 25–47 s：P0 26–37 s，P2 42–44 s，P4 36–47 s，SONIC Q0 41 s。1.00 m 和 Q2 会更长。
+- 改估：HEFT 60 局约 45–55 分钟，SONIC 40 局约 40–50 分钟，合计约 1.5–1.8 小时。
+- SONIC 照登记跑完（协调人 10:5xZ：它是登记过的次要几行，中途去掉就成了事后挑选；b0b 之后还给 HA 采集，晚一小时不要紧）。
+
 ## 结果
 
 **运行**：
@@ -824,6 +881,10 @@ dev rerun of p0 (dev/p0hg, revision-2 code) == formal p0: 20/20
 8. **ScaleBFM（S0）一次走比 HEFT 差**：0.05 / 0.10 m 不迈步，各格都少走 5–12 cm，直行成功 1/60。在 LML 用 hg_walk 时，"看得到自己的位置"没帮它一次走准。
 9. **刹车惯性在预测范围内**：16.6 / 8.7 / 8.2 cm。慢的两档横向漂 12.7 / 16.3 cm，没想到。
 10. **P2 最后的里程计误差**：1.50 m 是 2.1 cm，略超预测的 0.3–2 cm；其余格在范围内。
+11. **HA 里机器人站着时，控制器读到的腿关节速度比 LML 大约 600 倍**（HA 冒烟的 probe，候选 6）。
+   - 原始读数：HA `dq_legs_abs_mean_at_stand 0.39817762188613415`（rad/s，12 个腿关节速度绝对值的平均，站稳后读）；LML `$O/dev/lmlprobe.txt` 是 0.0006 rad/s。参考延迟两边都是 8 帧。
+   - 猜想（**未验证**）：HA 喂给控制器的关节速度噪声大，这可能和 HEFT、SONIC 在 HA 里小步不迈、横向偏有关。
+   - 这次不追查，不改任何东西。之后要查，另外登记。
 
 ## 结论与下一步
 
