@@ -493,6 +493,22 @@
       - 除了这两类，没有别的 FAIL 行。
     - ht_equiv 自己的总判定和 FAIL 行数照实打印出来。
     - 这个读法先在开发核对的输出（`dev/check2/all_equiv.txt`）上试过，读出 27/27、8/8、3/3，和当时一致。那份输出里没有任务结果。
+  - **ScaleBFM 的代码检查：通过**（`check/scalebfm_codecheck.txt`）
+    - 16:54Z 在卡 3 上开跑：P&PBox 在槽位 3b，DoubleDesk 在槽位 3a。R 用 S_f1_s0（d585348f）。17:04:10Z 两个进程都结束了。
+    - 17:04:39Z 跑 `ht_codecheck.sh scalebfm S`，结果：
+      - 两个任务都打印了 DONE，0 个 Traceback，0 局以"错误"结束；
+      - 两对的前缀 A == R 都是 True；
+      - 4 份局记录里模型的 md5 都是 d585348f，FDVEL 都是 True；
+      - ht_equiv 逐部分读：文本核对全是 True，右手 3/3、左手 1/1、双手 1/1 组逐位相同，合成缩回 200/200（缩回过的 156 个），除了预先说好的两类以外没有别的 FAIL 行；
+      - 特征核对 FEAT CHECK PASS：6 段逐字节相同；
+      - asrun2 和 MD5 相同，没有 `__pycache__`。
+      - 最后一行：CODE CHECK PASS。
+    - ht_equiv 自己的总判定是 EQUIV FAIL，3 行 FAIL，正是预先说好的那两类：两行"the run's model reader had FDVEL on"（P&PBox、DoubleDesk 的 R），一行"3 right-hand groups (the coordinator asked for >= 20)"。
+    - 成功、抬高、落点都没读。
+  - **ScaleBFM 正式运行开跑**：17:04:54Z – 17:05:54Z 起了 4 个进程（`formal/launch.txt`）。
+    - 2a 跑 P&PBox 400–429，2b 跑 DoubleDesk 400–429，3a 跑 P&PBox 430–459，3b 跑 DoubleDesk 430–459。
+    - 4 个进程都打印了"asrun2 = MD5"。
+    - 2a、2b 的 HEFT 分片在 17:04 前已经结束，没有停任何分片。
 - **正式运行怎么分**：每个槽位一个进程，跑一个任务的 30 个种子。
   - 卡 2：2a 跑 P&PBox 400–429，2b 跑 DoubleDesk 400–429；
   - 卡 3：3a 跑 P&PBox 430–459，3b 跑 DoubleDesk 430–459。
