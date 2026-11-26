@@ -52,9 +52,13 @@ Per trial (runs/<tag>.jsonl): cell, rep, line, target, reach_own / reach_true, e
 the truth pose at the command, the plan's steps and duration, lift-offs during it, the wait and how it ended, truth
 pelvis moved, largest reference lead), and the final metrics: cross (truth frontmost past the line at any step after
 the command, m; > 0 = crossed), gap (s_line - frontmost at the read, m), lat / fwd error of the pelvis to T, yaw error,
+[revision 1: "frontmost" is the feet's (ankle_roll_link geoms' world AABB), the toes, as reach_own already was; the
+registered bfm_brake.frontmost_low over every robot geom with an AABB bottom below 0.37 m is kept as cross_low_m /
+gap_low_m / reach_true_low, with the body that set cross_low_m -- in the smoke it was the hip-yaw and knee links'
+AABBs, which swell ahead of the toes in swing],
 liftoffs (foot load < 10 N for 3 consecutive steps, faildiag's rule, after the command), settle_s (command to the final
 read), n_reissue, odo_err (odometry - truth at the read), fell, success. Traces (traces/<arm>_c<cid>_r<rep>.npz) per step:
-truth pelvis xy / yaw, odometry xy / yaw, foot loads, frontmost - line, the pushed reference root (world), stage.
+truth pelvis xy / yaw, odometry xy / yaw, foot loads, frontmost - line (feet; low), the pushed reference root (world), stage.
 
     cd $G; PYTHONPATH=$G:$W/src $PY hw_run.py run --arms p0,p1a,p1b,p1c,p2 --cells 0:11 --reps 0:10 --shard K --shards N
     $PY hw_run.py selftest
@@ -192,6 +196,7 @@ class Body:
         self.scratch = mj.MjData(m)
         self.f6 = np.zeros(6)
         self.rq, self.qadr, self.c = dr.rq, dr.qadr, np.asarray(dr.c, float)
+        self.bname = [bn[int(m.geom_bodyid[g])] for g in range(m.ngeom)]
 
     def load(self, d) -> np.ndarray:
         """Normal force on each foot (left, right) from everything that is not the robot."""
@@ -210,20 +215,26 @@ class Body:
             w[s] += abs(float(self.f6[0]))
         return w
 
-    def _front(self, d, geoms, origin, h, top) -> float:
+    def _front(self, d, geoms, origin, h, top) -> tuple[float, int]:
         m = self.m
         rot = d.geom_xmat[geoms].reshape(-1, 3, 3)
         centre = d.geom_xpos[geoms] + np.einsum("kij,kj->ki", rot, m.geom_aabb[geoms, :3])
         half = np.einsum("kij,kj->ki", np.abs(rot), m.geom_aabb[geoms, 3:])
         low = centre[:, 2] - half[:, 2] < top if top is not None else np.ones(len(geoms), bool)
-        return float(((centre[low, :2] - origin) @ h + half[low, :2] @ np.abs(h)).max())
+        v = np.where(low, (centre[:, :2] - origin) @ h + half[:, :2] @ np.abs(h), -np.inf)
+        k = int(np.argmax(v))
+        return float(v[k]), int(geoms[k])
 
-    def frontmost(self, d, origin, h) -> float:
-        """Truth: bfm_brake.frontmost_low over every robot geom (world AABB bottom below OBSTACLE_TOP)."""
+    def frontmost(self, d, origin, h) -> tuple[float, float, str]:
+        """Truth, on a scratch copy of the state: (the feet's frontmost point -- the ankle_roll_link geoms' world AABB, the
+        toes: revision 1's crossing and gap --, bfm_brake.frontmost_low over every robot geom whose world AABB bottom is
+        below OBSTACLE_TOP -- the registered definition, kept as the `_low` fields --, the body that gives the latter)."""
         s = self.scratch
         s.qpos[:] = d.qpos
         self.mj.mj_kinematics(self.m, s)
-        return self._front(s, self.robot_geoms, origin, h, OBSTACLE_TOP)
+        low, g = self._front(s, self.robot_geoms, origin, h, OBSTACLE_TOP)
+        feet, _ = self._front(s, self.foot_geoms, origin, h, None)
+        return feet, low, self.bname[g]
 
     def reach_own(self, x: dict, h) -> float:
         """The feet's frontmost point ahead of the pelvis (robot_fk convention) along h: FK of the encoders with the IMU's
@@ -234,7 +245,7 @@ class Body:
         s.qpos[self.qadr] = x["q"]
         self.mj.mj_kinematics(self.m, s)
         pel = L._qmat(x["root"][3:]) @ self.c  # the pelvis point (host body origin 0 + R c)
-        return self._front(s, self.foot_geoms, pel[:2], h, None)
+        return self._front(s, self.foot_geoms, pel[:2], h, None)[0]
 
 
 class Lift:
@@ -290,7 +301,7 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
     s_line = target = None
     walks: list[dict] = []
     queue: list[np.ndarray] = []
-    n_re, cross_max, trig, f_fin, final = 0, -np.inf, None, None, None
+    n_re, cross_max, cross_low, low_body, trig, f_fin, final = 0, -np.inf, -np.inf, "", None, None, None
     anchor = None
     tr = []
 
@@ -343,8 +354,11 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
         if odo is not None:
             odo.update(dr, x)
             lift.update(w)
-            fm = body.frontmost(dr.d, p0, h) - (MARKER_M if marker else s_line)
+            fm, fl, fb = body.frontmost(dr.d, p0, h)
+            fm, fl = fm - (MARKER_M if marker else s_line), fl - (MARKER_M if marker else s_line)
             cross_max = max(cross_max, fm)
+            if fl > cross_low:
+                cross_low, low_body = fl, fb
             if walks and stage == "walk" and anchor is not None:
                 fr = frames[min(max(f - delay, anchor[2]), len(frames) - 1)]
                 lead = float(((fr[:2] - anchor[1]) - (x["root"][:2] - anchor[0])) @ h)
@@ -352,7 +366,7 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
             if trace_dir is not None:
                 op, oy = odo.pose()
                 ref_w = frames[min(f, len(frames) - 1)]
-                tr.append(np.r_[f, x["root"][:2], L.yaw_of(L._qmat(x["root"][3:])), op, oy, w, fm, ref_w[:2],
+                tr.append(np.r_[f, x["root"][:2], L.yaw_of(L._qmat(x["root"][3:])), op, oy, w, fm, fl, ref_w[:2],
                                 ("walk", "wait", "post").index(stage) if stage in ("walk", "wait", "post") else -1])  # fmt: skip
         if float(x["root"][2]) < L.FALL_Z:
             fell = f
@@ -365,11 +379,11 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                 h = np.array([math.cos(yaw0), math.sin(yaw0)])
                 n = np.array([-h[1], h[0]])
                 odo = HW.LegOdo(dr, x, (p0.copy(), yaw0))
-                reach_true = body.frontmost(dr.d, p0, h)
+                reach_true, reach_low, _ = body.frontmost(dr.d, p0, h)
                 reach_own = body.reach_own(x, h)
                 j = 0.0 if marker else float(np.random.default_rng([TAG, cid, rep, 2]).uniform(-JIT, JIT))
                 s_line = reach_true + MARGIN + d_run + j
-                R.update(f_cmd0=f, stand=go, stand_wait_s=(f - open_f) / FPS, jitter=j, reach_true=reach_true, reach_own=reach_own,
+                R.update(f_cmd0=f, stand=go, stand_wait_s=(f - open_f) / FPS, jitter=j, reach_true=reach_true, reach_true_low=reach_low, reach_own=reach_own,
                          s_line=s_line, p0=p0.tolist(), yaw0=yaw0, delay_f=delay)  # fmt: skip
                 if marker:
                     target = p0 + MARKER_RUN * h
@@ -408,8 +422,8 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                 if not nxt:
                     f_fin, stage = f, "post"
                     yaw = L.yaw_of(L._qmat(x["root"][3:]))
-                    fm = body.frontmost(dr.d, p0, h)
-                    final = dict(how=go, fwd=tf, lat_pos=tl, yaw_deg=math.degrees(wrap(yaw - yaw0)), front=fm,
+                    fm, fl, _ = body.frontmost(dr.d, p0, h)
+                    final = dict(how=go, fwd=tf, lat_pos=tl, yaw_deg=math.degrees(wrap(yaw - yaw0)), front=fm, front_low=fl,
                                  odo=[bf, bl, math.degrees(wrap(oy - yaw0))],
                                  odo_err_cm=100 * float(np.linalg.norm(op - x["root"][:2])), odo_yaw_err_deg=math.degrees(wrap(oy - yaw)))  # fmt: skip
         elif stage == "post":
@@ -421,17 +435,17 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
         f += 1
     R.update(walks=walks, n_reissue=n_re, fell=fell, steps=f, liftoffs=lift.total(), liftoffs_lr=lift.n.tolist(), wall_s=round(time.time() - t0, 2))
     if odo is not None:
-        R["cross_m"] = float(cross_max)
+        R.update(cross_m=float(cross_max), cross_low_m=float(cross_low), cross_low_body=low_body)
     if final is not None and fell is None:
         R["final"] = final
         R["settle_s"] = (f_fin - R["f_cmd0"]) / FPS
         if marker:
-            R.update(trigger=trig, pelvis_past_m=final["fwd"] - MARKER_M, toes_past_m=final["front"] - MARKER_M,
+            R.update(trigger=trig, pelvis_past_m=final["fwd"] - MARKER_M, toes_past_m=final["front"] - MARKER_M, low_past_m=final["front_low"] - MARKER_M,
                      carry_m=None if trig is None else final["fwd"] - trig["truth_fwd"])  # fmt: skip
         else:
             tf_, tl_ = R["target"]
             gap = s_line - final["front"]
-            R.update(gap_m=gap, err_fwd_m=final["fwd"] - tf_, err_lat_m=final["lat_pos"] - tl_,
+            R.update(gap_m=gap, gap_low_m=s_line - final["front_low"], err_fwd_m=final["fwd"] - tf_, err_lat_m=final["lat_pos"] - tl_,
                      pelvis_err_m=math.hypot(final["fwd"] - tf_, final["lat_pos"] - tl_))  # fmt: skip
             ok = (cross_max <= 0.0 and GAP_OK[0] <= gap <= GAP_OK[1] and abs(R["err_lat_m"]) <= LAT_OK and final["how"] == "settled"
                   and not R.get("timeout"))  # fmt: skip
@@ -445,8 +459,28 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
     if trace_dir is not None and tr:
         trace_dir.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(trace_dir / f"{arm}_c{cid}_r{rep}.npz", rows=np.array(tr),
-                            cols=np.array(["f", "x", "y", "yaw", "ox", "oy", "oyaw", "load_l", "load_r", "front_past", "ref_x", "ref_y", "stage"]))  # fmt: skip
+                            cols=np.array(["f", "x", "y", "yaw", "ox", "oy", "oyaw", "load_l", "load_r", "front_past", "front_low_past", "ref_x", "ref_y", "stage"]))  # fmt: skip
     return R
+
+
+def code_check(tag: str) -> None:
+    """lc3_run.code_check without its env.py requirement (this runner loads no self model): with LC_CODE_ROOT set, every
+    loaded module from the shared repo tree or the copy, and this file and lc3_run themselves, must lie in the copy."""
+    root = os.environ.get("LC_CODE_ROOT")
+    if not root:
+        return
+    root_p, shared = Path(root).resolve(), LC.SHARED_TREE.resolve()
+    inside = lambda p: p == root_p or root_p in p.parents  # noqa: E731
+    bad = []
+    for name, mod in list(sys.modules.items()):
+        f = getattr(mod, "__file__", None)
+        if f and shared in Path(f).resolve().parents and not inside(Path(f).resolve()):
+            bad.append(f"{name} {Path(f).resolve()}")
+    own = [Path(__file__).resolve(), Path(LC.__file__).resolve()]
+    bad += [f"{p}" for p in own if not inside(p)]
+    print(f"hw code check {tag}: {Path(__file__).resolve()}; modules outside {root_p}: {len(bad)}", flush=True)
+    if bad:
+        raise SystemExit(f"hw code check {tag}: FAIL -- outside the copy: {bad[:8]}")
 
 
 def _js(o):
@@ -493,7 +527,7 @@ def run(a) -> None:
     print(f"hw {backend} shard {a.shard}/{a.shards}: {len(jobs) - len(todo)}/{len(jobs)} done", flush=True)
     if not todo:
         return
-    LC.code_check("start")
+    code_check("start")
     dr = make_driver(backend)
     body, rig, ps = Body(dr), D3.Rig(dr), LC.PropSettle(dr)
     G = gaits()
@@ -516,11 +550,12 @@ def run(a) -> None:
         print(f"hw {arm} c{cid} r{rep} d {r['d']:.2f} lat {r['lat']:+.2f}: "
               + (f"carry {100 * r['carry_m']:+.1f} cm pelvis past {100 * r['pelvis_past_m']:+.1f} toes past {100 * r['toes_past_m']:+.1f}" if r.get("carry_m") is not None else
                  f"success {r.get('success')} gap {100 * r['gap_m']:+.1f} cm cross {100 * r['cross_m']:+.1f} lat {100 * r['err_lat_m']:+.1f} fwd err {100 * r['err_fwd_m']:+.1f} "
-                 f"yaw {fin.get('yaw_deg', 0):+.1f} lift {r['liftoffs']} reissue {r['n_reissue']} settle {r.get('settle_s')} s odo {fin.get('odo_err_cm', 0):.1f} cm"
+                 f"yaw {fin.get('yaw_deg', 0):+.1f} lift {r['liftoffs']} reissue {r['n_reissue']} settle {r.get('settle_s')} s {fin.get('how')} odo {fin.get('odo_err_cm', 0):.1f} cm"
+                 f" (low: gap {100 * r['gap_low_m']:+.1f} cross {100 * r['cross_low_m']:+.1f} {r['cross_low_body'].replace('robot0_', '')})"
                  if "gap_m" in r else f"fell {r.get('fell')} timeout {r.get('timeout')}")
               + f" first: asked {100 * (r.get('first') or {}).get('asked_fwd', float('nan')):.1f} moved {100 * ((r.get('first') or {}).get('moved_fwd') or float('nan')):.1f} cm"
               f" [{r['wall_s']} s]", flush=True)  # fmt: skip
-    LC.code_check("end")
+    code_check("end")
 
 
 def selftest(a) -> None:

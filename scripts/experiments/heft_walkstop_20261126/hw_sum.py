@@ -3,7 +3,9 @@
     python hw_sum.py [--out DIR] [--arms p0,p1a,...] [--json FILE]
 
 Units: cm (gap: line - frontmost point at the read, + = before the line; cross: the largest frontmost point past the line
-after the command, + = crossed; err_fwd / err_lat: pelvis - target), deg, s. Success = no crossing, gap 0-5 cm, |lat| <= 3
+after the command, + = crossed; err_fwd / err_lat: pelvis - target), deg, s. Revision 1: the frontmost point is the feet's
+(the toes); "xlow" counts crossings by the registered bfm_brake.frontmost_low (every robot geom with an AABB bottom below
+0.37 m), shown for reference only. Success = no crossing, gap 0-5 cm, |lat| <= 3
 cm, settled by the robot's own rule within 3 s of the last walk's end, no fall (hw_run.trial). Verdict (the entry's
 criterion 1): an arm "solves HEFT's walking" when success >= 9/10 in every straight cell with d >= 0.10 m and no arm-wide
 fall.
@@ -55,7 +57,7 @@ def table(rows: list[dict], arms: list[str]) -> dict:
     for r in rows:
         by[(r["arm"], r["cid"])].append(r)
     res = {}
-    hdr = (f"{'arm':5s} {'d':>5s} {'lat':>5s} {'n':>3s} {'succ':>5s} {'cross':>5s} {'fall':>4s} {'unset':>5s} {'gap cm (mean ± sd [min, max])':>34s} "
+    hdr = (f"{'arm':5s} {'d':>5s} {'lat':>5s} {'n':>3s} {'succ':>5s} {'cross':>5s} {'xlow':>4s} {'fall':>4s} {'unset':>5s} {'gap cm (mean ± sd [min, max])':>34s} "
            f"{'|lat| cm':>8s} {'fwd err cm':>24s} {'|yaw|':>5s} {'lift':>4s} {'moved/asked':>11s} {'re':>4s} {'settle s':>8s} {'odo cm':>6s} {'err':>3s}")  # fmt: skip
     print(hdr)
     for arm in arms:
@@ -70,6 +72,7 @@ def table(rows: list[dict], arms: list[str]) -> dict:
             fin = [r for r in ok if "gap_m" in r]
             succ = sum(bool(r.get("success")) for r in ok)
             cross = sum(r.get("cross_m", -1) > 0 for r in ok)
+            xlow = sum(r.get("cross_low_m", -1) > 0 for r in ok)
             fall = sum(r.get("fell") is not None for r in ok)
             unset = sum((r.get("final") or {}).get("how") == "timeout" for r in fin)
             ratio = [((r.get("first") or {}).get("moved_fwd") or np.nan) / r["first"]["asked_fwd"] for r in ok
@@ -78,7 +81,7 @@ def table(rows: list[dict], arms: list[str]) -> dict:
             res[(arm, cid)] = dict(n=len(ok), succ=succ, cross=cross, fall=fall, unset=unset, err=nerr,
                                    gap=[100 * r["gap_m"] for r in fin], ratio=ratio,
                                    lift=[r["liftoffs"] for r in ok], first_lift=[(r.get("first") or {}).get("lift") for r in ok])  # fmt: skip
-            print(f"{arm:5s} {d:5.2f} {lat:+5.2f} {len(ok):3d} {succ:2d}/{len(ok):<2d} {cross:5d} {fall:4d} {unset:5d} {ms([100 * r['gap_m'] for r in fin]):>34s} "
+            print(f"{arm:5s} {d:5.2f} {lat:+5.2f} {len(ok):3d} {succ:2d}/{len(ok):<2d} {cross:5d} {xlow:4d} {fall:4d} {unset:5d} {ms([100 * r['gap_m'] for r in fin]):>34s} "
                   f"{med([100 * abs(r['err_lat_m']) for r in fin]):>8s} {ms([100 * r['err_fwd_m'] for r in fin]):>24s} "
                   f"{med([abs(r['final']['yaw_deg']) for r in fin]):>5s} {med([r['liftoffs'] for r in ok], '{:.0f}'):>4s} {med(ratio, '{:.2f}'):>11s} "
                   f"{np.mean([r['n_reissue'] for r in ok]) if ok else 0:4.1f} {med([r.get('settle_s') for r in fin]):>8s} "
