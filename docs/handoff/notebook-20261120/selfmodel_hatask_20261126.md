@@ -386,6 +386,7 @@
     - 冒烟进程以 root 跑，只读权限挡不住 root，Python 在 asrun 里写了字节码缓存；
     - 这些缓存不在 MD5 里，`md5sum -c` 照常通过；
     - asrun2 拷过来时删掉了它们。
+  - 冒烟已经写进 asrun 的这些 `__pycache__` 先不动（协调方 11-26）。中断测试和正式运行都加 `PYTHONDONTWRITEBYTECODE=1`，不往冻结目录里写任何东西；中断测试结束时再查一次 asrun2，要求 MD5 相同、没有 `__pycache__`。
   - asrun2 里的 ht_freeze.sh 没改，它的 `check` 只核对 asrun。所以从 asrun2 跑之前，直接在 asrun2 里 `md5sum -c --quiet MD5`。
   - diff 全文（`loco_outputs/selfmodel_hatask_20261126/asrun2_ht_task.diff`）：
 
