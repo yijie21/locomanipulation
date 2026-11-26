@@ -770,6 +770,137 @@ SONIC 的训练用同一套脚本，采集根目录换成 `selfmodel_hadata_soni
 
 - **开发副本**：`scripts/experiments/selfmodel_hacollect_20261126/` 里的同名文件，和冻结的逐字节相同。
 
+### 修订 2b 补记：评估脚本和 md5（任何评估运行之前）（2026-11-26，冻结于 2026-11-26T14:49:35Z）
+
+预测、判据和第 3 节"评估的定义"一条不改。写这一节时，正式的 HA 模型一个都还没训出来：H20b 的驱动还在等 ScaleBFM 的 d3b 采完。三项评估都没有正式跑过。
+
+**1. 脚本**
+
+| 文件 | 做什么 | md5 |
+|---|---|---|
+| hd_eval.py | 评估 1，加上闸门 (b) 的双手段一行 | 8c352741 |
+| hd_xfer_pair.py | 评估 2 的"绝对误差比 F 低多少" | f144403e |
+| hd_real.py | 评估 3 | ca437d89 |
+| hd_eval.sh | 驱动：`hd_eval.sh <采集根目录> <控制器>`，输出写到 `train/<控制器>/eval/` | 79f808a3 |
+| hd_eval_freeze.sh | 冻结脚本 | 04962c79 |
+
+**hd_eval.py**（`--root <采集根目录>/train/<控制器> --split val|test_iid`）
+- **代码从哪来**：kept、predict、stats、cell、section 这几个函数抄自两处冻结的脚本，没有 import：train3b 的 t3b_eval.py（asrun，2f8d0c8b）和 simpledata 的 sd_eval.py（asrun/repo，500927fc）。在它们之上只加了两样东西：集成分歧，和第 3 节的比值。
+- **读入和模型**：都用 repo_b 里的文件。启动时核对三个 md5：data.py 174071cb、train.py 8acdaea1、models.py 0ac27f6b。四个标志必须都是 1，X0_REF 必须关着。
+- **模型**：S_f1_s0..2、T_f1_s0..2、S_f0.6_s0、S_f0.3_s0、T_f0.6_s0、T_f0.3_s0。十个里缺一个就停。
+- **段和格子**：
+  - 段的筛选用 t3b_eval 的 kept。
+  - 格子照 sd_eval 的分法：
+    - data3：全部伸手；第一下里分原地、先走路（任务走路）、先走路（d3 走路）；
+    - data3b：全部，加上进入、预抓、相对三类；
+    - 每一格都再分全部、第一下、接着上一下。
+- **每格报什么**：每个模型的位置误差中位数和 p90，姿态误差中位数，集成分歧中位数（5 个成员预测位置的标准差，取模长，单位 cm）。
+- **比值**：每一格都算，和中位数用同一批重抽样，1000 次，按重置抽。
+  - S_f1 / D_lml、T_f1 / D_lml：分子是三个 seed 中位数的平均。分母是 LML 的固定数，不参与重抽。
+  - 1 − T/S：每个 seed 配对算，再取三个 seed 的平均。
+  - 学习曲线：两个臂各自算 1 − f1/f0.6 和 1 − f1/f0.3，都用 seed 0。
+  - T_f0.3_s0 / S_f1_s0。
+- **LML 的两个参照数**：
+  - **D 的分母**：取自 train3b 的 `final_val.json`，"data3 val" 一节里 all / all / all 那一格，D0、D1、D2 三个的平均。
+  - **F 的 LML val**：取自 fdvel 的 `eval_lml_val.json`，all / all 格的 f[0]，也就是 seed 0，正是 T 的起点。三个 seed 的平均也印在旁边。
+- **双手段一行**：
+  - 数据：both_d3、both_d3b 的同一划分，kept 之后用 S_f1_s0 和 T_f1_s0 预测。
+  - 对照：d3、d3b 同一划分的单手段。
+  - 报中位数、p90 和双手 / 单手的比值，合起来报一次，每个文件也单独报。
+  - 重抽样按单手段和双手段的重置并集来抽，同一个重置的单手段和双手段一起进出，所以是配对的。
+- **头条**：最后印 "HA val"，即 data3 的 val、全部伸手的十个中位数和全部比值，旁边印 D 的分母和 F 的数。test_iid 由 `--split test_iid` 另跑一次，并排看。
+
+**评估 2**（驱动里的几步，加上 hd_xfer_pair.py）
+- **xfer 记录**：`selfmodel_xfer_20261125/<控制器>_ha`，400 次重置。先用 hd_touch.py（5526f05b）按修订 1 剔除接触段，写到 `eval/xfer/data/all.npz`，run.json 原样复制过去。剔除要打印 "TOUCH FILTER PASS"，否则停。
+- **HA 侧**：`eval/lml/data/all.npz` 链到 `train/<控制器>/data/d3.npz`，也就是剔除过接触段的 HA d3。所以 sx_eval 算出的倍数是相对 HA val。
+- **sx_eval**：冻结的那份（asrun_ha，81f61381），SX_REPO 指向 repo_b，FDVEL=1。7 个模型（S_f1_s0..2、T_f1_s0..2、F）各跑两次，`--keep settled` 和 `--keep ended`。
+- **hd_xfer_pair.py**：
+  - 按路径 import 同一份 sx_eval，核对 md5，然后用它自己的读入、kept、predict、groups_of。模型的建法也和 sx_eval 一样：在 HA d3 上建，归一化来自 state dict。
+  - 每种取法下，7 个模型用同一批保留段、同一批重抽样：1000 次，按记录的重置抽。
+  - 报每个模型的中位数，每个 seed 的 1 − S_f1_sK / F 和 1 − T_f1_sK / F，以及每个臂三个 seed 的平均。
+  - 用记录的全部伸手。主取法是 settled，ended 是补充。
+  - 核对：每个模型的中位数和保留段数，必须等于 sx_eval 自己的 json。有一个不等，驱动就停。
+
+**hd_real.py**（`--root … --real <各任务的 hr_real 目录> --out eval/real`，seeds 200–239）
+- **按路径 import，核对 md5**：sd_range.py（simpledata asrun/repo，1276163a）、hr_smoke_stats.py（asrun_real，b4d65b92）、hd_touch.py（asrun_train，5526f05b）。
+- **合并**：照 sd_real_merge.py 的做法。每个目录的每局 npz 按 seed 顺序逐键拼接，只保留每局都有的键，写成 `eval/real/<目录名>/data/all.npz`，旁边写 run.json 和 merge.txt。
+  - sd_real_merge 里只适用于 SIMPLE 的核对换成 hr_real 的四条：
+    1. 每局 log 记的段数等于 npz 里的段数；
+    2. 每段的重置号、task_id、seed、repeat 和 log 一致；
+    3. 每段的 chain 在本局唯一，并且对应 log 里同一侧、同一 reach_no 的那下伸手；
+    4. (重置号, chain) 全体唯一。
+  - 任何一条不过就印 "REAL MERGE … FAIL" 并停下。
+- **干净伸手**：kept（t3b_eval 的规则），而且没被修订 1 的接触规则剔除。少于 10 下记"样本不足"。
+- **倍数**：干净伸手的误差中位数，除以同一个模型的 HA val 中位数（d3 val、全部伸手、kept）。
+  - 区间有两种：按局重抽、val 固定；以及 val 的重置也一起重抽。两个臂的中位数和差值 T − S 都在同一批重抽样上算。
+  - 合在一起报一次，再按任务、`reach_no`、任务 × `reach_no` 分开报。
+- **选臂**：真实局中位数较低的那个臂。样本不足时，改选 HA val 较低的那个。
+- **轻触组**：kept、被接触规则剔除，并且 `hr_smoke_stats.light_target(log, chain, side)` 为真的段。按任务报误差，不超过 20 下时每下都列出来，旁边放干净伸手的数。没有接触记录（返回 None）的单独计数。
+- **范围**：用 sd_range 的三项检查。
+  - 训练集：配方 D 的四个文件，取训练划分，frac 1.0。
+  - 最近邻的 99 % 分位：从训练段里抽 10 000 段（seed 0）。
+  - 伸手表：D3.TABLE（9d4c716a，和 hr_real 用的是同一份）。
+  - 在干净伸手和轻触组上报：在范围内的比例（区间按局重抽），以及两个臂在范围内外的误差。hr_real 记下的 `cmd_in_range` 作为一行并排报。HA val 在范围内的比例作参照。
+- **描述性的两项**（修订 2a 补记第 10、12 条）：在所有合并的段上，按任务 × `reach_no` 报，只描述，不进判据。
+  - 接触计数：碰到的段数，按部位分（本侧手 / 另一只手 / 身体），轻触组的段数，峰值力，碰到的部位有多高。
+  - 骨盆位移：从命令行到末端标签行，投影到命令时刻的朝向上，分前后、左右，单位 cm。
+
+**hd_eval.sh**（阶段写进 `eval/STATUS` 和 `eval/run.log`，任何一步失败就写 "FAIL …" 并停下）
+1. 核对 eval_code 的 MD5 和 asrun_train 的 MD5.check。
+2. 确认训练的 STATUS 是 done。
+3. 评估 1：先 val，再 test_iid。
+4. 评估 2：剔除 xfer 记录的接触段，跑 sx_eval × 14，再跑配对。
+5. 评估 3：确认采集根目录下有 `real/DONE`，然后在 `real/<控制器>_*` 上跑 hd_real。
+
+- 默认用 CPU，nice 10，每个进程 4 线程。
+
+**2. 冻结**
+- **位置**：`loco_outputs/selfmodel_hadata_20261126/eval_code/`，FROZEN_UTC 2026-11-26T14:49:35Z，只读。
+- **MD5 文件**：30 行，md5 372876c2，冻结时核对通过。里面除了五个脚本，还按绝对路径列了它们 import、调用或读入的所有固定文件：
+  - repo_b 的 data.py、train.py、models.py、py4090b.py、d3_collect.py、伸手表；
+  - 冻结的 sx_eval.py、sd_range.py、hr_smoke_stats.py、hd_touch.py；
+  - 三个控制器各自的 train3b `final_val.json`、fdvel `eval_lml_val.json`、F 的 model.pt，以及 xfer HA 记录的 all.npz 和 run.json。
+- **开发副本**：`scripts/experiments/selfmodel_hacollect_20261126/` 里的同名文件，和冻结的逐字节相同。
+
+**3. 流水线测试（没有读任何数）**
+- **机器和占用**：4090 的 CPU，nice 19，2 线程，CUDA_VISIBLE_DEVICES 为空。测试用的代码和冻结的逐字节相同。测试目录 `eval_test/` 在冻结之后立刻删除，冻结就是从它里面的代码拷的。
+- **替身布局**：
+  - d3.npz、both_d3.npz：真的 ScaleBFM d3 和它的 data_both，用 hd_touch 剔除接触段。
+  - d3b.npz、both_d3b.npz：d3b 当时已写完的 32 个分块，拼起来再剔除。
+  - 中间点的两个文件：分别链到 d3.npz、d3b.npz，只为让范围检查的训练集读得进来。
+  - 十个模型：都链到 fdvel 的 F。
+  - 四次剔除都打印了 "TOUCH FILTER PASS"。
+- **驱动**：在 `HE_TEST=1` 下跑了两遍，真实局用 ScaleBFM 的两个任务。两遍都从头跑到 done，没有报错。
+  - 评估 1：val 和 test_iid 都跑通了，所有格子都印了出来。
+    - ScaleBFM d3 剔除接触段后剩 3872 段。val 257 段，kept 之后 170 段（134 次重置）；test_iid 269 段，kept 之后 180 段。
+    - 空格子有两个："先走路（任务走路）"，原因见第 4 节第 1 条；data3b 第一下里的"进入"，因为进入总是接在预抓后面，不会是第一下。
+  - 双手段一行：四个集合都有段。val 下，单手 d3 170 段、d3b 116 段，双手 d3 59 段、d3b 51 段。
+  - 评估 2：
+    - xfer 记录剔除接触段打印了 PASS，487 段剔除 29 段，剩 458 段；
+    - sx_eval 的 14 次运行都跑通了；
+    - 配对脚本在两种取法下，7 个模型的中位数和保留段数都和 sx_eval 自己的 json 相等。
+  - 评估 3：
+    - 两个任务的合并都 PASS：ScaleBFM 每个任务 20 局；
+    - 后面每一节都印了出来；
+    - 合并出来的两个目录，冻结的 sx_eval 也能读进去（退出码 0，输出没看）。
+  - 两遍之间只改了一处：轻触组为空时，第一遍印的是 nan，第二遍改成印 "no light-touch reaches"。冻结的就是第二遍跑的这一份，5 个文件的 md5 逐个对过。
+- **看了什么**：只看了阶段行、PASS / FAIL 行、段数和局数、格子的清单。中位数、比值、区间一个都没看。
+  - 评估 3 的输出，看之前把数字都遮掉了，因为干净伸手、接触和轻触组的计数会提前透露"样本不足"的判定。
+  - 遮掉以后还是能看出两件事：
+    1. 选臂那一行写的是"按真实局中位数较低的臂"，不是"样本不足"，所以 ScaleBFM 的干净伸手不少于 10 下；
+    2. 两个任务的轻触组（kept 之后）都是空的。
+  - 除此之外，干净伸手、接触、轻触组的计数一个都没看到。
+- **替身模型的输出**：替身模型就是 F 本身，所以测试里算出来的其实是 F 在 HA 各数据上的真实误差。这些数一个都没读，测试目录连同输出在冻结之后立刻删了。
+
+**4. 补充的细节和偏离**
+1. **"先走路"那一格**：HA 的 d3 没有 walk_task，所以 sd_eval 的"先走路（任务走路）"格是空的，会印 "no segments"；"先走路（d3 走路）"就是先走路的全部第一下。
+2. **模型在哪份数据上建**：hd_eval 照 t3b_eval，在被评估的那份文件上建；hd_real 和 hd_xfer_pair 照 sx_eval，在 HA d3 上建。归一化都来自 state dict，所以两种建法预测相同。
+3. **"样本不足"怎么数**：按控制器数，两个任务合起来，照补记第 12 条。样本不足时一个倍数都不算，按任务、`reach_no` 分开的也不算，只报个数和每一下的误差。
+4. **真实局的 run.json**：controller、stance、delay_f 取自这个控制器 d3 采集的 run.json，是同一个宿主。这个文件只是为了让 sx_eval 能读，打分不用它。
+5. **SONIC**：采集根目录是 `selfmodel_hadata_sonic_20261126`，xfer 记录是 `sonic_ha`，真实局在它自己的 `real/sonic_*` 下。驱动要等那里的 `real/DONE`。
+6. **真实局的局数**：ScaleBFM 的目录里每个任务 20 局（200–219），HEFT 每个任务 40 局（200–239）。hd_real 在 200–239 里有几局就取几局，局数写进 merge.txt。
+7. **双手段一行的单手段对照**：用 d3 和 d3b 同一划分的单手段合起来，每个文件也单独报。第 3 节只说"同一划分的单手段"，这里把它补具体。
+
 ## 结果
 
 ## 意外
