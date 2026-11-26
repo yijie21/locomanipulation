@@ -667,7 +667,7 @@ salt visibility check (13x13 window around the object's expected pixel; mask = t
 
 ## 结果
 
-### 问题 2（测量组，10:20Z 跑完 340/340 个任务，无出错）
+### 问题 2（测量组，09:56Z 跑完 340/340 个任务，无出错）
 - **原始输出**：`q2an/q2_an.txt`（逐局 `q2an/q2_episodes.json`）、`q2an/q2_offline.txt`（`q2_offline.json`）。分析 `code_q2/fd_q2_an.py`、`code_q2/fd_q2_offline.py`。
 - **怎么数**：
   - 每组每局记成功、失败原因。伺服组还记伺服是否收敛（进入段进了 0.5 cm / 5°）和剩下的误差。
