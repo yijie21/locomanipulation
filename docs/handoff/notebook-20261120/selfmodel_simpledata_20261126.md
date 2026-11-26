@@ -187,6 +187,127 @@
 - **输出**：`loco_outputs/selfmodel_simpledata_20261126/{data3,data3b}/`；日志在 `logs/{d3,d3b}_w<k>.log`；每个进程结束写 `logs/done_<k>`，里面是两次运行的退出码。
 - **收尾**：40 个都结束以后，在 4090 上用冻结版对两种数据各跑 merge、check、summary，输出到各自目录的 `{merge,check,summary}.txt`。
 
+### 修订 2：中间点样本、data3b 的走法、训练和评估的实现细节，开训之前（2026-11-26，冻结于 2026-11-26T02:44:49Z）
+
+预测和判据一行不改。写这一节时正式采集还在跑，没看过正式数据，也没有训练过模型。新脚本都在 `scripts/experiments/selfmodel_simpledata_20261126/`。
+
+**1. 中间点样本多存一行，k0 = 3**
+- **原因**：冻结版 D 的中间点 k0 = 2，只存 k−2、k−1、k 三行，再加最后 6 行。fdvel 的 data.py 在 `REACHWM_FDVEL=1` 时断言 k0 ≥ 3，因为 S[k0−2] 的差分要用到它前面那一行。两者冲突，登记时没发现。2026-11-26 和协调方确认了下面的改法；另外两种做法（关掉中间点的 FDVEL、换配方）都和登记不符，不用。
+- **改法**（`sd_mid.py`）：
+  - 是 train3b 冻结版 `t3b_mid.py`（6a39671c）的拷贝，只改一处：每个起点多存 k−3 一行，k0 设为 3；
+  - 其余不动，起点的选法、丢弃规则和自带检查都一样；
+  - 附带三处：输入路径必须显式给；运行时断言 FDVEL 关着（自带检查要拿 x0 和原始 S 行比）；多存一个 `mid_<name>_src.npz`，记每个起点的源段和行号，给核对用。
+- **核对**（`sd_mid_check.py`）：正式数据上先用冻结版 t3b_mid 和 sd_mid 各生成一份，再核对，不过就停。
+  1. FDVEL 关：两份起点顺序相同；x0、u 和标签共 13 个数组逐字节相同；新的 k0 全是 3，每段多一行。
+  2. FDVEL 开：`data.fdvel_x0` 换掉的 96 列（三行的 29 个关节速度和 3 个角速度）要等于用源段真实相邻两行算出的差分，误差 ≤ 1e-5；其余 182 列和 FDVEL 关时相同。
+  3. 开 FDVEL 的子进程用 `data.load` 读新文件，k0 ≥ 3 的断言通过，读出的 x0 和第 2 步逐字节相同。
+
+  冒烟数据上的结果（原文）：
+
+  ```
+  data3: 316 new / 316 old starts; same order True; k0 new [3] old [2]; n_steps new = old + 1: True
+    FDVEL off, byte equal: x0 True, u True, pos_f True, rot_f True, settled True, fell True, err_cm True, target True, rot6 True, jaw0 True, rot0 True, pel_f True, q_f True
+    FDVEL on, 316 sampled starts vs the source rows: joint velocity max |d| 2.38e-07 rad/s, angular velocity max |d| 2.85e-08 rad/s; 96 columns replaced, the other 182 equal to FDVEL off: True
+    child with REACHWM_FDVEL=1: data.load ran (k0 >= 3), its x0 byte equal to fdvel_x0 here: True
+  data3b: 513 new / 513 old starts; ...（同上，角速度 4.32e-08）
+  MID FDVEL CHECK PASS
+  ```
+- **划分检查**（`sd_split_check.py`）：train3b 的 `t3b_split_check.py` 用 k0 == 2 认中间点，现在原有段也是 k0 = 3，认不出来了。改成按文件认：从 `mid_*.npz` 来的段算中间点。另加一条：中间点的 k0 全是 3。其余检查不变。冒烟数据上 `SPLIT CHECK PASS`。
+
+**2. data3b 的先走后伸重置**：一半照 d3 规则，一半任务式，分法和 data3 相同，按 `crc32("taskwalk:<重置编号>")` 分。2026-11-26 和协调方确认。实现和冒烟见修订 1，正式采集就是这样跑的。
+
+**3. 训练**（`sd_run.sh`，4090 上从冻结副本跑，tmux `sd_run`）
+- **开训前的门槛**：
+  - `logs/finished` 已写；
+  - data3 和 data3b 的 check.txt 里都有 `CHECK PASSED` 和 `SIMPLE CHECK PASSED`；
+  - 判据里的扭转：两种数据 check 第 8 项 "task walk end" 的比例都 ≥ 80 %；
+  - 然后等 `TRAIN_GO`。它在本修订提交并推送之后手写。
+- **训练本身**：
+  - train3b 冻结版 `t3b_train.py`（c7ecf581）训 E3_ensemble；
+  - 数据是 data3、data3b 和两个中间点文件；seed 0，frac 1.0 和 0.3 两个并行，各占一张卡；
+  - `REACHWM_GOAL_REF/APPROACH/QFIX/FDVEL=1`，不开 X0_REF；
+  - 迭代数用 train.py 的缺省值，和 train3b 的 D 相同；nice 10，每个 4 个 CPU 线程。
+- **显卡**：开训前 nvidia-smi 记进 run.log，从 4090 的 1–3 号卡里选两张空的。0 号卡不碰。
+- **frac 0.3**：data.splits 按每次重置的 frac_rank 嵌套，中间点跟着它的源重置走。
+
+**4. 评估的口径**
+- **SIMPLE val**：data3 的 val 集，全部伸手，只算没摔、末端停稳的段，取 D（frac 1.0）落点误差的中位数。
+  - 这和"LML 上 D 的 val 约 2.2 cm"是同一个口径：train3b `final_val.txt` 里 data3 val、all 那一格的 D0 是 2.25 cm；
+  - 预测里的"1.5–3.0 cm"、判据里的"> 3.5 cm"，以及评估 2、3 的分母，都用这一个数。
+- **学习曲线**：同一格里 D 和 D_f0.3 中位数的比值。区间用 1000 次按重置重抽，两者配对。判据"仍降 10 % 以上"指这个比值 < 0.90。test_iid 的比值一起报，但判据只看 val。
+- **评估 1**（`sd_eval.py`）：
+  - data3 和 data3b 各取 7 个留出集：val、test_iid、四个 band、edge；
+  - 每个都分全部、第一下、连续伸手三组报；
+  - data3 另外把第一下分成原地、任务式先走、d3 式先走；data3b 另外按入口、预抓取、相对伸手分；
+  - 每格报位置误差的中位数和 p90、姿态误差的中位数、直接执行的误差，以及学习曲线比值。
+- **评估 2**：
+  - 用 xfer 的 `sx_eval.py`（81f61381，和 fdvel 用的是同一个文件），FDVEL=1；
+  - `--lml` 指本实验的 data3，所以分母就是 SIMPLE val；`--models` 指本实验的 D；
+  - `--keep settled` 为主，ended 也报；
+  - F 的倍数取 fdvel 已有的结果：`xfer/scalebfm_simple/F_s0_settled.txt` 的 all 行（2.309x），三个 seed 见 `xfer_table.txt`（2.31–2.41x）。
+- **评估 3：真实局**（`sd_real.py` 记录，`sd_real.sh` 跑，`sd_real_merge.py` 合并和检查）
+  - **哪些局**：主指标 A 栏的同一批局，四个抓取任务各 30 局（0–29）。
+    - 用 simple_bench 自己的 `main()` 跑，参数照 bench_via.sh 的 A 栏：`--method direct --bench-set controller=scalebfm --bench-set sensor=rgbd --trace --episodes 0-29`；
+    - 环境变量 `REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1`。
+  - **设备**：ScaleBFM 的策略放在 GPU 上，和 A 栏当时一样，`CUDA_VISIBLE_DEVICES` 和 `MUJOCO_EGL_DEVICE_ID` 设成同一张卡。8 个进程（两种标签 × 四个任务），nice 10。
+    - 理由：冒烟里同一局（TabletopGraspMP 第 0 局）在 GPU 上的 simple_bench 行和 A 栏逐位相同（手掌误差 33.94 cm），在 CPU 上是 33.765 cm；
+    - 用 GPU，补充标签的局就是 A 栏那一局本身；
+    - 训练数据是在 CPU 上采的，策略在 CPU 和 GPU 上的数值差别留作一个已知的小差异。
+  - **simple_bench 的版本**：A 栏跑的 md5 是 abc246fd，冻结副本里的是 80511140，后来加过别的开关。两者在 A 栏的路径上是否等价，用逐局比对来查：补充标签的每一局，simple_bench 行的 palm_cm 和每个阶段的 err_cm、ik_cm 都必须和 A 栏同一局相同。sd_real_merge 检查这一条，不过就停。
+  - **记录器**：
+    - 包在 `Motor.tick` 最里层，每拍记一行，和采集用同一个 `SimpleHost.sample` 和 `SRig.record`；同时记这一拍 Motor 的参考位姿作为参考帧；
+    - 预抓取和进入两次 `Motor.reach`，调用期间截下 `_blend` 的位姿和时长，即规划，写法照 `plan_native_b`；抬起那一次不记；
+    - 命令行取调用前的最后一行；走路记 `open_walk` 各段的起点和要求的位移；
+    - 段用采集的同一套函数生成（`D3.segments`、`SX.add_fields`、`D3.augment_b`），格式是 data3b 的，kind 1 是预抓取，kind 2 是进入；
+    - 重置编号：主标签 90 000 000 起，补充标签 91 000 000 起，再加 1000 × 任务 + 100 × 难度 + 局号。
+  - **手点换算**：采集的手点是 wrist_yaw_link 前方 13 cm（`L.HAND_OFF`），simple_bench 的 Motor 规划的是 Dex3 手掌点（`REACH_HAND_OFF` 0.0415 m）。
+    - 一条命令是一个完整的腕部位姿：手掌点 T 加腕部姿态 R；
+    - 记录里的命令目标取同一个位姿的 13 cm 点，即 T + R (HAND_OFF − OFF)；
+    - ik_err 是规划最后一个位姿的 13 cm 点到它的距离；标签是测得的 13 cm 点。
+  - **主标签**：
+    - 在预抓取命令前、进入命令前和合手前，都按 d3 规则等：从参考结束起（预抓取前从走完那一刻起），在从命令起算的 0.1 s 网格上，取第一次满足"骨盆和两个手点 0.5 s 内都低于 2 cm/s"的那一行，最多等到参考结束后 3 s；
+    - 这一行就是上一下的末端标签，下一条命令也在这一行发；
+    - 只改命令什么时候发，不改发什么，命令仍是 simple_bench 自己从感知算出来的。仿真里的速度只决定什么时候发，和采集时的 d3 规则一样。
+  - **补充标签**：局照原样跑。预抓取的末端取进入命令之前、网格上的最后一行；进入的末端取第一次合手命令之前、网格上的最后一行。settled_end 记那一行是否满足 d3 规则。
+  - **保留哪些段**：
+    - 主标签：没摔、末端停稳，和 SIMPLE val 同一口径。判据用这个；
+    - 补充标签：只要没摔，停没停稳都算。补充标签本来就不等停稳，预测的 1.5–4 倍说的就是这种情况；
+    - 两种标签的另一种保留法也都报。
+  - **倍数和区间**：用 sx_eval 的 all 行，倍数 = 真实段误差中位数 / SIMPLE val。判据里的区间用两边都重抽的那一个（"val resampled too"），上限 ≤ 1.5 才算过。第一下和第二下另报。
+  - **原地伸手**：A 栏的 120 局都先走（位移 > 2 cm），所以真实段全是"先走后伸"。评估 4 里"原地伸手 ≥ 90 %"那条预测在真实局上没有段可算，报 n = 0。
+  - **冒烟**（4090，GPU 2 和 3）：BendPickMP 和 TabletopGraspMP 的第 0–1 局，两种标签各跑一遍；另有 TabletopGraspMP 第 0 局在 CPU 上的两种标签。
+    - 每局 2 段，没有摔倒，标签行都在网格上；
+    - 补充标签 4/4 局和 A 栏逐位相同；8 段里 7 段末端停稳，TabletopGraspMP 第 1 局的预抓取在进入命令时还没停稳；
+    - 主标签 8 段全部停稳。走完后要等 0.70–0.96 s 才发预抓取；进入和合手前只等 0.02–0.08 s，因为 `Motor.reach` 自己会等到停稳，最多 1.5 s；
+    - 例子，TabletopGraspMP 第 0 局：补充标签的预抓取在第 168 行发、第 438 行取末端，进入在第 439 行发、第 654 行取末端；主标签的预抓取在第 203 行发；
+    - 数据用 data.py（FDVEL=1）读入，x0 有 278 列，全部有限。
+- **评估 4**（`sd_range.py`）：
+  - **训练集**：D 的训练集，即 data3、data3b 和中间点，data.splits 的 train，frac 1.0。
+  - **范围**：在起点行查 39 个量，每个都要落在训练集的 p0.5–p99.5 之内：29 个关节角；骨盆的高度和骨盆系里的重力方向，共 4 个；两个手点在起点朝向系里的位置，xy 相对骨盆，z 原样，共 6 个。按关节、骨盆、手点三组分别报，也报合起来的。
+  - **最近邻**：在 x0 空间（FDVEL=1 时的模型输入）按训练集每列的均值和标准差标准化，去掉常数列，算到最近一个训练段的距离。
+    - 阈值是训练集自己最近邻距离的 p99：用 seed 0 抽 10 000 个训练段，每个只和别的重置的段比，同一条轨迹自己的中间点不算；
+    - 不超过阈值算在范围内。
+  - **伸手表**：命令目标在伸手表里它那只手、那个骨盆高度的框内，用采集用的同一张表（md5 9d4c716a）和 `d3_collect.in_table`。
+  - **三项都满足**才算在范围内。误差（D，frac 1.0）按在范围内和不在分开报，每一项单独也报，附上相对 SIMPLE val 的倍数；再按原地 / 先走、第一下 / 第二下分组。
+  - **参照**：SIMPLE val 自己落在范围内的比例一起报。39 个量各留 1 % 在外，训练分布里的段本身也会有一部分"不在范围内"。
+  - 比例的区间用 1000 次按局重抽。
+- **整条流程的冒烟**：冒烟数据上用 `SD_TEST=1` 从头跑过一遍 sd_run.sh，训练只跑 300 步，接着跑上面两个真实局的冒烟。mid、两个核对、训练、评估 1–4 都跑通了。数字没有意义，不记。
+
+**5. 冻结**
+- 新文件拷进 `asrun/repo/scripts/experiments/selfmodel_simpledata_20261126/`，md5 记在 `asrun/MD5_r2.check`，冻结时刻记在 `asrun/FROZEN_UTC_R2`。sd_run.sh 和 sd_real.sh 开跑前都要核对 MD5.check 和 MD5_r2.check。
+- train3b 的 `t3b_train.py` 和 `t3b_mid.py` 直接用 train3b 的冻结副本，sd_run.sh 开跑前核对它们的 md5。
+- 修订 1 的 MD5.check 不动。正式采集不读这些新文件。
+
+| 文件 | md5 |
+|---|---|
+| sd_mid.py / sd_mid_check.py / sd_split_check.py | 5c46a94d / 5521766f / 86d68705 |
+| sd_real.py / sd_real_merge.py / sd_real.sh | 3703c1aa / 4cb32665 / c1bcf695 |
+| sd_eval.py / sd_range.py / sd_run.sh | 500927fc / 1276163a / a29c1c0d |
+| train3b asrun：t3b_train.py / t3b_mid.py | c7ecf581 / 6a39671c |
+| selfmodel_xfer_20261125/sx_eval.py | 81f61381 |
+
+- **顺序**：本修订单独提交并推送 → 跑真实局（sd_real.sh，不依赖采集）→ 采集结束、检查通过 → 写 TRAIN_GO → sd_run.sh 训练和评估。
+
 ## 结果
 
 ## 意外
