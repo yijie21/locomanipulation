@@ -350,6 +350,135 @@ model.pt md5: smoke/b_equiv 35c9d5df, simpledata dev_b/runtest/models_D_s0 35c9d
 - `nw_run_b2.sh` 冻结在 `asrun/code/`，md5 30a53601，冻结时间 2026-11-26T09:25:38Z（`asrun/MD5_r2.check`、`asrun/FROZEN_R2_UTC`）。
 - 接管时 N s0 已经跑到第 6000 步。这期间我只看过步数和每 2000 步的用时，没有看 val 数字。
 
+### 修订 2：第二阶段的实现细节（2026-11-26 09:28Z；第二阶段还没有开始正式训练，第一阶段的结果也还没出来）
+
+登记里第二阶段的预测和判据都不改，这里只补实现细节。登记时说过修订"只补实现细节，不改数字"。
+
+**数据和配方**
+- 每个控制器（ScaleBFM、SONIC、HEFT）分开做，训练数据就是 train3b 的 D：
+  - `selfmodel_data3_20261125/<控制器>/data/all.npz`
+  - `selfmodel_data3b_20261125/<控制器>/data/all.npz`
+  - `selfmodel_train3b_20261125/<控制器>/data/mid_data3.npz`、`mid_data3b.npz`
+- 开关和 train3b 的 D 一样：`REACHWM_GOAL_REF / APPROACH / QFIX = 1`；FDVEL 不开，因为 train3b 的 D 没用它。
+- 代码仍然是 simpledata 的 `asrun/repo_b`：
+  - `train.py`、`models.py` 和 train3b 冻结的版本 md5 相同；
+  - `data.py`（174071cb）比 train3b 的（e0cabb83）只多 65 行，全是 FDVEL 开关下的内容，FDVEL 不开时完全一样；
+  - `env.py` 只差 HEFT 控制器的设置，训练和评估都用不到。
+- D 本身不重训，只作参考。train3b 的 D 是在 4090 的 1–3 号卡上训的（train3b 条目"卡和运行"），所以 N/D、C/D 里混着换卡的差别。N/C 两组都在 H20 上训，彼此配对，没有这个问题。
+
+**各组**
+- 只做 N 和 C，不做 C2。登记里第二阶段写的是"同样的 N/C 消融"。
+- 种子 0、1、2 各训一次，一共 3 个控制器 × 2 组 × 3 个种子 = 18 个训练。用三个种子是因为：
+  - train3b 的 D 本来就有三个种子；
+  - LML 的真实局段数少（ScaleBFM 226 段，SONIC 129 段，HEFT 69 段），模型种子之间的差别会比 SIMPLE 大。
+- `nw2_split.py` 就是 `nw_split.py`，只改了这几处，构造规则一样：
+  1. 数据路径换掉；D 的训练段数从 train3b 的 `logs/train_D_s0_f1.log` 里读。
+  2. train3b 的 t3b_mid 没写 `mid_*_src.npz`，所以中间点的段改成按重置编号核对：编号必须是它来源文件里的；走没走过，按日志核对。
+  3. sd_range 的 39 个起点量原样抄进来。原因是 sd_range 一 import 就断言 FDVEL = 1。
+  4. 输入检查改成对着本控制器的 lmlreal 记录做，走过的段和原地的段分开报。
+- 训练的包装（`nw_train.py`）和第一阶段同一份。
+- 和 train3b 的 D 训练命令核对过：`t3b_run.sh` 里 D 的数据顺序是 data3、data3b、mid_data3、mid_data3b，环境变量是 `REACHWM_GOAL_REF / APPROACH / QFIX = 1`、`REACHWM_X0_REF=0`，`t3b_train.py E3_ensemble --seed S --frac 1`，和这里一样。
+
+**划分检查**（`lml/<控制器>/splits/split.log`，每份都是 SPLIT CHECK PASS；节选原文，完整日志见文件）：
+
+```
+--- scalebfm (lml/scalebfm/splits/split.log)
+  md5 {'data3': '9eeede9a', 'data3b': 'b303a773', 'mid_data3': '9e567fa9', 'mid_data3b': 'b9ca63ac'}
+logs: 45000 resets, walk-first 15164
+  [ok] D's training split 847551 == 847551 (train3b logs/train_D_s0_f1.log)
+  D : train 847551 segments (28786 resets; first 345596, chained 501955), walk-first 283850 segments / 9698 resets (task 0, d3 283850)
+  N : train 563701 segments (19088 resets; first 230850, chained 332851), walk-first 0 segments / 0 resets (task 0, d3 0)
+  C : train 563723 segments (19116 resets; first 229892, chained 333831), walk-first 190299 segments / 6462 resets (task 0, d3 190299)
+  [ok] N's training split 563701 == D's training segments of in-place resets 563701
+  [ok] C's training split 563723 vs N's 563701: +0.004 % (tolerance 1 %)
+input check, lmlreal scalebfm settled (226 segments; walked 174, in place 52): share inside the arm's training p0.5 / p99.5 (sd_range's 39 quantities; below 'first' = walked, 'second' = in place), and ...
+  D : joints 92.5 % (first 90.8, second 98.1); pelvis 92.5 % (first 90.2, second 100.0); hands 100.0 % (first 100.0, second 100.0); all 39 85.0 % (first 81.0, second 98.1)
+  N : joints 91.6 % (first 89.7, second 98.1); pelvis 93.8 % (first 92.0, second 100.0); hands 100.0 % (first 100.0, second 100.0); all 39 85.4 % (first 81.6, second 98.1)
+  C : joints 92.5 % (first 90.8, second 98.1); pelvis 91.2 % (first 88.5, second 100.0); hands 100.0 % (first 100.0, second 100.0); all 39 83.6 % (first 79.3, second 98.1)
+SPLIT CHECK PASS
+--- sonic (lml/sonic/splits/split.log)
+  md5 {'data3': '51d1afa1', 'data3b': '1cfe41df', 'mid_data3': 'b199b720', 'mid_data3b': '7e22a714'}
+logs: 45000 resets, walk-first 15164
+  [ok] D's training split 1079768 == 1079768 (train3b logs/train_D_s0_f1.log)
+  D : train 1079768 segments (28492 resets; first 428576, chained 651192), walk-first 364173 segments / 9624 resets (task 0, d3 364173)
+  N : train 715595 segments (18868 resets; first 286014, chained 429581), walk-first 0 segments / 0 resets (task 0, d3 0)
+  C : train 715611 segments (18902 resets; first 284001, chained 431610), walk-first 243033 segments / 6402 resets (task 0, d3 243033)
+  [ok] N's training split 715595 == D's training segments of in-place resets 715595
+  [ok] C's training split 715611 vs N's 715595: +0.002 % (tolerance 1 %)
+input check, lmlreal sonic settled (129 segments; walked 97, in place 32): share inside the arm's training p0.5 / p99.5 (sd_range's 39 quantities; below 'first' = walked, 'second' = in place), and x0  ...
+  D : joints 91.5 % (first 88.7, second 100.0); pelvis 99.2 % (first 100.0, second 96.9); hands 99.2 % (first 100.0, second 96.9); all 39 89.9 % (first 88.7, second 93.8)
+  N : joints 91.5 % (first 88.7, second 100.0); pelvis 99.2 % (first 100.0, second 96.9); hands 99.2 % (first 100.0, second 96.9); all 39 89.9 % (first 88.7, second 93.8)
+  C : joints 91.5 % (first 88.7, second 100.0); pelvis 99.2 % (first 100.0, second 96.9); hands 99.2 % (first 100.0, second 96.9); all 39 89.9 % (first 88.7, second 93.8)
+SPLIT CHECK PASS
+--- heft (lml/heft/splits/split.log)
+  md5 {'data3': '8280b777', 'data3b': '743dafc9', 'mid_data3': '8437471c', 'mid_data3b': '6478dffe'}
+logs: 45000 resets, walk-first 15164
+  [ok] D's training split 499077 == 499077 (train3b logs/train_D_s0_f1.log)
+  D : train 499077 segments (23815 resets; first 277559, chained 221518), walk-first 166848 segments / 7986 resets (task 0, d3 166848)
+  N : train 332229 segments (15829 resets; first 185310, chained 146919), walk-first 0 segments / 0 resets (task 0, d3 0)
+  C : train 332230 segments (15847 resets; first 184536, chained 147694), walk-first 112410 segments / 5335 resets (task 0, d3 112410)
+  [ok] N's training split 332229 == D's training segments of in-place resets 332229
+  [ok] C's training split 332230 vs N's 332229: +0.000 % (tolerance 1 %)
+input check, lmlreal heft settled (69 segments; walked 40, in place 29): share inside the arm's training p0.5 / p99.5 (sd_range's 39 quantities; below 'first' = walked, 'second' = in place), and x0 co ...
+  D : joints 79.7 % (first 65.0, second 100.0); pelvis 100.0 % (first 100.0, second 100.0); hands 98.6 % (first 97.5, second 100.0); all 39 79.7 % (first 65.0, second 100.0)
+  N : joints 79.7 % (first 65.0, second 100.0); pelvis 100.0 % (first 100.0, second 100.0); hands 98.6 % (first 97.5, second 100.0); all 39 79.7 % (first 65.0, second 100.0)
+  C : joints 79.7 % (first 65.0, second 100.0); pelvis 100.0 % (first 100.0, second 100.0); hands 98.6 % (first 97.5, second 100.0); all 39 79.7 % (first 65.0, second 100.0)
+SPLIT CHECK PASS
+```
+
+- LML 的先走后伸只有 d3 走法（task 0），日志里 45000 个重置中有 15164 个先走。三个控制器的日志相同。
+- 输入检查里，真实局里走过的段落在 N 训练范围里的比例和 C、D 几乎一样（ScaleBFM 全部 39 个量：N 85.4 %、C 83.6 %、D 85.0 %；SONIC 和 HEFT 三组相同）。所以 LML 上 N 的起点覆盖并不比 C 差。这一点在训练之前就知道了，预测是在它之前写的，不改。
+
+**冒烟**（`smoke/lml_run`，ScaleBFM，种子 0，N 和 C 各 300 步，H20 的 0、1 号卡；checkpoint 测完已删）：
+- 全流程跑通：划分检查 → 训练 → 评估。
+- D 的核对通过，原文：
+
+```
+  reproduction: D0 median 1.96050 vs train3b lml_real.json 1.96050 (+0.00001); n 226 vs 226
+  reproduction: D1 median 1.85640 vs train3b lml_real.json 1.85640 (+0.00000); n 226 vs 226
+  reproduction: D2 median 2.22039 vs train3b lml_real.json 2.22039 (+0.00000); n 226 vs 226
+REPRODUCTION PASS
+```
+
+- 冒烟也打出了 300 步模型的 N0/C0（0.949）。300 步的模型离收敛很远，这个数不代表任何结论；第二阶段的预测登记时就写好了，不改。
+
+**评估**（`nw2_eval.py`，只用 CPU）
+- **主评估**：`selfmodel_lmlreal_20261125/<控制器>/data/all.npz`。保留的段和 train3b 的 lmlreal 指标一样：没摔、没丢，末端停稳；途经点那几下也算进去。
+  - 每个模型报误差中位数。
+  - 区间按局重抽 4000 次。一局就是一个重置编号，编号 = 9 100 000 + 1000 × 任务 + 局号，7 个任务各 30 局；有记录的局 ScaleBFM 135 局、SONIC 128 局、HEFT 74 局。
+  - LML 没有 SIMPLE 那种"同一局号、三个难度、布局几乎相同"的结构：每局的布局是单独抽的。所以不再按布局合并，按局重抽就够了。
+- **登记的统计量**：三个种子各自配对，求 N_k/C_k，再取平均；它的 95 % 区间由同样的重抽得到。每个种子自己的比值也报。
+- 第一下（reach_no 1）、第二下（reach_no 2）、走过的段、原地的段，各单独报一格，不进判据。
+- **次要评估**：本控制器 data3 的留出集（val + test_iid，没摔、停稳），分成原地第一下、先走的第一下、原地连续伸手、走过之后的连续伸手，各组配对，按重置重抽 2000 次。
+- **核对**：用 D0–D2 重算 train3b `lml_real.json` 里"全部"那一格的中位数，段数要相同，差不超过 2e-3 cm（那边是在 GPU 上算的）。对不上就停下。要对上的数是：
+
+  | 控制器 | D0 | D1 | D2 |
+  |---|---|---|---|
+  | ScaleBFM | 1.96050 | 1.85640 | 2.22039 |
+  | SONIC | 1.84117 | 1.83337 | 1.85337 |
+  | HEFT | 24.30997 | 23.65374 | 24.72060 |
+
+**判据怎么用到第二阶段**（阈值不变）
+- 每个控制器单独判，用三个种子平均的 N/C 和它的区间，套登记表里的三行。
+- **种子一致**：对应第一阶段的附加规则 1。
+  - 如果平均落在第一行，三个种子各自的点估计都必须 ≤ 1.25；
+  - 如果平均落在 > 1.25 那一行，三个种子都必须 > 1.10；
+  - 不满足就降为中间那一行。
+- 第一阶段附加规则 2、3 说的是 SIMPLE 的任务。LML 每个任务只有 10–30 段，按任务不报也不判。
+- **HEFT 要单独说明**（在看第二阶段任何结果之前写下）：
+  - train3b 里，D 在 HEFT 真实局上的中位数是 23.7–24.7 cm，直接把命令当预测是 28.4 cm，val 只有 3.2 cm。也就是说，所有模型在这批局上都错得很远。
+  - 所以 HEFT 的 N/C 就算落在第一行，也只能说"去掉先走后伸的数据，不会让一个本来就错得很远的预测变得更差"，不能当成 HEFT 可以只采原地的证据。
+  - HEFT 的结论同时看 data3 留出集里先走的那一格。
+
+**运行**
+- `nw2_run.sh` 在 H20 的 tmux `nowalk2` 里跑。
+- 冻结的代码放在 `asrun2/code/`，冻结时间 2026-11-26T09:26:50Z。md5 记在 `asrun2/MD5.check`：
+  - `nw2_split.py` d3f7c3b2，`nw2_eval.py` bcb8cb74，`nw2_run.sh` c3b2dd01，`nw_train.py` f000197d；
+  - splits.npz：ScaleBFM 1d0f9833，SONIC 7ced1558，HEFT eea135d9。
+- 卡：H20 只用 0、1 号卡，2、3 号卡留给搭环境的 agent。每张卡最多同时两个我们的训练，开之前要求已用显存加 12 GB ≤ 80 GB。
+- 按协调人 09:24Z 的安排，第二阶段和第一阶段同时跑。第一阶段在 4090b 上，两边不抢卡。
+- 第一阶段如果出现任何一条停下的情况（核对失败、N 的训练集里出现先走后伸的段），第二阶段的结果先不解读，查清以后再说。
+
 ## 结果（贴原始输出，不转述）
 <!-- 取指标的命令 + 原始输出；完整日志、checkpoint、评测输出的路径。 -->
 
