@@ -576,6 +576,125 @@
   - 但 04:30–05:00Z 时 E2a 和冒烟都没在跑，也是 77.2 s；30 分钟一段的数本身就在 56–77 s 之间。
 - 同一时期诊断从约 20 个进程涨到约 32 个，E2a 实际只用 8.0 个核。协调人看过以后认为主要是诊断加了进程，不暂停 E2a 去查。
 
+**修订 3：H20 接手 HEFT、SONIC（2026-11-26 约 11:45Z 写下；ScaleBFM 正在 4090 上跑，约 6100/10368 局；HEFT、SONIC 一局都没跑）**
+
+协调人的决定，为了加速：照原来的速度，全部要到明天中午。**预测和判据不改。**
+
+**1. 为什么可以用 H20**
+- 原登记写的是"E2a 只用 4090 和 4090b 的 CPU，最多 24 个核"。理由是不拖慢 HA 采集，HA 是关键路径。修订 1 第 6 节降到 8 个进程，理由是给 4090 上的失败诊断和 cuRobo 路线让 CPU。
+- H20 不跑 HA：Isaac 在 H20 上起不来，见 `loco_outputs/h20_bringup_20261126/README.md`。H20 也是另一个节点，不和 4090 抢 CPU。所以这两条理由都不适用于 H20。
+- 4090 上不加跑局进程。
+
+**2. 分工**
+- 4090：只把 ScaleBFM 跑完。就是已经在跑的那 8 个进程，局号 0–15，不停、不改。
+- H20：HEFT（修订 2 的两步）和 SONIC（局号 0–21），全部 216 格。
+- ScaleBFM 不分给 H20：4090 的 8 个进程在开始时就定好了各自的任务表，不会跳过别处跑完的局。要分，只能停掉进程或者重复跑。
+- 局数照修订 2：ScaleBFM 10368，SONIC 9504，HEFT 6912 加"第二步选中的格数 × 38"。修订 1 写的 HEFT 15120 是改成两步之前的数。
+
+**3. 驱动怎么换**
+- 4090 上原来的情况：
+  - 旧驱动 `fs_formal.sh`（pid 1096976）从修订 2 起一直被 SIGSTOP 停着；
+  - `fs_formal2.sh`（pid 1290559，tmux `fs_formal2`）在等 ScaleBFM 的 8 个进程结束。等完以后它会：
+    1. 按 pid 杀掉旧驱动；
+    2. 做 ScaleBFM 的收尾：记录数、代码核对计数、`fs_check`、`fs_eval`、事后 md5；
+    3. 在 4090 上跑 HEFT 两步，再跑 SONIC，各自收尾；
+    4. 在 formal.log 写 "formal done"。
+  - 两个脚本都没有跳过开关，也不看标记文件。
+- **4090**：
+  - 按 pid 杀掉 `fs_formal2.sh`，杀之前核对过命令行。
+    - 它当时只在 `sleep 60` 的等待循环里，没有在跑局的子进程。
+    - 它的进程组（1290555）里只有外层的 `bash -c`、它自己和 sleep。ScaleBFM 的跑局进程在旧驱动的进程组（1096973）里，不受影响。
+  - 新起 `fs_formal3a.sh`（tmux `fs_formal3a`），做的是 `fs_formal2.sh` 的第 1、2 步，照抄：
+    - 等 ScaleBFM 的 8 个进程结束；
+    - 核对命令行后，按 pid 杀掉停着的旧驱动；
+    - 做 ScaleBFM 的收尾；
+    - 最后写标记 `SCALEBFM_POST_DONE`。
+    - 不起任何跑局进程。开始时如果 `fs_formal2.sh` 还在，它就拒绝运行。
+  - 旧驱动仍然等 ScaleBFM 跑完才杀，理由同修订 2：提前杀会关掉 tmux 窗口，挂断信号打到同组给日志去警告的 grep，跑局进程写日志时会出错。
+- **H20**：新起 `fs_formal3b.sh`（tmux `fs_formal3`），做 `fs_formal2.sh` 的第 3、4 步：
+  - HEFT 第一步（216 格 × 局号 0–15）和 SONIC（216 格 × 局号 0–21）同时开跑；
+  - HEFT 第一步跑完，`fs_heft2.py` 照修订 2 选格，更新 `FORMAL_TOTALS`，跑第二步，然后 HEFT 收尾；
+  - SONIC 跑完，SONIC 收尾；
+  - 等 4090 写出 `SCALEBFM_POST_DONE`，用 `fs_tally.py` 核对三个控制器的局数。核对结果和 "formal done" 写进 formal.log。
+- 收尾和 `fs_formal2.sh` 只差一处：代码核对计数改用副本的 realpath 去比。
+  - 原因：H20 上 `/wuji-vefps-D/wuji-il` 是指向 `/wuji-vefps-D` 的链接，lc3 的代码核对打印的是解析后的路径。不改的话，H20 上会数出 0。
+  - 4090 上两种写法数出来一样。
+- 日志：H20 写 `formal_h20.log`。formal.log 由 4090 写，H20 只在最后写两行，那时 4090 已经写完。
+
+**4. 进程数和 CPU**
+- H20 的进程数：
+  - HEFT 第一步 23 个、SONIC 33 个，同时跑，共 56 个；
+  - HEFT 第二步 21 个，和 SONIC 合起来 54 个；
+  - 都是单线程、nice 19、只用 CPU。SONIC 用 onnx-cpu 推理：`CUDA_VISIBLE_DEVICES=` 留空，不设 `D3_SONIC_INFER`。
+- 进程数都取奇数：
+  - 每个（格子，局号）有 A、R 两组，任务表按 k::NP 分片。NP 是偶数时，每个分片只拿到 A 或者只拿到 R，R 每局约慢 5 倍，尾巴会很长。
+  - 分片数不影响记录：一局只由（格子，局号，组）决定。冒烟的检查 2 和下面第 6 节都核对过。
+- 第二步用 21 个，和第一步的 23 个不同，所以 `fs_batch.sh` 的 `run_n<NP>_<k>.log` 不会覆盖第一步的日志。
+  - `fs_formal2.sh` 两步都用 8 个进程，第二步会覆盖第一步的日志，记录不受影响。这里顺带避开了。
+- CPU 按我们自己进程的 CPU 时间量（`h20check/tools/cpu.py`：30 s 内所有进程的 utime + stime 之差除以 30 s），不看 loadavg：
+  - 开跑前（11:41Z）是 0.00 核，H20 上只有 GPU keepalive；
+  - 上限是 75 核。E2a 最多 56 个进程，给别的实验留余量。
+- 4090 不加跑局进程。`fs_formal3a.sh` 只是替换掉 `fs_formal2.sh` 那个等待用的脚本。
+
+**5. 怎么防止重复**
+- 每个（控制器，格子，局号，组）只在一台机器上跑：ScaleBFM 只在 4090 上跑，HEFT、SONIC 只在 H20 上跑。
+- 4090 上能启动 HEFT、SONIC 的只有两个脚本，两个都处理掉了：
+  - `fs_formal2.sh` 已经杀掉；
+  - 旧驱动一直停着，等 ScaleBFM 跑完后由 `fs_formal3a.sh` 杀掉。
+- H20 的驱动只在有标记文件 `H20_OWNS_HEFT_SONIC` 时才启动。这个标记在 `fs_formal2.sh` 杀掉以后才写。
+- `fs_run` 开跑时会跳过已经有记录的任务。按（格子，局号，组）全局判断，和分片无关。
+- 最后用 `fs_tally.py` 把每个控制器的记录和应有的任务表逐个对：重复、缺的、多的都要是 0。
+  - 总数 = 10368 + (6912 + 38 × 第二步格数) + 9504。
+
+**6. 逐位核对**（开跑前，在 H20 上，用冻结副本）
+- **代码**：
+  - H20 上用 `md5sum -c` 核对，`CODE_MD5`（1119 个文件）、`CODE_MD5_REV2`、`MD5`（29 行输入）都通过；
+  - 三份清单本身的 md5 在 4090 和 H20 上相同：4bf02e60、753ef4ac、b76379c6；
+  - 副本里只有顶层的 assets、outputs、third_party、grasp_kit、rsi_kit 五个链接，指向共享树，只读。新文件只写进副本里的真目录。
+- **修订 3 加进副本的文件**：md5 记在 `asrun/CODE_MD5_REV3`，REV3_UTC 2026-11-26T11:40:31Z。fs_formal3a 16b69762，fs_formal3b 07ff1b79，fs_tally 9111a8e7。三个驱动每一步开跑前都核对 CODE_MD5、REV2、REV3 三份清单。
+- **跑法**：
+  - 环境照 `fs_batch.sh`：单线程、nice 19、`LC_CODE_ROOT` 设成副本，另加 `LOCOMANI_WORKSPACE`；
+  - 每个挑出的局一个进程。SONIC 的一对 A、R 放在同一个进程里，顺带看前一局会不会影响后一局；
+  - 输出在 `h20check/`，不进 E2a 的记录。
+- **挑哪些局**（`h20check/tools/pick.py`，每条规则取按（格子，局号）排序的第一个）：
+  - ScaleBFM 正式局 5 局：站立 A；站着出发蹲下伸手的 R，有修正；蹲着出发的 S；蹲着出发的 R；S 摔倒的一局；
+  - HEFT 冒烟 3 局：站立 A；R 有修正；R 跑离；
+  - SONIC 冒烟 3 局：站立 R，有修正；蹲着出发的 A 和 R。
+- **比法**（`h20check/tools/cmp.py`）：
+  - 局记录除 wall_s、think_s 以外的每个字段；
+  - 这一局在 segs 和 segs/arm 里的每个数组，按字节比；
+  - 冒烟用的是改号之前的重置号（93,000,000 起），这一个数组只核对"新 − 旧 = 107,000,000"。
+- **结果：11/11 局 IDENTICAL**，每局 81 个分段数组全同。
+  - 代码核对：每个进程都从副本的 realpath 导入 env.py，副本以外的模块 0 个；
+  - SONIC 用的是 onnx-cpu。
+  - 原始输出 `h20check/cmp.txt`：
+
+```
+scalebfm formal cell 0 stand ep 3 alone [stand A]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments); err_cm 36.0534523197657 / 36.0534523197657, why '' / '', steps 383 / 383
+scalebfm formal cell 72 standsquat ep 3 reachable [standsquat R, corrected]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments); err_cm 19.559052227425784 / 19.559052227425784, why '' / '', steps 392 / 392
+scalebfm formal cell 144 squat ep 3 selfmodel [squat S]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments); err_cm 37.665915658291844 / 37.665915658291844, why '' / '', steps 536 / 536
+scalebfm formal cell 180 squat ep 0 reachable [squat R]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments); err_cm 9.1644739199632 / 9.1644739199632, why '' / '', steps 567 / 567
+scalebfm formal cell 4 stand ep 0 selfmodel [a fall]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments); err_cm None / None, why 'fell during label' / 'fell during label', steps 461 / 461
+heft smoke cell 0 stand ep 1000 alone [stand A]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments, reset [200001000] vs [93001000] (new - old = 107000000: True)); err_cm 56.49816104593947 / 56.49816104593947, why '' / '', steps 439 / 439
+heft smoke cell 86 standsquat ep 1000 reachable [standsquat R, corrected]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments, reset [230861000] vs [123861000] (new - old = 107000000: True)); err_cm 8.214253450544726 / 8.214253450544726, why '' / '', steps 289 / 289
+heft smoke cell 0 stand ep 1000 reachable [lost]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments, reset [230001000] vs [123001000] (new - old = 107000000: True)); err_cm None / None, why 'lost during label' / 'lost during label', steps 387 / 387
+sonic smoke cell 0 stand ep 1000 reachable [stand R, corrected]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments, reset [230001000] vs [123001000] (new - old = 107000000: True)); err_cm 4.822506586485024 / 4.822506586485024, why '' / '', steps 515 / 515
+sonic smoke cell 144 squat ep 1000 alone [squat R, corrected (+ its A, one process)]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments, reset [201441000] vs [94441000] (new - old = 107000000: True)); err_cm 12.737567068908156 / 12.737567068908156, why '' / '', steps 586 / 586
+sonic smoke cell 144 squat ep 1000 reachable [squat R, corrected (+ its A, one process)]: IDENTICAL (record fields except ['think_s', 'wall_s']: same; 81 segment arrays over 1 segments, reset [231441000] vs [124441000] (new - old = 107000000: True)); err_cm 5.366676741891433 / 5.366676741891433, why '' / '', steps 686 / 686
+h20 bit-identity check: 11 episodes, identical 11, differing 0
+```
+
+**7. 用时估计**
+- ScaleBFM（4090）：最慢的分片（第 2 片）每小时约 190 局，还差约 680 局，约 15:00Z 跑完，收尾再加十几分钟。8 个分片各自固定拿同一批（格子，组），所以快慢差得多，最快的分片约 13:00Z 就跑完了。
+- HEFT、SONIC（H20）：按冒烟每局用时，约 110 个进程小时（4090 的速度）。H20 每局比 4090 快 15–35 %，56 个进程约 1.5–2 h。
+- 所以 E2a 的结束时间由 4090 上的 ScaleBFM 决定，约 15:15Z。
+
+**8. 灵动岛**
+- `freespace-e2a` 改成只数 ScaleBFM（10368 局）；
+- 新登记 `freespace-e2a-h20`，数 HEFT 和 SONIC。HEFT 的总数在第一步选完格之前按上限 15120 算，选完以后改成实际数。
+
+**9. 预测和判据**：不改。H20 和 4090 的记录逐位相同，所以一局在哪台机器上跑不影响结果。
+
 ## 结果
 
 ## 意外
