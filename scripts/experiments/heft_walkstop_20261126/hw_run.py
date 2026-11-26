@@ -69,6 +69,13 @@ T = p0 + (s_line - r_now - MARGIN) h + lat n and the would-cross guard uses r_no
 four (the belief at the command is p0 / yaw0 either way). Every walk also records, at its settle, the feet's own reach
 (reach_own_end) and the truth toes past the line (front_past_end). Cells 11 / 12 (2.00 / 3.00 m straight) are the 2x2's.
 
+heft_p4robust_20261126 (the 2x2 review's follow-ups): per-arm overrides "jit" (the line's jitter half-width, default
+JIT), "reissue_max" (default REISSUE_MAX) and "rem_min" (default REM_MIN); cells 13-16 (1.10-1.40 m straight); and
+program "lat" (cells 17-22: pure lateral +-2 / 3 / 4 cm, + = left): spec "pre" = none (the test walk from the stand), side
+(first a 3 cm side step to the right, -n) or walk (first a 0.30 m walk ahead); after the pre walk's settle the test walk
+asks lat along n from the believed pose; the record's lat_test has the test walk's asked / moved lateral (truth), lift-offs
+and step kinds; no line (s_line 1 km), no success.
+
     cd $G; PYTHONPATH=$G:$W/src $PY hw_run.py run --arms p0,p1a,p1b,p1c,p2 --cells 0:11 --reps 0:10 --shard K --shards N
     $PY hw_run.py selftest
 """
@@ -111,7 +118,11 @@ MARKER_M, MARKER_RUN = 1.5, 3.0
 # cells: (run-up d = the distance to walk, lateral offset of the target), straight first
 CELLS = ((0.05, 0.0), (0.10, 0.0), (0.20, 0.0), (0.30, 0.0), (0.50, 0.0), (1.00, 0.0), (1.50, 0.0),
          (0.20, 0.20), (0.20, -0.20), (1.00, 0.20), (1.00, -0.20),
-         (2.00, 0.0), (3.00, 0.0))  # fmt: skip  (11 / 12: heft_reanchor2x2_20261126 only)
+         (2.00, 0.0), (3.00, 0.0),  # 11 / 12: heft_reanchor2x2_20261126
+         (1.10, 0.0), (1.20, 0.0), (1.30, 0.0), (1.40, 0.0),  # 13-16: heft_p4robust_20261126's fine cells
+         (0.0, 0.02), (0.0, -0.02), (0.0, 0.03), (0.0, -0.03), (0.0, 0.04), (0.0, -0.04))  # fmt: skip  (17-22: program lat)
+LAT_CIDS = tuple(range(17, 23))
+LAT_PRE_SIDE, LAT_PRE_WALK = 0.03, 0.30  # program lat's pre walks: a side step to the right / a walk ahead (m)
 MARKER_CID = 100
 # arms: backend, gait, program (plan | marker), re-anchor
 ARMS = {
@@ -132,6 +143,15 @@ ARMS = {
     "p2t": dict(backend="heft", gait="p0", program="plan", reanchor=True, src="true"),
     "p4": dict(backend="heft", gait="p0", program="plan", reanchor=True, aim="toe"),
     "p4t": dict(backend="heft", gait="p0", program="plan", reanchor=True, src="true", aim="toe"),
+    # heft_p4robust_20261126: P4 with the line's jitter +-5 cm (re-issues 3 / 4); P2t (measurement) with stop at 2 / 1 cm
+    "p4j": dict(backend="heft", gait="p0", program="plan", reanchor=True, aim="toe", jit=0.05),
+    "p4j4": dict(backend="heft", gait="p0", program="plan", reanchor=True, aim="toe", jit=0.05, reissue_max=4),
+    "p2tj": dict(backend="heft", gait="p0", program="plan", reanchor=True, src="true", jit=0.05),
+    "p2tj1": dict(backend="heft", gait="p0", program="plan", reanchor=True, src="true", jit=0.05, rem_min=0.01),
+    # ... and the pure lateral walks (program lat), HEFT on gait_heft, SONIC / ScaleBFM on hg_walk (their LML walk)
+    # (lhn / lhs / lhw = HEFT from the stand / after a side step / after a walk; lq* SONIC; lb* ScaleBFM)
+    **{f"l{c}{k[0]}": dict(backend=b, gait="p0" if b == "heft" else "hg", program="lat", reanchor=False, pre=k)
+       for c, b in (("h", "heft"), ("q", "sonic"), ("b", "scalebfm")) for k in ("none", "side", "walk")},
     "m050": dict(backend="heft", gait="p0", program="marker", reanchor=False),
     "m035": dict(backend="heft", gait="m035", program="marker", reanchor=False),
     "m025": dict(backend="heft", gait="m025", program="marker", reanchor=False),
@@ -285,7 +305,10 @@ class Lift:
 
 
 def cells_of(arm: str) -> list[int]:
-    return [MARKER_CID] if ARMS[arm]["program"] == "marker" else list(range(len(CELLS)))
+    prog = ARMS[arm]["program"]
+    if prog == "marker":
+        return [MARKER_CID]
+    return list(LAT_CIDS) if prog == "lat" else [c for c in range(len(CELLS)) if c not in LAT_CIDS]
 
 
 def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: dict | None, trace_dir: Path | None) -> dict:
@@ -300,6 +323,8 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
         dmin = p3.get("dmin")
     g = G.get(spec["gait"]) if backend == "heft" else None
     marker = spec["program"] == "marker"
+    latp = spec["program"] == "lat"
+    jit, rmax, rmin = spec.get("jit", JIT), spec.get("reissue_max", REISSUE_MAX), spec.get("rem_min", REM_MIN)
     d_run, lat = (MARKER_M, 0.0) if marker else CELLS[cid]
     t0 = time.time()
     dr.env.rng = np.random.default_rng([TAG, rep, 1])
@@ -407,13 +432,19 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                 reach_true, reach_low, _ = body.frontmost(dr.d, p0, h)
                 reach_own = body.reach_own(x, h)
                 reach_cur = reach_own
-                j = 0.0 if marker else float(np.random.default_rng([TAG, cid, rep, 2]).uniform(-JIT, JIT))
-                s_line = reach_true + MARGIN + d_run + j
+                j = 0.0 if marker or latp else float(np.random.default_rng([TAG, cid, rep, 2]).uniform(-jit, jit))
+                s_line = 1e3 if latp else reach_true + MARGIN + d_run + j
                 R.update(f_cmd0=f, stand=go, stand_wait_s=(f - open_f) / FPS, jitter=j, reach_true=reach_true, reach_true_low=reach_low, reach_own=reach_own,
                          s_line=s_line, p0=p0.tolist(), yaw0=yaw0, delay_f=delay)  # fmt: skip
                 if marker:
                     target = p0 + MARKER_RUN * h
                     issue(x, target, "walk")
+                elif latp:
+                    pre = spec["pre"]
+                    if pre == "none":
+                        issue(x, p0 + lat * n, "test")
+                    else:
+                        issue(x, p0 - LAT_PRE_SIDE * n if pre == "side" else p0 + LAT_PRE_WALK * h, "pre")
                 else:
                     target = p0 + (s_line - reach_own - MARGIN) * h + lat * n
                     R["target"] = [float((target - p0) @ h), float((target - p0) @ n)]
@@ -439,7 +470,10 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                 if not marker:
                     wk.update(reach_own_end=body.reach_own(x, h), front_past_end=body.frontmost(dr.d, p0, h)[0] - s_line)
                 nxt = False
-                if queue:  # the forward leg of a split
+                if latp:
+                    if wk["kind"] == "pre":  # the test walk: lat along n from where the robot believes it stands
+                        nxt = issue(x, belief(x)[0] + lat * n, "test")
+                elif queue:  # the forward leg of a split
                     nxt = issue(x, queue.pop(0), "fwd")
                 elif spec["reanchor"]:
                     if aim == "toe":  # P4: the stance the robot now stands in sets where the pelvis must go
@@ -448,7 +482,7 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
                         wk["aim_fwd"] = float((target - p0) @ h)
                     rem = target - belief(x)[0]
                     wk["rem_belief_cm"] = 100 * float(np.linalg.norm(rem))
-                    if n_re < REISSUE_MAX and float(np.linalg.norm(rem)) >= REM_MIN:
+                    if n_re < rmax and float(np.linalg.norm(rem)) >= rmin:
                         n_re += 1
                         nxt = plan_walk(x)
                 if not nxt:
@@ -471,7 +505,14 @@ def trial(dr, body: Body, rig, ps, arm: str, cid: int, rep: int, G: dict, p3: di
     if final is not None and fell is None:
         R["final"] = final
         R["settle_s"] = (f_fin - R["f_cmd0"]) / FPS
-        if marker:
+        if latp:
+            t = next((w for w in walks if w["kind"] == "test"), None)
+            if t is not None and "moved_lat" in t:
+                R["lat_test"] = dict(asked_lat=t["asked_lat"], moved_lat=t["moved_lat"], moved_fwd=t["moved_fwd"], lift=t["lift"],
+                                     ratio=t["moved_lat"] / t["asked_lat"] if t["asked_lat"] else None, kinds=t["plan"]["kinds"],
+                                     n_steps=t["plan"]["n_steps"], how=t["how"], pre=spec["pre"])  # fmt: skip
+            R["success"] = None
+        elif marker:
             R.update(trigger=trig, pelvis_past_m=final["fwd"] - MARKER_M, toes_past_m=final["front"] - MARKER_M, low_past_m=final["front_low"] - MARKER_M,
                      carry_m=None if trig is None else final["fwd"] - trig["truth_fwd"])  # fmt: skip
         else:
@@ -549,6 +590,13 @@ def report(r: dict) -> None:
         print(f"hw {arm} c{cid} r{rep}: ERROR {r['error']}", flush=True)
         return
     fin = r.get("final") or {}
+    if r.get("program") == "lat":  # heft_p4robust: the pure lateral test walk
+        t = r.get("lat_test") or {}
+        print(f"hw {arm} c{cid} r{rep} lat {100 * r['lat']:+.0f} cm pre {ARMS[arm]['pre']}: "
+              + (f"asked {100 * t['asked_lat']:+.1f} moved {100 * t['moved_lat']:+.1f} cm (fwd {100 * t['moved_fwd']:+.1f}) lift {t['lift']} steps {t['n_steps']} "
+                 f"kinds {t['kinds']} {t['how']}" if t else f"no test walk; fell {r.get('fell')} timeout {r.get('timeout')}")
+              + f" [{r['wall_s']} s]", flush=True)  # fmt: skip
+        return
     print(f"hw {arm} c{cid} r{rep} d {r['d']:.2f} lat {r['lat']:+.2f}: "
           + (f"carry {100 * r['carry_m']:+.1f} cm pelvis past {100 * r['pelvis_past_m']:+.1f} toes past {100 * r['toes_past_m']:+.1f}" if r.get("carry_m") is not None else
              f"success {r.get('success')} gap {100 * r['gap_m']:+.1f} cm cross {100 * r['cross_m']:+.1f} lat {100 * r['err_lat_m']:+.1f} fwd err {100 * r['err_fwd_m']:+.1f} "
