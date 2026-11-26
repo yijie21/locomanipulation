@@ -115,6 +115,9 @@ ARMS = {
     # SONIC (secondary rows, the coordinator 11-26): its LML walk (hg_walk.walk_frames, as lmlcmp (c)), one shot / re-anchored
     "q0": dict(backend="sonic", gait="hg", program="plan", reanchor=False),
     "q2": dict(backend="sonic", gait="hg", program="plan", reanchor=True),
+    # revision 2 (diagnostic, LML and HA): HEFT on the walk HA's task episodes give it today (hr_real: hg_walk.walk_frames,
+    # 0.20 m / 0.55 s steps, 6 cm swing) -- one of the LML-vs-HA candidates is this reference, not the simulator
+    "p0hg": dict(backend="heft", gait="hg", program="plan", reanchor=False),
     "m050": dict(backend="heft", gait="p0", program="marker", reanchor=False),
     "m035": dict(backend="heft", gait="m035", program="marker", reanchor=False),
     "m025": dict(backend="heft", gait="m025", program="marker", reanchor=False),
@@ -145,7 +148,7 @@ def gaits() -> dict:
 
 def walk(dr, backend: str, g, x: dict, ref_frame: np.ndarray, goal_xy, goal_yaw: float, pose, info: dict | None = None):
     """lc3_run.walk_ctrl with the HEFT gait `g` as a parameter (g = gait_heft.HEFT: walk_ctrl bit for bit)."""
-    if backend != "heft":
+    if backend != "heft" or g is None:  # ScaleBFM / SONIC, and HEFT on hg_walk (p0hg)
         return HW.walk_frames(dr, x, ref_frame, goal_xy, goal_yaw, pose=pose, info=info)
     G, GH = LC.heft_gait()
     if not hasattr(dr, "_heft_legs"):
@@ -159,7 +162,7 @@ def walk(dr, backend: str, g, x: dict, ref_frame: np.ndarray, goal_xy, goal_yaw:
 
 
 def hold_end_f(backend: str, g) -> int:
-    return int(round((g.hold_end_s if backend == "heft" else HW.HOLD_END_S) * FPS))
+    return int(round((g.hold_end_s if backend == "heft" and g is not None else HW.HOLD_END_S) * FPS))
 
 
 def wrap(a: float) -> float:
@@ -510,6 +513,23 @@ def rng_of(spec: str) -> list[int]:
     return [int(v) for v in spec.split(",")]
 
 
+def report(r: dict) -> None:
+    """The trial's one-line summary."""
+    arm, cid, rep = r["arm"], r["cid"], r["rep"]
+    if "error" in r:
+        print(f"hw {arm} c{cid} r{rep}: ERROR {r['error']}", flush=True)
+        return
+    fin = r.get("final") or {}
+    print(f"hw {arm} c{cid} r{rep} d {r['d']:.2f} lat {r['lat']:+.2f}: "
+          + (f"carry {100 * r['carry_m']:+.1f} cm pelvis past {100 * r['pelvis_past_m']:+.1f} toes past {100 * r['toes_past_m']:+.1f}" if r.get("carry_m") is not None else
+             f"success {r.get('success')} gap {100 * r['gap_m']:+.1f} cm cross {100 * r['cross_m']:+.1f} lat {100 * r['err_lat_m']:+.1f} fwd err {100 * r['err_fwd_m']:+.1f} "
+             f"yaw {fin.get('yaw_deg', 0):+.1f} lift {r['liftoffs']} reissue {r['n_reissue']} settle {r.get('settle_s')} s {fin.get('how')} odo {fin.get('odo_err_cm', 0):.1f} cm"
+             f" (low: gap {100 * r['gap_low_m']:+.1f} cross {100 * r['cross_low_m']:+.1f} {r['cross_low_body'].replace('robot0_', '')})"
+             if "gap_m" in r else f"fell {r.get('fell')} timeout {r.get('timeout')}")
+          + f" first: asked {100 * (r.get('first') or {}).get('asked_fwd', float('nan')):.1f} moved {100 * ((r.get('first') or {}).get('moved_fwd') or float('nan')):.1f} cm"
+          f" [{r['wall_s']} s]", flush=True)  # fmt: skip
+
+
 def run(a) -> None:
     out = Path(a.out)
     arms = a.arms.split(",")
@@ -543,18 +563,7 @@ def run(a) -> None:
             r = dict(arm=arm, cid=cid, rep=rep, error=f"{type(e).__name__}: {e}", tb=traceback.format_exc()[-800:])
         with open(fn, "a") as fh:
             fh.write(json.dumps(r, default=_js) + "\n")
-        if "error" in r:
-            print(f"hw {arm} c{cid} r{rep}: ERROR {r['error']}", flush=True)
-            continue
-        fin = r.get("final") or {}
-        print(f"hw {arm} c{cid} r{rep} d {r['d']:.2f} lat {r['lat']:+.2f}: "
-              + (f"carry {100 * r['carry_m']:+.1f} cm pelvis past {100 * r['pelvis_past_m']:+.1f} toes past {100 * r['toes_past_m']:+.1f}" if r.get("carry_m") is not None else
-                 f"success {r.get('success')} gap {100 * r['gap_m']:+.1f} cm cross {100 * r['cross_m']:+.1f} lat {100 * r['err_lat_m']:+.1f} fwd err {100 * r['err_fwd_m']:+.1f} "
-                 f"yaw {fin.get('yaw_deg', 0):+.1f} lift {r['liftoffs']} reissue {r['n_reissue']} settle {r.get('settle_s')} s {fin.get('how')} odo {fin.get('odo_err_cm', 0):.1f} cm"
-                 f" (low: gap {100 * r['gap_low_m']:+.1f} cross {100 * r['cross_low_m']:+.1f} {r['cross_low_body'].replace('robot0_', '')})"
-                 if "gap_m" in r else f"fell {r.get('fell')} timeout {r.get('timeout')}")
-              + f" first: asked {100 * (r.get('first') or {}).get('asked_fwd', float('nan')):.1f} moved {100 * ((r.get('first') or {}).get('moved_fwd') or float('nan')):.1f} cm"
-              f" [{r['wall_s']} s]", flush=True)  # fmt: skip
+        report(r)
     code_check("end")
 
 
