@@ -630,6 +630,146 @@
 - **不做的事**：不补跑，不加局，不改接触的阈值，也不改站开距离。
 - **另外两个控制器**：ScaleBFM 和 SONIC 的干净伸手如果也不到 10 下，同样记"样本不足"，按上面同样的办法报。按冒烟，它们预计都会超过 10 下。
 
+### 修订 2b：训练和评估的实现，开训之前（2026-11-26，冻结于 2026-11-26T12:46:45Z）
+
+预测和判据一行不改。写这一节时，ScaleBFM 的 d3 已经采完并通过检查（11:36:45Z），d3b 还在采；没有训练过任何正式模型。
+
+流水线测试在 H20b 上跑过两次。用的是 ScaleBFM 的 d3，加上 d3b 当时已写完的 10 个分块（864 个单手段、402 个双手段）。一次每个模型训 2 步，一次训 2000 步。测试只看了流程是否跑通、段数、剔除计数、核对结果，以及在哪些步上评估了 val，没看任何 val 或 loss 的数字。测试的输出（`train_test/`）在冻结前已删除。
+
+SONIC 的训练用同一套脚本，采集根目录换成 `selfmodel_hadata_sonic_20261126`，开训前在 [selfmodel_hadata_sonic_20261126](selfmodel_hadata_sonic_20261126.md) 里补一条说明。
+
+**1. 训练输入**
+- **单手段进训练**：每份采集的 `data/all.npz`，也就是 sx_collect 合并出来的单手段。`data_both`（双手段）和 `data_detour`（绕行段）不进训练，这和 LML 一样。
+- **剔除接触段**：`hd_touch.py`，规则照修订 1：`touch_n` > 1 N 并且 `touch_z` ≥ 0.2 m。
+  - 输出：`train/<控制器>/data/d3.npz`、`d3b.npz`，格式和 all.npz 相同。
+  - 每个数组按第一维分三类处理：每段一个值的、每行一个值的、每个参考行一个值的。第一维对不上这三类中任何一类的，整个运行失败。
+  - 三项核对，任何一项不过就停：
+    1. 计数对得上；
+    2. 用训练的读入（FDVEL 版 data.py 和四个标志）分别读输出文件和原 all.npz，剔除后留下的段，20 个派生数组逐字节相同；
+    3. 每段所在的划分不变。
+  - 剔除了多少段按控制器、采集写进结果。流水线测试里 ScaleBFM d3 是 13/3885（0.3 %）。
+- **中间点样本**（k0 = 3，照 simpledata 修订 2）：
+  - 在剔除后的文件上跑。
+  - 冻结的 `t3b_mid.py` 生成旧格式，只用来核对；`sd_mid.py` 生成训练用的 `mid_data3.npz` 和 `mid_data3b.npz`。这两步都在 `REACHWM_FDVEL` 关着时跑。
+  - 然后跑 `sd_mid_check.py` 和 `sd_split_check.py`，都要 PASS。
+- **配方 D**：d3.npz、d3b.npz、mid_data3.npz、mid_data3b.npz 四个文件。
+
+**2. 训练**
+- **读入和训练代码**：都是 simpledata 冻结的 `asrun/repo_b` 里的文件（md5 见第 5 节）。
+  - data.py 174071cb，和 fdvel 的 FDVEL 版逐字节相同；train.py 8acdaea1，models.py 0ac27f6b。
+  - H20b 上没有 /workspace，经它的 py4090b.py 启动。
+  - 标志：`REACHWM_GOAL_REF=1 REACHWM_APPROACH=1 REACHWM_QFIX=1 REACHWM_FDVEL=1`，`REACHWM_X0_REF` 关。
+- **`hd_train.py`**：走 train3b 冻结的 t3b_train.py（c7ecf581）的流程：data.load → models.tensors → train.train(E3_ensemble, frac, seed, lr 1e-3)。所有模块都从那个文件 import。只改两处：
+  1. 每 1000 步在 val 上评估一次（登记的要求；train.py 默认是 2000 步）。做法是在调用 train.train 之前，把模块里的 `EVAL_EVERY` 设成 1000。
+  2. 微调臂（T）的起点：F 的全部权重，归一化用 HA 训练划分重算。
+     - 用 models.build 在这次运行的数据和划分上建一个模型，取它的 25 个 buffer，即 5 个成员各自的 nx.mu、nx.sd、nu.mu、nu.sd 和 sd_d。代码里断言 buffer 只有这些。
+     - 其余 50 个参数全部来自 F。断言名字和形状都和 F 一致。
+     - 拼好以后存成 `init_ha_f<frac>.pt`，作为 train.train 的 init 传进去。train.train 把它的 val 记作第 0 步，作为后面要超过的基准。所以 T 选出的最佳点可能是第 0 步，也就是 F 的权重配 HA 的归一化，没有经过训练。选在哪一步照实报。
+- **两个臂共同的设置**：
+  - 学习率都是 1e-3，余弦退火，batch 1024，3 万步；
+  - 最佳 checkpoint 按 train.train 自己的 val 选：HA 的 val 划分里没摔倒的段，位置误差中位数；
+  - 数据量按重置嵌套抽取（data.py 的 frac_rank），和 train3b 相同。
+- **每个控制器 10 个训练**，按这个顺序起：
+
+  | 名字 | 臂 | 数据量 | seed |
+  |---|---|---|---|
+  | S_f1_s0、S_f1_s1、S_f1_s2 | 从头训 | 100 % | 0、1、2 |
+  | T_f1_s0、T_f1_s1、T_f1_s2 | 从 F（fdvel，seed 0）微调 | 100 % | 0、1、2 |
+  | S_f0.6_s0、T_f0.6_s0 | 两个臂 | 60 % | 0 |
+  | S_f0.3_s0、T_f0.3_s0 | 两个臂 | 30 % | 0 |
+
+  实际启动顺序是 S_f1_s0、T_f1_s0、S_f1_s1、T_f1_s1、S_f1_s2、T_f1_s2、S_f0.6_s0、T_f0.6_s0、S_f0.3_s0、T_f0.3_s0。输出在 `train/<控制器>/models_<S|T>_s<seed>/E3_ensemble_f<frac>/`。
+- **机器和占用**：
+  - H20b 的 0、1 号卡，同时最多 4 个训练（每卡 2 个），每个约 2.1 GB 显存；
+  - 每个训练 4 个 CPU 线程，nice 10。训练加合并合计不超过 20 核，每卡远低于 80 GB；
+  - 2000 步约 32 s，估计每个控制器 30–50 min；
+  - H20b 上线核对 (d) 查过：同一个训练在 H20b 和 H20 上逐位相同，H20b 两张卡之间也相同。
+- **开训的条件**：驱动脚本 `hd_train.sh` 先等两份采集都满足 FINISHED、finish_status 全为 0、check.txt 里有 "CHECK PASSED" 和 "XFER CHECK PASSED"，再等 `TRAIN_GO_2b` 文件。这个文件在本修订提交并推送以后手写。
+- **顺序**：ScaleBFM 的 d3b 一采完、检查一过就开训；HEFT 等它的 d3b；SONIC 见上。
+
+**3. 评估的定义**（脚本和 md5 在任何评估运行之前另写补记）
+- **所有评估共用的规则**：
+  - 段的筛选照 t3b_eval 的 kept：没摔倒、没跑丢、末端标签停稳。
+  - 所有段都先按修订 1 剔除接触段。xfer 记录、真实局、data_both 都一样。
+  - 误差指预测的末端手点到实际手点的距离，单位 cm。
+  - 区间是 95 %，1000 次重抽样：HA 自己的数据按重置抽，真实局按局抽。
+  - 比值和差值都在同一批重抽样上配对算。
+- **评估 1：HA 的 val 和 test_iid**
+  - 每个训练都算，格子沿用 train3b 和 simpledata 的 sd_eval：
+    - data3 的全部伸手；
+    - 第一下和接着上一下；
+    - 第一下里再分原地和先走路；
+    - data3b 的全部和各类（预抓、进入、相对）。
+  - 每格报误差的中位数和 p90，以及集成分歧的中位数。
+  - 登记里说的"HA val"指 d3 val、全部伸手、位置误差中位数。test_iid 并排报。
+  - val 也是选 checkpoint 用的划分，所以 val 上的数会略偏乐观，test_iid 不受这个影响。这和 train3b 一样。
+  - 预测表里的数这样算：
+    - **"从头训的 HA val 是 LML 上 D 的 val 的几倍"**：分子是 S_f1 三个 seed 的 HA val 平均；分母是 train3b 的 D 三个 seed 在 LML data3 val 同一格的平均，数取自 `selfmodel_train3b_20261125/<控制器>/final_val.json`。fdvel 的 F 在 LML val 同一格的数也并排报（`selfmodel_fdvel_20261126/<控制器>/eval_lml_val.txt`）。F 和 HA 模型用的是同一种 FDVEL 读入。
+    - **"微调比从头训低多少"**：1 − T/S，按 seed 配对（S_f1_sK 对 T_f1_sK），三个 seed 平均。每个 seed 的区间都按重置配对。
+    - **学习曲线**：从头训 1 − S_f1_s0 / S_f0.6_s0，以及 S_f0.3_s0 那一点。微调臂也报。
+    - **判据"微调用 30 % 的数据就追平从头训的 100 %"**：T_f0.3_s0 / S_f1_s0 ≤ 1.0 算追平，区间也报。
+    - **判据"微调 100 % 仍是 LML 上 D 的 val 的 > 1.3 倍"**：T_f1 三个 seed 的平均，除以上面那个 D 的分母。
+- **评估 2：xfer 的 HA 记录**
+  - 每个控制器 400 次重置，用冻结的 sx_eval（81f61381）。
+  - 它的 `--lml` 指向这次的 HA d3 采集，所以它算的倍数是相对 HA val。
+  - 主取法（末端停稳）和补充取法（到结束）都报。
+  - S、T 的 f1 三个 seed 都跑，F 在同一批记录上一起跑，这样可以配对。
+  - "绝对误差比 F 低"的算法：1 − 模型 / F，用记录的全部伸手、主取法，三个 seed 平均，区间按重置配对。
+- **评估 3：真实 HA 局 200–239**
+  - 局：ScaleBFM，HEFT（gait_heft），SONIC 见它自己的条目。
+  - 把每个控制器、每个任务的 data 合并成 sx_eval 能读的格式，用 S_f1_s0 和 T_f1_s0 打分。
+  - **干净伸手**：主口径没剔除，而且按上面的筛选留下的伸手。
+  - **样本量**：干净伸手不到 10 下，照修订 2a 补记第 12 条记"样本不足"。
+  - **倍数**：真实局误差中位数除以同一个模型的 HA val 中位数，按局重抽样给区间（val 固定），旁边再报 val 也一起重抽的区间。
+  - **选臂**：两个臂中真实局误差中位数较低的那个，就是判据表里"较好的那个"，hatask 用的也是它。两个臂都报。样本不足时改按 HA val 选。
+  - **轻触组**（修订 2a 第 10 节）：主口径剔除的段里，只碰到目标物体的那些，单独报误差，和干净伸手比。判定用 `hr_smoke_stats.light_target`。
+  - **范围**：起点在不在训练范围里，照 simpledata 的 sd_range 判。
+    - 三项检查：39 个量都在训练集的 0.5–99.5 % 内；在标准化 x0 空间里，到最近训练段的距离不超过训练集自身的 99 % 分位；命令目标在站姿伸手表的盒子里。三项都满足才算在范围内。
+    - 报在范围内的比例，以及范围内外的误差。
+    - hr_real 记下的 `cmd_in_range` 并排报。
+  - 都按任务和 `reach_no` 分开报。
+- **闸门 (b) 的双手段一行**（协调方 11-26 确认，只作标注，不拦着不跑）
+  - **为什么不用真实局**：真实局 200–239 里没有双手段。hr_real 每下伸手都是单手命令：`command()` 里 mode 等于那一侧，`hands` 也只有那一侧。P&PBox 的四下是左抬手、左预抓、右抬手、右预抓，两手夹箱子那一下不在真实局里。所以双手段只能用 HA 自己采的数据。
+  - **数据**：d3 和 d3b 的 `data_both`，按修订 1 剔除接触段，取 val 和 test_iid 两个划分。
+  - **怎么预测**：每只手的段照原样读，用单手模型预测。模型的输入里看不出另一只手也在动，这正是选项 1 的做法。
+  - **怎么报**：和同一划分的单手段误差并排报。
+  - **划分不重叠**：data.py 按重置号的 crc32 分桶，桶 < 8 是训练，8 是 val，9 是 test_iid；band 和 edge 按固定的命令阈值逐段留出。所以同一个重置不管在哪个文件里，都落在同一个划分。`hd_both_check.py` 在开训前实际核对一遍：两个划分的重置号和训练段（frac 1.0，60 % 和 30 % 都是它的子集）的重置号没有交集，val 和 test_iid 之间也没有交集。核对不过就停，不开训。
+    - 流水线测试里，ScaleBFM d3 加部分 d3b 的结果：val 和 test_iid 各自和训练的交集都是 0，核对 PASS。
+  - hatask 里夹紧那一下每只手的落点误差（A 对 R），写在 hatask 的修订 2。
+
+**4. 驱动脚本的阶段**（`hd_train.sh <采集根目录> <控制器> <卡> [并行数]`）
+
+| 阶段 | 内容 |
+|---|---|
+| code | 核对 asrun_train 的 MD5.check |
+| data | 等采集完成和 TRAIN_GO_2b，见第 2 节 |
+| touch | 剔除接触段（第 1 节） |
+| mid、mid check、split check | 生成中间点样本，跑两项核对（第 1 节） |
+| two-hand | 剔除 data_both 的接触段，跑 hd_both_check（第 3 节） |
+| train | 第 2 节的 10 个训练 |
+| done | 每个训练的最佳 val 写进 run.log |
+
+- 每个阶段写 `train/<控制器>/STATUS` 和 run.log。任何一步失败就写 "FAIL …" 并停下。
+
+**5. 冻结**
+- **位置**：`loco_outputs/selfmodel_hadata_20261126/asrun_train/`，FROZEN_UTC 2026-11-26T12:46:45Z，只读。
+- **核对文件**：MD5.check 9c2b0797，19 行，冻结时核对通过。
+
+| 文件 | md5 |
+|---|---|
+| hd_touch.py | 5526f05b |
+| hd_train.py | 0184f411 |
+| hd_train.sh | 3727ff63 |
+| hd_both_check.py | b88c27d9 |
+| repo_b 的 data.py / train.py / models.py | 174071cb / 8acdaea1 / 0ac27f6b |
+| repo_b 的 selfwm wm.py / env.py / fk.py | 28cae81d / 62b8856f / 721bd136 |
+| repo_b 的 py4090b.py | 23664f5d |
+| train3b 的 t3b_train.py / t3b_mid.py | c7ecf581 / 6a39671c |
+| simpledata 的 sd_mid.py / sd_mid_check.py / sd_split_check.py | 5c46a94d / bb940b71 / 86d68705 |
+| F：ScaleBFM / HEFT / SONIC 的 model.pt | baaca060 / 48329b09 / 1371ff24 |
+
+- **开发副本**：`scripts/experiments/selfmodel_hacollect_20261126/` 里的同名文件，和冻结的逐字节相同。
+
 ## 结果
 
 ## 意外
