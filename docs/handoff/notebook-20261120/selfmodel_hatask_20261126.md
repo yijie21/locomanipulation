@@ -439,6 +439,14 @@
   - 要确认两个臂都在新进程里重跑，而且前缀 A == R；
   - 成功率不读。
   - 冒烟的槽位一空出来就做，大约 10 分钟，做完再把槽位还给采集。
+  - **结果：通过**（`ht_resume_test.sh` 47f060d8，commit e6270ea8）
+    - 卡 3（槽位 3a），开发种子 P&PBox s296 r0，A,R，1 倍时限，从 asrun2 跑，加了 `PYTHONDONTWRITEBYTECODE=1`。
+    - 14:59:25Z 开跑前核对 asrun2 和它的 MD5 相同。15:02:20Z A 结束，用时 127 s。
+    - 15:03:23Z，也就是 R 跑了 63 s（A 用时的一半）时，按 pid 杀掉 ht_task.py（pid 1936452，SIGKILL）。这时 R 已存下 4 个眼，还没有数据文件。
+    - 同一条命令再跑一次。新进程把 A 的 7 个文件（跑完的记录）和 R 的 4 个文件（半截的眼）都挪进了各自的 `stale/ppbox_s296_r0_20261126T150412Z/`，然后在这个进程里重跑了 A 和 R。
+    - 新进程打印"prefix A == R: True"，两个臂的前缀都是 737 帧。两个进程都没有 Traceback。
+    - 测试结束后再查 asrun2：和 MD5 相同，没有 `__pycache__`。
+    - 成功率没读。输出在 `dev/resume_ppbox`，过程在 `resume_ppbox.test` 和 `resume_ppbox.log`。
 - **条件 3**：冒烟只跑 A，继续用 asrun。
 
 ## 偏离
@@ -452,7 +460,80 @@
   - 代码在这之前（14:18:10Z）已经冻结，冒烟在这之前（14:18:24Z）已经开跑；
   - 没有据此改任何代码、参数或规则，之后也不会。
 
+## 结果
+
+### 冒烟：ScaleBFM A，种子 380–389，两个任务，3 倍时限（2026-11-26 14:18:24Z – 15:12Z）
+
+- **代码**：从 asrun 跑（FROZEN 14:18:10Z），P&PBox 在卡 2（槽位 2b），DoubleDesk 在卡 3（槽位 3a）。两个进程都正常打印 DONE，没有 Traceback。
+- **取数**：`ht_smoke_stats.py`（ab5ffe95，commit acf83ac0），只读局记录。命令：
+
+```
+python3 ht_smoke_stats.py smoke/scalebfm_ppbox,smoke/scalebfm_doubledesk A
+```
+
+- **原始输出**（全文也存在 `loco_outputs/selfmodel_hatask_20261126/smoke/smoke_report.txt`）：
+
+```
+task        seed  furthest step  ended                              steps success  lifted search_f  max_lift_cm
+ppbox        380  search         held (shelf not seen)               2819    None    1642     1740  41.54
+ppbox        381  search         held (shelf not seen)               3473    None    None     2092  0.38
+ppbox        382  search         held (shelf not seen)               3418    None    None     2284  0.03
+ppbox        383  carry          timeout                             4350    None    None     1925  4.06
+ppbox        384  place          timeout                             4350    None    None     1777  1.67
+ppbox        385  search         held (shelf not seen)               2889    None    None     1710  1.07
+ppbox        386  carry          timeout                             4350    None    2176     2044  10.59
+ppbox        387  search         held (shelf not seen)               2814    None    None     1946  0.28
+ppbox        388  search         held (shelf not seen)               2816    None    2268     1975  7.7
+ppbox        389  carry          timeout                             4350    None    None     3011  1.56
+doubledesk   380  search         held (basket not seen)              2579    None    None     1654  0.0
+doubledesk   381  carry          HA fall                             2387    None    None     1395  0.0
+doubledesk   382  open           held (sequence done)                4152    None    None     1477  0.0
+doubledesk   383  open           held (sequence done)                4550    None    None     1467  9.13
+doubledesk   384  search         held (basket not seen)              2625    None    None     1589  0.0
+doubledesk   385  open           held (sequence done)                4366    None    None     1388  0.0
+doubledesk   386  search         held (basket not seen)              2732    None    None     1520  0.0
+doubledesk   387  carry          HA fall                             2775    None    None     1432  0.0
+doubledesk   388  carry          HA fall                             2703    None    None     1668  0.0
+doubledesk   389  open           held (sequence done)                3734    None    None     1497  10.1
+
+episodes 20; ended in error 0 (left out of the rule, revision 2 section 6): 
+doubledesk: normal ends 10; success 0; grasp-and-lift 0 (before the search 0); stuck at the search (target never found) 3; ended inside the search otherwise 0; ends: HA fall 3, held (basket not seen) 3, held (sequence done) 4
+ppbox: normal ends 10; success 0; grasp-and-lift 3 (before the search 1); stuck at the search (target never found) 6; ended inside the search otherwise 0; ends: held (shelf not seen) 6, timeout 4
+
+A's success: 0/20 -> <= 1/20: revision 1, the main metric is grasp-and-lift
+```
+
+- **列的意思**：
+  - "furthest step"是流程进到的最后一个环节：抓起（合手）→ 找货架或篮子 → 搬着走 → 放下（P&PBox）或到篮子上方（DoubleDesk）→ 张手。它只说明流程走到了哪里，不说明前面的环节都做成了。流程不用仿真真值判断抓没抓住，所以手里是空的也会接着往下走。例如 DoubleDesk s382、s385 一路走到了张手，但锤子从没离开过桌面（最大抬高 0.0 cm）。
+  - "抓起并举高"另看 `lifted` 一列：有数字就是满足了（物体比重置后高 ≥ 5 cm，连续 ≥ 50 步），数字是满足的那一步。
+  - "怎么结束"：
+    - `timeout`：3 倍时限到（P&PBox 4350 步）；
+    - `HA fall`：HA 判摔倒；
+    - `held (shelf / basket not seen)`：找货架或篮子找不到，流程先结束，保持到底；
+    - `held (sequence done)`：流程走完（张手）后保持到底，没判成功。
+  - 20 局里没有成功，没有程序报错，也没有规划失败（命令的 IK 失败）。
+
+- **找货架 / 找篮子**：
+  - P&PBox 有 6 局卡在找货架上（ha_bench 的 find_shelf 一直没看到货架）：s380、381、382、385、387、388。
+  - DoubleDesk 有 3 局卡在找篮子上：s380、384、386。
+  - 在找货架开始之前就已经满足"抓起并举高"的：P&PBox 1 局（s380，第 1642 步满足，找货架从第 1740 步开始，它后来也卡在了找货架上）。DoubleDesk 0 局。
+  - 另有 P&PBox 2 局是在找货架开始之后才满足的：s386（第 2176 步，找货架从第 2044 步开始）、s388（第 2268 步，从第 1975 步开始）。
+  - 找货架和找篮子都在抓起之后，A 和 R 跑的是同一段代码（R 只改伸手的命令），所以两组会同样碰到。不过上面这 2 局说明"抓起并举高"也可能在找货架期间才满足，找不到货架而提前结束的局，留给它满足的时间就短一些。这一点对 A 和 R 也是一样的。
+
+- **按修订 1 判**：20 局都是正常结束，没有"错误"局，所以修订 2 第 6 条不起作用。A 的 3 倍时限成功是 0/20，≤ 1/20，修订 1 触发：
+  - 主指标换成"抓起并举高"，三个控制器都换，Holm 校正也改在它上面做；
+  - HA 官方成功（3 倍时限和官方时限）照报，改作次要指标；
+  - 不停下，照常等模型训好、做每个控制器正式运行之前的代码检查，然后进正式运行（400–459，从 asrun2 跑）。
+  - 按协调方 11-26 的要求，不因为失败的原因是找货架就另作处理，find_shelf 也不调。
+- **只陈述，不改规则**：换过去的主指标在这 20 局 A 里是 3/20，P&PBox 3/10，DoubleDesk 0/10。
+
+- **槽位**：冒烟（15:12Z 前）和中断测试（15:08:27Z）都做完了，15:13:11Z 撤掉 hold_2b 和 hold_3a，两个槽位还给了采集。冒烟和中断测试的灵动岛登记都已归档。
+
 ## 意外
+
+- 冒烟 A 的 3 倍时限成功是 0/20，落在预测"0–4 局，一半以上可能 ≤ 1/20"的范围里，修订 1 触发。
+- 一半以上的局（20 局里 9 局）卡在找货架或找篮子上，比"带着东西走、放下"这些环节还多。
+- DoubleDesk 的锤子 10 局里有 8 局最大抬高是 0.0 cm。流程照样走完了 4 局，到篮子上方张了手。
 
 ## 结论与下一步
 
