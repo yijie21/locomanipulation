@@ -183,9 +183,9 @@
  },
  "bench": {
   "name": "locomanilab",
-  "root": "/workspace/code/locomanipulation-bench",
+  "root": "/workspace/code/locomanipulation-bench-loop2",
   "options": {},
   "config": {},
-  "about_root": "the bench worktree; pin a detached worktree at the adapter's commit (b96d3aa7 or later) before a real loop so ongoing work there never reaches it, as simple_art does"
+  "about_root": "the detached worktree pinned at 623d6cc9 (all bench adapters as of 2026-11-25), so ongoing work never reaches a running loop"
  }
 }

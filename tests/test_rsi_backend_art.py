@@ -181,7 +181,7 @@ def test_pick_record_is_unchanged():
 
 
 # ----------------------------------------------------------------------------------- bench adapter (TODO 49.6a)
-BENCH_REAL = Path("/workspace/code/locomanipulation-bench")
+BENCH_REAL = Path("/workspace/code/locomanipulation-bench-loop2")  # the pinned bench worktree (623d6cc9)
 needs_bench = pytest.mark.skipif(
     not (BENCH_REAL / "src/locomani/bench/simple/guard.py").exists(), reason="no bench worktree"
 )

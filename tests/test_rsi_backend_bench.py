@@ -19,7 +19,7 @@ import bench_lml as BL  # noqa: E402
 import bench_lml as LL  # noqa: E402
 import bench_simple as B  # noqa: E402
 
-BENCH_REAL = Path("/workspace/code/locomanipulation-bench")
+BENCH_REAL = Path("/workspace/code/locomanipulation-bench-loop2")  # the pinned bench worktree (623d6cc9)
 needs_lml = pytest.mark.skipif(
     not (BENCH_REAL / "src/locomani/bench/locomanilab/guard.py").exists(), reason="no bench worktree"
 )
