@@ -340,7 +340,29 @@
   - 这一段代码和已经走通的举高是同一套：`shifted(exec_cmd(...))` 加 `arm.go` 直接执行，再加上 `head()` 和张手后的保持。我逐行读过一遍，没发现问题。
   - 冒烟里这一段如果报错，按第 6 条处理：不算进判定，单独报，先修代码。
 
-*冻结*（填在下面）
+*冻结*
+- **冻结的是什么**：`loco_outputs/selfmodel_hatask_20261126/asrun/`，dev_code 原样拷过来，去掉 `__pycache__`。
+  - 冻结时间 FROZEN_UTC 2026-11-26T14:18:10Z，只读。
+  - 653 个文件各自的 md5 记在 `MD5`，MD5 文件本身的 md5 是 de311d7f。
+  - 两个链接记在 `LINKS`：repo/assets、repo/third_party，指向共享树，只读用。
+- **怎么核对**：从 asrun 跑的每一次，启动前都先跑 `ht_freeze.sh check`（`md5sum -c`）。
+- 主要文件：
+
+| 文件 | md5 |
+|---|---|
+| ht_task.py | ca022a11 |
+| ht_inv.py | 6760ac73 |
+| ht_equiv.py | 4294a235 |
+| ht_feat_check.py | a0510cd0 |
+| ht_run.sh（启动） | 9152e178 |
+| ht_checks.sh | a2b1eae9 |
+| ht_freeze.sh | be7f5df2 |
+| hr_real.py（asrun_real2 的，未改） | 7dfaa816 |
+| hc_ha.py / hc_ha.sh | 58dd6cdc / 9405b08d |
+| 对照：lc3_run.py（lmlcmp3 冻结版） | eca94321 |
+| 对照：lml_tasks.py | 246b6d8a |
+
+- **冒烟**：14:18:24Z 从 asrun 开跑。ScaleBFM A，种子 380–389，repeat 0，3 倍时限。P&PBox 在卡 2（槽位 2b），DoubleDesk 在卡 3（槽位 3a）。
 
 **6. 以"错误"结束的局不算进冒烟的判定**（协调方 11-26 定，冻结之前写定）
 - **什么叫"错误"结束**：局记录里的 `end` 以 `error` 开头，就是任务局代码自己抛了异常，Kit 留着跑下一局。正常结束只有这几种：成功、HA 判摔倒、时限到，以及流程走完后保持到底（`held`）。
