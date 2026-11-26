@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>Knowledge sharing gso-alt-seed</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><style>
+:root{--bg:#f7f8f6;--card:#ffffff;--fg:#1d2321;--muted:#5d6763;--line:#dfe4e1;--head:#eef2ef;--accent:#1f7a5a;
+--warn:#a1561b;--rate:31,122,90}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121615;--card:#1a201e;--fg:#e4ebe7;
+--muted:#9aa7a1;--line:#2c3532;--head:#222a27;--accent:#5cc79c;--warn:#e0a060;--rate:92,199,156;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#121615;--card:#1a201e;--fg:#e4ebe7;--muted:#9aa7a1;--line:#2c3532;--head:#222a27;
+--accent:#5cc79c;--warn:#e0a060;--rate:92,199,156;color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;margin:0}
+main{max-width:1760px;margin:0 auto;padding-block:24px 48px;padding-left:max(16px,env(safe-area-inset-left,0px));
+padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:28px}
+h1{font-size:22px;margin:0;text-wrap:balance}h2{font-size:18px;margin:0 0 4px;text-wrap:balance}
+h3{font-size:15px;margin:0 0 6px}
+p{margin:0;max-width:75ch}.muted{color:var(--muted)}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px;display:flex;
+flex-direction:column;gap:12px;min-width:0}
+dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0}dt{color:var(--muted)}dd{margin:0;
+min-width:0;overflow-wrap:anywhere}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;font-variant-numeric:tabular-nums;white-space:nowrap}
+th,td{border:1px solid var(--line);padding:4px 8px;text-align:right}
+th{background:var(--head);font-weight:600}
+td.l,th.l{text-align:left}td.name{white-space:normal;min-width:180px;max-width:280px}
+tr.total td{font-weight:700;background:var(--head)}tr.sub td{font-weight:600;background:var(--head)}
+td.rate{background:rgba(var(--rate),calc(var(--r)*0.35))}
+th.kept,td.kept{color:var(--muted)}
+.tag{display:inline-block;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.tag.accepted,.tag.synced{color:var(--accent)}
+ul{margin:0;padding-left:20px}li{max-width:110ch}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.warn{color:var(--warn)}
+
+main{max-width:960px}
+td.l{white-space:normal}
+p.lead{font-size:16px;line-height:1.6}
+</style><main>
+<h1>Knowledge sharing between single-grasp and bimanual-lift</h1>
+<p class="muted">RSI run gso-alt-seed, mode 3 (the two task families take turns), 2026-11-25</p>
+<section><h2>In one sentence</h2>
+<p class="lead">Only one piece of text knowledge actually worked between the two task families: what single-grasp
+learned, &ldquo;while walking, the hands knock over tall objects, so stop behind the stance first and then walk
+straight in&rdquo;. Bimanual-lift used it in iteration 4, and its acceptance went from 74/80 to 78/80, reaching the
+95 % stop line. The code sync did not actually carry anything across this time.</p></section>
+<section><h2>Results</h2>
+<div class="scroll"><table><thead><tr><th>Iteration</th><th class="l">Single-grasp acceptance (200 starts)</th>
+<th class="l">Bimanual-lift acceptance (80 starts)</th></tr></thead><tbody><tr><td>1</td><td class="l">0 &rarr; 131</td><td class="l">0 &rarr; 65</td></tr><tr><td>2</td><td class="l">131 &rarr; 149</td><td class="l">65 &rarr; 74</td></tr><tr><td>3</td><td class="l">149 &rarr; 164</td><td class="l">Candidate rejected at stage 1; stays at 74</td></tr><tr><td>4</td><td class="l">Its own iteration was voided; the version synced from bimanual-lift was accepted under the &ldquo;no worse&rdquo; rule, 164 &rarr; 164</td><td class="l">74 &rarr; 78 (this step used single-grasp&rsquo;s knowledge)</td></tr><tr><td>5</td><td class="l">Candidates rejected at stage 1</td><td class="l">Reached 95 %, stopped</td></tr></tbody></table></div>
+<p>Final results on the sealed set: single-grasp 157/200 (78.5 %), bimanual-lift 78/80 (97.5 %).</p></section>
+<section><h2>The 9 entries in the library</h2>
+<h3>Single-grasp (7)</h3><ul><li>The approach path passes through a neighbouring free object</li><li>Long box: grasp it from the end instead</li><li>Lift to the goal height and hold until the judging window ends</li><li>A near-square box slips when the jaw closes along its diagonal</li><li>The arms knock over tall objects while walking</li><li>Every side approach path is blocked</li><li>Not enough grip force on a thin rod</li></ul>
+<h3>Bimanual-lift (2)</h3><ul><li>Lift to the goal height and hold until the judging window ends</li><li>While walking in before the hug, the fingers knock over objects at the platform edge</li></ul></section>
+<section><h2>How knowledge is shared within one task category</h2><ul><li><b>Joint diagnosis of failures.</b> The Reviewer puts the failed rounds of every object into one evidence table, one row per round, and diagnoses them together.</li><li><b>Scene-graph evidence across objects.</b> The Reviewer analyzes the PAST scene-graph records of all objects: what each step was expected to do, compared with what actually happened.</li><li><b>One code structure for all objects.</b> Object names are never hard-coded. A flow made for one kind of object is chosen by its features (size, height, mass, &hellip;), so a similar object reuses it.</li><li><b>Accept only net wins.</b> A code change is kept only if it wins clearly more starts than it loses, across all objects (gains &minus; losses &ge; 3 and losses &le; gains / 3).</li></ul></section>
+</main>
