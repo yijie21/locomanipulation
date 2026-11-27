@@ -230,6 +230,78 @@
 6. **闸门脚本**（`checks/fakegate/`）：把冒烟的 A 行冒充四个任务的行，`ssd_gate.sh` 跑通，F1-0、F1(a)、F1(b) 和判定都打印出来，判 GATE FAIL（冒烟模型的 F1(a) 是 12–14 倍）。
 7. **HEFT 那一格**：simpleheft 的闸门 13:14Z 判 GATE PASS（XMovePick、XMoveBendPick），不需要在 H20b 上采 HEFT 的数据。给它留的 50 个进程用不上，本条仍然只开 90 个进程。
 
+## 修订 1（2026-11-27T00:56Z，采集完成、训练开始之前写好并提交，那时任何模型结果都还没有）
+
+**起因**：采集 11-27 00:46Z 跑完。链条在训练的第一步停了，按判据表第一行"check 没有 SIMPLE CHECK PASSED，停下查清，不训练"。没过的是 data3b 的 SIMPLE check 第 (2) 项。
+
+1. **没过的是什么**：data3b 的 data_both（双手伸手）上，有 1 个手点的"结束标签处本体 FK 和记录手点之差"是 0.252 mm，界是 0.2 mm。`data3b/check.txt`（md5 706111ce）原文：
+
+   ```
+   simple data_both: 16278 segments (sonic, data3b, perturb 0.005 rad)
+     (2) hand point, 20746 rows of 300 segments: KP vs W max 0.00000 cm; this body's FK from the recorded joints and pelvis vs W: settled end labels (10) max 0.0252 cm, all rows median 0.0410 / max 1.768 cm (moving rows: xpos one 5 ms substep behind); settle rule 0.05 m/s: the bound on the settled_2cm labels, every settled label (452) max 0.0796 cm (not checked)
+   SIMPLE CHECK FAILED (1)
+   ```
+
+   - data3b 里其他各项都过了，包括 data 和 data_detour 的第 (2) 项（0.0157 cm、0.0004 cm），以及 d3_collect 的 CHECK PASSED。
+   - data3 两行都是 PASSED（`data3/check.txt`，md5 f77a8c30）。
+
+2. **逐个手点的数**（`checks/ssd_check2_diag.py`，只读、只用 CPU，按 check 的同一套抽样重算第 (2) 项，输出 `checks/check2_diag_rev1.txt`，md5 d7c01ee6）：
+   - 五个子集一共 36 个手点：data3 的 data 10 个、data_both 4 个，data3b 的 data 10 个、data_both 10 个、data_detour 2 个。
+   - 超过 0.2 mm 的只有 1 个，就是下表标 FLAG 的那个。它不是这一段的执行手：是左手段里的右手。
+   - 手速是这只手在最后一个行间隔里的平均速度，|W[r] − W[r−1]| / 0.1 s。
+
+   ```
+   data3b/data_both: 16278 segments, 300 sampled, 5 settled_2cm end labels (the checked set)
+     seg   row      side  hand   acting  FK-W mm  hand speed cm/s (|W[r]-W[r-1]| / 0.1 s)  other hand speed cm/s  FK-W / (speed x 5 ms)  flag (ratio > 1 and FK-W > 0.2 mm)
+     15555  1071513  left  right  False    0.2523     1.358     1.804      3.71  FLAG
+     15555  1071513  left  left   True     0.1141     1.804     1.358      1.26
+      5889   403081  left  right  False    0.0057     0.086     0.181      1.33
+      5889   403081  left  left   True     0.0084     0.181     0.086      0.93
+     13406   924818  right right  True     0.0204     0.438     0.527      0.93
+     13406   924818  right left   False    0.0237     0.527     0.438      0.90
+      8791   605977  left  right  False    0.0035     0.093     0.200      0.76
+      8791   605977  left  left   True     0.0022     0.200     0.093      0.22
+     14475   997605  left  right  False    0.0079     0.168     0.168      0.94
+     14475   997605  left  left   True     0.0064     0.168     0.168      0.76
+     settled_2cm labels 5, hands 10: max of FK-W minus speed x 5 ms +0.1844 mm; hands with FK-W > 0.2 mm 1
+     max FK-W 0.2523 mm (acting hand False, its speed 1.358 cm/s); acting hands only: max 0.1141 mm; bound 0.2 mm
+   ```
+
+   - 其余四个子集的最大差：data3/data 0.1523 mm，data3/data_both 0.0356 mm，data3b/data 0.1567 mm，data3b/data_detour 0.0042 mm。全表见 `check2_diag_rev1.txt`。
+   - 36 个手点里，"差值 / (手速 × 5 ms)"大于 1 的有 11 个，但只有上面那 1 个同时超过 0.2 mm。
+
+3. **data_both 不进训练，也不进闸门**：
+   - 训练只用 data3/data、data3b/data 和两份 mid（`ssd_train.sh` 的 `DS=$D3,$D3B,$MID`）。这三份数据的第 (2) 项都过了；mid 是从 data3/data、data3b/data 派生的。
+   - 闸门用的是 SIMPLE 的真实任务局，不读采集的数据。
+   - 数据量的判据也过了（`checks/datacheck_pre.txt`，md5 af470927，和训练第一步要跑的是同一个脚本，同样的输入）：
+
+   ```
+   data3: 30000 resets, 41801 one-hand segments, usable 32184 (1.07 a reset); settled only under the relaxed rule 98.9 %; jit_pp median 0.69 cm, rms 0.24 cm; resets fell 49, lost 2972 (10.1 %); wall 64.7 s / reset median, 66.3 mean
+   data3b: 15000 resets, 33762 one-hand segments, usable 28257 (1.88 a reset); settled only under the relaxed rule 98.8 %; jit_pp median 0.68 cm, rms 0.23 cm; resets fell 53, lost 1850 (12.7 %); wall 85.2 s / reset median, 87.0 mean
+   usable one-hand segments 60441; DATA OK
+   ```
+
+4. **原因：未证实，不当成结论。**
+   - 最可能的解释是"记录的手点比关节晚一个 5 ms 子步"，再加上 SONIC 的手抖。
+   - 这一点按 0.1 s 的平均手速是 1.36 cm/s，乘 5 ms 只有 0.068 mm；0.252 mm 要求最后一个子步里的瞬时速度约 5 cm/s。这只手的 z 在最后几行里先升 1.1 mm、再降 1.3 mm，抖得比 0.1 s 一行的采样还快，看起来对得上。
+   - 但现有记录里没有逐子步的手位置，证明不了。0.2 mm 这条界是按 ScaleBFM 手速 < 2 cm/s 定的，它默认行间平均速度也能约束最后一个子步里的运动；在 SONIC 上，这个默认不一定成立。
+   - 如果确实是子步滞后，结束标签里会带进同样大小的偏移：settled_2cm 标签上最大 0.25 mm，所有停稳标签上最大约 0.8 mm（`check2_diag_all.txt` 的 FK-W 列）。和模型厘米级的误差比可以忽略，所以不处理。
+   - 协调方 11-27 定：不做重放验证。
+
+5. **处理（协调方 11-27 定）**：记作偏离，第 (2) 项的检查不改，界仍是 0.2 mm，从训练接着跑。
+   - 后面各步的判据都不变：训练和留出评估、阶段 A 和一致性、闸门、R_D、F1、评估。闸门不过就停下报协调方。
+   - 代码只改了接着跑需要的两处，都在 `scripts/experiments/selfmodel_simplesonicdata_20261126/rev1/` 下，H20b 上放在 `asrun/rev1/`：
+     - `rev1/ssd_train.sh`（md5 ace8d8b0）：冻结的 `ssd_train.sh`（b432976c）只改一处。data3 仍要两行 PASSED；data3b 只接受本修订记下的那份 `check.txt`（CHECK PASSED，md5 706111ce），别的 check.txt 一律停。
+     - `rev1/ssd_chain.sh`（md5 47129e76）：冻结的 `ssd_chain.sh`（da033561）只改两处。一是调用 `asrun/rev1/ssd_train.sh`；二是日志写到 `chain_rev1.log`，`chain.log` 留着第一次的 FAIL 行。后面各步都调冻结副本里的原脚本。
+   - `asrun/code` 不动，`CODE_MD5` 照常核对。第一次训练留下的 `train/`（只有 STATUS、run.log 和两个空目录）改名为 `train_rev0/`，新的训练写回 `train/`，后面的脚本都读这个路径。
+
+6. **更正**：我在查清的过程中报给协调方的手速算错了，大了 5 倍。
+   - 错因：W 每 0.1 s 一行（每 5 帧一行，data.py 的 `ROW_S`；C 的时间列每行加 0.1，在第 15555 段上核对过），我当成了每帧 0.02 s 一行。
+   - 我报的是 settled_2cm 标签上手速 2–9 cm/s，超界那只手 6.8 cm/s，"所有手点都在速度 × 5 ms 以内"。正确的是 0.09–1.86 cm/s、1.36 cm/s，而且后一句不成立：11 个手点的比值大于 1。
+   - 当时还说手点总数是 34 个，实际是 36 个。
+   - `checks/check2_diag.txt`（md5 5f40c26e）和 `check2_diag_all.txt`（fac16fda）是用错的 0.02 s 算的，速度列要除以 5，FK-W 列不受影响。脚本的默认值已经改成 0.1 s（`ssd_check2_diag.py`，md5 31c6ff96）。
+   - 当时据此提的方案 1（界改成 max(0.2 mm, 手速 × 5 ms)），协调方已经撤回。
+
 ## 预测修订
 
 ## 结果（贴原始输出，不转述）
