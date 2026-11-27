@@ -1159,6 +1159,154 @@ segments 120 from 40 episodes; kept 120 (fallen / lost 0, not settled 0); touchi
 - **第 5 行**（微调用 30 % 就追平从头训的 100 %）：T_f0.3_s0 / S_f1_s0 在 val 上是 1.154 [1.016, 1.264]，没追平；在 test_iid 上是 0.967 [0.845, 1.157]。
 - **第 6 行**（从头训在 xfer 记录上不比 F 准）：没有触发，S 比 F 低 39.3 % [29.1 %, 46.6 %]。
 
+### HEFT：训练和评估 1–3（2026-11-26 – 11-27）
+
+**训练**
+- H20b 卡 0、1，同时跑 4 个，用冻结的 hd_train.sh。23:00:31Z 开跑，23:43:24Z 10 个模型都训完了（`train/heft/run.log`）。
+- 起跑时 HEFT 的 d3 已在 19:02:09Z 采完，d3b 在 22:35:42Z 采完，检查都通过了。
+- 开训前的检查都是 PASS：剔除接触段（d3 3226 段里碰到 4 段，d3b 1965 段里碰到 1 段）、中间数据检查、FDVEL 中间数据检查、划分检查、双手段的剔除和划分检查。
+- 每个模型的最佳 val（run.log 原文）：
+
+```
+S_f1_s0: E3_ensemble frac 1.0: best val median 6.210 cm (837.5 s)
+T_f1_s0: E3_ensemble frac 1.0: best val median 5.824 cm (886.3 s)
+S_f1_s1: E3_ensemble frac 1.0: best val median 6.181 cm (865.2 s)
+T_f1_s1: E3_ensemble frac 1.0: best val median 6.120 cm (825.7 s)
+S_f1_s2: E3_ensemble frac 1.0: best val median 5.865 cm (890.1 s)
+T_f1_s2: E3_ensemble frac 1.0: best val median 5.798 cm (848.3 s)
+S_f0.6_s0: E3_ensemble frac 0.6: best val median 7.129 cm (827.5 s)
+T_f0.6_s0: E3_ensemble frac 0.6: best val median 5.868 cm (796.1 s)
+S_f0.3_s0: E3_ensemble frac 0.3: best val median 6.720 cm (795.9 s)
+T_f0.3_s0: E3_ensemble frac 0.3: best val median 6.025 cm (798.5 s)
+```
+
+**评估**
+- **评估 1、2**：从 eval_code 跑，在 4090 的 CPU 上，23:44:01Z – 23:45:53Z。
+  - 由等待脚本在训练的 STATUS 变成 done 时启动；
+  - xfer 记录剔除接触段 PASS：441 段里碰到 81 段，留下 360 段；
+  - 配对脚本的中位数和段数，settled、ended 两种取法都和 sx_eval 的 json 一致（True）。
+- **评估 3**：第一次合并真实局时报 FAIL，见修订 2c。之后用 eval_code2 只重跑了评估 3，01:18:33Z – 01:18:41Z，两个任务的合并都是 PASS。
+- **输出**：`loco_outputs/selfmodel_hadata_20261126/train/heft/eval/`。
+
+**评估 1（HA val，data3 部分，all | all，kept 74 段，64 次重置）**
+
+```
+== HA val (data3 val, all reaches, kept; n 74, 64 resets): position median [95 %]
+  S_f1_s0 5.74 [4.32, 7.43] | S_f1_s1 5.61 [4.68, 7.90] | S_f1_s2 5.23 [4.12, 7.75] | T_f1_s0 5.70 [4.54, 6.85] | T_f1_s1 6.05 [4.61, 6.88] | T_f1_s2 5.47 [4.71, 7.13] | S_f0.6_s0 6.59 [4.91, 8.14] | S_f0.3_s0 6.47 [5.79, 8.99] | T_f0.6_s0 5.70 [4.47, 7.28] | T_f0.3_s0 5.81 [4.86, 7.45]
+  S_f1 5.525 [4.453, 7.724] | T_f1 5.742 [4.626, 6.852] | S_f1/D_lml 1.925 [1.552, 2.692] | T_f1/D_lml 2.001 [1.612, 2.387] | 1-T/S -0.040 [-0.160, 0.154] | 1-T/S_s0 0.006 [-0.195, 0.198] | 1-T/S_s1 -0.080 [-0.181, 0.179] | 1-T/S_s2 -0.045 [-0.249, 0.201] | S 1-f1/f0.6 0.130 [-0.130, 0.309] | S 1-f1/f0.3 0.113 [-0.082, 0.360] | T 1-f1/f0.6 -0.000 [-0.176, 0.174] | T 1-f1/f0.3 0.019 [-0.174, 0.171] | T_f0.3/S_f1_s0 1.014 [0.781, 1.288]
+  LML denominators (fixed): D (train3b, seeds 0-2 mean) 2.870 cm (seeds [2.943, 2.895, 2.772]); F (fdvel seed 0) 4.032 cm (fdvel seeds [4.032, 4.041, 4.072], mean 4.048)
+```
+
+闸门 (b) 的双手段一行（val，kept，单手段 159 段、双手段 49 段）：
+
+```
+  direct: median one-hand 7.26 [6.29, 8.67] | two-hand 9.09 [4.94, 16.21] | two/one 1.252 [0.670, 2.301]
+  S_f1_s0: median one-hand 5.38 [4.59, 7.06] | two-hand 11.16 [6.65, 13.77] | two/one 2.074 [1.235, 2.728]
+  T_f1_s0: median one-hand 5.53 [4.47, 6.48] | two-hand 10.15 [5.83, 13.16] | two/one 1.834 [1.085, 2.665]
+```
+
+test_iid 上：S_f1_s0 的双手是单手的 1.306 倍 [0.798, 1.942]，T_f1_s0 是 1.346 倍 [0.971, 1.850]。
+
+**评估 2（xfer HA 记录，`eval2_pair.txt`）**
+
+```
+== keep settled (primary): all reaches, 151 kept of 360 record segments, 119 resets
+  median cm [95 %]: S_f1_s0 5.897 [4.997, 6.953] | S_f1_s1 6.030 [5.156, 7.608] | S_f1_s2 6.141 [5.000, 7.768] | T_f1_s0 4.999 [4.595, 6.126] | T_f1_s1 5.016 [4.448, 6.023] | T_f1_s2 5.087 [4.230, 6.191] | F 7.535 [6.517, 8.519]
+  1 - S/F: mean over seeds 0.201 [0.051, 0.312]; per seed s0 0.217 [0.051, 0.315], s1 0.200 [0.023, 0.315], s2 0.185 [0.022, 0.329]
+  1 - T/F: mean over seeds 0.332 [0.201, 0.419]; per seed s0 0.337 [0.196, 0.406], s1 0.334 [0.204, 0.426], s2 0.325 [0.189, 0.433]
+== keep ended (supplement): all reaches, 208 kept of 360 record segments, 165 resets
+  1 - S/F: mean over seeds 0.095 [-0.061, 0.237]; per seed s0 0.095 [-0.075, 0.259], s1 0.066 [-0.082, 0.230], s2 0.123 [-0.055, 0.252]
+  1 - T/F: mean over seeds 0.247 [0.112, 0.366]; per seed s0 0.242 [0.111, 0.363], s1 0.255 [0.105, 0.378], s2 0.245 [0.101, 0.364]
+```
+
+**评估 3（真实 HA 局，eval_code2，`eval3.txt`）**
+
+```
+segments 229 from 80 episodes; kept 219 (fallen / lost 0, not settled 10); touching 223; clean 5; light-touch kept 0 (touching kept without a contact record 0)
+HA val (d3 val, all reaches, kept): 74 segments from 64 resets; models S_f1_s0 .../train/heft/models_S_s0/E3_ensemble_f1, T_f1_s0 .../train/heft/models_T_s0/E3_ensemble_f1
+
+== clean reaches (kept, not touching): 5 < 10: 样本不足 (no ratio; the arm by HA val)
+  HA val median: S_f1_s0 5.735 cm; T_f1_s0 5.703 cm
+  S_f1_s0 errors (cm, each clean reach): [5.039999961853027, 5.5, 5.599999904632568, 6.769999980926514, 6.849999904632568]
+  T_f1_s0 errors (cm, each clean reach): [3.8399999141693115, 4.190000057220459, 4.300000190734863, 4.610000133514404, 4.760000228881836]
+  arm chosen: T_f1_s0 (by HA val (样本不足))
+  task doubledesk: n 5; S_f1_s0 median 5.60 cm; T_f1_s0 median 4.30 cm
+  task ppbox: no clean reaches
+  reach_no 0: n 5; S_f1_s0 median 5.60 cm; T_f1_s0 median 4.30 cm
+  reach_no 1: no clean reaches
+== light-touch group (revision 2a section 10; kept, touching, light_target): 0
+  doubledesk: no light-touch reaches (touching kept without a record 0; clean n 5)
+  ppbox: no light-touch reaches (touching kept without a record 0; clean n 0)
+== range (sd_range's checks): training set 33869 segments (2097 resets) from .../train/heft/data/d3.npz, d3b.npz, mid_data3.npz, mid_data3b.npz
+  HA val (reference) inside: joints 91.9 %, pelvis 100.0 %, hands 98.6 %, neighbour 100.0 %, table 100.0 %, range (39) 90.5 %, all three 90.5 %
+  clean: 5 reaches from 5 episodes
+    all three             : inside 100.0 % [100.0, 100.0] (5 in / 0 out); error in / out S_f1_s0 5.60 / nan cm; T_f1_s0 4.30 / nan cm
+    cmd_in_range (hr_real): inside 100.0 % [100.0, 100.0] (5 in / 0 out); error in / out S_f1_s0 5.60 / nan cm; T_f1_s0 4.30 / nan cm
+== contacts and pelvis displacement (every merged segment; descriptive)
+  doubledesk reach_no 0: n 40 (kept 39); touching 35 {'own hand': 16, 'other hand': 19, 'body': 0}, light-touch 0 (no record 0); peak force median 15.3 N, max 70.0 N; touched body height median 0.72 m; pelvis forward 8.3 [4.8, 24.3] cm, lateral -2.5 [-5.7, 0.7] cm
+  doubledesk reach_no 1: n 40 (kept 39); touching 40 {'own hand': 31, 'other hand': 8, 'body': 1}, light-touch 0 (no record 0); peak force median 46.8 N, max 150.2 N; touched body height median 0.76 m; pelvis forward -4.1 [-15.8, 2.2] cm, lateral -2.3 [-9.8, 1.2] cm
+  ppbox reach_no 0: n 77 (kept 73); touching 76 {'own hand': 26, 'other hand': 41, 'body': 9}, light-touch 0 (no record 0); peak force median 19.4 N, max 827.8 N; touched body height median 0.72 m; pelvis forward 9.2 [-10.4, 24.2] cm, lateral -2.0 [-35.3, 5.3] cm
+  ppbox reach_no 1: n 72 (kept 68); touching 72 {'own hand': 41, 'other hand': 10, 'body': 21}, light-touch 0 (no record 0); peak force median 54.5 N, max 3532.7 N; touched body height median 0.72 m; pelvis forward -6.7 [-51.6, 8.2] cm, lateral -3.6 [-46.2, 22.8] cm
+```
+
+- 合并那几行（7 局 "left out" 的原文）和修订 2c 测试里的相同，这里不重复。长路径换成了 `...`。range 只摘了"all three"和 cmd_in_range 两行，五项单独的检查也都是 5/5 在内，全文在 `eval3.txt`。
+- **样本不足**（修订 2a 补记第 12 条）：干净伸手只有 5 下（都在 DoubleDesk 的 reach_no 0），所以：
+  - 不算倍数，也不按判据表的真实局那几行下结论；
+  - 改报接触计数（上面最后一节）：229 段里 223 段碰到东西，P&PBox 两下伸手几乎全碰（76/77、72/72）；
+  - 轻触组是空组（kept 以后 0 段），这一行照样保留。
+- **选臂**：照规则按 HA val 选，T_f1_s0 5.703 cm 比 S_f1_s0 5.735 cm 低，选 T_f1_s0（models_T_s0，model.pt 的 md5 是 0cced537）。
+
+**修订 2c 要求的两项核对**（`hdreal_lost_check.py` 704e4504，在评估 3 之后对合并文件跑，只读）
+
+```
+merged P&PBox file .../train/heft/eval/real/heft_ppbox/data/all.npz: 149 segments
+eval3.txt: heft_ppbox: 40 episodes (seeds 200-239, 40 seeds), 0 without segments, 149 segments merged; keys left out (not in every episode): []; segments left out (a lost episode's last reach, eval_code2): 7
+eval3.txt: REAL MERGE heft_ppbox PASS
+eval3.txt: segments 229 from 80 episodes; kept 219 (fallen / lost 0, not settled 10); touching 223; clean 5; light-touch kept 0 (touching kept without a contact record 0)
+ppbox_s208_r0 (reset 95000080, end lost, 3 logged reaches): lost reach chain 3 in the merged file: False; merged: chain 0 kept, touching; chain 1 kept, touching; chain 2 not settled
+ppbox_s210_r0 (reset 95000100, end lost, 3 logged reaches): lost reach chain 3 in the merged file: False; merged: chain 0 kept, touching; chain 1 kept, touching; chain 2 kept, touching
+ppbox_s211_r0 (reset 95000110, end lost, 2 logged reaches): lost reach chain 2 in the merged file: False; merged: chain 0 not settled; chain 1 kept, touching
+ppbox_s217_r0 (reset 95000170, end lost, 3 logged reaches): lost reach chain 3 in the merged file: False; merged: chain 0 kept, touching; chain 1 kept, touching; chain 2 kept, touching
+ppbox_s225_r0 (reset 95000250, end lost, 2 logged reaches): lost reach chain 2 in the merged file: False; merged: chain 0 kept, touching; chain 1 kept, touching
+ppbox_s229_r0 (reset 95000290, end lost, 1 logged reaches): lost reach chain 1 in the merged file: False; merged: chain 0 kept, touching
+ppbox_s231_r0 (reset 95000310, end lost, 3 logged reaches): lost reach chain 3 in the merged file: False; merged: chain 0 not settled; chain 1 kept, touching; chain 2 kept, touching
+1 the 7 lost reaches absent from the merged file: 7/7
+2 the 7 episodes' earlier segments merged 17: clean 0; left out by the filters: fallen / lost 0, not settled 3, kept but touching 14 (kept 14)
+LOST CHECK PASS
+```
+
+- **读法**：
+  1. 这 7 局跑丢的那一段，7/7 都不在合并文件里，所以也没进评估 3；
+  2. 它们 lost 之前的 17 段都进了合并，照常过筛选：没摔倒也没跑丢的 17 段里，3 段末端没停稳，14 段 kept 但碰到东西，干净伸手 0 段。
+  - 所以 HEFT 的 5 下干净伸手都不来自这 7 局。
+
+**和预测对照（HEFT，100 % 数据，seed 0–2 的平均，val）**
+
+| 指标 | 预测 | 结果 | 落在哪 |
+|---|---|---|---|
+| 从头训：HA val 是 LML 上 D 的 val 的几倍 | 1.5–2.4 倍 | 1.925 [1.552, 2.692] | 在预测内 |
+| 微调：HA val 比从头训低 | 10–35 % | −4.0 % [−16.0 %, 15.4 %] | 低于预测 |
+| xfer：从头训比 F 低 | 0–30 % | 20.1 % [5.1 %, 31.2 %] | 在预测内 |
+| xfer：微调比 F 低 | 15–45 % | 33.2 % [20.1 %, 41.9 %] | 在预测内 |
+| 学习曲线：从头训 60 % → 100 % 再降 | 8–20 % | 13.0 % [−13.0 %, 30.9 %] | 在预测内，区间很宽 |
+| 真实局：预测误差是 HA val 的几倍 | 1.0–2.5 倍 | 样本不足，不算 | — |
+| 真实局：起始状态在范围内的比例 | ≥ 70 % | 5/5（100 %），只有 5 下 | 满足，但只有 5 下 |
+
+- HEFT 的 val 只有 74 段（ScaleBFM 是 170 段），区间都比 ScaleBFM 的宽。
+
+**对照判据表**
+- **真实局那三行**（≤ 1.3 倍、1.3–1.5 倍、> 1.5 倍）：样本不足，不下结论（修订 2a 补记第 12 条）。闸门照算照报：
+  - (a) 干净伸手 5 下，不到 10 下，没过；
+  - (b) 样本不足，没有倍数；
+  - (c) 5/5 在范围内。
+  - 按用户 11-26 的决定，闸门只作标注，hatask 照跑。
+- **学习曲线那一行**（从头训 60 % → 100 % 仍降 ≥ 10 %，而且微调 100 % 仍是 LML 上 D 的 val 的 > 1.3 倍）：按点估计两个条件都满足（13.0 %；2.001 倍 [1.612, 2.387]），触发。13.0 % 的区间是 [−13.0 %, 30.9 %]。
+  - 协调方 11-26 对 ScaleBFM 同一行定了推迟：不采第二批，不做多环境采集器，理由是范围只有 3×3 表、HA 正式局是关键路径。HEFT 照同样处理，等用户在正式结果出来以后决定。
+- **"微调用 30 % 就追平从头训的 100 %"那一行**：T_f0.3_s0 / S_f1_s0 在 val 上是 1.014 [0.781, 1.288]。点估计差 1.4 %，区间跨 1，分不开。
+  - 判据没写"追平"的数值界线，所以照实记成"分不开"，不据此下"以后先微调"的结论。
+  - val 只有 74 段。
+- **"从头训在 xfer 记录上不比 F 准"那一行**：没触发，S 比 F 低 20.1 % [5.1 %, 31.2 %]。
+
 ## 意外
 
 - （ScaleBFM 评估）从头训的 HA val 误差是 LML 上 D 的 2.9 倍，高于预测的 1.7–2.6 倍。微调只比从头训低 4.5 %，区间跨 0，低于预测的 10–35 %。
@@ -1166,6 +1314,9 @@ segments 120 from 40 episodes; kept 120 (fallen / lost 0, not settled 0); touchi
   - 双桌 13.37 cm，是 val 的 2.11 倍；搬箱子 2.93 cm，是 val 的 0.46 倍。
   - 差别主要在抬手中间点（reach_no 0）：双桌上 S 14.08 cm、T 7.32 cm；搬箱子上 S 2.91 cm、T 7.32 cm。
   - T 在两个任务上差不多（1.12 倍、0.95 倍）。
+- （HEFT 评估）微调没有比从头训好：1 − T/S 是 −4.0 % [−16.0 %, 15.4 %]，预测是 10–35 %。ScaleBFM 是 4.5 %，也低于预测。
+- （HEFT 评估 3）真实局 229 段里 223 段碰到东西，干净伸手只有 5 下，全在 DoubleDesk 的抬手中间点。修订 2a 补记第 11 条的预测是"0–25 下，最可能不到 10 下"，落在里面。
+- （HEFT 评估 3）P&PBox 40 局真实局里有 7 局在伸手途中跑丢。评估代码没预料到这种情况，合并核对报 FAIL（修订 2c）。
 
 - （开发阶段，看正式数据之前）HEFT 在空地上走路只走到要求长度的 0.57–0.81 倍（修订 2a 第 7 节的朝向诊断），短段几乎不迈步，伸手时骨盆在两脚不动的情况下前移，然后补步（修订 2a 第 3、13、14 节）。
 - （开发阶段，看正式数据之前）HEFT 走 hg_walk 不迈步，主要原因是走路参考给错了：LML 的任务局给 HEFT 用的是 gait_heft（heft_walkstop 在 LML 复现）。换成 gait_heft 以后，冒烟里 6 局都走到了站位，误差 0.004–0.092 m；但 18 下伸手全都碰到东西（修订 2a 补记第 5、11、12 条）。
