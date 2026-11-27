@@ -392,6 +392,104 @@ GATE FAIL
     - 因此闸门只能靠 XMoveBendPick 的 F1(a) ≤ 1.3 过。
     - 全体的诊断是 1.08 倍，但 XMoveBendPick 要下蹲。我估它的 F1(a) 在 0.9–1.5 倍，GATE PASS 的把握约 55 %。
 
+## 修订 3（2026-11-27T02:17Z，复核以后、两次重复运行开跑之前写好并提交）
+
+**起因**：
+- 复核第 3 节建议重复跑。同一批局，本条的 A 和主指标的 SONIC A 有 39/120 局结果不同，论文需要知道结论稳不稳。
+- 协调方 11-27 定：跑。顺序是先写这一节并提交，再跑任何局。
+- 写这一节时已经知道第一次运行（下称 C）的全部结果，包括 4×2 表和复核。所以这一节的预测是看过 C 以后写的。
+
+1. **两条新的浮点路径**，各跑一遍 A（连同 AL）和 R_D：
+   - **G**：`REACH_SONIC_NETS=gpu`，SONIC 的三个网络（encoder、decoder、planner）都放在作业自己的卡上，走 CUDA。主指标就是这样跑的。
+   - **T**：`REACH_SONIC_NETS=allcpu`，`REACH_SONIC_THREADS=2`，即 onnxruntime 每个会话 2 个线程。C 是 1 个线程。
+   - 共同的设定：
+     - 都在 H20b 上跑，A 和 R_D 同机配对；
+     - 代码是 `asrun/code2`，walked 置 0 不变；
+     - D_S、R 规则、局号（四个任务各 0–29，level 0–2）、种子、记录的 arm id 都不变；
+     - 进程数和 C 一样，8 张卡每卡 5 个。T 每个进程 2 个线程，约 80 核，在 140 核以内。
+   - 先跑 G，再跑 T，由一个链条接着跑，见第 6 条。
+   - 输出目录：`run_g/`、`gate_g/`、`f1_g/`、`eval_g.txt`；`run_t/`、`gate_t/`、`f1_t/`、`eval_t.txt`；合并结果在 `merge.txt`、`merge.json`。
+2. **登记前核对**（只调用网络本身，不跑任何局）。脚本 `rev3/ort_check.py`（md5 fbc28b9e），输出 `checks/rev2/ort_check.txt`（md5 2ac670c3）。给三个网络喂同一组随机输入，比较 1、2、4 个线程和 GPU 的输出：
+
+   ```
+   onnxruntime 1.23.2 providers ['TensorrtExecutionProvider', 'CUDAExecutionProvider', 'CPUExecutionProvider']
+   encoder: inputs [('obs_dict', [1, 1751], 'tensor(float)')]
+     cpu 2 threads  vs cpu 1 thread: bitwise equal True, max |diff| 0.000e+00
+     cpu 4 threads  vs cpu 1 thread: bitwise equal True, max |diff| 0.000e+00
+     gpu            vs cpu 1 thread: bitwise equal True, max |diff| 0.000e+00
+   decoder: inputs [('obs_dict', [1, 994], 'tensor(float)')]
+     cpu 2 threads  vs cpu 1 thread: bitwise equal True, max |diff| 0.000e+00
+     cpu 4 threads  vs cpu 1 thread: bitwise equal True, max |diff| 0.000e+00
+     gpu            vs cpu 1 thread: bitwise equal False, max |diff| 1.013e-06
+   planner: inputs [('context_mujoco_qpos', [1, 4, 36], 'tensor(float)'), ('target_vel', [1], 'tensor(float)'), ('mode', [1], 'tensor(int64)'), ('movement_direction', [1, 3], 'tensor(float)'), ('facing_direction', [1, 3], 'tensor(float)'), ('random_seed', [1], 'tensor(int64)'), ('has_specific_target', [1, 1], 'tensor(int64)'), ('specific_target_positions', [1, 4, 3], 'tensor(float)'), ('specific_target_headings', [1, 4], 'tensor(float)'), ('allowed_pred_num_tokens', [1, 11], 'tensor(int64)'), ('height', [1], 'tensor(float)')]
+     cpu 2 threads  vs cpu 1 thread: bitwise equal False, max |diff| 8.106e-04
+     cpu 4 threads  vs cpu 1 thread: bitwise equal False, max |diff| 7.856e-04
+     gpu            vs cpu 1 thread: bitwise equal False, max |diff| 5.111e+00
+   ```
+
+   - T 只改变 planner 的输出（差约 8e-4）。encoder 和 decoder 在 1、2、4 个线程下逐位相同。
+   - G 改变 decoder（差 1e-6）和 planner 的输出。
+   - 所以两条路径都会改变浮点计算，至少 planner 会变。planner 在随机输入上的 GPU 差是 5.1，这组随机输入不代表真实状态，只说明两边不同。
+
+   每条路径自己是否确定：同一输入，3 个新会话各调 20 次。脚本 `rev3/ort_det.py`（md5 5cc1c0cc），输出 `checks/rev2/ort_det.txt`（md5 62f82746）：
+
+   ```
+   encoder  cpu 1 thread  : 60 calls (3 sessions x 20) bitwise identical: True
+   encoder  cpu 2 threads : 60 calls (3 sessions x 20) bitwise identical: True
+   encoder  gpu           : 60 calls (3 sessions x 20) bitwise identical: True
+   decoder  cpu 1 thread  : 60 calls (3 sessions x 20) bitwise identical: True
+   decoder  cpu 2 threads : 60 calls (3 sessions x 20) bitwise identical: True
+   decoder  gpu           : 60 calls (3 sessions x 20) bitwise identical: True
+   planner  cpu 1 thread  : 60 calls (3 sessions x 20) bitwise identical: True
+   planner  cpu 2 threads : 60 calls (3 sessions x 20) bitwise identical: True
+   planner  gpu           : 60 calls (3 sessions x 20) bitwise identical: True
+   ```
+
+   三条路径都是确定的，所以每次运行内部的"A = AL"检查仍然成立。
+3. **每次运行的检查**（照原来的，加一条）：
+   - 阶段 A 之后：
+     - 每个作业退出码都是 0；
+     - A = AL 120/120（同样去掉 `wall_s` 等字段）；
+     - AL 的 plan_same 全为真；
+     - AL 的在线 = 离线 < 1e-4 m；
+     - **加的一条**：A 在 120 局上的阶段记录不能和 C 的 A 全部相同，否则说明浮点路径没有改变。
+     - 任何一项不过，链条就在这次运行的 R_D 之前停下，报协调方。不另想办法。
+   - 阶段 R 之后：
+     - 每个作业退出码都是 0；
+     - R_D 的在线 = 离线 < 1e-4 m，不过就在评估之前停下。
+   - 共享树的检查照旧。
+   - **闸门**：每次运行都照原规则（`rev2/ssd_gate.sh`）算一遍，并报出来，但不作为停下的条件，因为协调方定了每次运行都跑 R_D。
+4. **怎么报**：
+   - 每次运行单独报一张 4×2 表（四个任务 × 两种时限，A → R_D），加上它自己的配对检验（`ssd_eval.py` 原样，也就是 eval_g.txt、eval_t.txt）。
+   - 三次运行（C、G、T）合并：`rev3/ssd_merge.py`。
+     - 每个布局（任务, index）把 3 个 level × 3 次运行的成功数加起来，一个布局得一个符号，40 个布局做精确的双侧符号检验。
+     - 合并的成功数是每组 360 局，按任务和两种时限分别报。
+     - 区间按布局重抽 4000 次，每次调用用自己的 seed 0；McNemar 一起报，不作判据。
+   - 只报这些。三次运行都报，不挑某一次。
+5. **判据**（协调方定）：
+   - **BendPick 的 +10**：两次新运行里 45 s 的 R_D − A 都 ≥ +5，才算"复现"；否则论文里不提这个差。
+   - **TabletopGrasp 的 −5**：两次新运行里 45 s 的 R_D 都少于 A，才算"复现"。官方时限的数在旁边报。
+   - **合计**：照原判据表读，不另加判据。主比较读三次合并的布局符号检验（p < 0.05 才算成立），每次运行各自的检验在旁边报。
+   - **归属**：照原规则，每次运行各自按闸门和 F1 判；合并结果不另定归属规则。
+6. **代码**（`scripts/experiments/selfmodel_simplesonicdata_20261126/rev3/`，H20b 上放在 `asrun/rev3/`）：
+   - `rev3/ssd_run.sh`（md5 6137c976）：`rev2/ssd_run.sh` 改了三处：运行目录取自 `SSD_RUN`（必须给）；网络放在哪取自 `SSD_NETS`（默认 allcpu，和以前一样）；线程数取自 `SSD_THREADS`（默认 1，和以前一样）。阶段那一行日志会记下这两个设定。
+   - `rev3/ssd_chain3.sh`（md5 f98c6803）：照冻结链条的第 2–7 步，依次跑 G、T，再合并。日志写到 `chain_rev3.log`。
+   - `rev3/ssd_merge.py`（md5 f47ea0f6）：只读。用 C 当两次跑了一遍，作为代码测试，结果没有记录。
+   - 闸门和 F1 用 `rev2/ssd_gate.sh` 和 `rev2/ssd_f1.sh` 原样，只是传入不同的目录。
+7. **预测**（看过 C 以后、G 和 T 一局都没跑之前写的）：
+   - 每次新运行 A 在 45 s 内的合计：22–38/120。
+   - 每次新运行 45 s 的合计差 R_D − A：−6 到 +10；官方时限：−10 到 +4。
+   - 每次新运行 BendPick 的差（45 s）：+1 到 +12。两次都 ≥ +5、算"复现"的把握约 45 %。
+     - 依据：R_D 把 BendPick 的手掌偏差减了一半，这一点像是稳定的；但 C 的 A 偏低（6，主指标是 11）。
+   - 每次新运行 TabletopGrasp 的差：−9 到 +1。两次都少、算"复现"的把握约 65 %。
+     - 依据：手掌偏差翻倍、碰桌子的伸手变多，这一点像是稳定的。
+   - 三次合并：45 s 的布局符号检验 p < 0.05 的把握约 25 %；官方时限不显著的把握约 85 %。
+   - 闸门：每次新运行里 XMoveBendPick 过闸门的把握各约 40 %。在主指标那次的起点上，它的 F1-0 是 68.3 %。
+8. **跑完以后**：
+   - 原始输出贴进条目，然后提交。
+   - 再做一次简短的独立复核，只核数字和"有没有挑运行"。
+   - 不碰 PPT 和 rss_status。
+
 ## 预测修订
 
 ## 结果（贴原始输出，不转述）
