@@ -231,6 +231,32 @@ class LoopProcedure(unittest.TestCase):
         with mock.patch.object(self.lp, "family_spec", return_value={}):  # a family without `scene`: the ADT file
             self.assertEqual(self.lp.prompt_vars()["SCENE_FILE"], self.lp.SCENE_FILE)
 
+    def test_the_prompts_pool_sizes_are_counted_from_the_pools(self):
+        """TODO 55.2: `N_DIAG` / `N_ACCEPT` are the pools' sizes, not the family file's `pools.*.n` or 50 / 60, with
+        the per-task count beside each; the Reviewer's prompt says them where it said "the 30 rounds"."""
+        from unittest import mock
+
+        self.lp.configure("gso_all_s3")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            diag, accept = root / "pool_diag", root / "accept"
+            diag.mkdir()
+            accept.mkdir()
+            for lab in ("a_s0", "a_s1", "a_s2", "b_s0", "b_s1", "b_s2", "b_s3"):
+                (diag / f"{lab}.json").write_text("{}")
+            (diag / "_meta.json").write_text("{}")  # not a start
+            for lab in ("a_s0", "a_s1", "b_s0", "b_s1"):
+                (accept / f"{lab}.json").write_text("{}")
+            with mock.patch.multiple(self.lp, LOOP=root, accept_pool=lambda: accept):
+                v = self.lp.prompt_vars()
+                text = self.lp.fill((HERE / "prompts" / "reviewer.md").read_text(), **v)
+            with mock.patch.multiple(self.lp, LOOP=root / "none", accept_pool=lambda: root / "none"):
+                none = self.lp.prompt_vars()
+        self.assertEqual((v["N_DIAG"], v["N_DIAG_TASK"], v["N_ACCEPT"], v["N_ACCEPT_TASK"]), (7, "3-4", 4, "2"))
+        self.assertIn("across the 7 rounds (3-4 per task) is a filter on this table rather than 7 `past.py show`", text)
+        self.assertNotIn("the 30 rounds", text)
+        self.assertEqual((none["N_DIAG"], none["N_DIAG_TASK"]), (0, "0"))  # no pool drawn yet: no number made up
+
 
 class RunFlags(unittest.TestCase):
     """`loop.py run` takes every TODO 32 switch on its command line (the first --scoped-review never reached the

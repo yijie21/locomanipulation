@@ -431,20 +431,36 @@ SCENE_NOTE = (
 )
 
 
+def per_task(labels: list[str]) -> str:
+    """How many starts each task has in a pool, as the prompts say it: "4", or "3-4" when the tasks differ."""
+    counts: dict[str, int] = {}
+    for x in labels:
+        counts[task_of(x)] = counts.get(task_of(x), 0) + 1
+    if not counts:
+        return "0"
+    lo, hi = min(counts.values()), max(counts.values())
+    return str(lo) if lo == hi else f"{lo}-{hi}"
+
+
 def prompt_vars() -> dict:
     """What a family sets in the role prompts (TODO 31): the plan the roles read, a note on the seed's skills, the scene
     the prompts' first line names (`scene_note`, TODO 38.10), its scene file (`scene`; the Reviewer's prompt named the
     ADT apartment's to every family until 2026-11-06), and the pool sizes. A family without them gets the text the
-    prompts had before."""
+    prompts had before. The pool sizes are counted from the pools the roles actually see (TODO 55.2, user 2026-11-27):
+    the diagnostic pool under the loop and the acceptance pool the gate judges on (`accept_pool`, the redrawn one when
+    tasks are parked) -- until then the prompts said the family file's `pools.*.n`, or 50 / 60 when it had none,
+    whatever the pools held -- with the per-task count beside each (`N_DIAG_TASK`, `N_ACCEPT_TASK`)."""
     spec = family_spec()
-    pools = spec.get("pools") or {}
+    diag, accept = B.pool_labels(LOOP / "pool_diag"), B.pool_labels(accept_pool())
     return dict(
         PLAN=PLAN,
         SKILLS_NOTE=spec.get("skills_note") or SKILLS_NOTE,
         SCENE_NOTE=spec.get("scene_note") or SCENE_NOTE,
         SCENE_FILE=REPO / spec["scene"] / "scene_meta.json" if spec.get("scene") else SCENE_FILE,
-        N_DIAG=(pools.get("diag") or {}).get("n", 50),
-        N_ACCEPT=(pools.get("accept") or {}).get("n", 60),
+        N_DIAG=len(diag),
+        N_DIAG_TASK=per_task(diag),
+        N_ACCEPT=len(accept),
+        N_ACCEPT_TASK=per_task(accept),
         CANDIDATES_NOTE=CANDIDATES_NOTE.replace("{K}", str(CANDIDATES)) if CANDIDATES > 1 else "",
         LIBRARY=(LIBRARY_NOTE if (HERE / "experience" / "INDEX.md").exists() else "")
         + (KNOWLEDGE_NOTE if (HERE / "knowledge" / "KNOWLEDGE.md").exists() else "")
