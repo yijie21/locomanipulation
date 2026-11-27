@@ -93,7 +93,8 @@ latexmk -pdf -interaction=nonstopmode main.tex   # TeX Live 2026，pdfTeX
 
 ## 在新机器上接着写
 
-1. clone 本仓库，切到 `sonic-selfmodel` 分支，进 `rss2027_paper/`。
+1. `git clone -b selfwm git@github.com:yijie21/locomanipulation.git`，进 `rss2027_paper/`。
+   - 远程分支是 `selfwm`；本机的 `sonic-selfmodel` 分支一直推到 `origin/selfwm`（`git push origin HEAD:selfwm`）。
 2. 想让 Claude Code 带上原来的规则，把 `handoff/memory/*.md` 拷到新机器对应项目的 memory 目录（`~/.claude/projects/<项目路径>/memory/`）。
    - 记忆里写的路径 `~/Research/rss/paper` 换成本文件夹。
 3. 先读 `pending_updates.md` 的最后几节，再读 `handoff/memory/rss-paper-workflow.md`。
