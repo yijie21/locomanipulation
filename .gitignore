@@ -40,3 +40,5 @@ MUJOCO_LOG.TXT
 # the loop's changed_files() never sees it as an Engineer's stray
 scripts/rsi/knowledge/HITS.md
 scripts/rsi/knowledge/KNOWLEDGE.md
+
+assets/logistics_manufacturing_samsung_assets/
