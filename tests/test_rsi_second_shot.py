@@ -168,7 +168,7 @@ class SecondShot(unittest.TestCase):
             with (
                 mock.patch.multiple(lp, STATE=st, LOOP=root, FAMILY="fam", CANDIDATES=3, ENGINEER_LATE_MIN=0,
                                     SECOND_SHOT=False, claude=fake_claude, ledger=rows.append,
-                                    transcript_leaks=lambda s: [], revert_strays=lambda b: [],
+                                    transcript_leaks=lambda s, samples=None: [], revert_strays=lambda b: [],
                                     put_skills=lambda p: None, named_objects=lambda s, names=None: [],
                                     context=lambda *a, **k: {}, pool_view=lambda *a, **k: [],
                                     gate_candidate=lambda n, it, cand, stub, **k: gated.append(str(cand)) or None),

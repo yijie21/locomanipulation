@@ -60,7 +60,7 @@ class _LoopCase(unittest.TestCase):
         (self.root / "state").mkdir()
         self.lp.FAMILY = "fam"
         for p in (mock.patch.multiple(self.lp, STATE=self.root / "state", LOOP=self.root, HIDDEN=hid,
-                                      GATE_DIR=hid / "gate", transcript_leaks=lambda s: []),
+                                      GATE_DIR=hid / "gate", transcript_leaks=lambda s, samples=None: []),
                   mock.patch.dict(os.environ)):  # fmt: skip
             p.start()
             self.addCleanup(p.stop)

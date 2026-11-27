@@ -1152,6 +1152,9 @@ def own_link_targets() -> list[str]:
     return sorted({os.path.realpath(x) for x in links if x.is_symlink()})
 
 
+TOKEN = r"[^\s\"'`;|&<>()$\\,]"  # one character of a path-like token in a tool input (climbs_out, leak_token)
+
+
 def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     """TODO 36 (review 2026-10-22, L8; review_outer finding 2): a path-like token in a tool input with a `..` segment,
     resolved (symlinks first, as the shell does) from the directory the command runs in, that lands outside the sandbox
@@ -1168,7 +1171,7 @@ def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     roots = [repo, os.path.realpath(role_tmp()), *targets]
     state = cwd if cwd is not None else {}
     base = state.get("dir", repo)
-    toks = re.findall(r"[^\s\"'`;|&<>()$\\,]+", text.replace("\\n", " ").replace("\\t", " "))
+    toks = re.findall(TOKEN + "+", text.replace("\\n", " ").replace("\\t", " "))
     out = False
     for i, tok in enumerate(toks):
         path = os.path.realpath(tok if tok.startswith("/") else os.path.join(base, tok))
@@ -1182,7 +1185,21 @@ def climbs_out(text: str, targets: list[str], cwd: dict | None = None) -> bool:
     return out
 
 
-def transcript_leaks(session: str | None) -> list[str]:
+def leak_token(text: str, start: int, end: int) -> str:
+    """The path-like token around a match in an audited line, at most 120 characters: what the rerun note names
+    (TODO 55.3), so the second call knows which path the first one should not have written."""
+    a, b = start, end
+    while a > 0 and re.match(TOKEN, text[a - 1]):
+        a -= 1
+    while b < len(text) and re.match(TOKEN, text[b]):
+        b += 1
+    tok = text[a:b]
+    return tok if len(tok) <= 120 else tok[:117] + "..."
+
+
+def transcript_leaks(session: str | None, samples: dict[str, str] | None = None) -> list[str]:
+    """The categories (leak_patterns, plus "origin" for a `..` that climbs out) a session's tool calls fall in.
+    `samples`, when given, receives per category the first token matched (leak_token): the rerun note names it."""
     p = transcript(session)
     if p is None:
         return []
@@ -1193,9 +1210,20 @@ def transcript_leaks(session: str | None) -> list[str]:
     with p.open() as fh:
         for line in fh:
             line = own.sub("", audited(line))
-            found |= {k for k, pat in pats.items() if re.search(pat, line)}
-            if targets is not None and climbs_out(climb_view(line), targets, cwd):
-                found.add("origin")
+            for k, pat in pats.items():
+                m = re.search(pat, line)
+                if m:
+                    found.add(k)
+                    if samples is not None and k not in samples:
+                        samples[k] = leak_token(line, m.start(), m.end())
+            if targets is not None:
+                view = climb_view(line)
+                if climbs_out(view, targets, cwd):
+                    found.add("origin")
+                    if samples is not None and "origin" not in samples:
+                        toks = re.findall(TOKEN + "+", view.replace("\\n", " ").replace("\\t", " "))
+                        climb = next((t for t in toks if ".." in t.split("/") and not t.startswith("~")), "..")
+                        samples["origin"] = leak_token(climb, 0, len(climb))
     return sorted(found)
 
 
@@ -1673,15 +1701,22 @@ def iterate(n: int, meta: dict, stub: bool) -> str | None:
     stub_h = dict(notes="stub", hypotheses=[dict(id="H1", claim="stub", instead="stub", evidence="stub",
                   delta={"set": {"PLAN_HELD": "pick_simple"} if "PLAN_HELD" in extra["parameters"] else {}},
                   predicted_fixed=[], predicted_broken=[])])  # fmt: skip
-    if SCOPED:
-        hyps, acct = scoped_review(prompt, it_dir, stub_h if stub else None)
-    else:
-        hyps, acct = claude(
-            "reviewer", prompt, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent", stub_h if stub else None
-        )
-    jdump(it_dir / "hypotheses.json", hyps)
-    sessions = acct.pop("sessions", None) or [acct["session"]]
-    leaks = sorted({x for sess in sessions for x in transcript_leaks(sess)})
+    note = ""
+    for attempt in (1, 2):  # TODO 55.3: a first leak is rerun once (rerun_after_leak)
+        if SCOPED:
+            hyps, acct = scoped_review(prompt + note, it_dir, stub_h if stub else None)
+        else:
+            hyps, acct = claude("reviewer", prompt + note, HYPOTHESES_SCHEMA, it_dir, "Edit,Write,NotebookEdit,Agent",
+                                stub_h if stub else None)  # fmt: skip
+        jdump(it_dir / "hypotheses.json", hyps)
+        sessions = acct.pop("sessions", None) or [acct["session"]]
+        samples: dict[str, str] = {}
+        leaks = sorted({x for sess in sessions for x in transcript_leaks(sess, samples)})
+        if not leaks or attempt == 2:
+            break
+        first = [p for p in it_dir.glob("reviewer*") if p.name != "reviewer_context.json"]
+        note = rerun_after_leak(n, "reviewer", dict(acct, **({"sessions": sessions} if len(sessions) > 1 else {})),
+                                leaks, samples, it_dir / "hypotheses.json", *first)  # fmt: skip
     n_claims = len(hyps["infeasible"]) if isinstance(hyps.get("infeasible"), list) else 0
     ledger(dict(step="review", iter=n, n_hypotheses=len(hyps["hypotheses"]), n_claims=n_claims, void=bool(leaks),
                 leaks=leaks, **acct, **({"sessions": sessions} if len(sessions) > 1 else {})))  # fmt: skip
@@ -1766,10 +1801,17 @@ def after_review(n, it_dir, inc, base, base_changes, hyps, common, extra, stub) 
     jdump(ctx, dict(lead, **body))
     prompt = fill((HERE / "prompts" / "manager.md").read_text(), CONTEXT=ctx, **common)
     stub_m = dict(decision="engineer", hypothesis="H1", reason="stub", summary_zh="桩测试")
-    dec, acct = claude("manager", prompt, manager_schema(may_reopen), it_dir, "Edit,Write,NotebookEdit,Agent,Bash",
-                       stub_m if stub else None)  # fmt: skip
-    jdump(it_dir / "manager.json", dec)
-    leaks = transcript_leaks(acct["session"])
+    note = ""
+    for attempt in (1, 2):  # TODO 55.3: a first leak is rerun once (rerun_after_leak)
+        dec, acct = claude("manager", prompt + note, manager_schema(may_reopen), it_dir,
+                           "Edit,Write,NotebookEdit,Agent,Bash", stub_m if stub else None)  # fmt: skip
+        jdump(it_dir / "manager.json", dec)
+        samples: dict[str, str] = {}
+        leaks = transcript_leaks(acct["session"], samples)
+        if not leaks or attempt == 2:
+            break
+        first = [it_dir / f for f in ("manager_prompt.md", "manager_raw.json", "manager.json")]
+        note = rerun_after_leak(n, "manager", acct, leaks, samples, *first)
     ledger(dict(step="manager", iter=n, decision=dec["decision"], hypothesis=dec.get("hypothesis"),
                 hypotheses=dec.get("hypotheses") if CANDIDATES > 1 else None, reopen_claim=dec.get("reopen_claim"),
                 base=dec.get("base"), repeats=dec.get("repeats"), skip=dec.get("skip"),
@@ -1900,11 +1942,12 @@ def after_engineer(
     return gate_candidate(n, it_dir, cand, stub, reopen=(reopen, reopen_won(it_dir, reopen)) if reopen else None)
 
 
-def hide_void(n: int, *paths: Path) -> None:
+def hide_void(n: int, *paths: Path, into: str = "") -> None:
     """TODO 36 (review 2026-10-22, L5): a voided draft (leak or stray) leaves the visible loop tree for
     HIDDEN/<family>/void/iter_NN/, so the Composer and later roles cannot read code written after the audit flagged
-    its role. (HIDDEN is unlocked between role calls.)"""
-    dst = HIDDEN / "void" / f"iter_{n:02d}"
+    its role. (HIDDEN is unlocked between role calls.) `into`: a subdirectory of it (the first call's files of a role
+    rerun go under `first/`, TODO 55.3, so a second void of the iteration does not overwrite them)."""
+    dst = HIDDEN / "void" / f"iter_{n:02d}" / into
     dst.mkdir(parents=True, exist_ok=True)
     for p in paths:
         if p.exists():
@@ -1920,6 +1963,35 @@ def void_iteration(n: int, role: str, leaks: list[str]) -> None:
     One Engineer's of K voids only its draft (multi_engineer_step). Until then any of these stopped the loop."""
     ledger(dict(step="void_iter", iter=n, role=role, leaks=leaks))
     print(f"iteration {n} void: the {role} named off-limits paths ({', '.join(leaks)})")
+
+
+RERUN_NOTE = (
+    "\n\nThis is the second call of the {ROLE} in this iteration. The first call's tool calls named an off-limits "
+    "path -- {LEAKS} -- so what it produced was discarded and nothing of it remains to read (rules.md 3). Do the job "
+    "again from the same inputs without naming such a path: work in the checkout and your scratch directory with "
+    "paths under them (a relative path is resolved from where the command runs), and name no path only to say you "
+    "are avoiding it.\n"
+)
+
+
+def leak_note(role: str, leaks: list[str], samples: dict[str, str]) -> str:
+    """What the rerun prompt says about the first call's leak (TODO 55.3): each category with the token it matched."""
+    what = ", ".join(f"{k} (`{samples[k]}`)" if samples.get(k) else k for k in leaks)
+    return fill(RERUN_NOTE, ROLE=role.capitalize(), LEAKS=what)
+
+
+def rerun_after_leak(n: int, role: str, acct: dict, leaks: list[str], samples: dict[str, str], *first: Path) -> str:
+    """TODO 55.3 (user 2026-11-27, ported from main's A1): a Reviewer's, Manager's or Composer's first leaking call is
+    run once more, in a fresh session on the same inputs with a note naming the leak (leak_note), before the iteration
+    is voided -- the gso-alt-seed Composer of iteration 3 lost its iteration to one `../../code/...` inside a `sed`
+    replacement, a path that existed nowhere. The first call's prompt, raw answer and output (`first`) leave the
+    visible tree (hide_void, under first/), and a `rerun` row keeps its cost and session. The second call's leak voids
+    the iteration as before (void_iteration, counted by MAX_VOID_STREAK). One of several Engineers is not rerun (its
+    leak voids only its draft); the Consolidator has its own policy."""
+    hide_void(n, *first, into="first")
+    ledger(dict(step="rerun", iter=n, role=role, leaks=leaks, samples=samples, **acct))
+    print(f"iteration {n}: the {role} named off-limits paths ({', '.join(leaks)}); rerun once in a fresh session")
+    return leak_note(role, leaks, samples)
 
 
 def gate_lines() -> list[str]:
@@ -2704,11 +2776,20 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
                                  candidate_pool=pool_view(inc, base))))  # fmt: skip
     prompt = fill((HERE / "prompts" / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
     stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
-    comp, acct = claude("composer", prompt, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent", stub_c if stub else None)
-    leaks = transcript_leaks(acct["session"])
-    stray = revert_strays(base_changes)
-    put_skills(Path(inc["dir"]) / "skills")
-    jdump(it_dir / "composer.json", comp)
+    note = ""
+    for attempt in (1, 2):  # TODO 55.3: a first leak is rerun once (rerun_after_leak) on a fresh working copy
+        comp, acct = claude("composer", prompt + note, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent",
+                            stub_c if stub else None)  # fmt: skip
+        samples: dict[str, str] = {}
+        leaks = transcript_leaks(acct["session"], samples)
+        stray = revert_strays(base_changes)
+        put_skills(Path(inc["dir"]) / "skills")
+        jdump(it_dir / "composer.json", comp)
+        if not leaks or attempt == 2:
+            break
+        first = [it_dir / f for f in ("composer_prompt.md", "composer_raw.json", "composer.json")]
+        note = rerun_after_leak(n, "composer", dict(acct, stray=stray), leaks, samples, it_dir / "compose", *first)
+        shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     numbers = {
         c["number"] for c in cands
     }  # the drafts a merge kept (knowledge.draft_verdicts credits their gate verdict)

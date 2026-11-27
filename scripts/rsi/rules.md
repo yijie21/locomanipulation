@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 28, 2026-11-23)
+# Rules for the scene RSI loop (TODO 27, version 29, 2026-11-27)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -20,9 +20,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
 3. A candidate is accepted only by `gate.py` on the hidden acceptance pool. Nothing else counts as evidence that a
    change helps. The gate's per-round files are off limits; its verdict JSON is what a role may read. While a role
    runs the hidden tree cannot be read, and the sandbox's family file has no acceptance or sealed seeds (code, version
-   12). A role whose tool calls name the hidden tree or a path outside the sandbox voids what it produced -- its
-   iteration, or only its draft when it is one of several Engineers -- and the loop goes on; two voided iterations in a
-   row stop it (code, version 13; until then a voided Reviewer, Manager or Composer stopped the loop).
+   12). A role whose tool calls name the hidden tree or a path outside the sandbox voids what it produced and the
+   loop goes on. A Reviewer, Manager or Composer that does is called once more, in a fresh session on the same inputs
+   and told which path the first call named; the second call's leak voids the iteration (code, version 29, user
+   2026-11-27: until then the first leak voided it, and before version 13 it stopped the loop). One of several
+   Engineers' leak voids only its draft. Two voided iterations in a row stop the loop (code, version 13).
 4. A candidate is the skills package plus parameter overrides (`candidate.json` {"set": ...}, `skills.apply_set` keys:
    "NAME", "module.NAME", "module.NAME.key"). An unknown key is refused (code).
 

@@ -769,6 +769,127 @@ class LeakPolicy(unittest.TestCase):
         self.assertEqual(self.lp.stop_reason(meta), "manager: stop")
 
 
+class RoleRerun(unittest.TestCase):
+    """TODO 55.3 (user 2026-11-27, main's A1): a Reviewer's, Manager's or Composer's first leaking call is rerun once
+    in a fresh session, told which path it named, before the iteration is voided; the first call's files go to the
+    hidden void tree under first/ and a `rerun` row keeps its cost."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        self.root = Path(self.d.name)
+        (self.root / "pool_diag").mkdir()
+        hid = self.root / "outputs" / "scene_rsi_20261016_hidden" / "fam"
+        hid.mkdir(parents=True)
+        for p in (mock.patch.multiple(self.lp, STATE=self.root / "state", LOOP=self.root, HIDDEN=hid,
+                                      GATE_DIR=hid / "gate", accept_pool=lambda: self.root),):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+        (self.root / "state").mkdir()
+
+    def test_rerun_after_leak_hides_the_first_call_keeps_its_cost_and_names_the_token(self):
+        it_dir = self.lp.STATE / "iter_03"
+        it_dir.mkdir()
+        for f in ("composer_prompt.md", "composer_raw.json", "composer.json", "composer_context.json"):
+            (it_dir / f).write_text(f)
+        (it_dir / "compose" / "skills").mkdir(parents=True)
+        first = [it_dir / f for f in ("compose", "composer_prompt.md", "composer_raw.json", "composer.json")]
+        note = self.lp.rerun_after_leak(3, "composer", dict(cost_usd=2.5, session="s1", seconds=30.0), ["origin"],
+                                        {"origin": "../../code/rsi-scene/src/x.py"}, *first)  # fmt: skip
+        hidden = self.lp.HIDDEN / "void" / "iter_03" / "first"
+        self.assertEqual(sorted(p.name for p in hidden.iterdir()),
+                         ["compose", "composer.json", "composer_prompt.md", "composer_raw.json"])  # fmt: skip
+        self.assertEqual([p.name for p in it_dir.iterdir()], ["composer_context.json"])  # the input stays
+        row = self.lp.entries()[-1]
+        self.assertEqual((row["step"], row["iter"], row["role"], row["leaks"], row["session"], row["cost_usd"]),
+                         ("rerun", 3, "composer", ["origin"], "s1", 2.5))  # fmt: skip
+        self.assertEqual(row["samples"], {"origin": "../../code/rsi-scene/src/x.py"})
+        self.assertIn("second call of the Composer", note)
+        self.assertIn("origin (`../../code/rsi-scene/src/x.py`)", note)
+
+    def compose(self, leaking: set[str]) -> tuple[list[dict], list[str], Path]:
+        """multi_engineer_step with three drafts and a Composer whose sessions in `leaking` name an off-limits path;
+        returns the ledger rows, the Composer's prompts and the iteration directory."""
+        from unittest import mock
+
+        lp = self.lp
+        it_dir = lp.STATE / "iter_00"
+        it_dir.mkdir(parents=True)
+        inc_dir = self.root / "inc"
+        (inc_dir / "skills").mkdir(parents=True)
+        (inc_dir / "skills" / "__init__.py").write_text("X = 1\n")
+        (inc_dir / "candidate.json").write_text('{"set": {}}')
+        inc = dict(dir=str(inc_dir), hash=lp.candidate_hash(inc_dir), set={})
+        hyps = dict(hypotheses=[dict(id="H1", claim="c", instead="i", delta={"set": {}})])
+        dec = dict(decision="engineer", hypotheses=["H1", "H1", "H1"], reason="r")
+        rows, prompts = [], []
+
+        def fake_claude(role, prompt, schema, it_dir_, tools, stub=None, stop=None):
+            if role.startswith("engineer_"):
+                k = int(role.split("_")[1])
+                (it_dir / f"cand_{k}" / "skills" / "__init__.py").write_text(f"X = {k + 1}\n")
+                return (dict(mechanism=f"m{k}", files_changed=["__init__.py"], set={}, tests="t"),
+                        dict(cost_usd=1.0, session=f"s{k}", seconds=1))  # fmt: skip
+            prompts.append(prompt)
+            (it_dir / "composer_raw.json").write_text("{}")  # as claude() writes it
+            return (dict(decision="adopt", adopted=1, notes="n", mechanism="m1"),
+                    dict(cost_usd=1.0, session=f"sc{len(prompts)}", seconds=1))  # fmt: skip
+
+        def fake_leaks(session, samples=None):
+            if session not in leaking:
+                return []
+            if samples is not None:
+                samples["origin"] = "../../code/rsi-scene/src/x.py"
+            return ["origin"]
+
+        common = dict(RULES="r", PLAN="p", SIM_PY="py", POOL="pool", FAMILY="fam", FAMILY_FILE="ff", N_DIAG=30,
+                      LIBRARY="", DIAG_INC="d", TMP="t")  # fmt: skip
+        with (
+            mock.patch.multiple(lp, FAMILY="fam", CANDIDATES=3, ENGINEER_LATE_MIN=0, SECOND_SHOT=False,
+                                claude=fake_claude, ledger=rows.append, transcript_leaks=fake_leaks,
+                                revert_strays=lambda b: [], put_skills=lambda p: None,
+                                named_objects=lambda s, names=None: [], context=lambda *a, **k: {},
+                                pool_view=lambda *a, **k: [], gate_candidate=lambda n, it, cand, stub, **k: None),
+            mock.patch.object(lp.B, "run_jobs", lambda *a, **k: {}),
+            mock.patch.object(lp, "flips", lambda a, b: dict(ok=0, incumbent_ok=0, n=0, fixed=[], broken=[])),
+        ):  # fmt: skip
+            self.assertIsNone(lp.multi_engineer_step(0, it_dir, inc, hyps, [], dec, common, [], stub=False))
+        return rows, prompts, it_dir
+
+    def test_a_leaking_composer_is_rerun_once_on_a_fresh_working_copy(self):
+        rows, prompts, it_dir = self.compose({"sc1"})
+        steps = [r["step"] for r in rows]
+        self.assertNotIn("void_iter", steps)
+        rerun = next(r for r in rows if r["step"] == "rerun")
+        self.assertEqual((rerun["role"], rerun["session"], rerun["leaks"], rerun["cost_usd"]),
+                         ("composer", "sc1", ["origin"], 1.0))  # fmt: skip
+        comp = [r for r in rows if r["step"] == "compose"]
+        self.assertEqual((len(comp), comp[0]["void"], comp[0]["session"]), (1, False, "sc2"))
+        self.assertEqual(len(prompts), 2)
+        self.assertNotIn("second call", prompts[0])
+        self.assertIn("second call of the Composer", prompts[1])
+        self.assertIn("origin (`../../code/rsi-scene/src/x.py`)", prompts[1])
+        self.assertTrue((it_dir / "compose" / "skills" / "__init__.py").exists())  # the second call's working copy
+        first = self.lp.HIDDEN / "void" / "iter_00" / "first"
+        self.assertTrue((first / "compose" / "skills" / "__init__.py").exists())
+        self.assertTrue((first / "composer_raw.json").exists())
+
+    def test_a_second_leak_voids_the_iteration_as_before(self):
+        rows, prompts, it_dir = self.compose({"sc1", "sc2"})
+        steps = [r["step"] for r in rows]
+        self.assertEqual(steps.count("rerun"), 1)
+        self.assertEqual(steps[-2:], ["compose", "void_iter"])
+        self.assertTrue(rows[-2]["void"])
+        self.assertEqual((rows[-1]["role"], rows[-1]["leaks"]), ("composer", ["origin"]))
+        self.assertEqual(len(prompts), 2)
+        void = self.lp.HIDDEN / "void" / "iter_00"
+        self.assertTrue((void / "first" / "compose").exists() and (void / "compose").exists())
+        self.assertFalse((it_dir / "compose").exists())
+
+
 class DriftStreak(unittest.TestCase):
     """TODO 55.1 (user 2026-11-27): a gate call the sentinel voided counts as no call (gate.py marks it void); two in a
     row stop the loop abnormally, because a deterministic simulation drifts only when the bed changed under the run."""
@@ -970,6 +1091,18 @@ class TranscriptAudit(unittest.TestCase):
         self.assertEqual(self.lp.transcript_leaks(self.session("c", _line(peek, answer))), ["gate"])
         self.assertEqual(self.lp.transcript_leaks(self.session("d", _line(_call("Read", file_path=f"/x/{self.HID}")))),
                          ["gate"])  # fmt: skip
+
+    def test_the_samples_name_the_token_matched_at_most_120_characters(self):
+        """TODO 55.3: the rerun note tells the second call which path the first one wrote."""
+        samples: dict = {}
+        peek = _call("Bash", command=f"ls {self.HID}/pool_accept/ && echo done")
+        self.assertEqual(self.lp.transcript_leaks(self.session("s", _line(peek)), samples), ["gate"])
+        self.assertEqual(samples, {"gate": f"{self.HID}/pool_accept/"})
+        samples = {}
+        long = _call("Read", file_path=f"/x/{self.HID}/" + "a" * 200)
+        self.lp.transcript_leaks(self.session("l", _line(long)), samples)
+        self.assertEqual(len(samples["gate"]), 120)
+        self.assertTrue(samples["gate"].startswith(f"/x/{self.HID}/aaa") and samples["gate"].endswith("..."))
 
     def review(self, session: str) -> None:
         self.lp.ledger(dict(step="review", iter=4, n_hypotheses=4, void=True, leaks=["gate"], session=session))

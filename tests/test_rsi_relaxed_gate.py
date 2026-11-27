@@ -108,7 +108,7 @@ class _LoopCase(unittest.TestCase):
                                       GATE_DIR=hid / "gate", accept_pool=lambda: self.root, redraw_accept=lambda: None,
                                       unparked_view=lambda r: None, put_skills=lambda src: None,
                                       revert_strays=lambda base: [], changed_files=lambda: [],
-                                      transcript_leaks=lambda s: []),
+                                      transcript_leaks=lambda s, samples=None: []),
                   mock.patch.dict(os.environ)):  # fmt: skip
             p.start()
             self.addCleanup(p.stop)
