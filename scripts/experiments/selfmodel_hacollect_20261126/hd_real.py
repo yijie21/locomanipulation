@@ -17,6 +17,10 @@ reader and the models: LOCO_REPO's data.py / train.py / models.py (repo_b: 17407
   collection's d3 run.json, the same host) and merge.txt. Checks (any failure: "REAL MERGE ... FAIL", exit 1): every
   log's segments = its npz's; every segment's reset = the log's, task_id / seed / repeat the log's; chains unique per
   episode and each a reach of the log with the same side and reach_no; (reset, chain) unique.
+  eval_code2 (hadata revision 2c): an episode d3 declared lost ends inside that reach; its segment is saved but the log's
+  reach list never gets it. Such a segment beyond the list passes only if all three hold: it is the episode's last
+  segment (and its largest chain), the log's end is "lost", the segment's lost flag is set; it is left out of the merge
+  (t3b_eval's kept would drop it anyway) and named in merge.txt. Any other segment beyond the list still fails.
 2 the segments: every merged segment; kept = t3b_eval.kept (not fallen / lost, end label settled); touching = revision 1's
   rule (touch_n > 1 N and touch_z >= 0.2 m); clean = kept and not touching. The light-touch group (revision 2a section
   10): kept, touching, and hr_smoke_stats.light_target(log, chain, side) True (None: no contact record, counted apart).
@@ -82,6 +86,22 @@ def side_name(s) -> str:
     return "right" if float(s) > 0 else "left"
 
 
+def drop_segments(z: dict, keep: np.ndarray) -> dict:
+    """hd_touch's way: per segment (len(n_steps)) masked, per row (sum of n_steps) the kept segments' rows, per reference
+    row (sum of n_ref) their reference rows; a first dimension that is none of these, or two equal lengths, fails."""
+    n = np.asarray(z["n_steps"]).astype(int)
+    nref = np.asarray(z["n_ref"]).astype(int)
+    N, rows, refs = len(n), int(n.sum()), int(nref.sum())
+    assert len({N, rows, refs}) == 3, f"ambiguous lengths: segments {N}, rows {rows}, reference rows {refs}"
+    rmask, fmask = np.repeat(keep, n), np.repeat(keep, nref)
+    o = {}
+    for k, v in z.items():
+        v = np.asarray(v)
+        assert v.ndim > 0 and v.shape[0] in (N, rows, refs), f"{k}: first dimension {v.shape[:1]} is none of {N} / {rows} / {refs}"
+        o[k] = v[keep] if v.shape[0] == N else v[rmask] if v.shape[0] == rows else v[fmask]
+    return o
+
+
 def merge(d: Path, out: Path, seeds: set, coll_run: dict, HS, TOUCH) -> tuple[Path, list[dict], bool, list[str]]:
     """One hr_real directory -> out/<d.name>/data/all.npz + run.json + merge.txt; per merged segment its log facts."""
     lines, ok, zs, info = [], True, [], []
@@ -97,6 +117,7 @@ def merge(d: Path, out: Path, seeds: set, coll_run: dict, HS, TOUCH) -> tuple[Pa
         ok = False
     n_eps = len(logs)
     no_seg = 0
+    n_cut = 0  # eval_code2: segments left out (the reach a lost episode ended in)
     for name, L in logs:
         zp = d / "data" / f"{name}.npz"
         if int(L.get("segments", 0)) == 0:
@@ -124,9 +145,13 @@ def merge(d: Path, out: Path, seeds: set, coll_run: dict, HS, TOUCH) -> tuple[Pa
         if len(set(ch.tolist())) != n:
             bad.append(f"chains {ch.tolist()} not unique")
         hit = TOUCH.touching(z)
+        cut = np.zeros(n, bool)
         for j in range(n):
             c = int(ch[j])
             if c >= len(rc):
+                if j == n - 1 and c == int(ch.max()) and L.get("end") == "lost" and bool(np.asarray(z["lost"])[j]):
+                    cut[j] = True  # eval_code2: the reach the episode was lost in
+                    continue
                 bad.append(f"chain {c} beyond the log's {len(rc)} reaches")
                 continue
             sd = side_name(z["side"][j])
@@ -142,6 +167,11 @@ def merge(d: Path, out: Path, seeds: set, coll_run: dict, HS, TOUCH) -> tuple[Pa
         if bad:
             lines.append(f"{name}: " + "; ".join(bad))
             ok = False
+        if cut.any():
+            z = drop_segments(z, ~cut)
+            n_cut += int(cut.sum())
+            lines.append(f"{name}: chain {int(ch[cut][0])} left out of the merge (the episode's last segment, the episode ended "
+                         f"lost, the segment lost; eval_code2); chains merged {ch[~cut].tolist()}")  # fmt: skip
         zs.append(z)
     if not zs:
         lines.append("no segments")
@@ -165,7 +195,8 @@ def merge(d: Path, out: Path, seeds: set, coll_run: dict, HS, TOUCH) -> tuple[Pa
                                                  note="stance / delay_f: the collection's d3 run.json (the same host)"), indent=1))  # fmt: skip
     sds = sorted({int(L["seed"]) for _, L in logs})
     head = (f"{d.name}: {n_eps} episodes (seeds {sds[0] if sds else '-'}-{sds[-1] if sds else '-'}, {len(sds)} seeds), {no_seg} without "
-            f"segments, {len(pairs)} segments merged; keys left out (not in every episode): {dropped}")  # fmt: skip
+            f"segments, {len(pairs)} segments merged; keys left out (not in every episode): {dropped}; segments left out "
+            f"(a lost episode's last reach, eval_code2): {n_cut}")  # fmt: skip
     lines.insert(0, head)
     lines.append(f"REAL MERGE {d.name} " + ("PASS" if ok else "FAIL"))
     (od / "merge.txt").write_text("\n".join(lines) + "\n")

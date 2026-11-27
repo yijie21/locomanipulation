@@ -960,6 +960,104 @@ REAL MERGE FAIL: stop
   - 这段时间里训练早已结束；4 个 hold 着的槽位都空着：3b 从 23:09Z 起，其余三个大约从 00:45Z 起。
   - 之后改成不会到期的后台等待：用 run_in_background 跑一个循环，状态一变就退出，退出时叫醒我。
 
+**补记：冻结之前的测试、eval_code2 的 diff 和 md5**（评估 3 还没出过数）
+- **挪开失败的那次**：01:17:17Z 把失败那次的 `real/` 和 `logs/eval3.raw` 挪进了 `train/heft/eval/stale/eval3_fail_20261126T234555Z/`，这一步记在 eval 的 run.log 里。评估 1、2 的输出没动。
+- **只合并的测试**（`hdreal_merge_test.py`，在 4090 的 CPU 上，代码放在 /tmp）：
+  - 只调新 hd_real.py（cc7d84d8）的 merge，输出写到 /tmp。没建模型，没算任何评估的数。
+  - 对照的旧合并文件，是失败那次留下的 all.npz：旧代码在报 FAIL 之前已经把它写出来了。
+  - 原始输出：
+
+```
+heft_ppbox: 40 episodes (seeds 200-239, 40 seeds), 0 without segments, 149 segments merged; keys left out (not in every episode): []; segments left out (a lost episode's last reach, eval_code2): 7
+ppbox_s208_r0: chain 3 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0, 1, 2]
+ppbox_s210_r0: chain 3 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0, 1, 2]
+ppbox_s211_r0: chain 2 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0, 1]
+ppbox_s217_r0: chain 3 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0, 1, 2]
+ppbox_s225_r0: chain 2 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0, 1]
+ppbox_s229_r0: chain 1 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0]
+ppbox_s231_r0: chain 3 left out of the merge (the episode's last segment, the episode ended lost, the segment lost; eval_code2); chains merged [0, 1, 2]
+REAL MERGE heft_ppbox PASS
+heft_doubledesk: 40 episodes (seeds 200-239, 40 seeds), 0 without segments, 80 segments merged; keys left out (not in every episode): []; segments left out (a lost episode's last reach, eval_code2): 0
+REAL MERGE heft_doubledesk PASS
+1 merges PASS: True
+2 old P&PBox segments 156, the 7 lost episodes' last reaches 7, new 149
+2 new P&PBox == old minus those 7, every key byte-equal: True; DoubleDesk new == old: True
+3 data.load derived arrays (20) byte-equal to the old file's other segments: True; info rows == merged segments: True
+4 negative 'end not lost': merge FAIL (["ppbox_s229_r0: chain 1 beyond the log's 1 reaches"])
+4 negative 'segment not lost': merge FAIL (["ppbox_s229_r0: chain 1 beyond the log's 1 reaches"])
+4 negative 'not the last segment': merge FAIL (["ppbox_s229_r0: chain 1 beyond the log's 1 reaches; chain 0: side / reach_no left 1 != log left 0"])
+MERGE TEST PASS
+```
+
+  - **读法**：
+    - 第 2、3 行：新的 P&PBox 合并文件，等于旧文件去掉这 7 段，每个键逐字节相同；data.load 读出来的 20 个派生数组也逐字节相同。所以 33 局正常的局，加上这 7 局 lost 之前的段，都和原来一样。DoubleDesk 新旧完全相同。
+    - 第 4 行：三条里缺任何一条都照旧 FAIL。三个反例是把 s229 拷到 /tmp 后各改一处。
+- **冻结**：`loco_outputs/selfmodel_hadata_20261126/eval_code2/`，FROZEN_UTC 2026-11-27T01:17:36Z，只读，里面没有链接，也没有 `__pycache__`。
+  - MD5 共 31 行，MD5 文件本身的 md5 是 e8e43ed3，冻结时核对通过。
+  - 和 eval_code 比：MD5 里只有 hd_real.py 那一行变了（ca437d89 → cc7d84d8），另加了 hd_eval3.sh（06faa0b5）一行；其余 29 行相同。
+  - hd_eval3.sh 里评估 3 那几行和 hd_eval.sh 相同，只有一处不同：hd_eval.sh 在测试模式下不查 `real/DONE`，hd_eval3.sh 没有测试模式，总是查。
+  - `freeze.log` 记了一行。
+- **diff 全文**（`loco_outputs/selfmodel_hadata_20261126/eval_code2.diff`，只截掉了路径前缀 `.../selfmodel_hadata_20261126/`）：
+
+```diff
+diff -r eval_code/FROZEN_UTC eval_code2/FROZEN_UTC
+1c1
+< 2026-11-26T14:49:35Z
+---
+> 2026-11-27T01:17:36Z
+diff -r eval_code/MD5 eval_code2/MD5
+4c4,5
+< ca437d897f62e90b4f45a7ef70f82f10  selfmodel_hacollect_20261126/hd_real.py
+---
+> 06faa0b5f770c60556130cafede84f62  selfmodel_hacollect_20261126/hd_eval3.sh
+> cc7d84d8a2601578ef4c5c00fbc5bba9  selfmodel_hacollect_20261126/hd_real.py
+Only in eval_code2/selfmodel_hacollect_20261126: hd_eval3.sh
+diff -r eval_code/selfmodel_hacollect_20261126/hd_real.py eval_code2/selfmodel_hacollect_20261126/hd_real.py
+19a20,23
+>   eval_code2 (hadata revision 2c): an episode d3 declared lost ends inside that reach; its segment is saved but the log's
+>   reach list never gets it. Such a segment beyond the list passes only if all three hold: it is the episode's last
+>   segment (and its largest chain), the log's end is "lost", the segment's lost flag is set; it is left out of the merge
+>   (t3b_eval's kept would drop it anyway) and named in merge.txt. Any other segment beyond the list still fails.
+84a89,104
+> def drop_segments(z: dict, keep: np.ndarray) -> dict:
+>     """hd_touch's way: per segment (len(n_steps)) masked, per row (sum of n_steps) the kept segments' rows, per reference
+>     row (sum of n_ref) their reference rows; a first dimension that is none of these, or two equal lengths, fails."""
+>     n = np.asarray(z["n_steps"]).astype(int)
+>     nref = np.asarray(z["n_ref"]).astype(int)
+>     N, rows, refs = len(n), int(n.sum()), int(nref.sum())
+>     assert len({N, rows, refs}) == 3, f"ambiguous lengths: segments {N}, rows {rows}, reference rows {refs}"
+>     rmask, fmask = np.repeat(keep, n), np.repeat(keep, nref)
+>     o = {}
+>     for k, v in z.items():
+>         v = np.asarray(v)
+>         assert v.ndim > 0 and v.shape[0] in (N, rows, refs), f"{k}: first dimension {v.shape[:1]} is none of {N} / {rows} / {refs}"
+>         o[k] = v[keep] if v.shape[0] == N else v[rmask] if v.shape[0] == rows else v[fmask]
+>     return o
+> 
+> 
+99a120
+>     n_cut = 0  # eval_code2: segments left out (the reach a lost episode ended in)
+126a148
+>         cut = np.zeros(n, bool)
+129a152,154
+>                 if j == n - 1 and c == int(ch.max()) and L.get("end") == "lost" and bool(np.asarray(z["lost"])[j]):
+>                     cut[j] = True  # eval_code2: the reach the episode was lost in
+>                     continue
+144a170,174
+>         if cut.any():
+>             z = drop_segments(z, ~cut)
+>             n_cut += int(cut.sum())
+>             lines.append(f"{name}: chain {int(ch[cut][0])} left out of the merge (the episode's last segment, the episode ended "
+>                          f"lost, the segment lost; eval_code2); chains merged {ch[~cut].tolist()}")  # fmt: skip
+168c198,199
+<             f"segments, {len(pairs)} segments merged; keys left out (not in every episode): {dropped}")  # fmt: skip
+---
+>             f"segments, {len(pairs)} segments merged; keys left out (not in every episode): {dropped}; segments left out "
+>             f"(a lost episode's last reach, eval_code2): {n_cut}")  # fmt: skip
+```
+
+- **开发副本**：`scripts/experiments/selfmodel_hacollect_20261126/` 里的 hd_real.py（cc7d84d8）和 hd_eval3.sh（06faa0b5），和冻结的逐字节相同。
+
 ## 结果
 
 ### ScaleBFM：训练和评估 1–3（2026-11-26）
