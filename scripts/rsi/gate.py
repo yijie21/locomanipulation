@@ -10,6 +10,11 @@ Steps, stopping at the first rejection:
 1. static: the skills package loads and the overrides apply; the hash was never rejected; it is not the incumbent.
 2. sentinel: SENTINELS incumbent rounds re-run must reproduce its stored outcomes (ok and end time) -- the motor
    layer and the scene are shared code, a change there must not move the incumbent. One start per task (`sentinel_labels`).
+   A drift is a void call (user 2026-11-27, from main's TODO 54 A4: "void": true, like an incomplete pairing), not a
+   rejection: the candidate's hash is not blacklisted and the loop counts no gate call. Until then the hash was
+   "rejected before" for good and the call used up one of the loop's gate calls. The loop stops abnormally after
+   DRIFT_STREAK drift voids in a row (loop.stop_reason): the simulation is deterministic (TODO 38.2), so a drift
+   means the bed or its environment changed under the run.
 3. stage 1: STAGE1 starts drawn from every task in proportion to its share of the pool (`stage1_labels`); reject
    when the candidate's net wins (b - c) <= 0. (Until 2026-10-18 the first STAGE1 labels by name: about half of a
    multi-task family's tasks, so a candidate that changed only a later task was rejected without one round of it.)
@@ -309,7 +314,8 @@ def main(argv=None) -> int:
         return void("sentinel or incumbent", miss)
     drift = [k for k in again if (again[k]["ok"], again[k].get("t_end")) != (inc_out[k]["ok"], inc_out[k].get("t_end"))]
     if drift:
-        return finish(False, f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void")
+        why = f"sentinel: incumbent rounds no longer reproduce ({drift}); the pairing is void"
+        return finish(False, why, void=True)
     if a.non_inferior:
         miss = incomplete(labels, inc_out, B.outcomes(work / "candidate"))
         if miss:

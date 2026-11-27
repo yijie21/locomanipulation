@@ -57,8 +57,10 @@ class SentinelTest(unittest.TestCase):
 
 
 class GateVoidTest(unittest.TestCase):
-    def _run(self, drop: dict):
-        """gate.main with a fake run_jobs; `drop` {job index: labels not written}."""
+    def _run(self, drop: dict, flip: dict | None = None):
+        """gate.main with a fake run_jobs; `drop` {job index: labels not written}, `flip` {job index: labels whose
+        `ok` is the opposite of what the job would write} (job 1 is the sentinel re-run of the incumbent)."""
+        flip = flip or {}
         tmp = Path(tempfile.mkdtemp())
         pool = tmp / "pool"
         pool.mkdir()
@@ -75,7 +77,8 @@ class GateVoidTest(unittest.TestCase):
                 job.out.mkdir(parents=True, exist_ok=True)
                 for x in job.labels or B.pool_labels(pool_):
                     if x not in drop.get(k, ()):
-                        (job.out / f"{x}.json").write_text(json.dumps(_round(ok="candidate" in str(job.out))))
+                        ok = ("candidate" in str(job.out)) != (x in flip.get(k, ()))
+                        (job.out / f"{x}.json").write_text(json.dumps(_round(ok=ok)))
             return {}
 
         real = B.run_jobs
@@ -108,6 +111,18 @@ class GateVoidTest(unittest.TestCase):
         rc, led = self._run({})
         self.assertEqual(len(led), 1)
         self.assertNotIn("void", led[0])
+
+    def test_sentinel_drift_is_a_void_call_not_a_rejection(self):
+        """TODO 55.1 (user 2026-11-27, main's TODO 54 A4): an incumbent round that no longer reproduces voids the
+        call -- the loop counts no gate call and the hash is not "rejected before", so the same candidate may be
+        judged again once the bed is back."""
+        rc, led = self._run({}, flip={1: ["a_s0"]})
+        self.assertEqual(rc, 1)
+        self.assertEqual(len(led), 1)
+        self.assertFalse(led[0]["accepted"])
+        self.assertTrue(led[0]["void"])
+        self.assertTrue(led[0]["reason"].startswith("sentinel:"))
+        self.assertIn("a_s0", led[0]["reason"])
 
 
 class MotorSignatureTest(unittest.TestCase):

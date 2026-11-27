@@ -105,6 +105,7 @@ ALTERNATING = False
 # 5, 5 h, 80 % before, user 2026-11-06)
 MAX_RUN_ITERS = None
 MAX_VOID_STREAK = 2  # TODO 36.7 (user 2026-10-22): voided iterations in a row that stop the loop
+DRIFT_STREAK = 2  # TODO 55.1 (user 2026-11-27): gate calls in a row voided by sentinel drift that stop the loop
 HISTORY_FULL = 2  # TODO 36.7: the Manager reads the last 2 iterations' ledger rows in full, older ones one line each
 MAX_HYPOTHESES = 4
 POOL_KEEP = 2  # TODO 33.8 (D7, user 2026-10-22): rejected candidates kept for the Manager's `base` and the Composer
@@ -569,11 +570,32 @@ def voided_in_a_row(es: list[dict]) -> list[int]:
     return out[::-1]
 
 
+def drift_voids_in_a_row(es: list[dict]) -> int:
+    """TODO 55.1 (user 2026-11-27): the newest gate rows, counted back, that the sentinel voided (gate.py: "sentinel:
+    incumbent rounds no longer reproduce", `void`). The regular gate and the sync gate both count; a stub row (void
+    too, "dry run") or any judged call ends the count. A void never changes the incumbent, so a streak is always on one
+    incumbent."""
+    k = 0
+    for e in reversed(es):
+        if e.get("step") != "gate":
+            continue
+        if e.get("void") and str(e.get("reason", "")).startswith("sentinel:"):
+            k += 1
+        else:
+            break
+    return k
+
+
 def stop_reason(meta: dict) -> str | None:
     es = entries()
     voided = voided_in_a_row(es)
     if len(voided) >= MAX_VOID_STREAK:  # TODO 36.7: an abnormal stop (is_abnormal)
         return f"audit: iterations {', '.join(map(str, voided))} voided in a row (roles named off-limits paths)"
+    drifts = drift_voids_in_a_row(es)
+    if drifts >= DRIFT_STREAK:  # TODO 55.1: abnormal too (is_abnormal, "gate error"): the bed changed under the run
+        return (f"gate error: sentinel drift in {drifts} gate calls in a row -- the incumbent's rounds no longer "
+                "reproduce, so the bed or its environment changed under the run (re-run the incumbent's rounds or "
+                "restore the environment before resuming)")  # fmt: skip
     accepted = [e for e in es if e.get("step") == "gate" and e.get("accepted") and not e.get("void")]
     n_accept = len(B.pool_labels(accept_pool()))
     here = incumbent_ok_here(es)

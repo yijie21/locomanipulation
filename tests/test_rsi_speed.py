@@ -743,6 +743,61 @@ class LeakPolicy(unittest.TestCase):
         self.assertEqual(self.lp.stop_reason(meta), "manager: stop")
 
 
+class DriftStreak(unittest.TestCase):
+    """TODO 55.1 (user 2026-11-27): a gate call the sentinel voided counts as no call (gate.py marks it void); two in a
+    row stop the loop abnormally, because a deterministic simulation drifts only when the bed changed under the run."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        root = Path(self.d.name)
+        (root / "pool_diag").mkdir()
+        hid = root / "outputs" / "scene_rsi_20261016_hidden" / "fam"
+        hid.mkdir(parents=True)
+        for p in (mock.patch.multiple(self.lp, STATE=root / "state", LOOP=root, HIDDEN=hid, GATE_DIR=hid / "gate",
+                                      accept_pool=lambda: root),
+                  mock.patch.dict(os.environ)):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+        os.environ.pop("RSI_MAX_WALL_H", None)
+        (root / "state").mkdir()
+        self.meta = dict(started="2026-11-27T00:00:00Z", started_s=time.time())
+
+    def drift(self, **kw):
+        self.lp.ledger(dict(step="gate", accepted=False, void=True, hash="h",
+                            reason="sentinel: incumbent rounds no longer reproduce (['a_s0']); the pairing is void", **kw))  # fmt: skip
+
+    def test_the_streak_counts_the_newest_gate_rows_back_to_a_judged_or_stub_call(self):
+        c = self.lp.drift_voids_in_a_row
+        self.assertEqual(c([]), 0)
+        rows = [dict(step="gate", void=True, reason="sentinel: x"), dict(step="review", iter=1),
+                dict(step="gate", void=True, reason="sentinel: y")]  # fmt: skip
+        self.assertEqual(c(rows), 2)  # a non-gate row in between does not break the streak
+        self.assertEqual(c([*rows, dict(step="gate", accepted=False, reason="net wins 1 < 3")]), 0)
+        self.assertEqual(c([*rows, dict(step="gate", void=True, reason="dry run: static checks passed")]), 0)
+        self.assertEqual(c([*rows, dict(step="gate", void=True, reason="pairing incomplete: final lacks 1")]), 0)
+        self.assertEqual(c([dict(step="gate", accepted=True, reason="accepted"), *rows]), 2)
+
+    def test_one_drift_void_is_no_gate_call_and_the_loop_goes_on(self):
+        self.drift(iter=0)
+        self.assertEqual(self.lp.run_gates(self.lp.entries(), self.meta), [])
+        self.assertIsNone(self.lp.stop_reason(self.meta))
+
+    def test_two_drift_voids_in_a_row_stop_the_loop_abnormally_also_when_alternating(self):
+        from unittest import mock
+
+        self.drift(iter=0)
+        self.drift(sync={"from": "other"})  # the sync gate's void counts too
+        why = self.lp.stop_reason(self.meta)
+        self.assertTrue(why.startswith("gate error: sentinel drift in 2 gate calls in a row"))
+        self.assertTrue(self.lp.is_abnormal(why))
+        with mock.patch.object(self.lp, "ALTERNATING", True):
+            self.assertEqual(self.lp.stop_reason(self.meta), why)
+
+
 class ManagerHistory(unittest.TestCase):
     """TODO 36.7 (user 2026-10-22): the Manager reads the last two iterations' ledger rows in full and each earlier
     iteration as one line (32.12's iteration 5 Manager context: 93 -> 42 KB)."""
