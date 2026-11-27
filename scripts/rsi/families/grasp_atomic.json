@@ -53,6 +53,7 @@
    "scripts/rsi/digest.py",
    "scripts/rsi/family.py",
    "scripts/rsi/gate.py",
+   "scripts/rsi/verdict.py",
    "scripts/rsi/scene_round.py",
    "scripts/rsi/sealed.py",
    "scripts/rsi/claim_check.py",

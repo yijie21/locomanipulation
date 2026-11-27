@@ -43,6 +43,12 @@ family's skills package. Not written for this family's tasks, so it need not win
 once, accepted iff the candidate loses no more starts than it wins (c <= b; `non_inferior_fails`). The static checks,
 the sentinel and complete pairing are as above. "Rejected before" counts only rejections under the same rule.
 
+The rules themselves live in scripts/rsi/verdict.py (TODO 56.1, user 2026-11-27, from main's TODO 54): `decide(t,
+kind)` with kind stage1 / gate / sync is what the three checks above call, and the sealed set judges the final against
+the seed with the same module. A tally also carries `per_task` {task: {n, b, c, net, p_regress, p_holm, regress}}: the
+one-sided exact test that the candidate is WORSE on the task, Holm-corrected across the tasks at 0.05. Reported in
+gate.json and the loop's ledger for the human and the roles, never a reason to reject.
+
     PY=third_party/GR00T-WholeBodyControl/.venv_sim/bin/python
     PYTHONPATH=src $PY scripts/rsi/gate.py pick_single --gate <dir> --pool <accept pool> \\
         --candidate <dir> [--procs 12 --gpus 0,1] [--dry-run]
@@ -57,7 +63,7 @@ import os
 import shutil
 import sys
 import time
-from math import comb, sqrt
+from math import sqrt
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -65,20 +71,18 @@ REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import batch as B  # noqa: E402
+import verdict as V  # noqa: E402
 from scene_round import load_skills, skills_hash  # noqa: E402
 
 STAGE1 = 30
 SENTINELS = 5
-MIN_NET = 3
-LOSS_SHARE = 3  # c <= b / LOSS_SHARE
+MIN_NET = V.MIN_NET
+LOSS_SHARE = V.LOSS_SHARE  # c <= b / LOSS_SHARE
 GATE_RULE = 2  # 1: b - c >= 3 and p <= 0.05 (to 2026-10-22); 2: b - c >= 3 and c <= b / 3 (TODO 33.8)
 SYNC_RULE = "sync"  # --non-inferior: c <= b (scripts/rsi/alternate.py)
 SEED_SKILLS = REPO / "src" / "locomani" / "tasks" / "scene" / "skills"
 
-
-def mcnemar_one_sided(b: int, c: int) -> float:
-    n = b + c
-    return 1.0 if n == 0 else sum(comb(n, i) for i in range(b, n + 1)) / 2**n
+mcnemar_one_sided = V.sign_p  # the name the experiment scripts and regress.py import
 
 
 def wilson(k: int, n: int, z: float = 1.96) -> list[float]:
@@ -140,29 +144,17 @@ def incomplete(labels, *arms: dict) -> list[str]:
     return sorted(x for x in labels if any(x not in arm for arm in arms))
 
 
-def drop_limit(t: dict) -> int:
-    """The most drops a candidate may have on the pool (verdict step 5)."""
-    limit = t["incumbent_dropped"] + 1
-    return max(limit, t["candidate_ok"] // 2) if t["incumbent_ok"] == 0 else limit
+drop_limit = V.drop_limit  # the most drops a candidate may have on the pool (verdict step 5)
 
 
 def verdict_fails(t: dict) -> list[str]:
-    """Why a full-pool tally `t` is rejected (verdict step 5); empty when it is accepted."""
-    fails = []
-    if t["b"] - t["c"] < MIN_NET:
-        fails.append(f"net wins {t['b'] - t['c']} < {MIN_NET}")
-    if t["c"] * LOSS_SHARE > t["b"]:
-        fails.append(f"losses {t['c']} > wins {t['b']} / {LOSS_SHARE}")
-    if t["candidate_fell"] > t["incumbent_fell"] + 1:
-        fails.append(f"falls {t['candidate_fell']} > {t['incumbent_fell']} + 1")
-    if t["candidate_dropped"] > drop_limit(t):
-        fails.append(f"drops {t['candidate_dropped']} > {drop_limit(t)}")
-    return fails
+    """Why a full-pool tally `t` is rejected (verdict step 5; verdict.decide kind `gate`); empty when accepted."""
+    return V.decide(t, "gate")["reasons"]
 
 
 def non_inferior_fails(t: dict) -> list[str]:
     """Why a full-pool tally is rejected under --non-inferior (rule `sync`): it loses more starts than it wins."""
-    return [f"losses {t['c']} > wins {t['b']}"] if t["c"] > t["b"] else []
+    return V.decide(t, "sync")["reasons"]
 
 
 def overrides(cand: Path) -> dict:
@@ -221,10 +213,11 @@ def per_class(cand: dict, inc: dict, keys: list[str]) -> dict:
 def tally(cand: dict, inc: dict) -> dict:
     """The paired comparison over the shared starts: b = starts the candidate reaches a higher stage on, c = a lower
     one (stage_of: a pack round's 0-4 progress, else ok / fail), `candidate_ok` / `incumbent_ok` the successes (stage
-    4), `stage` the stages behind b and c (stage_tally; None when no round carries one)."""
+    4), `stage` the stages behind b and c (stage_tally; None when no round carries one), `per_task` the regression
+    report by task (verdict.task_tests: wins, losses, the Holm-corrected one-sided p that the candidate is worse)."""
     keys = sorted(set(cand) & set(inc))
-    b = sum(stage_of(cand[k]) > stage_of(inc[k]) for k in keys)
-    c = sum(stage_of(cand[k]) < stage_of(inc[k]) for k in keys)
+    per_task = V.per_task_counts(cand, inc, keys, stage_of)
+    b, c = sum(v["b"] for v in per_task.values()), sum(v["c"] for v in per_task.values())
     why = {}
     for k in keys:
         if not cand[k]["ok"]:
@@ -236,7 +229,8 @@ def tally(cand: dict, inc: dict) -> dict:
                 candidate_dropped=sum(cand[k]["dropped"] for k in keys),
                 incumbent_dropped=sum(inc[k]["dropped"] for k in keys),
                 candidate_why=dict(sorted(why.items(), key=lambda kv: -kv[1])),
-                per_class=per_class(cand, inc, keys), stage=stage_tally(cand, inc, keys))  # fmt: skip
+                per_class=per_class(cand, inc, keys), stage=stage_tally(cand, inc, keys),
+                per_task=V.task_tests(per_task))  # fmt: skip
 
 
 def main(argv=None) -> int:
@@ -333,8 +327,9 @@ def main(argv=None) -> int:
     if miss:
         return void("stage 1", miss)
     t1 = tally(B.outcomes(work / "candidate"), inc_out)
-    if t1["b"] - t1["c"] <= 0:
-        return finish(False, f"stage 1: net wins {t1['b'] - t1['c']} <= 0 on {t1['n']} pairs", stage1=t1)
+    fails = V.decide(t1, "stage1")["reasons"]
+    if fails:
+        return finish(False, "; ".join(fails), stage1=t1)
     B.run_jobs([B.Job(work / "cand" / "skills", work / "candidate", overrides(work / "cand"))], a.family, a.pool,
                a.procs, log, a.gpus)  # fmt: skip
     miss = incomplete(labels, inc_out, B.outcomes(work / "candidate"))

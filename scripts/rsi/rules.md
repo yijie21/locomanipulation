@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 29, 2026-11-27)
+# Rules for the scene RSI loop (TODO 27, version 30, 2026-11-27)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -116,7 +116,11 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     win is a start the candidate reaches a higher stage on than the incumbent and a loss a lower one, the same stage a
     tie; b and c are judged by the same rule, so a change that carries three starts further along the chain is
     accepted before any start completes it. The verdict reports the stages behind b and c (`stage`). The 80 % stop,
-    `candidate_ok` and the sealed pool count stage 4 (the goal) alone.
+    `candidate_ok` and the sealed pool count stage 4 (the goal) alone. The verdict's `per_task` (version 30, TODO
+    56.1, user 2026-11-27) gives each task's wins, losses and the Holm-corrected one-sided p that the candidate is
+    worse on it (`regress` when significant at 0.05); it is a report for the roles and the human, never a reason to
+    reject -- a candidate that lifts the pool while a task regresses is still accepted, and the Reviewer's next
+    hypothesis should start from that task.
 
 26. When task-wide parks cover more than half the acceptance pool, the gate judges on an acceptance pool of the same
     size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a

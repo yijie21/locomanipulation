@@ -3,7 +3,8 @@ ends, run under the seed and under the gate's accepted incumbents (each one's sk
 as the gate judged it). The final incumbent and the seed run first; with --all the intermediate incumbents follow, for
 the growth curve. Rounds land in <hidden>/sealed/<name>/ (a rerun skips rounds already written); the summary --
 per-version and per-task wins with their 95% Wilson intervals, falls and drops, the final against the seed paired by
-start -- goes to
+start (`final_vs_seed`: scripts/rsi/verdict.py's `sealed` kind, the gate's net and loss-share conditions reported,
+and the per-task Holm-corrected regression test; TODO 56.1) -- goes to
 <hidden>/sealed/summary.json. D8: a family whose final incumbent wins >= 50% of the sealed pool enters bucket 1.
 
 Run it in the loop's sandbox checkout, detached (nohup setsid), like the gate:
@@ -26,7 +27,8 @@ sys.path[:0] = [str(HERE), str(REPO / "src")]
 
 import batch as B  # noqa: E402
 import family as F  # noqa: E402
-from gate import mcnemar_one_sided, overrides, stage_of, wilson  # noqa: E402
+import verdict as V  # noqa: E402
+from gate import overrides, stage_of, wilson  # noqa: E402
 
 from locomani.tasks.scene import body  # noqa: E402
 
@@ -82,11 +84,13 @@ def main(argv=None) -> int:
                    prediction={name: body.score(B.outcomes(out / name).values()) for name, _ in order})  # fmt: skip
     final, seed = B.outcomes(out / order[0][0]), B.outcomes(out / "seed")
     keys = sorted(set(final) & set(seed))
-    b = sum(final[k]["ok"] and not seed[k]["ok"] for k in keys)
-    c = sum(seed[k]["ok"] and not final[k]["ok"] for k in keys)
     rate = sum(final[k]["ok"] for k in keys) / max(len(keys), 1)
     k_ok = sum(final[k]["ok"] for k in keys)
-    summary.update(final=order[0][0], final_vs_seed=dict(n=len(keys), b=b, c=c, p_one_sided=mcnemar_one_sided(b, c)),
+    # TODO 56.1: the final against the seed paired by start under verdict.py's `sealed` kind (the gate's net and
+    # loss-share conditions, reported) with the per-task regression report; a success against a failure is a win
+    vs = V.judge(final, seed, "sealed")
+    summary.update(final=order[0][0],
+                   final_vs_seed={k: vs[k] for k in ("n", "b", "c", "p_one_sided", "decision", "reasons", "per_task")},
                    final_rate=round(rate, 3), final_rate_ci=wilson(k_ok, len(keys)), bucket1=rate >= BUCKET1_RATE)  # fmt: skip
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
     print(json.dumps(summary, indent=1))
