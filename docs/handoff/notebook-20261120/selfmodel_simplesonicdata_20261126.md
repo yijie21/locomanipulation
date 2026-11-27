@@ -302,9 +302,376 @@
    - `checks/check2_diag.txt`（md5 5f40c26e）和 `check2_diag_all.txt`（fac16fda）是用错的 0.02 s 算的，速度列要除以 5，FK-W 列不受影响。脚本的默认值已经改成 0.1 s（`ssd_check2_diag.py`，md5 31c6ff96）。
    - 当时据此提的方案 1（界改成 max(0.2 mm, 手速 × 5 ms)），协调方已经撤回。
 
+## 修订 2（2026-11-27T01:39Z，第一次闸门不过之后写好并提交，那时 R_D 一局都没跑）
+
+**起因**：链条 01:22:30Z 判 GATE FAIL，按登记停下，R_D 没跑。`gate/gate.txt`（md5 77c96bb6）的判定几行原文如下，全文在"结果"一节：
+
+```
+verdict (D_S; F1-0 share >= 80 % and F1(a) ratio <= 1.3, both stages; F1(b) beside, not in the verdict):
+  XMovePickTeleop      F1-0  68.3 %  F1(a) 4.442x  -> FAIL   (F1(b)  45.0 % of 60)
+  XMoveBendPickTeleop  F1-0  83.3 %  F1(a) 4.461x  -> FAIL   (F1(b)  36.7 % of 60)
+  BendPickMP           F1-0  63.3 %  F1(a) 4.918x  -> FAIL   (F1(b)  48.3 % of 60)
+  TabletopGraspMP      F1-0  66.7 %  F1(a) 5.888x  -> FAIL   (F1(b)  30.0 % of 60)
+GATE FAIL
+```
+
+1. **诊断：z 分数**。脚本 `checks/ssd_input_diag.py`（md5 c7a840b0），输出 `checks/input_diag.txt`（md5 d6f2a1ee），原文在"结果"一节。
+   - 按 D_S 每个模型自己的归一化，给 AL 每一下的输入逐列算 z 分数。
+   - x0 的第 204 列 `walked`（这一下之前走过路没有）z = 1000：
+     - 任务局每一下都是先走到站位再伸手，所以这一列都是 1；
+     - D_S 的训练数据只采原地，这一列全是 0，标准差被 wm.Norm 截到 1e-3。
+   - 其余 289 列（x0 277 列加 u 12 列）的 |z| 中位数都 ≤ 1.9。最大的是 1.90，参考里的第 2 个关节。
+   - 对照组 ScaleBFM（simplecmp 的 AL，simpledata 的 D）：训练数据里有 33 % 的段走过路，同一列 z = 1.42；没有哪一列的 |z| 中位数超过 4。
+   - 这一列在两条路上都由同一行代码算出（`d3_collect.segments` 的 `walked=bool(info["walked"])`），同一个走过路的状态两条路都给 1。按协调方的判法，这不算代码 bug，是真实的分布差别。
+2. **先例，以及这次登记漏掉的一步**：
+   - nowalk 判"SONIC 不需要先走后伸的数据"时，原地模型 N 在训练和评估里都把这一列置成了 0。`selfmodel_nowalk_20261126/nw2_split.py` 的原文："Zeroed inputs (nw_train / nw_eval, arms N and C2): x0 column 204 (data.py's `walked`, checked equal to the flag)"。
+   - 本条照 nowalk 只采原地，却漏了这一步。
+3. **照实写：置 0 是看到离线诊断以后才定的**。
+   - 诊断是把 AL 记录里的这一列置 0，再离线预测一次：误差中位数 3.654 cm，是 val 3.392 cm 的 1.08 倍；五个模型的分歧 2.29 cm；模型 / 直接 0.598。
+   - 这个诊断不算闸门的数，也没有分任务看过。
+   - 协调方 11-27 定的置 0，理由有两条：
+     - 用户定了 SONIC 在 SIMPLE 上只采原地，这一列在训练里恒为 0，对模型没有信息；
+     - nowalk 的原地模型 N 就是这样处理的。
+4. **冒烟里的 12–14 倍是同一个原因**：冒烟模型（2000 步）在冒烟 AL 的 4 下上，置 0 后误差从 88.8 cm 降到 8.2 cm，分歧从 53.2 cm 降到 1.9 cm。我当时把它归因于模型没训够，没有再查。
+5. **写这一节时还没有的东西**：
+   - R_D 一局都没跑，所以没有 R_D 的任务成功率。
+   - A 和 AL 的成功数在阶段 A 的 `run/eval_A.txt` 里，链条在闸门之前就打印了，我看过。
+6. **实现：新冻结副本 `asrun/code2`**。
+   - 做法：01:34:51Z 用 `cp -a asrun/code asrun/code2` 复制（链接照原样复制，不跟进去）。
+   - 只改 `scripts/experiments/reachwm_20261030/data.py` 的一行：md5 从 174071cb 变成 b8f2c677。`CODE_MD5` 里也只有这一行跟着变，从 f30c3f73 变成 ba3a0f91。
+   - `diff -r --no-dereference code code2` 只有这两个文件（`asrun/code2.diff`，md5 c0d6f329），原文：
+
+   ```
+   diff -r --no-dereference code/CODE_MD5 code2/CODE_MD5
+   581c581
+   < 174071cb9cdcfce6ce99b916aa365fbf  scripts/experiments/reachwm_20261030/data.py
+   ---
+   > b8f2c677c047f1dd1e6fc1c3536a7827  scripts/experiments/reachwm_20261030/data.py
+   diff -r --no-dereference code/scripts/experiments/reachwm_20261030/data.py code2/scripts/experiments/reachwm_20261030/data.py
+   245c245,247
+   <     D["x0"] = np.c_[S[k0], S[k0 - 1], S[k0 - 2], D["jaw0"], D["rot0"], D["walked"], D["chain"]].astype(np.float32)
+   ---
+   >     # selfmodel_simplesonicdata_20261126 revision 2 (this frozen copy only, inference: no model is trained from it): x0
+   >     # column 204 (walked) set to 0, as selfmodel_nowalk_20261126's in-place model N (D_S's train split: 0 everywhere)
+   >     D["x0"] = np.c_[S[k0], S[k0 - 1], S[k0 - 2], D["jaw0"], D["rot0"], np.zeros(len(k0)), D["chain"]].astype(np.float32)
+   ```
+
+   - **为什么改在这一行**：
+     - 闸门的离线预测（sh_err.py 和 scmp_range.py 经 `data.load`）和 R_D 的在线反算（scmp_correct 的 `ModelD.z_of` 经 `DT.derive`）都要经过这一行，所以改一处，两处就都置 0 了。
+     - 不重训。
+     - code2 里的 ss_f1pre.py 和 scmp_range.py 也经这一行读 D_S 的训练数据。训练数据这一列本来全是 0，结果逐字节不变，核对见下。
+   - **核对**：脚本 `rev2/ssd_code2_check.py`（md5 32ab42b0），输出 `checks/rev2/code2_check.txt`（md5 e5de1676）。同一批记录分别用 code 和 code2 的 data.py 读一遍，逐列比 x0 和 u。原文（去掉了 dump 行和路径前缀）：
+
+   ```
+   == AL records (run/corr_AL): 240 segments; .../asrun/code/.../data.py vs .../asrun/code2/.../data.py
+     u byte-equal: True; x0 columns that differ: [204] of 278
+     x0[204]: code values [1.0], code2 values [0.0]; code's equals the walked flag: True
+     every other x0 column byte-equal: True; code2's x0[204] all 0: True
+   == D_S's training data (data3/data/all.npz, data3b/data/all.npz, train/data/mid_data3.npz, train/data/mid_data3b.npz): 1129925 segments; ...
+     u byte-equal: True; x0 columns that differ: [] of 278
+     every other x0 column byte-equal: True; code2's x0[204] all 0: True
+   code CODE_MD5 still OK
+   code2 CODE_MD5 OK
+   ```
+
+   - **启动脚本**：放在 `scripts/experiments/selfmodel_simplesonicdata_20261126/rev2/`，H20b 上在 `asrun/rev2/`。
+     - `rev2/ssd_gate.sh`（md5 b9f622f5）：冻结的 `ssd_gate.sh`（55ca61a9）只改两处：代码目录换成 code2，默认输出目录换成 `gate_rev2/`。原来的 `gate/` 和它的 gate.txt 保留不动。
+     - `rev2/ssd_run.sh`（md5 e93220e1）：冻结的 `ssd_run.sh`（63177f71）只改代码目录。
+     - `rev2/ssd_f1.sh`（md5 ac1e6ee2）：冻结的 `ssd_f1.sh`（6902ad00）只改代码目录。
+     - `rev2/ssd_chain.sh`（md5 5a23fa20）：冻结链条（da033561）的第 4–7 步，日志写到 `chain_rev2.log`。
+   - **链条里不重跑的**：训练和阶段 A 都不重跑，D_S 不重训，AL 的记录照用。
+   - **一致性怎么查**：
+     - A = AL（120 / 120）和 plan_same（240 / 240）跟第一次一样，数据没动。
+     - AL 的"在线 = 离线"现在不可能再成立，因为它的在线预测是用 walked = 1 算的。这一项只记进日志，不作为停下的条件。
+     - 同一项检查（sh_err.py 的，< 1e-4 m）改在阶段 R 之后对 R_D 做，不过就在评估之前停下。
+7. **判据不变**：闸门（ssd_gate.sh 的规则）、R_D、F1 和评估都照登记。闸门不过就停下报协调方，不再改别的。
+8. **不做"同一状态、两条路逐列比"**：协调方 11-27 定的。原因已经找到：置 0 以后误差回到 val 的水平，其余各列也都在范围里。
+9. **结果怎么写**：SONIC 这一格的 R_D 写成"walked 置 0 后"的结果，和第一次的 GATE FAIL 并排写，不藏。
+10. **重算之前的预测**：
+    - F1-0 不经过这一列：它比的是命令时的 29 个关节和 D_S 训练数据的分布，而训练数据逐字节不变。所以 F1-0 应和第一次逐字相同，过 80 % 的仍只有 XMoveBendPick（83.3 %）。
+    - 因此闸门只能靠 XMoveBendPick 的 F1(a) ≤ 1.3 过。
+    - 全体的诊断是 1.08 倍，但 XMoveBendPick 要下蹲。我估它的 F1(a) 在 0.9–1.5 倍，GATE PASS 的把握约 55 %。
+
 ## 预测修订
 
 ## 结果（贴原始输出，不转述）
+
+- **运行**（修订 1 之后，H20b，冻结副本 `asrun/code` 加 `asrun/rev1/` 的两个脚本，CODE_MD5 核对通过）：
+  - 重启：00:57:09Z。重启前的 nvidia-smi 在 `nvidia_smi_rev1.txt`：8 张卡各 914 MiB，只有 keepalive。
+  - 训练和两项留出评估：00:57–01:12Z，卡 6、7。
+  - 阶段 A：01:12:18–01:20:05Z，48 个作业退出码都是 0（`run/run.log`），8 张卡各 5 个进程，SONIC 网络在 CPU 上。
+  - 闸门：01:22:30Z 判 GATE FAIL，链条按登记停下，R_D 没跑。
+- **原始输出**：`/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/`
+  - 链条日志 `chain_rev1.log`；训练 `train/`（run.log、eval1.txt、eval2_*.txt）；
+  - 行 `run/rows/`，AL 的记录 `run/corr_AL/`，一致性 `run/eval_A.txt`、`run/consistency.txt`；
+  - 闸门 `gate/`（gate.txt，md5 77c96bb6）；输入诊断 `checks/input_diag.txt`（md5 d6f2a1ee）。
+
+### 链条：`chain_rev1.log`
+
+```
+2026-11-27T00:57:09Z chain start (GPUs 6,7)
+2026-11-27T01:12:18Z train done: E3_ensemble frac 0.3: best val median 4.055 cm (446.0 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f0.3;E3_ensemble frac 1.0: best val median 3.392 cm (471.6 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f1;
+2026-11-27T01:12:18Z phase A start
+2026-11-27T01:20:05Z phase A done: 48 jobs, 0 nonzero exits
+2026-11-27T01:20:06Z phase A:   A = AL: 120 / 120 episodes identical (every row and stage key but wall_s, --correct's fields and the option sonic_vr_f
+2026-11-27T01:22:30Z consistency: A = AL 120 / 120; plan_same 240 / 240; online = offline max 5.095691680945258e-06 m -> OK
+2026-11-27T01:22:30Z gate: GATE FAIL
+2026-11-27T01:22:30Z GATE FAIL: no R_D (stop)
+```
+
+### 训练：`train/run.log`（去掉了两行 datacheck 原文，它们和修订 1 第 3 条贴的逐字相同）
+
+```
+2026-11-27T00:57:09Z code: /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/asrun/code (CODE_MD5 ok or SSD_TEST), train3b's t3b_train / t3b_mid frozen; GPUs 6 7; out /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train
+2026-11-27T00:57:09Z wait for the collection
+2026-11-27T00:57:09Z data3: checks passed
+2026-11-27T00:57:09Z data3b: CHECK PASSED; SIMPLE CHECK FAILED (1) accepted as revision 1's deviation (check.txt md5 706111ce)
+usable one-hand segments 60441; DATA OK
+2026-11-27T00:57:10Z mid
+MID CHECKS PASS
+MID CHECKS PASS
+2026-11-27T00:58:29Z mid check
+  FDVEL off, byte equal: x0 True, u True, pos_f True, rot_f True, settled True, fell True, err_cm True, target True, rot6 True, jaw0 True, rot0 True, pel_f True, q_f True
+  FDVEL on, 3000 sampled starts vs the source rows: joint velocity max |d| 4.77e-07 rad/s, angular velocity max |d| 8.99e-08 rad/s; 96 columns replaced, the other 182 equal to FDVEL off: True
+  child with REACHWM_FDVEL=1: data.load ran (k0 >= 3), its x0 byte equal to fdvel_x0 here: True
+  FDVEL off, byte equal: x0 True, u True, pos_f True, rot_f True, settled True, fell True, err_cm True, target True, rot6 True, jaw0 True, rot0 True, pel_f True, q_f True
+  FDVEL on, 3000 sampled starts vs the source rows: joint velocity max |d| 5.22e-07 rad/s, angular velocity max |d| 9.46e-08 rad/s; 96 columns replaced, the other 182 equal to FDVEL off: True
+  child with REACHWM_FDVEL=1: data.load ran (k0 >= 3), its x0 byte equal to fdvel_x0 here: True
+MID FDVEL CHECK PASS
+2026-11-27T01:00:03Z split check
+SPLIT CHECK PASS
+2026-11-27T01:01:14Z train
+0, 914 MiB, 0 %
+1, 914 MiB, 0 %
+2, 914 MiB, 0 %
+3, 914 MiB, 0 %
+4, 914 MiB, 0 %
+5, 914 MiB, 0 %
+6, 914 MiB, 0 %
+7, 914 MiB, 0 %
+2026-11-27T01:01:15Z train D_S seed 0 frac 1 on GPU 6 (FDVEL 1): pid 498386
+2026-11-27T01:02:00Z train D_S seed 0 frac 0.3 on GPU 7 (FDVEL 1): pid 498566
+E3_ensemble frac 0.3: best val median 4.055 cm (446.0 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f0.3
+E3_ensemble frac 1.0: best val median 3.392 cm (471.6 s) -> /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f1
+2026-11-27T01:10:10Z eval 1
+SIMPLE val (data3 val, all, kept): D 3.517 cm [3.338, 3.631] (n 2212, 1654 resets); learning curve D / D_f0.3 0.833 (0.7945901873557507, 0.8597688758874684); test_iid: D 3.226109266281128, curve 0.8231330779003642
+2026-11-27T01:11:26Z eval 2
+eval 2 settled:     all         : n   56 (49 resets) xfer 1.906 cm [1.508, 2.232] / val 3.517 cm (n 2212) = 0.542x [0.442, 0.661] (val resampled too [0.437, 0.648])
+eval 2 ended:     all         : n  360 (319 resets) xfer 3.201 cm [2.890, 3.737] / val 3.517 cm (n 2212) = 0.910x [0.832, 1.062] (val resampled too [0.831, 1.084])
+2026-11-27T01:12:18Z done
+```
+
+### 阶段 A 和一致性：`run/eval_A.txt`
+
+A 栏是 H20b 上用 CPU 网络重跑的，和主指标 SONIC 行（4090，GPU 网络）不是同一组数，只和本条的 R_D 配对。
+
+```
+== rows: A 120, AL 120, RD 0, S 120
+
+== 1. consistency
+  A = AL: 120 / 120 episodes identical (every row and stage key but wall_s, --correct's fields and the option sonic_vr_frame)
+  the look (cloud, score, seen_cm) = the main metric's SONIC A (GPU nets; a description): 120 / 120
+  AL: 120 episodes logged, 240 stages, plan_same 240
+
+== 2. failures before the arms split (A's rows), per task and class
+  XMovePick     : 0 (none)
+  XMoveBendPick : 0 (none)
+  BendPick      : 0 (none)
+  TabletopGrasp : 0 (none)
+
+== 3. success per task
+  -- 45 s
+  XMovePick     : A 7, AL 7, RD 0 (of 30)
+  XMoveBendPick : A 4, AL 4, RD 0 (of 30)
+  BendPick      : A 6, AL 6, RD 0 (of 30)
+  TabletopGrasp : A 13, AL 13, RD 0 (of 30)
+  all           : A 30, AL 30, RD 0 (of 120)
+  -- official
+  XMovePick     : A 7, AL 7, RD 0 (of 30)
+  XMoveBendPick : A 4, AL 4, RD 0 (of 30)
+  BendPick      : A 0, AL 0, RD 0 (of 30)
+  TabletopGrasp : A 13, AL 13, RD 0 (of 30)
+  all           : A 24, AL 24, RD 0 (of 120)
+
+== 4. decision set (pre-split failures over half out; A >= 24 / 30 'ceiling' out)
+  45 s     XMovePick     : A 7 / 30 -> in
+  45 s     XMoveBendPick : A 4 / 30 -> in
+  45 s     BendPick      : A 6 / 30 -> in
+  45 s     TabletopGrasp : A 13 / 30 -> in
+  official XMovePick     : A 7 / 30 -> in
+  official XMoveBendPick : A 4 / 30 -> in
+  official BendPick      : A 0 / 30 -> in
+  official TabletopGrasp : A 13 / 30 -> in
+
+== 6. mechanism: each stage's palm miss (cm, median), D_S's error of the sent command at the stage's end (palm, cm, median), reaches with a table contact (hits)
+  XMovePick      pregrasp (n 30): miss A 4.64 | D_S's error AL 28.10 | table contact A 2
+  XMovePick      entry    (n 30): miss A 6.83 | D_S's error AL 26.88 | table contact A 1
+  XMoveBendPick  pregrasp (n 30): miss A 7.82 | D_S's error AL 27.13 | table contact A 1
+  XMoveBendPick  entry    (n 30): miss A 8.30 | D_S's error AL 28.06 | table contact A 1
+  BendPick       pregrasp (n 30): miss A 5.51 | D_S's error AL 26.63 | table contact A 0
+  BendPick       entry    (n 30): miss A 6.48 | D_S's error AL 28.56 | table contact A 0
+  TabletopGrasp  pregrasp (n 30): miss A 6.60 | D_S's error AL 31.56 | table contact A 30
+  TabletopGrasp  entry    (n 30): miss A 6.37 | D_S's error AL 29.69 | table contact A 23
+```
+
+### 第一次闸门（walked 未置 0）：`ssd_gate.sh` → `gate/gate.txt`
+
+```
+gate 2026-11-27T01:20:06Z: rows /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/run/rows, AL record /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/run/corr_AL; D_S /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f1 (n_train 1095531, val median 3.3923 cm); train /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/data3/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/data3b/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/data/mid_data3.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/data/mid_data3b.npz
+== D_S: train /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/data3/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/data3b/data/all.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/data/mid_data3.npz,/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/data/mid_data3b.npz; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '1', 'REACHWM_TRAIN_HELD': '', 'REACHWM_SUBSET': ''}
+  train split 1095531 segments (train.json n_train 1095531: equal); val 5140, val starts in range 86.6 %
+  rows A_XMovePickTeleop.jsonl: 30 episodes, md5 656a35f20929a7fa9f17fa7793848cac
+  rows A_XMoveBendPickTeleop.jsonl: 30 episodes, md5 314c1ce82a20a468d0f1616d8be5e3ac
+  rows A_BendPickMP.jsonl: 30 episodes, md5 87760c6340485920e22fd6f18d39373e
+  rows A_TabletopGraspMP.jsonl: 30 episodes, md5 7fbab276a3dc78514052e1888a21e6c1
+  in range (all 29 joints inside the train split's 0.5 / 99.5 %): share [95 %, layouts resampled]; joints out median; most often out (% of starts)
+    XMovePickTeleop      pregrasp n  30   53.3 % [ 30.0,  76.7]  out median 0  [('right_ankle_pitch_joint', 30.0), ('left_shoulder_pitch_joint', 26.7), ('right_ankle_roll_joint', 10.0)]
+    XMovePickTeleop      entry    n  30   83.3 % [ 69.9,  96.7]  out median 0  [('waist_pitch_joint', 10.0), ('right_ankle_pitch_joint', 6.7), ('left_shoulder_pitch_joint', 3.3), ('right_ankle_roll_joint', 3.3)]
+    XMovePickTeleop      both     n  60   68.3 % [ 53.3,  83.3]  out median 0  [('right_ankle_pitch_joint', 18.3), ('left_shoulder_pitch_joint', 15.0), ('right_ankle_roll_joint', 6.7), ('waist_pitch_joint', 5.0)]
+    XMoveBendPickTeleop  pregrasp n  30   73.3 % [ 53.3,  90.0]  out median 0  [('left_shoulder_pitch_joint', 13.3), ('left_hip_yaw_joint', 3.3), ('left_knee_joint', 3.3), ('right_shoulder_pitch_joint', 3.3), ('left_ankle_roll_joint', 3.3)]
+    XMoveBendPickTeleop  entry    n  30   93.3 % [ 86.6, 100.0]  out median 0  [('left_ankle_pitch_joint', 6.7)]
+    XMoveBendPickTeleop  both     n  60   83.3 % [ 70.0,  95.0]  out median 0  [('left_shoulder_pitch_joint', 6.7), ('left_ankle_pitch_joint', 3.3), ('left_hip_yaw_joint', 1.7), ('right_shoulder_pitch_joint', 1.7), ('left_knee_joint', 1.7)]
+    BendPickMP           pregrasp n  30   50.0 % [ 26.7,  73.3]  out median 0  [('left_ankle_pitch_joint', 43.3), ('left_ankle_roll_joint', 3.3), ('right_ankle_roll_joint', 3.3)]
+    BendPickMP           entry    n  30   76.7 % [ 56.7,  93.3]  out median 0  [('right_ankle_pitch_joint', 23.3)]
+    BendPickMP           both     n  60   63.3 % [ 45.0,  81.7]  out median 0  [('left_ankle_pitch_joint', 21.7), ('right_ankle_pitch_joint', 11.7), ('right_ankle_roll_joint', 1.7), ('left_ankle_roll_joint', 1.7)]
+    TabletopGraspMP      pregrasp n  30   73.3 % [ 50.0,  90.0]  out median 0  [('right_hip_roll_joint', 20.0), ('right_ankle_roll_joint', 13.3), ('left_hip_roll_joint', 10.0), ('left_ankle_roll_joint', 3.3)]
+    TabletopGraspMP      entry    n  30   60.0 % [ 43.3,  80.0]  out median 0  [('left_ankle_pitch_joint', 20.0), ('right_ankle_roll_joint', 10.0), ('right_hip_yaw_joint', 6.7), ('left_hip_roll_joint', 6.7), ('left_ankle_roll_joint', 6.7)]
+    TabletopGraspMP      both     n  60   66.7 % [ 55.0,  78.3]  out median 0  [('right_hip_roll_joint', 13.3), ('right_ankle_roll_joint', 11.7), ('left_ankle_pitch_joint', 10.0), ('left_hip_roll_joint', 8.3), ('left_ankle_roll_joint', 5.0)]
+    all                  pregrasp n 120   62.5 % [ 50.8,  73.3]  out median 0  [('left_ankle_pitch_joint', 10.8), ('left_shoulder_pitch_joint', 10.0), ('right_ankle_pitch_joint', 7.5), ('right_ankle_roll_joint', 6.7), ('right_hip_roll_joint', 5.0)]
+    all                  entry    n 120   78.3 % [ 70.0,  85.8]  out median 0  [('right_ankle_pitch_joint', 8.3), ('left_ankle_pitch_joint', 6.7), ('waist_pitch_joint', 3.3), ('right_ankle_roll_joint', 3.3), ('right_hip_yaw_joint', 1.7)]
+    all                  both     n 240   70.4 % [ 62.9,  77.5]  out median 0  [('left_ankle_pitch_joint', 8.8), ('right_ankle_pitch_joint', 7.9), ('left_shoulder_pitch_joint', 5.4), ('right_ankle_roll_joint', 5.0), ('right_hip_roll_joint', 3.3)]
+== D_S: model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f1, val 3.392 cm; switches {'REACHWM_GOAL_REF': '1', 'REACHWM_APPROACH': '1', 'REACHWM_QFIX': '1', 'REACHWM_FDVEL': '1'}
+  AL: /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/run/corr_AL: 240 segments (240 kept, not fallen); online = offline on 240 sent stages (plan_same): max |pred diff| 5.096e-06 m; 0 stages without a pair
+    model error at the task label, median cm [95 %, layouts resampled] / val = F1(a) ratio [95 %]; direct miss median; model / direct [95 %]
+    reaches with a table contact (rows' hits): 58 of 240 kept
+    XMovePickTeleop      pregrasp n  30: 15.334 cm [15.012, 15.878] = 4.520x [4.425, 4.681]  > 1.3; direct  4.013 cm; model / direct 3.821 [3.048, 5.210]
+    XMovePickTeleop      entry    n  30: 14.367 cm [13.713, 15.504] = 4.235x [4.042, 4.570]  > 1.3; direct  6.037 cm; model / direct 2.380 [2.138, 2.658]
+    XMovePickTeleop      both     n  60: 15.070 cm [14.820, 15.504] = 4.442x [4.369, 4.570]  > 1.3; direct  5.207 cm; model / direct 2.894 [2.568, 3.526]
+    XMoveBendPickTeleop  pregrasp n  30: 15.443 cm [12.208, 16.319] = 4.552x [3.599, 4.810]  > 1.3; direct  7.990 cm; model / direct 1.933 [1.382, 2.486]
+    XMoveBendPickTeleop  entry    n  30: 14.667 cm [12.292, 17.113] = 4.324x [3.624, 5.045]  > 1.3; direct  8.029 cm; model / direct 1.827 [1.172, 2.805]
+    XMoveBendPickTeleop  both     n  60: 15.132 cm [12.315, 16.409] = 4.461x [3.630, 4.837]  > 1.3; direct  8.029 cm; model / direct 1.885 [1.332, 2.567]
+    BendPickMP           pregrasp n  30: 16.359 cm [14.529, 17.241] = 4.822x [4.283, 5.082]  > 1.3; direct  5.786 cm; model / direct 2.828 [2.381, 4.917]
+    BendPickMP           entry    n  30: 17.599 cm [14.569, 18.981] = 5.188x [4.295, 5.595]  > 1.3; direct  6.299 cm; model / direct 2.794 [1.930, 4.722]
+    BendPickMP           both     n  60: 16.683 cm [14.538, 18.283] = 4.918x [4.285, 5.390]  > 1.3; direct  6.009 cm; model / direct 2.776 [2.255, 4.564]
+    TabletopGraspMP      pregrasp n  30: 20.201 cm [18.661, 22.584] = 5.955x [5.501, 6.657]  > 1.3; direct  7.326 cm; model / direct 2.757 [1.459, 5.429]
+    TabletopGraspMP      entry    n  30: 19.499 cm [18.431, 20.478] = 5.748x [5.433, 6.037]  > 1.3; direct  6.387 cm; model / direct 3.053 [1.619, 6.135]
+    TabletopGraspMP      both     n  60: 19.975 cm [18.560, 20.707] = 5.888x [5.471, 6.104]  > 1.3; direct  7.222 cm; model / direct 2.766 [1.562, 5.777]
+    all                  pregrasp n 120: 16.111 cm [15.421, 16.965] = 4.749x [4.546, 5.001]  > 1.3; direct  5.789 cm; model / direct 2.783 [2.347, 3.721]
+    all                  entry    n 120: 16.135 cm [15.047, 17.393] = 4.756x [4.436, 5.127]  > 1.3; direct  6.431 cm; model / direct 2.509 [2.033, 2.950]
+    all                  both     n 240: 16.135 cm [15.398, 17.257] = 4.756x [4.539, 5.087]  > 1.3; direct  6.108 cm; model / direct 2.642 [2.208, 3.003]
+    XMovePickTeleop free pregrasp n  28: 15.356 cm [15.017, 16.005] = 4.527x [4.427, 4.718]  > 1.3; direct  4.160 cm; model / direct 3.691 [2.963, 5.005]
+    XMovePickTeleop free entry    n  29: 14.427 cm [13.942, 15.504] = 4.253x [4.110, 4.570]  > 1.3; direct  6.036 cm; model / direct 2.390 [2.207, 2.832]
+    XMovePickTeleop free both     n  57: 15.123 cm [14.820, 15.751] = 4.458x [4.369, 4.643]  > 1.3; direct  5.231 cm; model / direct 2.891 [2.538, 3.439]
+    XMoveBendPickTeleop free pregrasp n  29: 15.522 cm [12.208, 16.689] = 4.576x [3.599, 4.920]  > 1.3; direct  7.763 cm; model / direct 2.000 [1.367, 2.707]
+    XMoveBendPickTeleop free entry    n  29: 14.411 cm [12.292, 16.659] = 4.248x [3.624, 4.911]  > 1.3; direct  7.957 cm; model / direct 1.811 [1.223, 2.877]
+    XMoveBendPickTeleop free both     n  58: 14.667 cm [12.292, 16.700] = 4.324x [3.624, 4.923]  > 1.3; direct  7.902 cm; model / direct 1.856 [1.331, 2.835]
+    BendPickMP free      pregrasp n  30: 16.359 cm [14.529, 17.241] = 4.822x [4.283, 5.082]  > 1.3; direct  5.786 cm; model / direct 2.828 [2.386, 4.895]
+    BendPickMP free      entry    n  30: 17.599 cm [14.569, 19.009] = 5.188x [4.295, 5.604]  > 1.3; direct  6.299 cm; model / direct 2.794 [1.930, 4.723]
+    BendPickMP free      both     n  60: 16.683 cm [14.560, 18.283] = 4.918x [4.292, 5.390]  > 1.3; direct  6.009 cm; model / direct 2.776 [2.135, 4.502]
+    TabletopGraspMP free entry    n   7: 19.428 cm [13.391, 21.139] = 5.727x [3.947, 6.231]  > 1.3; direct 12.741 cm; model / direct 1.525 [1.412, 1.774]
+    TabletopGraspMP free both     n   7: 19.428 cm [13.391, 21.139] = 5.727x [3.947, 6.231]  > 1.3; direct 12.741 cm; model / direct 1.525 [1.412, 1.774]
+    all free             pregrasp n  87: 15.522 cm [15.012, 16.203] = 4.576x [4.425, 4.777]  > 1.3; direct  5.697 cm; model / direct 2.725 [2.299, 3.779]
+    all free             entry    n  95: 15.339 cm [14.506, 16.659] = 4.522x [4.276, 4.911]  > 1.3; direct  6.528 cm; model / direct 2.350 [1.864, 2.700]
+    all free             both     n 182: 15.494 cm [14.778, 16.159] = 4.567x [4.356, 4.763]  > 1.3; direct  6.124 cm; model / direct 2.530 [2.035, 2.850]
+== F1(b) beside the gate (scmp_range.py, AL's reaches)
+training set 1095531 segments; nearest-neighbour p99 22.897 (sd_range's eval4: 21.152)
+AL: 240 reaches, in range 40.0 % (kept 240), D median 16.135 cm
+verdict (D_S; F1-0 share >= 80 % and F1(a) ratio <= 1.3, both stages; F1(b) beside, not in the verdict):
+  XMovePickTeleop      F1-0  68.3 %  F1(a) 4.442x  -> FAIL   (F1(b)  45.0 % of 60)
+  XMoveBendPickTeleop  F1-0  83.3 %  F1(a) 4.461x  -> FAIL   (F1(b)  36.7 % of 60)
+  BendPickMP           F1-0  63.3 %  F1(a) 4.918x  -> FAIL   (F1(b)  48.3 % of 60)
+  TabletopGraspMP      F1-0  66.7 %  F1(a) 5.888x  -> FAIL   (F1(b)  30.0 % of 60)
+GATE FAIL
+```
+
+### 待查：疑似输入管线问题（协调方 11-27 定，"D_S 在任务局上不可信"这个结论暂时不写）
+
+闸门不过时看到的几条信号（gate.txt 和 `run/corr_AL/log/` 的每一下记录）：
+- 五个模型对每一下的分歧（预测标准差的模长）都约 31.5 cm：中位数 31.50，p10 30.83，p90 32.18，几乎是常数。HEFT 的 D_heft 在它的 AL 上（simpleheft）中位数是 1.34 cm。
+- 预测减实际落点也几乎是常数偏移：朝向坐标系下均值 [+6.7, −7.9, +12.2] cm，每个分量的标准差 4–5 cm。误差和分歧的相关系数是 −0.01。
+- 模型 / 直接 = 2.64，比"手就落在命令点上"还差。预抓取和进入一样差；没碰桌子的伸手也一样差（4.57 倍）。
+- 登记前的冒烟（2000 步的模型）里 F1(a) 是 12–14 倍。我当时归因于模型没训够，没有再查。
+
+第一步，z 分数（`checks/ssd_input_diag.py`，只读、只用 CPU，md5 c7a840b0；`checks/input_diag.txt` 原文，md5 d6f2a1ee）：
+- 按每个模型自己的归一化，给 AL 每一下的 x0、u 逐列算 z 分数。
+- 再把 x0 的第 204 列置 0，重新预测一次。这只是诊断，不是闸门的数。
+- 同样的做法，也用在冒烟的 AL 和 ScaleBFM（simplecmp 的 AL，simpledata 的 D）上作对照。
+
+```
+== D_S on SONIC AL (gate): /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/run/corr_AL (24 files, 240 reaches kept of 240); model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/train/models_D_s0/E3_ensemble_f1, 5 members; switches GOAL_REF True APPROACH True QFIX True FDVEL True
+  member 0's normalisation; the 'walked' column (x0 204): training mean / std per member 0.0000 / 0.0010; 0.0000 / 0.0010; 0.0000 / 0.0010; 0.0000 / 0.0010; 0.0000 / 0.0010; this set's values [1.0]
+  columns by median |z| (member 0), top 15; |z| > 4 share
+    x0[204] walked                     median |z|   1000.00  max   1000.00  |z| > 4: 100.0 %
+    x0[208] ref_q:j2                   median |z|      1.90  max      5.83  |z| > 4:   2.9 %
+    u[4] rot6_0                        median |z|      1.53  max      1.60  |z| > 4:   0.0 %
+    x0[213] ref_q:j7                   median |z|      1.28  max      4.62  |z| > 4:   0.8 %
+    x0[240] ref_q-start:j5             median |z|      1.20  max      4.35  |z| > 4:   0.4 %
+    x0[224] ref_q:j18                  median |z|      1.18  max      1.46  |z| > 4:   0.0 %
+    x0[82] S[k0-1].q:j17               median |z|      1.17  max      5.33  |z| > 4:   0.8 %
+    u[8] rot6_4                        median |z|      1.16  max      1.34  |z| > 4:   0.0 %
+    x0[147] S[k0-2].q:j17              median |z|      1.15  max      5.30  |z| > 4:   0.8 %
+    x0[272] ref_c1_z                   median |z|      1.15  max      6.53  |z| > 4:   2.5 %
+    x0[211] ref_q:j5                   median |z|      1.13  max      3.17  |z| > 4:   0.0 %
+    x0[198] rot0_0                     median |z|      1.13  max      1.75  |z| > 4:   0.0 %
+    x0[17] S[k0].q:j17                 median |z|      1.12  max      5.31  |z| > 4:   0.8 %
+    x0[6] S[k0].q:j6                   median |z|      1.11  max      4.06  |z| > 4:   0.4 %
+    x0[267] ref_c0_x                   median |z|      1.11  max      1.15  |z| > 4:   0.0 %
+  columns with median |z| > 4: 1 of 290
+  as recorded: model error median 16.135 cm, direct miss median 6.108 cm, model / direct 2.642; ensemble spread |std| median 31.50 cm (p10 30.83, p90 32.18)
+  x0 columns [204] (walked) set to 0 -- a diagnosis, not a gate number: model error median 3.654 cm, direct miss median 6.108 cm, model / direct 0.598; ensemble spread |std| median 2.29 cm (p10 1.61, p90 3.39)
+== smoke model on the smoke AL: /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/checks/smoke/corr_AL (2 files, 4 reaches kept of 4); model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplesonicdata_20261126/checks/train_dev/models_D_s0/E3_ensemble_f1, 5 members; switches GOAL_REF True APPROACH True QFIX True FDVEL True
+  member 0's normalisation; the 'walked' column (x0 204): training mean / std per member 0.0000 / 0.0010; 0.0000 / 0.0010; 0.0000 / 0.0010; 0.0000 / 0.0010; 0.0000 / 0.0010; this set's values [1.0]
+  columns by median |z| (member 0), top 15; |z| > 4 share
+    x0[204] walked                     median |z|   1000.00  max   1000.00  |z| > 4: 100.0 %
+    x0[98] S[k0-1].dq:j4               median |z|      4.79  max      9.39  |z| > 4:  50.0 %
+    x0[112] S[k0-1].dq:j18             median |z|      4.23  max      8.92  |z| > 4:  50.0 %
+    x0[47] S[k0].dq:j18                median |z|      3.16  max      6.74  |z| > 4:  50.0 %
+    x0[177] S[k0-2].dq:j18             median |z|      3.00  max      5.84  |z| > 4:  50.0 %
+    x0[61] S[k0].w_x                   median |z|      2.61  max      5.66  |z| > 4:  50.0 %
+    x0[137] S[k0-2].q:j7               median |z|      2.46  max      2.80  |z| > 4:   0.0 %
+    x0[101] S[k0-1].dq:j7              median |z|      2.35  max      5.16  |z| > 4:  50.0 %
+    x0[163] S[k0-2].dq:j4              median |z|      2.24  max      6.88  |z| > 4:  50.0 %
+    x0[72] S[k0-1].q:j7                median |z|      2.19  max      2.76  |z| > 4:   0.0 %
+    x0[32] S[k0].dq:j3                 median |z|      2.11  max     12.52  |z| > 4:  50.0 %
+    x0[35] S[k0].dq:j6                 median |z|      2.11  max      8.74  |z| > 4:  25.0 %
+    u[9] rot6_5                        median |z|      1.83  max      1.84  |z| > 4:   0.0 %
+    x0[97] S[k0-1].dq:j3               median |z|      1.82  max      7.48  |z| > 4:  25.0 %
+    x0[104] S[k0-1].dq:j10             median |z|      1.80  max      6.43  |z| > 4:  25.0 %
+  columns with median |z| > 4: 3 of 290
+  as recorded: model error median 88.821 cm, direct miss median 12.203 cm, model / direct 7.279; ensemble spread |std| median 53.18 cm (p10 52.45, p90 53.48)
+  x0 columns [204] (walked) set to 0 -- a diagnosis, not a gate number: model error median 8.201 cm, direct miss median 12.203 cm, model / direct 0.672; ensemble spread |std| median 1.90 cm (p10 1.42, p90 2.37)
+== ScaleBFM: simpledata D on simplecmp AL (control): /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simplecmp_20261126/run/corr_AL (8 files, 240 reaches kept of 240); model /wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/train/models_D_s0/E3_ensemble_f1, 5 members; switches GOAL_REF True APPROACH True QFIX True FDVEL True
+  member 0's normalisation; the 'walked' column (x0 204): training mean / std per member 0.3301 / 0.4705; 0.3301 / 0.4705; 0.3301 / 0.4705; 0.3301 / 0.4705; 0.3301 / 0.4705; this set's values [1.0]
+  columns by median |z| (member 0), top 15; |z| > 4 share
+    u[4] rot6_0                        median |z|      1.55  max      1.59  |z| > 4:   0.0 %
+    x0[140] S[k0-2].q:j10              median |z|      1.43  max      1.57  |z| > 4:   0.0 %
+    x0[204] walked                     median |z|      1.42  max      1.42  |z| > 4:   0.0 %
+    x0[10] S[k0].q:j10                 median |z|      1.42  max      1.60  |z| > 4:   0.0 %
+    x0[75] S[k0-1].q:j10               median |z|      1.41  max      1.59  |z| > 4:   0.0 %
+    x0[9] S[k0].q:j9                   median |z|      1.36  max      1.64  |z| > 4:   0.0 %
+    x0[74] S[k0-1].q:j9                median |z|      1.35  max      1.64  |z| > 4:   0.0 %
+    x0[139] S[k0-2].q:j9               median |z|      1.34  max      1.63  |z| > 4:   0.0 %
+    x0[1] S[k0].q:j1                   median |z|      1.28  max      1.71  |z| > 4:   0.0 %
+    x0[66] S[k0-1].q:j1                median |z|      1.27  max      1.69  |z| > 4:   0.0 %
+    x0[73] S[k0-1].q:j8                median |z|      1.25  max      1.85  |z| > 4:   0.0 %
+    x0[131] S[k0-2].q:j1               median |z|      1.25  max      1.68  |z| > 4:   0.0 %
+    x0[8] S[k0].q:j8                   median |z|      1.24  max      1.85  |z| > 4:   0.0 %
+    x0[138] S[k0-2].q:j8               median |z|      1.24  max      1.84  |z| > 4:   0.0 %
+    x0[267] ref_c0_x                   median |z|      1.23  max      1.44  |z| > 4:   0.0 %
+  columns with median |z| > 4: 0 of 290
+  as recorded: model error median 0.821 cm, direct miss median 4.235 cm, model / direct 0.194; ensemble spread |std| median 0.74 cm (p10 0.55, p90 1.27)
+  x0 columns [204] (walked) set to 0 -- a diagnosis, not a gate number: model error median 0.834 cm, direct miss median 4.235 cm, model / direct 0.197; ensemble spread |std| median 0.77 cm (p10 0.63, p90 1.44)
+```
+
+读法（01:31Z 前后，诊断时写的）：
+- 290 列里只有一列远远超出训练分布：x0 的第 204 列 `walked`（这一下之前走过路没有）。
+  - 任务局每一下都是先走到站位再伸手，所以这一列都是 1。
+  - D_S 的训练数据只采原地，这一列全是 0，标准差被 wm.Norm 截到 1e-3，所以 z = 1000。
+  - 其余 289 列的 |z| 中位数都 ≤ 1.9。ScaleBFM 对照组的训练数据里有 33 % 的段走过路，同一列的 z 是 1.42。
+- 把这一列置 0 以后（只作诊断）：误差中位数 3.654 cm，是 val 3.392 cm 的 1.08 倍；分歧 2.29 cm；模型 / 直接 0.598。冒烟里也一样：88.8 cm 降到 8.2 cm，分歧 53.2 cm 降到 1.9 cm。所以冒烟里的 12–14 倍是同一个原因。
+- 这一列两条路都是同一行代码算的：`d3_collect.segments` 里的 `walked=bool(info["walked"])`。同一个走过路的状态，两条路都会给 1，所以按协调方的定义，这目前不算代码 bug，是真实的分布差别。
+- 但它是登记的疏漏。nowalk 判"SONIC 不需要先走后伸的数据"时，原地模型 N 在训练和评估里都把这一列置成了 0（`selfmodel_nowalk_20261126/nw2_split.py`："Zeroed inputs (nw_train / nw_eval, arms N and C2): x0 column 204"）。本条照 nowalk 只采原地，却没把这一步一起照搬。
+- 后续：协调方 11-27 定照 nowalk 的先例把这一列置 0，见修订 2。"同一状态、两条路逐列比"没有做，理由是原因已经找到：置 0 以后误差回到 val 的水平，其余各列也都在范围里（修订 2 第 8 条）。
 
 ## 意外
 
