@@ -1,0 +1,12 @@
+entry_end A: t - t_close 0.000 s; palm vs snapshot max |d| 0 m
+entry_end R: t - t_close 0.000 s; palm vs snapshot max |d| 0 m
+after1000ms A: t - t_close 1.000 s; palm vs snapshot max |d| 0 m
+after1000ms R: t - t_close 1.000 s; palm vs snapshot max |d| 0 m
+main projection check err px: [0.02, 0.02, 0.03, 0.08]
+saved A_full (2400x1600), void hi-res px 0
+saved R_full (2400x1600), void hi-res px 0
+closeup projection check err px: [0.0, 0.03, 0.04, 0.04]
+saved A_hand_closeup (1600x1200), void hi-res px 0
+saved R_hand_closeup (1600x1200), void hi-res px 0
+{"p_star": {"world": [0.32073, -0.21946, 1.25985], "px": {"main": [1096.5, 587.5], "closeup": [800.0, 600.0]}}, "c_star": {"world": [0.28607, -0.19871, 1.25985], "px": {"main": [1098.2, 557.3], "closeup": [799.9, 534.2]}}, "a_cmd": {"world": [0.32073, -0.21946, 1.25985], "px": {"main": [1096.5, 587.5], "closeup": [800.0, 600.0]}}, "A_landing": {"world": [0.34558, -0.22994, 1.26223], "px": {"main": [1099.8, 605.8], "closeup": [809.5, 643.0]}}, "R_landing": {"world": [0.32334, -0.21733, 1.26373], "px": {"main": [1100.1, 584.7], "closeup": [807.7, 595.3]}}}
+distances {"A_close": 2.7079669792760654, "R_close": 0.5140737920473749, "A_row_palm_cm": 2.708, "R_row_palm_cm": 0.514, "R_correction_c_star_to_p_star": 4.0394669970427}

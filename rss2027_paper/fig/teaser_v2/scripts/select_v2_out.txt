@@ -1,0 +1,53 @@
+== scalebfm: decision set ['candle', 'apple', 'salt', 'statue_cab', 'dumbbell', 'wcan']; A fail & R success 138; FK check (left hand - right hand vs record) max 0.0025 cm, torso point max 0.0020 cm; pairs without an A close 0
+  candle     n  65 | goal z 0.520 [0.493, 0.547] | shoulder z at close A 0.821 [0.776, 0.838] R 0.852 [0.813, 0.875] | standing 1.071 [1.071, 1.071] | hand z at close A 0.470 [0.428, 0.491] R 0.526 [0.493, 0.546] | arm elev R -47.323 [-57.966, -39.449] deg | torso tilt R 56.988 [51.779, 63.740] deg | goal above shoulder (A and R) 0
+  apple      n   4 | goal z 0.970 [0.947, 0.992] | shoulder z at close A 0.976 [0.946, 1.018] R 0.988 [0.958, 1.011] | standing 1.068 [1.068, 1.070] | hand z at close A 0.998 [0.984, 1.021] R 0.987 [0.976, 0.999] | arm elev R -0.085 [-3.904, 4.562] deg | torso tilt R 28.138 [26.015, 30.413] deg | goal above shoulder (A and R) 1
+  salt       n  31 | goal z 1.015 [0.994, 1.026] | shoulder z at close A 1.009 [0.897, 1.053] R 0.982 [0.894, 1.031] | standing 1.070 [1.068, 1.071] | hand z at close A 1.045 [1.034, 1.064] R 1.025 [1.003, 1.042] | arm elev R 4.896 [-1.384, 15.825] deg | torso tilt R 28.728 [17.220, 44.787] deg | goal above shoulder (A and R) 17
+  statue_cab n 0
+  dumbbell   n  22 | goal z 0.532 [0.524, 0.554] | shoulder z at close A 0.735 [0.689, 0.895] R 0.757 [0.695, 0.892] | standing 1.070 [1.068, 1.071] | hand z at close A 0.519 [0.514, 0.540] R 0.535 [0.521, 0.556] | arm elev R -27.651 [-42.583, -17.678] deg | torso tilt R 69.765 [50.176, 76.859] deg | goal above shoulder (A and R) 0
+  wcan       n  16 | goal z 0.559 [0.522, 0.616] | shoulder z at close A 0.751 [0.690, 0.831] R 0.751 [0.703, 0.851] | standing 1.070 [1.070, 1.071] | hand z at close A 0.529 [0.515, 0.593] R 0.574 [0.530, 0.617] | arm elev R -20.903 [-37.029, -12.787] deg | torso tilt R 71.401 [57.852, 75.177] deg | goal above shoulder (A and R) 0
+== sonic: decision set ['apple', 'salt', 'statue_cab', 'dumbbell', 'wcan']; A fail & R success 33; FK check (left hand - right hand vs record) max 0.0056 cm, torso point max 0.0037 cm; pairs without an A close 0
+  apple      n   5 | goal z 0.994 [0.939, 0.995] | shoulder z at close A 1.026 [0.931, 1.060] R 1.028 [0.903, 1.044] | standing 1.069 [1.068, 1.071] | hand z at close A 1.007 [0.993, 1.086] R 0.985 [0.972, 1.003] | arm elev R -6.421 [-6.978, 10.974] deg | torso tilt R 25.896 [24.827, 50.617] deg | goal above shoulder (A and R) 1
+  salt       n  11 | goal z 1.013 [1.007, 1.025] | shoulder z at close A 1.046 [0.948, 1.076] R 1.023 [0.838, 1.076] | standing 1.069 [1.066, 1.071] | hand z at close A 1.043 [1.026, 1.062] R 1.016 [0.987, 1.038] | arm elev R -0.432 [-7.677, 20.099] deg | torso tilt R 34.547 [8.533, 61.809] deg | goal above shoulder (A and R) 2
+  statue_cab n 0
+  dumbbell   n   6 | goal z 0.554 [0.533, 0.590] | shoulder z at close A 0.845 [0.815, 0.891] R 0.828 [0.777, 0.876] | standing 1.069 [1.067, 1.072] | hand z at close A 0.587 [0.548, 0.642] R 0.556 [0.525, 0.579] | arm elev R -40.177 [-59.854, -25.138] deg | torso tilt R 66.717 [61.053, 68.087] deg | goal above shoulder (A and R) 0
+  wcan       n  11 | goal z 0.556 [0.536, 0.596] | shoulder z at close A 0.864 [0.818, 0.924] R 0.850 [0.808, 0.913] | standing 1.069 [1.067, 1.072] | hand z at close A 0.591 [0.566, 0.718] R 0.584 [0.539, 0.615] | arm elev R -40.857 [-59.972, -25.233] deg | torso tilt R 62.587 [51.380, 66.634] deg | goal above shoulder (A and R) 0
+== heft: decision set ['candle', 'apple', 'salt', 'statue_cab', 'dumbbell', 'wcan']; A fail & R success 26; FK check (left hand - right hand vs record) max 0.0442 cm, torso point max 0.0312 cm; pairs without an A close 0
+  candle     n  26 | goal z 0.522 [0.494, 0.551] | shoulder z at close A 0.861 [0.849, 0.916] R 0.848 [0.826, 0.908] | standing 1.071 [1.070, 1.071] | hand z at close A 0.515 [0.502, 0.573] R 0.516 [0.486, 0.549] | arm elev R -50.255 [-62.474, -43.859] deg | torso tilt R 62.120 [51.627, 65.593] deg | goal above shoulder (A and R) 0
+  apple      n 0
+  salt       n 0
+  statue_cab n 0
+  dumbbell   n 0
+  wcan       n 0
+step 2 kept: {'scalebfm': 18, 'sonic': 3, 'heft': 0}
+step 2 pool: 18 (scalebfm, goal above the shoulder)
+  scalebfm salt       ep  70 goal z 1.026 | shoulder z A 0.897 R 0.894 (standing 1.070) | hand z A 1.064 R 1.034 | pelvis z R 0.731 | arm elev A 19 R 16 deg, torso tilt R 42 (stand 1) deg | close dist A 15.728187530676163 R 2.378 | A hit_furniture
+  scalebfm salt       ep  90 goal z 1.025 | shoulder z A 0.985 R 0.928 (standing 1.070) | hand z A 1.053 R 1.032 | pelvis z R 0.747 | arm elev A 8 R 12 deg, torso tilt R 37 (stand 0) deg | close dist A 4.655770766437818 R 1.990 | A hit_furniture
+  scalebfm salt       ep  36 goal z 1.021 | shoulder z A 0.985 R 0.969 (standing 1.068) | hand z A 1.043 R 1.027 | pelvis z R 0.760 | arm elev A 7 R 7 deg, torso tilt R 30 (stand 3) deg | close dist A 3.2024672363029514 R 2.648 | A hit_furniture
+  scalebfm salt       ep  71 goal z 1.021 | shoulder z A 0.997 R 0.962 (standing 1.070) | hand z A 1.044 R 1.027 | pelvis z R 0.760 | arm elev A 6 R 7 deg, torso tilt R 32 (stand 0) deg | close dist A 4.710640039953703 R 1.549 | A hit_furniture
+  scalebfm salt       ep  61 goal z 1.021 | shoulder z A 0.986 R 0.953 (standing 1.068) | hand z A 1.061 R 1.042 | pelvis z R 0.753 | arm elev A 8 R 10 deg, torso tilt R 33 (stand 3) deg | close dist A 4.539524349005995 R 3.428 | A hit_furniture
+  scalebfm salt       ep  91 goal z 1.020 | shoulder z A 0.988 R 0.950 (standing 1.070) | hand z A 1.046 R 1.025 | pelvis z R 0.756 | arm elev A 7 R 9 deg, torso tilt R 34 (stand 0) deg | close dist A 3.8603095049042717 R 1.833 | A hit_furniture
+  scalebfm salt       ep  99 goal z 1.020 | shoulder z A 1.015 R 1.004 (standing 1.071) | hand z A 1.034 R 1.025 | pelvis z R 0.767 | arm elev A 2 R 2 deg, torso tilt R 24 (stand 0) deg | close dist A 1.7351042314105856 R 2.220 | A hit_furniture
+  scalebfm salt       ep  49 goal z 1.019 | shoulder z A 0.980 R 0.938 (standing 1.070) | hand z A 1.049 R 1.027 | pelvis z R 0.750 | arm elev A 8 R 10 deg, torso tilt R 35 (stand 0) deg | close dist A 3.9514047291231917 R 4.139 | A hit_furniture
+  scalebfm salt       ep  84 goal z 1.018 | shoulder z A 0.957 R 0.897 (standing 1.070) | hand z A 1.047 R 1.030 | pelvis z R 0.733 | arm elev A 10 R 15 deg, torso tilt R 42 (stand 1) deg | close dist A 3.535134417847635 R 2.581 | A hit_furniture
+  scalebfm salt       ep  43 goal z 1.015 | shoulder z A 0.998 R 0.979 (standing 1.070) | hand z A 1.037 R 1.023 | pelvis z R 0.764 | arm elev A 5 R 5 deg, torso tilt R 29 (stand 0) deg | close dist A 3.4596604276592338 R 1.876 | A hit_furniture
+  scalebfm salt       ep 102 goal z 1.015 | shoulder z A 1.005 R 0.982 (standing 1.070) | hand z A 1.042 R 1.025 | pelvis z R 0.765 | arm elev A 4 R 5 deg, torso tilt R 29 (stand 0) deg | close dist A 4.5899787676010915 R 1.982 | A hit_furniture
+  scalebfm salt       ep  86 goal z 1.014 | shoulder z A 0.992 R 0.954 (standing 1.070) | hand z A 1.051 R 1.023 | pelvis z R 0.756 | arm elev A 7 R 8 deg, torso tilt R 33 (stand 0) deg | close dist A 4.709094536616502 R 1.693 | A hit_furniture
+  scalebfm salt       ep  87 goal z 1.012 | shoulder z A 1.009 R 0.993 (standing 1.068) | hand z A 1.041 R 1.016 | pelvis z R 0.754 | arm elev A 4 R 3 deg, torso tilt R 24 (stand 2) deg | close dist A 3.8908428243337165 R 3.261 | A hit_furniture
+  scalebfm salt       ep  57 goal z 1.010 | shoulder z A 0.987 R 0.896 (standing 1.069) | hand z A 1.039 R 1.009 | pelvis z R 0.738 | arm elev A 6 R 13 deg, torso tilt R 45 (stand 2) deg | close dist A 3.76490194873491 R 1.602 | A hit_furniture
+  scalebfm salt       ep  93 goal z 1.009 | shoulder z A 0.951 R 0.932 (standing 1.070) | hand z A 1.037 R 1.017 | pelvis z R 0.735 | arm elev A 9 R 9 deg, torso tilt R 35 (stand 0) deg | close dist A 4.886154595453026 R 0.857 | A hit_furniture
+  scalebfm salt       ep  34 goal z 1.000 | shoulder z A 0.964 R 0.942 (standing 1.068) | hand z A 1.035 R 1.013 | pelvis z R 0.752 | arm elev A 8 R 8 deg, torso tilt R 35 (stand 3) deg | close dist A 4.207787242960168 R 2.644 | A hit_furniture
+  scalebfm salt       ep  35 goal z 0.994 | shoulder z A 0.924 R 0.900 (standing 1.070) | hand z A 1.043 R 1.003 | pelvis z R 0.732 | arm elev A 13 R 11 deg, torso tilt R 41 (stand 1) deg | close dist A 5.530097594523704 R 2.365 | A hit_furniture
+  scalebfm apple      ep  43 goal z 0.959 | shoulder z A 0.949 R 0.958 (standing 1.068) | hand z A 1.021 R 0.999 | pelvis z R 0.735 | arm elev A 8 R 5 deg, torso tilt R 29 (stand 1) deg | close dist A 8.510221566981855 R 6.869 | A hit_furniture
+step 3: n 18 (without an A close distance: 0); median close dist A 4.374 R 2.292
+   1 score  13.89 scalebfm salt       ep  90 dA 4.656 dR 1.990 pA 63.9 pR 41.7 goal z 1.025 hosts nd9kr/nd9kr
+   2 score  13.89 scalebfm salt       ep 102 dA 4.590 dR 1.982 pA 58.3 pR 36.1 goal z 1.015 hosts zf4sr/zf4sr
+   3 score  19.44 scalebfm salt       ep  34 dA 4.208 dR 2.644 pA 47.2 pR 69.4 goal z 1.000 hosts zf4sr/zf4sr
+   4 score  25.00 scalebfm salt       ep  91 dA 3.860 dR 1.833 pA 30.6 pR 25.0 goal z 1.020 hosts nd9kr/nd9kr
+   5 score  30.56 scalebfm salt       ep  84 dA 3.535 dR 2.581 pA 19.4 pR 63.9 goal z 1.018 hosts zf4sr/zf4sr
+   6 score  30.56 scalebfm salt       ep  86 dA 4.709 dR 1.693 pA 69.4 pR 19.4 goal z 1.014 hosts nd9kr/nd9kr
+   7 score  30.56 scalebfm salt       ep  87 dA 3.891 dR 3.261 pA 36.1 pR 80.6 goal z 1.012 hosts nd9kr/nd9kr
+   8 score  36.11 scalebfm salt       ep  35 dA 5.530 dR 2.365 pA 86.1 pR 52.8 goal z 0.994 hosts zf4sr/zf4sr
+   9 score  36.11 scalebfm salt       ep  43 dA 3.460 dR 1.876 pA 13.9 pR 30.6 goal z 1.015 hosts nd9kr/nd9kr
+  10 score  36.11 scalebfm salt       ep  57 dA 3.765 dR 1.602 pA 25.0 pR 13.9 goal z 1.010 hosts nd9kr/nd9kr
+  11 score  36.11 scalebfm salt       ep  61 dA 4.540 dR 3.428 pA 52.8 pR 86.1 goal z 1.021 hosts nd9kr/nd9kr
+  12 score  41.67 scalebfm salt       ep  36 dA 3.202 dR 2.648 pA 8.3 pR 75.0 goal z 1.021 hosts zf4sr/zf4sr

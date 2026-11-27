@@ -1,0 +1,5449 @@
+{
+ "threshold_cm": 2.0,
+ "panel": "after1000ms",
+ "fall_at": "after2000ms",
+ "fall_tilt_deg": 60.0,
+ "top_board_m": 1.16,
+ "vase_counts": {
+  "A": {
+   "fallen": [
+    0,
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+   ],
+   "lifted": [
+    4
+   ],
+   "tilted_over_60_at_close": [
+    0,
+    1,
+    2,
+    3,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+   ],
+   "dt_2s": [
+    2.0
+   ],
+   "dt_panel": [
+    1.0
+   ]
+  },
+  "R": {
+   "fallen": [
+    2,
+    12
+   ],
+   "lifted": [
+    0,
+    1,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19
+   ],
+   "tilted_over_60_at_close": [],
+   "dt_2s": [
+    2.0
+   ],
+   "dt_panel": [
+    1.0
+   ]
+  }
+ },
+ "placements": {
+  "0": {
+   "A": {
+    "tilt_close_deg": 89.91123978885344,
+    "tilt_pre_deg": 0.0011860369547028926,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91123978885344,
+     "vase_z": 1.191685611941799,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91123978885344,
+     "vase_z": 1.191685611941799,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.648727893352513,
+    "d_close_end": 2.618463198654012,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 7.54,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.0,
+      -13.5,
+      8.9
+     ]
+    },
+    "knocked": {
+     "t": 8.04,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.32215129501528106,
+       -0.30059710390427585,
+       1.2598531027349826
+      ],
+      "cmd_w": [
+       0.32215,
+       -0.3006,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32981,
+       -0.31694,
+       1.2575
+      ],
+      "land_palm_w": [
+       0.3327541519307295,
+       -0.31581472154955764,
+       1.2567781932553708
+      ],
+      "err_cm": 1.88,
+      "pred_err_cm": 0.3232,
+      "pred_miss_cm": 1.8201,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.025
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.32215130304216555,
+       -0.2205971039320938,
+       1.2598552124294982
+      ],
+      "cmd_w": [
+       0.32215,
+       -0.2206,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.3423,
+       -0.23362,
+       1.25736
+      ],
+      "land_palm_w": [
+       0.34657925274240975,
+       -0.23056145618495735,
+       1.2622137931310127
+      ],
+      "err_cm": 2.649,
+      "pred_err_cm": 0.7159,
+      "pred_miss_cm": 2.4119,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.233
+     }
+    ],
+    "goal_entry": [
+     0.32215130304216555,
+     -0.2205971039320938,
+     1.2598552124294982
+    ],
+    "palm_close": [
+     0.34657925274240975,
+     -0.23056145618495735,
+     1.2622137931310127
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.000945265470063252,
+    "tilt_pre_deg": 0.0020450917609415756,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.861334954229884,
+     "vase_z": 1.160183391070759,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 4.8711540181698165,
+     "vase_z": 1.2140363294580787,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.4808120970926534,
+    "d_close_end": 1.787115897773214,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 7.64,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.8,
+      -11.6,
+      9.3
+     ]
+    },
+    "knocked": {
+     "t": 12.22,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.32215129501528106,
+       -0.30059710390427585,
+       1.2598531027349826
+      ],
+      "cmd_w": [
+       0.30767,
+       -0.2826,
+       1.2623
+      ],
+      "corr_cm": 2.3231,
+      "pred_palm_w": [
+       0.32216,
+       -0.3006,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.3255864336883912,
+       -0.29691284563643705,
+       1.2566671277112713
+      ],
+      "err_cm": 0.596,
+      "pred_err_cm": 0.5957,
+      "pred_miss_cm": 0.0011,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.03
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.32215130304216555,
+       -0.2205971039320938,
+       1.2598552124294982
+      ],
+      "cmd_w": [
+       0.28878,
+       -0.20032,
+       1.2595
+      ],
+      "corr_cm": 3.905,
+      "pred_palm_w": [
+       0.32253,
+       -0.22066,
+       1.25875
+      ],
+      "land_palm_w": [
+       0.3253182831215066,
+       -0.2184361010717098,
+       1.2627566484680026
+      ],
+      "err_cm": 0.481,
+      "pred_err_cm": 0.5363,
+      "pred_miss_cm": 0.1171,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.051
+     }
+    ],
+    "goal_entry": [
+     0.32215130304216555,
+     -0.2205971039320938,
+     1.2598552124294982
+    ],
+    "palm_close": [
+     0.3253182831215066,
+     -0.2184361010717098,
+     1.2627566484680026
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "1": {
+   "A": {
+    "tilt_close_deg": 89.9064931290128,
+    "tilt_pre_deg": 0.0003219688979436016,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.9064931290128,
+     "vase_z": 1.1916823571008537,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.9064931290128,
+     "vase_z": 1.1916823571008537,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.0012157382469518,
+    "d_close_end": 2.963798678498327,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.02
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 6.34,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.9,
+      -13.7,
+      9.4
+     ]
+    },
+    "knocked": {
+     "t": 6.86,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3192799753959341,
+       -0.26949669990359454,
+       1.2598499366710132
+      ],
+      "cmd_w": [
+       0.31928,
+       -0.2695,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33361,
+       -0.28579,
+       1.25772
+      ],
+      "land_palm_w": [
+       0.33641049089772807,
+       -0.28198905711793815,
+       1.2576488852700505
+      ],
+      "err_cm": 2.132,
+      "pred_err_cm": 0.4724,
+      "pred_miss_cm": 2.1799,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.81
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31928000307101745,
+       -0.18949669997614554,
+       1.259853343632581
+      ],
+      "cmd_w": [
+       0.31928,
+       -0.1895,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34361,
+       -0.2043,
+       1.25794
+      ],
+      "land_palm_w": [
+       0.3461477384676062,
+       -0.20225405683737085,
+       1.263866351397881
+      ],
+      "err_cm": 3.001,
+      "pred_err_cm": 0.6764,
+      "pred_miss_cm": 2.8541,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.329
+     }
+    ],
+    "goal_entry": [
+     0.31928000307101745,
+     -0.18949669997614554,
+     1.259853343632581
+    ],
+    "palm_close": [
+     0.3461477384676062,
+     -0.20225405683737085,
+     1.263866351397881
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0010127562173752405,
+    "tilt_pre_deg": 0.0010334435379922902,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.1319395106026409,
+     "vase_z": 1.1604106809438164,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.253374396885424,
+     "vase_z": 1.21572365607144,
+     "robot_touch": true,
+     "n_robot_contacts": 8
+    },
+    "fallen": false,
+    "d_close": 0.7420903092055761,
+    "d_close_end": 1.721750145038398,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.1
+     ],
+     [
+      "pregrasp",
+      "right_hand_middle_1_link",
+      "etagere",
+      0.03
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 7.44,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.4,
+      -12.3,
+      8.9
+     ]
+    },
+    "knocked": {
+     "t": 12.2,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3192799753959341,
+       -0.26949669990359454,
+       1.2598499366710132
+      ],
+      "cmd_w": [
+       0.29333,
+       -0.2496,
+       1.26092
+      ],
+      "corr_cm": 3.2721,
+      "pred_palm_w": [
+       0.31925,
+       -0.26938,
+       1.25989
+      ],
+      "land_palm_w": [
+       0.32188792392175486,
+       -0.2665805523403245,
+       1.2586728883565028
+      ],
+      "err_cm": 0.409,
+      "pred_err_cm": 0.403,
+      "pred_miss_cm": 0.0131,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.96
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31928000307101745,
+       -0.18949669997614554,
+       1.259853343632581
+      ],
+      "cmd_w": [
+       0.27959,
+       -0.16532,
+       1.26088
+      ],
+      "corr_cm": 4.6482,
+      "pred_palm_w": [
+       0.31948,
+       -0.18962,
+       1.25986
+      ],
+      "land_palm_w": [
+       0.31859827682420144,
+       -0.18443406247051303,
+       1.26523616385182
+      ],
+      "err_cm": 0.742,
+      "pred_err_cm": 0.7524,
+      "pred_miss_cm": 0.0235,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.116
+     }
+    ],
+    "goal_entry": [
+     0.31928000307101745,
+     -0.18949669997614554,
+     1.259853343632581
+    ],
+    "palm_close": [
+     0.31859827682420144,
+     -0.18443406247051303,
+     1.26523616385182
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "2": {
+   "A": {
+    "tilt_close_deg": 89.91169919823031,
+    "tilt_pre_deg": 0.0011808226596689926,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91169919823031,
+     "vase_z": 1.1916859234952577,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91169919823031,
+     "vase_z": 1.1916859234952577,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.134584235862085,
+    "d_close_end": 2.1111629841736956,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 6.38,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.0,
+      -12.9,
+      8.9
+     ]
+    },
+    "knocked": {
+     "t": 6.82,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33870046419215016,
+       -0.2768338461822458,
+       1.2598555641495133
+      ],
+      "cmd_w": [
+       0.3387,
+       -0.27683,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34676,
+       -0.29007,
+       1.25836
+      ],
+      "land_palm_w": [
+       0.3488965612965175,
+       -0.288494493906088,
+       1.2585545576637263
+      ],
+      "err_cm": 1.554,
+      "pred_err_cm": 0.2666,
+      "pred_miss_cm": 1.5569,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.926
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.338700417877798,
+       -0.19683384618267305,
+       1.2598558215046929
+      ],
+      "cmd_w": [
+       0.3387,
+       -0.19683,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.3554,
+       -0.20638,
+       1.25712
+      ],
+      "land_palm_w": [
+       0.35838762615083347,
+       -0.20420354071666985,
+       1.2635634378398592
+      ],
+      "err_cm": 2.135,
+      "pred_err_cm": 0.7432,
+      "pred_miss_cm": 1.9428,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.142
+     }
+    ],
+    "goal_entry": [
+     0.338700417877798,
+     -0.19683384618267305,
+     1.2598558215046929
+    ],
+    "palm_close": [
+     0.35838762615083347,
+     -0.20420354071666985,
+     1.2635634378398592
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0003098574994929158,
+    "tilt_pre_deg": 0.0015794380948444466,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.0006842808027187035,
+     "vase_z": 1.159855350643277,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 0.0023215973684724517,
+     "vase_z": 1.1598549112430265,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 11.74292331652542,
+    "d_close_end": 11.458906869392775,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "entry",
+      "right_hand_index_1_link",
+      "etagere",
+      0.06
+     ],
+     [
+      "entry",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ],
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.07
+     ],
+     [
+      "pregrasp",
+      "right_hand_middle_1_link",
+      "etagere",
+      0.01
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": null,
+    "knocked": null,
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33870046419215016,
+       -0.2768338461822458,
+       1.2598555641495133
+      ],
+      "cmd_w": [
+       0.32481,
+       -0.26103,
+       1.26153
+      ],
+      "corr_cm": 2.1111,
+      "pred_palm_w": [
+       0.33872,
+       -0.27684,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.2931415317923848,
+       -0.2658554307507124,
+       1.1409201223973648
+      ],
+      "err_cm": 12.783,
+      "pred_err_cm": 12.7835,
+      "pred_miss_cm": 0.0019,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.06
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.338700417877798,
+       -0.19683384618267305,
+       1.2598558215046929
+      ],
+      "cmd_w": [
+       0.31593,
+       -0.17816,
+       1.26099
+      ],
+      "corr_cm": 2.9466,
+      "pred_palm_w": [
+       0.33912,
+       -0.19705,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.2760086700728473,
+       -0.2577746851986649,
+       1.1814620481616074
+      ],
+      "err_cm": 11.743,
+      "pred_err_cm": 11.7541,
+      "pred_miss_cm": 0.0477,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.934
+     }
+    ],
+    "goal_entry": [
+     0.338700417877798,
+     -0.19683384618267305,
+     1.2598558215046929
+    ],
+    "palm_close": [
+     0.2760086700728473,
+     -0.2577746851986649,
+     1.1814620481616074
+    ]
+   },
+   "class": "both miss"
+  },
+  "3": {
+   "A": {
+    "tilt_close_deg": 89.91127008474123,
+    "tilt_pre_deg": 0.002887640314924138,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91127008474123,
+     "vase_z": 1.191685634499934,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91127008474123,
+     "vase_z": 1.191685634499934,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.2856104372400803,
+    "d_close_end": 2.2536834455081114,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 7.74,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.4,
+      -12.0,
+      9.3
+     ]
+    },
+    "knocked": {
+     "t": 8.0,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33180093019554374,
+       -0.3012231532028164,
+       1.2598454544251776
+      ],
+      "cmd_w": [
+       0.3318,
+       -0.30122,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33691,
+       -0.31637,
+       1.25771
+      ],
+      "land_palm_w": [
+       0.3396308796317871,
+       -0.31593308244867696,
+       1.2578358210435678
+      ],
+      "err_cm": 1.678,
+      "pred_err_cm": 0.2766,
+      "pred_miss_cm": 1.6126,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.076
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3318009692754401,
+       -0.22122315329200176,
+       1.2598492317417964
+      ],
+      "cmd_w": [
+       0.3318,
+       -0.22122,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.3486,
+       -0.23169,
+       1.25699
+      ],
+      "land_palm_w": [
+       0.35304667314316474,
+       -0.2292560498304125,
+       1.2623975934606697
+      ],
+      "err_cm": 2.286,
+      "pred_err_cm": 0.7415,
+      "pred_miss_cm": 1.9997,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.191
+     }
+    ],
+    "goal_entry": [
+     0.3318009692754401,
+     -0.22122315329200176,
+     1.2598492317417964
+    ],
+    "palm_close": [
+     0.35304667314316474,
+     -0.2292560498304125,
+     1.2623975934606697
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.001406224289613589,
+    "tilt_pre_deg": 0.0022581359086816743,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.2548356157858067,
+     "vase_z": 1.1603343185835797,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 4.252547409858864,
+     "vase_z": 1.2103130362257883,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.6973028436614602,
+    "d_close_end": 1.9210188714221075,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 6.3,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.4,
+      -12.2,
+      9.0
+     ]
+    },
+    "knocked": {
+     "t": 11.02,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33180093019554374,
+       -0.3012231532028164,
+       1.2598454544251776
+      ],
+      "cmd_w": [
+       0.32116,
+       -0.28492,
+       1.26176
+      ],
+      "corr_cm": 1.9561,
+      "pred_palm_w": [
+       0.33184,
+       -0.30124,
+       1.25984
+      ],
+      "land_palm_w": [
+       0.3345071989027483,
+       -0.2983963718801482,
+       1.2590524052098298
+      ],
+      "err_cm": 0.399,
+      "pred_err_cm": 0.3975,
+      "pred_miss_cm": 0.0042,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.101
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3318009692754401,
+       -0.22122315329200176,
+       1.2598492317417964
+      ],
+      "cmd_w": [
+       0.30433,
+       -0.20381,
+       1.26122
+      ],
+      "corr_cm": 3.2556,
+      "pred_palm_w": [
+       0.33202,
+       -0.22132,
+       1.25987
+      ],
+      "land_palm_w": [
+       0.33581770557783336,
+       -0.21775645243083547,
+       1.2643737140540683
+      ],
+      "err_cm": 0.697,
+      "pred_err_cm": 0.6887,
+      "pred_miss_cm": 0.0238,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.946
+     }
+    ],
+    "goal_entry": [
+     0.3318009692754401,
+     -0.22122315329200176,
+     1.2598492317417964
+    ],
+    "palm_close": [
+     0.33581770557783336,
+     -0.21775645243083547,
+     1.2643737140540683
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "4": {
+   "A": {
+    "tilt_close_deg": 2.9594459243881595,
+    "tilt_pre_deg": 0.0015180073822337575,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 2.1425063362334353,
+     "vase_z": 1.160771570036459,
+     "robot_touch": true,
+     "n_robot_contacts": 4
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 7.443297205580757,
+     "vase_z": 1.2078608358272838,
+     "robot_touch": true,
+     "n_robot_contacts": 8
+    },
+    "fallen": false,
+    "d_close": 1.5572628088505795,
+    "d_close_end": 2.333263705007535,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 7.76,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.8,
+      -11.7,
+      9.3
+     ]
+    },
+    "knocked": {
+     "t": 12.24,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3545388248382732,
+       -0.3017501970074255,
+       1.2598482131641635
+      ],
+      "cmd_w": [
+       0.35454,
+       -0.30175,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.35513,
+       -0.31391,
+       1.25854
+      ],
+      "land_palm_w": [
+       0.35626419222816125,
+       -0.3150611467357668,
+       1.2591477678892375
+      ],
+      "err_cm": 1.344,
+      "pred_err_cm": 0.173,
+      "pred_miss_cm": 1.2243,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.288
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.35453889505945324,
+       -0.22175019709955757,
+       1.259852051939452
+      ],
+      "cmd_w": [
+       0.35454,
+       -0.22175,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.36568,
+       -0.22677,
+       1.25978
+      ],
+      "land_palm_w": [
+       0.367629385956734,
+       -0.22906973181772608,
+       1.2640437347948998
+      ],
+      "err_cm": 1.557,
+      "pred_err_cm": 0.5219,
+      "pred_miss_cm": 1.2219,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.069
+     }
+    ],
+    "goal_entry": [
+     0.35453889505945324,
+     -0.22175019709955757,
+     1.259852051939452
+    ],
+    "palm_close": [
+     0.367629385956734,
+     -0.22906973181772608,
+     1.2640437347948998
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0003588795655694162,
+    "tilt_pre_deg": 0.002818969237402864,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.4711440705254868,
+     "vase_z": 1.1604488506742676,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 4.2070363491609335,
+     "vase_z": 1.2112543469633616,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.7454670271297483,
+    "d_close_end": 1.9557386004078012,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 9.76,
+     "phase": "close",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -8.0,
+      -7.6,
+      10.5
+     ]
+    },
+    "knocked": {
+     "t": 10.98,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3545388248382732,
+       -0.3017501970074255,
+       1.2598482131641635
+      ],
+      "cmd_w": [
+       0.35251,
+       -0.29038,
+       1.26186
+      ],
+      "corr_cm": 1.1726,
+      "pred_palm_w": [
+       0.35453,
+       -0.30182,
+       1.25987
+      ],
+      "land_palm_w": [
+       0.3547931594008272,
+       -0.30123789749655927,
+       1.2611697374938569
+      ],
+      "err_cm": 0.144,
+      "pred_err_cm": 0.1447,
+      "pred_miss_cm": 0.0075,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.332
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.35453889505945324,
+       -0.22175019709955757,
+       1.259852051939452
+      ],
+      "cmd_w": [
+       0.34089,
+       -0.2139,
+       1.26192
+      ],
+      "corr_cm": 1.5884,
+      "pred_palm_w": [
+       0.35543,
+       -0.22231,
+       1.25977
+      ],
+      "land_palm_w": [
+       0.3596558877145451,
+       -0.2210861948021365,
+       1.265232348954536
+      ],
+      "err_cm": 0.745,
+      "pred_err_cm": 0.7009,
+      "pred_miss_cm": 0.1057,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.929
+     }
+    ],
+    "goal_entry": [
+     0.35453889505945324,
+     -0.22175019709955757,
+     1.259852051939452
+    ],
+    "palm_close": [
+     0.3596558877145451,
+     -0.2210861948021365,
+     1.265232348954536
+    ]
+   },
+   "class": "both hit"
+  },
+  "5": {
+   "A": {
+    "tilt_close_deg": 89.90745739905634,
+    "tilt_pre_deg": 0.0012597015697674186,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.90745739905634,
+     "vase_z": 1.1916830075236593,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.90745739905634,
+     "vase_z": 1.1916830075236593,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.3358637975946674,
+    "d_close_end": 3.2950056826371936,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.01
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 6.3,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.7,
+      -14.0,
+      9.2
+     ]
+    },
+    "knocked": {
+     "t": 6.78,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.31021222372474766,
+       -0.2776611402990134,
+       1.2598582574121389
+      ],
+      "cmd_w": [
+       0.31021,
+       -0.27766,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32547,
+       -0.29498,
+       1.25725
+      ],
+      "land_palm_w": [
+       0.3283405944933421,
+       -0.2910720247387759,
+       1.2563957220511073
+      ],
+      "err_cm": 2.281,
+      "pred_err_cm": 0.4914,
+      "pred_miss_cm": 2.3228,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.916
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31021219602319544,
+       -0.1976611403064369,
+       1.2598571679223993
+      ],
+      "cmd_w": [
+       0.31021,
+       -0.19766,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33682,
+       -0.21441,
+       1.25794
+      ],
+      "land_palm_w": [
+       0.339821822849763,
+       -0.2126809004058305,
+       1.263093760785017
+      ],
+      "err_cm": 3.336,
+      "pred_err_cm": 0.621,
+      "pred_miss_cm": 3.1494,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.438
+     }
+    ],
+    "goal_entry": [
+     0.31021219602319544,
+     -0.1976611403064369,
+     1.2598571679223993
+    ],
+    "palm_close": [
+     0.339821822849763,
+     -0.2126809004058305,
+     1.263093760785017
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0015945886301722146,
+    "tilt_pre_deg": 0.0012597015697674186,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.1124886646433578,
+     "vase_z": 1.1604096109697142,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.3814119750192715,
+     "vase_z": 1.2194970604041704,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.6042095181466303,
+    "d_close_end": 1.6997903176946365,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.05
+     ],
+     [
+      "pregrasp",
+      "right_hand_middle_1_link",
+      "etagere",
+      0.02
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.01
+     ]
+    ],
+    "touched": {
+     "t": 7.56,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.6,
+      -12.2,
+      8.8
+     ]
+    },
+    "knocked": {
+     "t": 12.24,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.31021222372474766,
+       -0.2776611402990134,
+       1.2598582574121389
+      ],
+      "cmd_w": [
+       0.28365,
+       -0.25787,
+       1.26152
+      ],
+      "corr_cm": 3.3162,
+      "pred_palm_w": [
+       0.31112,
+       -0.27741,
+       1.25952
+      ],
+      "land_palm_w": [
+       0.3139854113845125,
+       -0.2760762537061076,
+       1.2553230460649412
+      ],
+      "err_cm": 0.611,
+      "pred_err_cm": 0.5252,
+      "pred_miss_cm": 0.0999,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.931
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31021219602319544,
+       -0.1976611403064369,
+       1.2598571679223993
+      ],
+      "cmd_w": [
+       0.26618,
+       -0.1709,
+       1.26133
+      ],
+      "corr_cm": 5.1544,
+      "pred_palm_w": [
+       0.31036,
+       -0.19788,
+       1.25943
+      ],
+      "land_palm_w": [
+       0.30909444475210124,
+       -0.19290997073305027,
+       1.2634186190259231
+      ],
+      "err_cm": 0.604,
+      "pred_err_cm": 0.6493,
+      "pred_miss_cm": 0.0501,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.109
+     }
+    ],
+    "goal_entry": [
+     0.31021219602319544,
+     -0.1976611403064369,
+     1.2598571679223993
+    ],
+    "palm_close": [
+     0.30909444475210124,
+     -0.19290997073305027,
+     1.2634186190259231
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "6": {
+   "A": {
+    "tilt_close_deg": 89.91595990099735,
+    "tilt_pre_deg": 0.0009378220645250836,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91595990099735,
+     "vase_z": 1.1916888367943104,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91595990099735,
+     "vase_z": 1.1916888367943104,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.3047487148548056,
+    "d_close_end": 2.278767672606558,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 6.44,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.0,
+      -12.5,
+      9.0
+     ]
+    },
+    "knocked": {
+     "t": 6.86,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3337631887002951,
+       -0.28458054280986833,
+       1.2598498841681511
+      ],
+      "cmd_w": [
+       0.33376,
+       -0.28458,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34171,
+       -0.29876,
+       1.25814
+      ],
+      "land_palm_w": [
+       0.34365360823099395,
+       -0.2971306232344997,
+       1.2577790892275518
+      ],
+      "err_cm": 1.611,
+      "pred_err_cm": 0.2565,
+      "pred_miss_cm": 1.6346,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.963
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3337632594809284,
+       -0.20458054284940985,
+       1.2598523984569692
+      ],
+      "cmd_w": [
+       0.33376,
+       -0.20458,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.35161,
+       -0.21527,
+       1.25711
+      ],
+      "land_palm_w": [
+       0.3549693825647485,
+       -0.21296095621889571,
+       1.263207346947319
+      ],
+      "err_cm": 2.305,
+      "pred_err_cm": 0.7333,
+      "pred_miss_cm": 2.0978,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.132
+     }
+    ],
+    "goal_entry": [
+     0.3337632594809284,
+     -0.20458054284940985,
+     1.2598523984569692
+    ],
+    "palm_close": [
+     0.3549693825647485,
+     -0.21296095621889571,
+     1.263207346947319
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0017175481386426837,
+    "tilt_pre_deg": 0.0012884672023031455,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.187905501748748,
+     "vase_z": 1.1603352610072601,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.342040647939507,
+     "vase_z": 1.2114447236949277,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "fallen": false,
+    "d_close": 0.6440030314758669,
+    "d_close_end": 1.7772022678886334,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.03
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 6.56,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.9,
+      -10.7,
+      9.6
+     ]
+    },
+    "knocked": {
+     "t": 11.02,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3337631887002951,
+       -0.28458054280986833,
+       1.2598498841681511
+      ],
+      "cmd_w": [
+       0.31967,
+       -0.26808,
+       1.26172
+      ],
+      "corr_cm": 2.1782,
+      "pred_palm_w": [
+       0.33378,
+       -0.28459,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.33677223747904533,
+       -0.2808261214263708,
+       1.258993253425019
+      ],
+      "err_cm": 0.489,
+      "pred_err_cm": 0.4885,
+      "pred_miss_cm": 0.0018,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.034
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3337632594809284,
+       -0.20458054284940985,
+       1.2598523984569692
+      ],
+      "cmd_w": [
+       0.30418,
+       -0.18665,
+       1.26056
+      ],
+      "corr_cm": 3.4606,
+      "pred_palm_w": [
+       0.3339,
+       -0.20465,
+       1.25967
+      ],
+      "land_palm_w": [
+       0.33638523392738395,
+       -0.20232990126942363,
+       1.2652869042243395
+      ],
+      "err_cm": 0.644,
+      "pred_err_cm": 0.6564,
+      "pred_miss_cm": 0.0239,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.893
+     }
+    ],
+    "goal_entry": [
+     0.3337632594809284,
+     -0.20458054284940985,
+     1.2598523984569692
+    ],
+    "palm_close": [
+     0.33638523392738395,
+     -0.20232990126942363,
+     1.2652869042243395
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "7": {
+   "A": {
+    "tilt_close_deg": 89.91053024370981,
+    "tilt_pre_deg": 0.0013886709062011962,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91053024370981,
+     "vase_z": 1.1916851158529933,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91053024370981,
+     "vase_z": 1.1916851158529933,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.241178799258751,
+    "d_close_end": 3.205893292621456,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 7.52,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.8,
+      -13.7,
+      9.2
+     ]
+    },
+    "knocked": {
+     "t": 8.02,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3091552066739558,
+       -0.29157829791014345,
+       1.2598561690486105
+      ],
+      "cmd_w": [
+       0.30916,
+       -0.29158,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32198,
+       -0.30912,
+       1.2571
+      ],
+      "land_palm_w": [
+       0.32516965311619694,
+       -0.30658805676873774,
+       1.2537671429705546
+      ],
+      "err_cm": 2.278,
+      "pred_err_cm": 0.5258,
+      "pred_miss_cm": 2.1899,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.019
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3091551883075767,
+       -0.2115782979127238,
+       1.2598568113243014
+      ],
+      "cmd_w": [
+       0.30916,
+       -0.21158,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33457,
+       -0.228,
+       1.25781
+      ],
+      "land_palm_w": [
+       0.3382131791039453,
+       -0.22571092200594003,
+       1.2623917882461768
+      ],
+      "err_cm": 3.241,
+      "pred_err_cm": 0.6283,
+      "pred_miss_cm": 3.0328,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.312
+     }
+    ],
+    "goal_entry": [
+     0.3091551883075767,
+     -0.2115782979127238,
+     1.2598568113243014
+    ],
+    "palm_close": [
+     0.3382131791039453,
+     -0.22571092200594003,
+     1.2623917882461768
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0010700692900098307,
+    "tilt_pre_deg": 0.0016605844745110412,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.5170907877072087,
+     "vase_z": 1.160054468545442,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 6.157366740352381,
+     "vase_z": 1.2146843967736198,
+     "robot_touch": true,
+     "n_robot_contacts": 8
+    },
+    "fallen": false,
+    "d_close": 0.441339029154454,
+    "d_close_end": 1.6518145740721573,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.02
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.05
+     ]
+    ],
+    "touched": {
+     "t": 7.54,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.6,
+      -12.1,
+      8.8
+     ]
+    },
+    "knocked": {
+     "t": 12.26,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3091552066739558,
+       -0.29157829791014345,
+       1.2598561690486105
+      ],
+      "cmd_w": [
+       0.28502,
+       -0.27224,
+       1.26169
+      ],
+      "corr_cm": 3.0977,
+      "pred_palm_w": [
+       0.30945,
+       -0.29153,
+       1.25894
+      ],
+      "land_palm_w": [
+       0.3120540730746794,
+       -0.2902824592965985,
+       1.255372737379165
+      ],
+      "err_cm": 0.549,
+      "pred_err_cm": 0.4587,
+      "pred_miss_cm": 0.0962,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.062
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3091551883075767,
+       -0.2115782979127238,
+       1.2598568113243014
+      ],
+      "cmd_w": [
+       0.26699,
+       -0.18679,
+       1.26203
+      ],
+      "corr_cm": 4.8957,
+      "pred_palm_w": [
+       0.30948,
+       -0.2121,
+       1.26022
+      ],
+      "land_palm_w": [
+       0.30983803431033546,
+       -0.2095782773200373,
+       1.2637312987524454
+      ],
+      "err_cm": 0.441,
+      "pred_err_cm": 0.4339,
+      "pred_miss_cm": 0.0712,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.112
+     }
+    ],
+    "goal_entry": [
+     0.3091551883075767,
+     -0.2115782979127238,
+     1.2598568113243014
+    ],
+    "palm_close": [
+     0.30983803431033546,
+     -0.2095782773200373,
+     1.2637312987524454
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "8": {
+   "A": {
+    "tilt_close_deg": 89.9139811210482,
+    "tilt_pre_deg": 0.0014681662514097469,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.9139811210482,
+     "vase_z": 1.1916875021675934,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.9139811210482,
+     "vase_z": 1.1916875021675934,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.14899989613966,
+    "d_close_end": 2.116568196185067,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 7.6,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.3,
+      -13.1,
+      8.8
+     ]
+    },
+    "knocked": {
+     "t": 8.04,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33818266825342097,
+       -0.3032066375853863,
+       1.2598536316877582
+      ],
+      "cmd_w": [
+       0.33818,
+       -0.30321,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34127,
+       -0.31768,
+       1.25776
+      ],
+      "land_palm_w": [
+       0.3436416206800663,
+       -0.31795275172113785,
+       1.2579540057587006
+      ],
+      "err_cm": 1.584,
+      "pred_err_cm": 0.2397,
+      "pred_miss_cm": 1.4949,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.372
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.33818271795283916,
+       -0.22320663759126577,
+       1.2598546003224516
+      ],
+      "cmd_w": [
+       0.33818,
+       -0.22321,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.35317,
+       -0.23232,
+       1.25748
+      ],
+      "land_palm_w": [
+       0.3579287875632044,
+       -0.2313326946801524,
+       1.2622794686676597
+      ],
+      "err_cm": 2.149,
+      "pred_err_cm": 0.6828,
+      "pred_miss_cm": 1.7699,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.147
+     }
+    ],
+    "goal_entry": [
+     0.33818271795283916,
+     -0.22320663759126577,
+     1.2598546003224516
+    ],
+    "palm_close": [
+     0.3579287875632044,
+     -0.2313326946801524,
+     1.2622794686676597
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.00047340651622979703,
+    "tilt_pre_deg": 0.0015347981820436655,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.281365446081449,
+     "vase_z": 1.1603347822206942,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 4.018330138077671,
+     "vase_z": 1.2126021729115963,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "fallen": false,
+    "d_close": 0.7400638182646101,
+    "d_close_end": 2.0008296749639087,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 7.72,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.7,
+      -10.9,
+      9.4
+     ]
+    },
+    "knocked": {
+     "t": 12.18,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33818266825342097,
+       -0.3032066375853863,
+       1.2598536316877582
+      ],
+      "cmd_w": [
+       0.33087,
+       -0.28836,
+       1.26155
+      ],
+      "corr_cm": 1.6638,
+      "pred_palm_w": [
+       0.33847,
+       -0.30334,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.34180748606916256,
+       -0.30211309345725285,
+       1.2591253917075818
+      ],
+      "err_cm": 0.386,
+      "pred_err_cm": 0.3626,
+      "pred_miss_cm": 0.032,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.357
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.33818271795283916,
+       -0.22320663759126577,
+       1.2598546003224516
+      ],
+      "cmd_w": [
+       0.31546,
+       -0.2088,
+       1.2617
+      ],
+      "corr_cm": 2.6966,
+      "pred_palm_w": [
+       0.33901,
+       -0.22365,
+       1.25997
+      ],
+      "land_palm_w": [
+       0.3428925618160353,
+       -0.2201079241788619,
+       1.2646488459860092
+      ],
+      "err_cm": 0.74,
+      "pred_err_cm": 0.7033,
+      "pred_miss_cm": 0.095,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.849
+     }
+    ],
+    "goal_entry": [
+     0.33818271795283916,
+     -0.22320663759126577,
+     1.2598546003224516
+    ],
+    "palm_close": [
+     0.3428925618160353,
+     -0.2201079241788619,
+     1.2646488459860092
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "9": {
+   "A": {
+    "tilt_close_deg": 89.91297686420363,
+    "tilt_pre_deg": 0.0008900912724884578,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91297686420363,
+     "vase_z": 1.1916867514974425,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91297686420363,
+     "vase_z": 1.1916867514974425,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.2454300814144466,
+    "d_close_end": 3.2099713653003024,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 7.52,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.9,
+      -13.8,
+      9.0
+     ]
+    },
+    "knocked": {
+     "t": 8.0,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3056710001123948,
+       -0.3026539841433654,
+       1.259855615977886
+      ],
+      "cmd_w": [
+       0.30567,
+       -0.30265,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.31701,
+       -0.32085,
+       1.25676
+      ],
+      "land_palm_w": [
+       0.31998486376052787,
+       -0.31857307328221574,
+       1.2541846532364034
+      ],
+      "err_cm": 2.215,
+      "pred_err_cm": 0.4544,
+      "pred_miss_cm": 2.1663,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.927
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.30567096217302636,
+       -0.22265398414424786,
+       1.259855989822989
+      ],
+      "cmd_w": [
+       0.30567,
+       -0.22265,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33063,
+       -0.23934,
+       1.25786
+      ],
+      "land_palm_w": [
+       0.3349736391557289,
+       -0.2365008785752975,
+       1.2615584226697523
+      ],
+      "err_cm": 3.245,
+      "pred_err_cm": 0.6376,
+      "pred_miss_cm": 3.0088,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.342
+     }
+    ],
+    "goal_entry": [
+     0.30567096217302636,
+     -0.22265398414424786,
+     1.259855989822989
+    ],
+    "palm_close": [
+     0.3349736391557289,
+     -0.2365008785752975,
+     1.2615584226697523
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0013025796512281696,
+    "tilt_pre_deg": 0.0005946942544737815,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.3531491759485022,
+     "vase_z": 1.159923770771249,
+     "robot_touch": true,
+     "n_robot_contacts": 4
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 6.661365709562385,
+     "vase_z": 1.2124091217088617,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "fallen": false,
+    "d_close": 0.4234600979846752,
+    "d_close_end": 1.5991892934690246,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.0
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.05
+     ]
+    ],
+    "touched": {
+     "t": 7.68,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.8,
+      -11.4,
+      9.2
+     ]
+    },
+    "knocked": {
+     "t": 12.26,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3056710001123948,
+       -0.3026539841433654,
+       1.259855615977886
+      ],
+      "cmd_w": [
+       0.28387,
+       -0.28303,
+       1.26201
+      ],
+      "corr_cm": 2.9412,
+      "pred_palm_w": [
+       0.30624,
+       -0.30194,
+       1.25882
+      ],
+      "land_palm_w": [
+       0.3090020391069709,
+       -0.30115150746349356,
+       1.2557943934224405
+      ],
+      "err_cm": 0.546,
+      "pred_err_cm": 0.4174,
+      "pred_miss_cm": 0.1382,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.949
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.30567096217302636,
+       -0.22265398414424786,
+       1.259855989822989
+      ],
+      "cmd_w": [
+       0.26391,
+       -0.19847,
+       1.26169
+      ],
+      "corr_cm": 4.8297,
+      "pred_palm_w": [
+       0.30609,
+       -0.22277,
+       1.25939
+      ],
+      "land_palm_w": [
+       0.3078642362646655,
+       -0.2224388352118267,
+       1.263471941309713
+      ],
+      "err_cm": 0.423,
+      "pred_err_cm": 0.446,
+      "pred_miss_cm": 0.0642,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.044
+     }
+    ],
+    "goal_entry": [
+     0.30567096217302636,
+     -0.22265398414424786,
+     1.259855989822989
+    ],
+    "palm_close": [
+     0.3078642362646655,
+     -0.2224388352118267,
+     1.263471941309713
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "10": {
+   "A": {
+    "tilt_close_deg": 89.91040706615108,
+    "tilt_pre_deg": 0.0008686033936851576,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91040706615108,
+     "vase_z": 1.1916850389619569,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91040706615108,
+     "vase_z": 1.1916850389619569,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.6597118638358355,
+    "d_close_end": 2.629748511665164,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 7.5,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.1,
+      -13.9,
+      9.0
+     ]
+    },
+    "knocked": {
+     "t": 8.04,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3219707812928795,
+       -0.2994135227121141,
+       1.2598566483881424
+      ],
+      "cmd_w": [
+       0.32197,
+       -0.29941,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32993,
+       -0.31573,
+       1.25753
+      ],
+      "land_palm_w": [
+       0.3329231658332798,
+       -0.31452928366309757,
+       1.2567144843295546
+      ],
+      "err_cm": 1.893,
+      "pred_err_cm": 0.3328,
+      "pred_miss_cm": 1.8299,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.836
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3219708474733071,
+       -0.21941352271219644,
+       1.2598567421420444
+      ],
+      "cmd_w": [
+       0.32197,
+       -0.21941,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34231,
+       -0.23253,
+       1.25733
+      ],
+      "land_palm_w": [
+       0.34649127508672295,
+       -0.22943247466875258,
+       1.2622600630133314
+      ],
+      "err_cm": 2.66,
+      "pred_err_cm": 0.7174,
+      "pred_miss_cm": 2.4329,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.23
+     }
+    ],
+    "goal_entry": [
+     0.3219708474733071,
+     -0.21941352271219644,
+     1.2598567421420444
+    ],
+    "palm_close": [
+     0.34649127508672295,
+     -0.22943247466875258,
+     1.2622600630133314
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0010155116236860947,
+    "tilt_pre_deg": 0.0015487157426084983,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.8191974261046756,
+     "vase_z": 1.1601674157524404,
+     "robot_touch": true,
+     "n_robot_contacts": 4
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.052401967755367,
+     "vase_z": 1.214084110786595,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.5099311905417486,
+    "d_close_end": 1.7711773072035968,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 10.98,
+     "phase": "close",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -8.2,
+      -7.5,
+      10.4
+     ]
+    },
+    "knocked": {
+     "t": 12.22,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3219707812928795,
+       -0.2994135227121141,
+       1.2598566483881424
+      ],
+      "cmd_w": [
+       0.30711,
+       -0.28137,
+       1.26233
+      ],
+      "corr_cm": 2.3508,
+      "pred_palm_w": [
+       0.32199,
+       -0.29942,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.32523890234977765,
+       -0.2961081360549155,
+       1.2562574170927463
+      ],
+      "err_cm": 0.588,
+      "pred_err_cm": 0.5867,
+      "pred_miss_cm": 0.0016,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.789
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3219708474733071,
+       -0.21941352271219644,
+       1.2598567421420444
+      ],
+      "cmd_w": [
+       0.28789,
+       -0.19892,
+       1.26045
+      ],
+      "corr_cm": 3.9771,
+      "pred_palm_w": [
+       0.32207,
+       -0.21979,
+       1.2592
+      ],
+      "land_palm_w": [
+       0.32486002788471774,
+       -0.21737422320452154,
+       1.2635305516059456
+      ],
+      "err_cm": 0.51,
+      "pred_err_cm": 0.5686,
+      "pred_miss_cm": 0.0762,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.071
+     }
+    ],
+    "goal_entry": [
+     0.3219708474733071,
+     -0.21941352271219644,
+     1.2598567421420444
+    ],
+    "palm_close": [
+     0.32486002788471774,
+     -0.21737422320452154,
+     1.2635305516059456
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "11": {
+   "A": {
+    "tilt_close_deg": 89.90666206135762,
+    "tilt_pre_deg": 0.0019023389260304422,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.90666206135762,
+     "vase_z": 1.1916824719902157,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.90666206135762,
+     "vase_z": 1.1916824719902157,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.511248287870545,
+    "d_close_end": 3.4700840138011384,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 7.54,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.5,
+      -13.6,
+      9.1
+     ]
+    },
+    "knocked": {
+     "t": 7.96,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.30296967089416876,
+       -0.2886118429992677,
+       1.2598492247623978
+      ],
+      "cmd_w": [
+       0.30297,
+       -0.28861,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.3181,
+       -0.30659,
+       1.25674
+      ],
+      "land_palm_w": [
+       0.32116198590000977,
+       -0.3031964335835772,
+       1.2538106908644393
+      ],
+      "err_cm": 2.409,
+      "pred_err_cm": 0.5427,
+      "pred_miss_cm": 2.3701,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.072
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.30296971863241284,
+       -0.20861184304611508,
+       1.2598519621511888
+      ],
+      "cmd_w": [
+       0.30297,
+       -0.20861,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33074,
+       -0.22638,
+       1.25771
+      ],
+      "land_palm_w": [
+       0.3341393639432007,
+       -0.2246346684148276,
+       1.2619987579753895
+      ],
+      "err_cm": 3.511,
+      "pred_err_cm": 0.5749,
+      "pred_miss_cm": 3.3037,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.47
+     }
+    ],
+    "goal_entry": [
+     0.30296971863241284,
+     -0.20861184304611508,
+     1.2598519621511888
+    ],
+    "palm_close": [
+     0.3341393639432007,
+     -0.2246346684148276,
+     1.2619987579753895
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.001960863998452444,
+    "tilt_pre_deg": 0.0019152826204432323,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.635841676599455,
+     "vase_z": 1.1601062269853832,
+     "robot_touch": true,
+     "n_robot_contacts": 3
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 6.294215280346412,
+     "vase_z": 1.2191590177258513,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "fallen": false,
+    "d_close": 0.4423185702559696,
+    "d_close_end": 1.6081703146815545,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.01
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 7.82,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -8.0,
+      -10.4,
+      9.4
+     ]
+    },
+    "knocked": {
+     "t": 12.24,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.30296967089416876,
+       -0.2886118429992677,
+       1.2598492247623978
+      ],
+      "cmd_w": [
+       0.27647,
+       -0.26969,
+       1.26187
+      ],
+      "corr_cm": 3.2628,
+      "pred_palm_w": [
+       0.30389,
+       -0.28889,
+       1.25929
+      ],
+      "land_palm_w": [
+       0.3063938514569128,
+       -0.2887031077952976,
+       1.2552963186497603
+      ],
+      "err_cm": 0.57,
+      "pred_err_cm": 0.472,
+      "pred_miss_cm": 0.1112,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.258
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.30296971863241284,
+       -0.20861184304611508,
+       1.2598519621511888
+      ],
+      "cmd_w": [
+       0.25755,
+       -0.18157,
+       1.26162
+      ],
+      "corr_cm": 5.2886,
+      "pred_palm_w": [
+       0.30303,
+       -0.20855,
+       1.25981
+      ],
+      "land_palm_w": [
+       0.30256595712577755,
+       -0.2058063139189505,
+       1.2632476292022583
+      ],
+      "err_cm": 0.442,
+      "pred_err_cm": 0.4421,
+      "pred_miss_cm": 0.0103,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.198
+     }
+    ],
+    "goal_entry": [
+     0.30296971863241284,
+     -0.20861184304611508,
+     1.2598519621511888
+    ],
+    "palm_close": [
+     0.30256595712577755,
+     -0.2058063139189505,
+     1.2632476292022583
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "12": {
+   "A": {
+    "tilt_close_deg": 89.91675741241045,
+    "tilt_pre_deg": 0.0026489375482404856,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91675741241045,
+     "vase_z": 1.1916893770202508,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91675741241045,
+     "vase_z": 1.1916893770202508,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.961036307059633,
+    "d_close_end": 2.9234650135170135,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.01
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 6.32,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.0,
+      -13.8,
+      9.4
+     ]
+    },
+    "knocked": {
+     "t": 6.86,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3198816987814173,
+       -0.2737792036917128,
+       1.259853291384101
+      ],
+      "cmd_w": [
+       0.31988,
+       -0.27378,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33332,
+       -0.28994,
+       1.25774
+      ],
+      "land_palm_w": [
+       0.33611076869712786,
+       -0.28647765405729814,
+       1.2576152620654304
+      ],
+      "err_cm": 2.073,
+      "pred_err_cm": 0.4443,
+      "pred_miss_cm": 2.1119,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.999
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31988166666310874,
+       -0.19377920370323887,
+       1.25985464901223
+      ],
+      "cmd_w": [
+       0.31988,
+       -0.19378,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34366,
+       -0.20836,
+       1.25784
+      ],
+      "land_palm_w": [
+       0.3464050662604097,
+       -0.20638529674555056,
+       1.2636453340668095
+      ],
+      "err_cm": 2.961,
+      "pred_err_cm": 0.6721,
+      "pred_miss_cm": 2.7964,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.28
+     }
+    ],
+    "goal_entry": [
+     0.31988166666310874,
+     -0.19377920370323887,
+     1.25985464901223
+    ],
+    "palm_close": [
+     0.3464050662604097,
+     -0.20638529674555056,
+     1.2636453340668095
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0010204238186879203,
+    "tilt_pre_deg": 0.002444947612320659,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.0012673406342455817,
+     "vase_z": 1.1598557431251204,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 0.0013337761642821231,
+     "vase_z": 1.1598556981780197,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 11.14599336591259,
+    "d_close_end": 10.941455247660231,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "entry",
+      "right_hand_middle_1_link",
+      "etagere",
+      0.05
+     ],
+     [
+      "entry",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ],
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.06
+     ],
+     [
+      "pregrasp",
+      "right_hand_middle_1_link",
+      "etagere",
+      0.05
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.07
+     ]
+    ],
+    "touched": null,
+    "knocked": null,
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3198816987814173,
+       -0.2737792036917128,
+       1.259853291384101
+      ],
+      "cmd_w": [
+       0.29542,
+       -0.25422,
+       1.26097
+      ],
+      "corr_cm": 3.1341,
+      "pred_palm_w": [
+       0.3199,
+       -0.27374,
+       1.25984
+      ],
+      "land_palm_w": [
+       0.28926597118856917,
+       -0.25101753216275136,
+       1.1723250203332245
+      ],
+      "err_cm": 9.548,
+      "pred_err_cm": 9.5464,
+      "pred_miss_cm": 0.0044,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.957
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31988166666310874,
+       -0.19377920370323887,
+       1.25985464901223
+      ],
+      "cmd_w": [
+       0.28455,
+       -0.16889,
+       1.26196
+      ],
+      "corr_cm": 4.3273,
+      "pred_palm_w": [
+       0.32029,
+       -0.19403,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.2736134469156321,
+       -0.2466452455621394,
+       1.1733228613797713
+      ],
+      "err_cm": 11.146,
+      "pred_err_cm": 11.1507,
+      "pred_miss_cm": 0.0479,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.865
+     }
+    ],
+    "goal_entry": [
+     0.31988166666310874,
+     -0.19377920370323887,
+     1.25985464901223
+    ],
+    "palm_close": [
+     0.2736134469156321,
+     -0.2466452455621394,
+     1.1733228613797713
+    ]
+   },
+   "class": "both miss"
+  },
+  "13": {
+   "A": {
+    "tilt_close_deg": 89.9187887523563,
+    "tilt_pre_deg": 0.0016971628568981465,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.9187887523563,
+     "vase_z": 1.191690737779086,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.9187887523563,
+     "vase_z": 1.191690737779086,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.008379890114138,
+    "d_close_end": 1.9820571585294737,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 6.44,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.2,
+      -12.5,
+      8.9
+     ]
+    },
+    "knocked": {
+     "t": 6.84,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.34389169888385224,
+       -0.2884514423205493,
+       1.2598529861230976
+      ],
+      "cmd_w": [
+       0.34389,
+       -0.28845,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34857,
+       -0.30134,
+       1.25826
+      ],
+      "land_palm_w": [
+       0.34972205589769034,
+       -0.30063779794778694,
+       1.2591849959562116
+      ],
+      "err_cm": 1.353,
+      "pred_err_cm": 0.1628,
+      "pred_miss_cm": 1.3805,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.088
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3438917289072184,
+       -0.20845144233654778,
+       1.2598545857554595
+      ],
+      "cmd_w": [
+       0.34389,
+       -0.20845,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.35833,
+       -0.21669,
+       1.2573
+      ],
+      "land_palm_w": [
+       0.36232916437824736,
+       -0.21581995549253843,
+       1.2628753415256475
+      ],
+      "err_cm": 2.008,
+      "pred_err_cm": 0.6919,
+      "pred_miss_cm": 1.6817,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.166
+     }
+    ],
+    "goal_entry": [
+     0.3438917289072184,
+     -0.20845144233654778,
+     1.2598545857554595
+    ],
+    "palm_close": [
+     0.36232916437824736,
+     -0.21581995549253843,
+     1.2628753415256475
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0008753595095584266,
+    "tilt_pre_deg": 0.00029590370767688544,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.2940666713296318,
+     "vase_z": 1.1603741533784668,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 4.748209887984151,
+     "vase_z": 1.212843127152866,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "fallen": false,
+    "d_close": 0.7401211110939142,
+    "d_close_end": 1.9175042348891145,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.02
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 6.36,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.4,
+      -11.9,
+      9.2
+     ]
+    },
+    "knocked": {
+     "t": 10.98,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.34389169888385224,
+       -0.2884514423205493,
+       1.2598529861230976
+      ],
+      "cmd_w": [
+       0.33483,
+       -0.27447,
+       1.26127
+      ],
+      "corr_cm": 1.6717,
+      "pred_palm_w": [
+       0.344,
+       -0.28849,
+       1.25984
+      ],
+      "land_palm_w": [
+       0.34631757248545053,
+       -0.2864842876216536,
+       1.2596005151575969
+      ],
+      "err_cm": 0.313,
+      "pred_err_cm": 0.3078,
+      "pred_miss_cm": 0.0115,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.121
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3438917289072184,
+       -0.20845144233654778,
+       1.2598545857554595
+      ],
+      "cmd_w": [
+       0.32199,
+       -0.19512,
+       1.2617
+      ],
+      "corr_cm": 2.5708,
+      "pred_palm_w": [
+       0.34473,
+       -0.20894,
+       1.25992
+      ],
+      "land_palm_w": [
+       0.34772404917688715,
+       -0.20602219399742208,
+       1.2657018072978872
+      ],
+      "err_cm": 0.74,
+      "pred_err_cm": 0.7136,
+      "pred_miss_cm": 0.0969,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.798
+     }
+    ],
+    "goal_entry": [
+     0.3438917289072184,
+     -0.20845144233654778,
+     1.2598545857554595
+    ],
+    "palm_close": [
+     0.34772404917688715,
+     -0.20602219399742208,
+     1.2657018072978872
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "14": {
+   "A": {
+    "tilt_close_deg": 89.91801826957978,
+    "tilt_pre_deg": 0.0007465946657214482,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91801826957978,
+     "vase_z": 1.1916902957570652,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91801826957978,
+     "vase_z": 1.1916902957570652,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 1.7160731998000265,
+    "d_close_end": 1.6828661011285124,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 6.56,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.8,
+      -11.6,
+      9.2
+     ]
+    },
+    "knocked": {
+     "t": 7.18,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.35917830156027997,
+       -0.29843898200351054,
+       1.2598519342899785
+      ],
+      "cmd_w": [
+       0.35918,
+       -0.29844,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.35956,
+       -0.30985,
+       1.25876
+      ],
+      "land_palm_w": [
+       0.35830577159378457,
+       -0.31039419364204524,
+       1.259635848837269
+      ],
+      "err_cm": 1.199,
+      "pred_err_cm": 0.163,
+      "pred_miss_cm": 1.1473,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.312
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.35917835942203263,
+       -0.21843898205455176,
+       1.2598547914307385
+      ],
+      "cmd_w": [
+       0.35918,
+       -0.21844,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.36936,
+       -0.22257,
+       1.26009
+      ],
+      "land_palm_w": [
+       0.3743135167089637,
+       -0.22616368672708573,
+       1.2622520136417945
+      ],
+      "err_cm": 1.716,
+      "pred_err_cm": 0.6495,
+      "pred_miss_cm": 1.0986,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.045
+     }
+    ],
+    "goal_entry": [
+     0.35917835942203263,
+     -0.21843898205455176,
+     1.2598547914307385
+    ],
+    "palm_close": [
+     0.3743135167089637,
+     -0.22616368672708573,
+     1.2622520136417945
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0007982285922846437,
+    "tilt_pre_deg": 0.0007465946657214482,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.197987028068028,
+     "vase_z": 1.160289959455488,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.067719960966152,
+     "vase_z": 1.2114183601869644,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "fallen": false,
+    "d_close": 0.6801512177437223,
+    "d_close_end": 1.885954167051588,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.05
+     ]
+    ],
+    "touched": {
+     "t": 6.34,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.4,
+      -12.8,
+      9.3
+     ]
+    },
+    "knocked": {
+     "t": 10.98,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.35917830156027997,
+       -0.29843898200351054,
+       1.2598519342899785
+      ],
+      "cmd_w": [
+       0.35748,
+       -0.28755,
+       1.26085
+      ],
+      "corr_cm": 1.1065,
+      "pred_palm_w": [
+       0.35933,
+       -0.29864,
+       1.25978
+      ],
+      "land_palm_w": [
+       0.35918592517205317,
+       -0.29881403228650655,
+       1.2607469718833717
+      ],
+      "err_cm": 0.097,
+      "pred_err_cm": 0.0996,
+      "pred_miss_cm": 0.0259,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.313
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.35917835942203263,
+       -0.21843898205455176,
+       1.2598547914307385
+      ],
+      "cmd_w": [
+       0.34588,
+       -0.21139,
+       1.26109
+      ],
+      "corr_cm": 1.5105,
+      "pred_palm_w": [
+       0.35997,
+       -0.21895,
+       1.25978
+      ],
+      "land_palm_w": [
+       0.3643947149984811,
+       -0.21957617609169203,
+       1.2640686960478098
+      ],
+      "err_cm": 0.68,
+      "pred_err_cm": 0.6198,
+      "pred_miss_cm": 0.0942,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.87
+     }
+    ],
+    "goal_entry": [
+     0.35917835942203263,
+     -0.21843898205455176,
+     1.2598547914307385
+    ],
+    "palm_close": [
+     0.3643947149984811,
+     -0.21957617609169203,
+     1.2640686960478098
+    ]
+   },
+   "class": "both hit"
+  },
+  "15": {
+   "A": {
+    "tilt_close_deg": 89.91547611603663,
+    "tilt_pre_deg": 0.0013543396038521685,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91547611603663,
+     "vase_z": 1.1916884967737587,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91547611603663,
+     "vase_z": 1.1916884967737587,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.890150380943469,
+    "d_close_end": 2.8570138871405897,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 6.3,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.9,
+      -13.6,
+      9.1
+     ]
+    },
+    "knocked": {
+     "t": 6.78,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.31895871487837085,
+       -0.2880261255682689,
+       1.2598531552049468
+      ],
+      "cmd_w": [
+       0.31896,
+       -0.28803,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33,
+       -0.30438,
+       1.25761
+      ],
+      "land_palm_w": [
+       0.3326468702646748,
+       -0.3013764175735289,
+       1.2566541052050137
+      ],
+      "err_cm": 1.939,
+      "pred_err_cm": 0.4108,
+      "pred_miss_cm": 1.9859,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.39
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3189587668914423,
+       -0.20802612557995784,
+       1.25985452178141
+      ],
+      "cmd_w": [
+       0.31896,
+       -0.20803,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34166,
+       -0.22244,
+       1.25764
+      ],
+      "land_palm_w": [
+       0.34505197836682044,
+       -0.2200760084755057,
+       1.2628945151286965
+      ],
+      "err_cm": 2.89,
+      "pred_err_cm": 0.6683,
+      "pred_miss_cm": 2.6979,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.25
+     }
+    ],
+    "goal_entry": [
+     0.3189587668914423,
+     -0.20802612557995784,
+     1.25985452178141
+    ],
+    "palm_close": [
+     0.34505197836682044,
+     -0.2200760084755057,
+     1.2628945151286965
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0012773769153885308,
+    "tilt_pre_deg": 0.0009844495143971391,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.7707018711516057,
+     "vase_z": 1.1601365031164033,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.378626164058367,
+     "vase_z": 1.2152866916616474,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.5126547920096208,
+    "d_close_end": 1.7065406359917088,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.04
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 7.76,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.9,
+      -10.6,
+      9.4
+     ]
+    },
+    "knocked": {
+     "t": 12.22,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.31895871487837085,
+       -0.2880261255682689,
+       1.2598531552049468
+      ],
+      "cmd_w": [
+       0.29839,
+       -0.26903,
+       1.26149
+      ],
+      "corr_cm": 2.8046,
+      "pred_palm_w": [
+       0.31904,
+       -0.28803,
+       1.25982
+      ],
+      "land_palm_w": [
+       0.3223918154078905,
+       -0.28520499013441675,
+       1.255483602305815
+      ],
+      "err_cm": 0.623,
+      "pred_err_cm": 0.6164,
+      "pred_miss_cm": 0.0083,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.153
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3189587668914423,
+       -0.20802612557995784,
+       1.25985452178141
+      ],
+      "cmd_w": [
+       0.28115,
+       -0.18522,
+       1.26049
+      ],
+      "corr_cm": 4.4163,
+      "pred_palm_w": [
+       0.3192,
+       -0.20818,
+       1.25853
+      ],
+      "land_palm_w": [
+       0.3208511317166112,
+       -0.20525889699014507,
+       1.2637330388791201
+      ],
+      "err_cm": 0.513,
+      "pred_err_cm": 0.6194,
+      "pred_miss_cm": 0.1358,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.05
+     }
+    ],
+    "goal_entry": [
+     0.3189587668914423,
+     -0.20802612557995784,
+     1.25985452178141
+    ],
+    "palm_close": [
+     0.3208511317166112,
+     -0.20525889699014507,
+     1.2637330388791201
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "16": {
+   "A": {
+    "tilt_close_deg": 89.9164773543442,
+    "tilt_pre_deg": 0.0012952019170969229,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.9164773543442,
+     "vase_z": 1.1916892262694752,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.9164773543442,
+     "vase_z": 1.1916892262694752,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.2653284107566796,
+    "d_close_end": 2.241716011363789,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 6.3,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -6.2,
+      -13.6,
+      9.1
+     ]
+    },
+    "knocked": {
+     "t": 6.8,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33545928777196293,
+       -0.27584504480821187,
+       1.25984940496949
+      ],
+      "cmd_w": [
+       0.33546,
+       -0.27585,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34451,
+       -0.28959,
+       1.25829
+      ],
+      "land_palm_w": [
+       0.34671431854786827,
+       -0.28768256280261156,
+       1.2580218636287601
+      ],
+      "err_cm": 1.644,
+      "pred_err_cm": 0.2926,
+      "pred_miss_cm": 1.6535,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.884
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.33545926978078644,
+       -0.19584504489113577,
+       1.2598530474285585
+      ],
+      "cmd_w": [
+       0.33546,
+       -0.19585,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.35343,
+       -0.20628,
+       1.25722
+      ],
+      "land_palm_w": [
+       0.3562427910475241,
+       -0.20400192233351766,
+       1.2636847409188006
+      ],
+      "err_cm": 2.265,
+      "pred_err_cm": 0.7411,
+      "pred_miss_cm": 2.095,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.303
+     }
+    ],
+    "goal_entry": [
+     0.33545926978078644,
+     -0.19584504489113577,
+     1.2598530474285585
+    ],
+    "palm_close": [
+     0.3562427910475241,
+     -0.20400192233351766,
+     1.2636847409188006
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0017437901923385722,
+    "tilt_pre_deg": 0.0013532250347538537,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.046363299398773,
+     "vase_z": 1.1602626642916904,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.68377643844623,
+     "vase_z": 1.2114535255777805,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "fallen": false,
+    "d_close": 0.6304750336029583,
+    "d_close_end": 1.7399092939428633,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.07
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 9.98,
+     "phase": "close",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -8.3,
+      -7.5,
+      10.6
+     ]
+    },
+    "knocked": {
+     "t": 11.14,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.33545928777196293,
+       -0.27584504480821187,
+       1.25984940496949
+      ],
+      "cmd_w": [
+       0.32004,
+       -0.25922,
+       1.26171
+      ],
+      "corr_cm": 2.2755,
+      "pred_palm_w": [
+       0.33548,
+       -0.27585,
+       1.25985
+      ],
+      "land_palm_w": [
+       0.33823484075395627,
+       -0.2713979449681948,
+       1.2599584678470275
+      ],
+      "err_cm": 0.524,
+      "pred_err_cm": 0.524,
+      "pred_miss_cm": 0.0019,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.203
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.33545926978078644,
+       -0.19584504489113577,
+       1.2598530474285585
+      ],
+      "cmd_w": [
+       0.30573,
+       -0.17818,
+       1.26002
+      ],
+      "corr_cm": 3.4578,
+      "pred_palm_w": [
+       0.33559,
+       -0.19586,
+       1.25976
+      ],
+      "land_palm_w": [
+       0.33745619458526876,
+       -0.19371947130004122,
+       1.2654426900856297
+      ],
+      "err_cm": 0.63,
+      "pred_err_cm": 0.6353,
+      "pred_miss_cm": 0.0158,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 0.91
+     }
+    ],
+    "goal_entry": [
+     0.33545926978078644,
+     -0.19584504489113577,
+     1.2598530474285585
+    ],
+    "palm_close": [
+     0.33745619458526876,
+     -0.19371947130004122,
+     1.2654426900856297
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "17": {
+   "A": {
+    "tilt_close_deg": 89.90671649091612,
+    "tilt_pre_deg": 0.002254303424814873,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.90671649091612,
+     "vase_z": 1.1916825024238653,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.90671649091612,
+     "vase_z": 1.1916825024238653,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 2.7079669792760654,
+    "d_close_end": 2.677583710187206,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 7.54,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.9,
+      -13.5,
+      8.9
+     ]
+    },
+    "knocked": {
+     "t": 8.0,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3207259120913587,
+       -0.2994633355881642,
+       1.2598459895173317
+      ],
+      "cmd_w": [
+       0.32073,
+       -0.29946,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32898,
+       -0.31593,
+       1.25747
+      ],
+      "land_palm_w": [
+       0.3319824103417518,
+       -0.314676203901637,
+       1.256269193333401
+      ],
+      "err_cm": 1.926,
+      "pred_err_cm": 0.3464,
+      "pred_miss_cm": 1.8578,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.376
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.32072585690750993,
+       -0.21946333572288124,
+       1.2598506318972387
+      ],
+      "cmd_w": [
+       0.32073,
+       -0.21946,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.34148,
+       -0.2329,
+       1.25737
+      ],
+      "land_palm_w": [
+       0.3455836628317225,
+       -0.22993811800382127,
+       1.2622332642411058
+      ],
+      "err_cm": 2.708,
+      "pred_err_cm": 0.7014,
+      "pred_miss_cm": 2.4842,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.301
+     }
+    ],
+    "goal_entry": [
+     0.32072585690750993,
+     -0.21946333572288124,
+     1.2598506318972387
+    ],
+    "palm_close": [
+     0.3455836628317225,
+     -0.22993811800382127,
+     1.2622332642411058
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0010262934550268707,
+    "tilt_pre_deg": 0.0014735482649700009,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.6883059595550167,
+     "vase_z": 1.1601016032083722,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.062411081556683,
+     "vase_z": 1.2140332854688924,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "fallen": false,
+    "d_close": 0.5140737920473749,
+    "d_close_end": 1.733255176156795,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.01
+     ]
+    ],
+    "touched": {
+     "t": 7.68,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.8,
+      -11.4,
+      9.3
+     ]
+    },
+    "knocked": {
+     "t": 12.22,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3207259120913587,
+       -0.2994633355881642,
+       1.2598459895173317
+      ],
+      "cmd_w": [
+       0.30557,
+       -0.28132,
+       1.26238
+      ],
+      "corr_cm": 2.3776,
+      "pred_palm_w": [
+       0.32094,
+       -0.29952,
+       1.25986
+      ],
+      "land_palm_w": [
+       0.3242564684483484,
+       -0.295724521446566,
+       1.2566730699986426
+      ],
+      "err_cm": 0.604,
+      "pred_err_cm": 0.5961,
+      "pred_miss_cm": 0.0223,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.118
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.32072585690750993,
+       -0.21946333572288124,
+       1.2598506318972387
+      ],
+      "cmd_w": [
+       0.28607,
+       -0.19871,
+       1.25985
+      ],
+      "corr_cm": 4.0394,
+      "pred_palm_w": [
+       0.32078,
+       -0.21946,
+       1.26001
+      ],
+      "land_palm_w": [
+       0.3233361762421046,
+       -0.21732823214418026,
+       1.2637306772638106
+      ],
+      "err_cm": 0.514,
+      "pred_err_cm": 0.4997,
+      "pred_miss_cm": 0.0167,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.072
+     }
+    ],
+    "goal_entry": [
+     0.32072585690750993,
+     -0.21946333572288124,
+     1.2598506318972387
+    ],
+    "palm_close": [
+     0.3233361762421046,
+     -0.21732823214418026,
+     1.2637306772638106
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "18": {
+   "A": {
+    "tilt_close_deg": 89.91044253487465,
+    "tilt_pre_deg": 0.0013513931557052508,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91044253487465,
+     "vase_z": 1.1916850661533513,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91044253487465,
+     "vase_z": 1.1916850661533513,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.30125170457204,
+    "d_close_end": 3.2595827945800084,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.01
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.04
+     ]
+    ],
+    "touched": {
+     "t": 7.46,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.7,
+      -14.0,
+      9.3
+     ]
+    },
+    "knocked": {
+     "t": 7.94,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3114373505580285,
+       -0.27310217175458074,
+       1.259849524616236
+      ],
+      "cmd_w": [
+       0.31144,
+       -0.2731,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32735,
+       -0.29041,
+       1.25731
+      ],
+      "land_palm_w": [
+       0.3299107364753304,
+       -0.2865256987146413,
+       1.2570631879083536
+      ],
+      "err_cm": 2.3,
+      "pred_err_cm": 0.466,
+      "pred_miss_cm": 2.3652,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 6.346
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3114373900608559,
+       -0.1931021718107011,
+       1.2598525209006517
+      ],
+      "cmd_w": [
+       0.31144,
+       -0.1931,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33818,
+       -0.20969,
+       1.25793
+      ],
+      "land_palm_w": [
+       0.34077495881337116,
+       -0.20781783214937752,
+       1.2633997285605056
+      ],
+      "err_cm": 3.301,
+      "pred_err_cm": 0.634,
+      "pred_miss_cm": 3.1524,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.661
+     }
+    ],
+    "goal_entry": [
+     0.3114373900608559,
+     -0.1931021718107011,
+     1.2598525209006517
+    ],
+    "palm_close": [
+     0.34077495881337116,
+     -0.20781783214937752,
+     1.2633997285605056
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.002133824775900937,
+    "tilt_pre_deg": 0.0013500537232093014,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 1.120392023081688,
+     "vase_z": 1.160395571992175,
+     "robot_touch": true,
+     "n_robot_contacts": 4
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.430862188628988,
+     "vase_z": 1.2188367586450484,
+     "robot_touch": true,
+     "n_robot_contacts": 7
+    },
+    "fallen": false,
+    "d_close": 0.7648059247559431,
+    "d_close_end": 1.690563891665186,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.08
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.0
+     ]
+    ],
+    "touched": {
+     "t": 7.5,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.4,
+      -12.3,
+      8.7
+     ]
+    },
+    "knocked": {
+     "t": 12.24,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.3114373505580285,
+       -0.27310217175458074,
+       1.259849524616236
+      ],
+      "cmd_w": [
+       0.28353,
+       -0.25348,
+       1.26114
+      ],
+      "corr_cm": 3.4143,
+      "pred_palm_w": [
+       0.31166,
+       -0.27292,
+       1.25975
+      ],
+      "land_palm_w": [
+       0.3150399239749814,
+       -0.2713021265922148,
+       1.2553138700373787
+      ],
+      "err_cm": 0.607,
+      "pred_err_cm": 0.5804,
+      "pred_miss_cm": 0.0306,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.702
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.3114373900608559,
+       -0.1931021718107011,
+       1.2598525209006517
+      ],
+      "cmd_w": [
+       0.26753,
+       -0.16633,
+       1.26137
+      ],
+      "corr_cm": 5.1452,
+      "pred_palm_w": [
+       0.3115,
+       -0.19312,
+       1.25981
+      ],
+      "land_palm_w": [
+       0.3101128675512394,
+       -0.18728819841943564,
+       1.264641692413696
+      ],
+      "err_cm": 0.765,
+      "pred_err_cm": 0.77,
+      "pred_miss_cm": 0.008,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.074
+     }
+    ],
+    "goal_entry": [
+     0.3114373900608559,
+     -0.1931021718107011,
+     1.2598525209006517
+    ],
+    "palm_close": [
+     0.3101128675512394,
+     -0.18728819841943564,
+     1.264641692413696
+    ]
+   },
+   "class": "A miss R hit"
+  },
+  "19": {
+   "A": {
+    "tilt_close_deg": 89.91223750718457,
+    "tilt_pre_deg": 0.0018598694156348908,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 89.91223750718457,
+     "vase_z": 1.1916862995252562,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 89.91223750718457,
+     "vase_z": 1.1916862995252562,
+     "robot_touch": false,
+     "n_robot_contacts": 0
+    },
+    "fallen": true,
+    "d_close": 3.3006124387160503,
+    "d_close_end": 3.2601428892804876,
+    "success_lift": false,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.03
+     ]
+    ],
+    "touched": {
+     "t": 6.26,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -5.8,
+      -14.0,
+      9.2
+     ]
+    },
+    "knocked": {
+     "t": 6.76,
+     "phase": "entry",
+     "touch": [
+      "etagere"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.31054421529532367,
+       -0.2812360169369759,
+       1.259853936101577
+      ],
+      "cmd_w": [
+       0.31054,
+       -0.28124,
+       1.25985
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.32505,
+       -0.29851,
+       1.25725
+      ],
+      "land_palm_w": [
+       0.3277758921811775,
+       -0.29482251740086995,
+       1.2553397459068045
+      ],
+      "err_cm": 2.24,
+      "pred_err_cm": 0.4964,
+      "pred_miss_cm": 2.271,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.701
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31054422357565226,
+       -0.20123601694663573,
+       1.2598551792849593
+      ],
+      "cmd_w": [
+       0.31054,
+       -0.20124,
+       1.25986
+      ],
+      "corr_cm": 0.0,
+      "pred_palm_w": [
+       0.33669,
+       -0.2178,
+       1.25789
+      ],
+      "land_palm_w": [
+       0.3398877072361881,
+       -0.21604249958880328,
+       1.2628771464409303
+      ],
+      "err_cm": 3.301,
+      "pred_err_cm": 0.6176,
+      "pred_miss_cm": 3.1014,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.359
+     }
+    ],
+    "goal_entry": [
+     0.31054422357565226,
+     -0.20123601694663573,
+     1.2598551792849593
+    ],
+    "palm_close": [
+     0.3398877072361881,
+     -0.21604249958880328,
+     1.2628771464409303
+    ]
+   },
+   "R": {
+    "tilt_close_deg": 0.0013539334577588533,
+    "tilt_pre_deg": 0.0020704470371076538,
+    "panel": {
+     "dt": 1.0,
+     "tilt_deg": 0.9312662873787679,
+     "vase_z": 1.160281256023511,
+     "robot_touch": true,
+     "n_robot_contacts": 6
+    },
+    "at_2s": {
+     "dt": 2.0,
+     "tilt_deg": 5.375958886352071,
+     "vase_z": 1.2168895301732352,
+     "robot_touch": true,
+     "n_robot_contacts": 5
+    },
+    "fallen": false,
+    "d_close": 0.6419442334185667,
+    "d_close_end": 1.7188788305799518,
+    "success_lift": true,
+    "fell": null,
+    "walk_m": 0.01044030650891055,
+    "hits": [
+     [
+      "pregrasp",
+      "right_hand_index_1_link",
+      "etagere",
+      0.02
+     ],
+     [
+      "pregrasp",
+      "right_hand_thumb_2_link",
+      "etagere",
+      0.02
+     ]
+    ],
+    "touched": {
+     "t": 7.54,
+     "phase": "entry",
+     "links": [
+      "right_hand_thumb_2_link"
+     ],
+     "hand": [
+      -7.6,
+      -12.2,
+      8.8
+     ]
+    },
+    "knocked": {
+     "t": 12.24,
+     "phase": "lift",
+     "touch": [
+      "right_hand_index_1_link",
+      "right_hand_middle_1_link",
+      "right_hand_thumb_2_link"
+     ]
+    },
+    "reaches": [
+     {
+      "stage": "pregrasp",
+      "goal_w": [
+       0.31054421529532367,
+       -0.2812360169369759,
+       1.259853936101577
+      ],
+      "cmd_w": [
+       0.28421,
+       -0.26162,
+       1.26137
+      ],
+      "corr_cm": 3.2867,
+      "pred_palm_w": [
+       0.31072,
+       -0.28091,
+       1.2598
+      ],
+      "land_palm_w": [
+       0.31413372800640854,
+       -0.2790897659958954,
+       1.2554908410535173
+      ],
+      "err_cm": 0.604,
+      "pred_err_cm": 0.5787,
+      "pred_miss_cm": 0.0373,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.01,
+      "think_s": 5.546
+     },
+     {
+      "stage": "entry",
+      "goal_w": [
+       0.31054422357565226,
+       -0.20123601694663573,
+       1.2598551792849593
+      ],
+      "cmd_w": [
+       0.26746,
+       -0.17543,
+       1.26116
+      ],
+      "corr_cm": 5.0241,
+      "pred_palm_w": [
+       0.31071,
+       -0.2013,
+       1.25999
+      ],
+      "land_palm_w": [
+       0.30997488661870903,
+       -0.19659618562339284,
+       1.2642548452499216
+      ],
+      "err_cm": 0.642,
+      "pred_err_cm": 0.6397,
+      "pred_miss_cm": 0.022,
+      "plan_same": true,
+      "in_table": true,
+      "ik_cm": 0.0,
+      "think_s": 1.101
+     }
+    ],
+    "goal_entry": [
+     0.31054422357565226,
+     -0.20123601694663573,
+     1.2598551792849593
+    ],
+    "palm_close": [
+     0.30997488661870903,
+     -0.19659618562339284,
+     1.2642548452499216
+    ]
+   },
+   "class": "A miss R hit"
+  }
+ },
+ "checks": [],
+ "cls_counts": {
+  "A miss R hit": 16,
+  "both hit": 2,
+  "both miss": 2,
+  "A hit R miss": 0
+ },
+ "rank": [
+  {
+   "index": 17,
+   "A": 2.7079669792760654,
+   "R": 0.5140737920473749,
+   "pA": 46.875,
+   "pR": 40.625,
+   "score": 9.375
+  },
+  {
+   "index": 15,
+   "A": 2.890150380943469,
+   "R": 0.5126547920096208,
+   "pA": 53.125,
+   "pR": 34.375,
+   "score": 15.625
+  },
+  {
+   "index": 6,
+   "A": 2.3047487148548056,
+   "R": 0.6440030314758669,
+   "pA": 28.125,
+   "pR": 65.625,
+   "score": 21.875
+  },
+  {
+   "index": 10,
+   "A": 2.6597118638358355,
+   "R": 0.5099311905417486,
+   "pA": 40.625,
+   "pR": 28.125,
+   "score": 21.875
+  },
+  {
+   "index": 0,
+   "A": 2.648727893352513,
+   "R": 0.4808120970926534,
+   "pA": 34.375,
+   "pR": 21.875,
+   "score": 28.125
+  },
+  {
+   "index": 3,
+   "A": 2.2856104372400803,
+   "R": 0.6973028436614602,
+   "pA": 21.875,
+   "pR": 71.875,
+   "score": 28.125
+  },
+  {
+   "index": 19,
+   "A": 3.3006124387160503,
+   "R": 0.6419442334185667,
+   "pA": 78.125,
+   "pR": 59.375,
+   "score": 28.125
+  },
+  {
+   "index": 16,
+   "A": 2.2653284107566796,
+   "R": 0.6304750336029583,
+   "pA": 15.625,
+   "pR": 53.125,
+   "score": 34.375
+  },
+  {
+   "index": 1,
+   "A": 3.0012157382469518,
+   "R": 0.7420903092055761,
+   "pA": 59.375,
+   "pR": 90.625,
+   "score": 40.625
+  },
+  {
+   "index": 5,
+   "A": 3.3358637975946674,
+   "R": 0.6042095181466303,
+   "pA": 90.625,
+   "pR": 46.875,
+   "score": 40.625
+  },
+  {
+   "index": 7,
+   "A": 3.241178799258751,
+   "R": 0.441339029154454,
+   "pA": 65.625,
+   "pR": 9.375,
+   "score": 40.625
+  },
+  {
+   "index": 8,
+   "A": 2.14899989613966,
+   "R": 0.7400638182646101,
+   "pA": 9.375,
+   "pR": 78.125,
+   "score": 40.625
+  },
+  {
+   "index": 9,
+   "A": 3.2454300814144466,
+   "R": 0.4234600979846752,
+   "pA": 71.875,
+   "pR": 3.125,
+   "score": 46.875
+  },
+  {
+   "index": 11,
+   "A": 3.511248287870545,
+   "R": 0.4423185702559696,
+   "pA": 96.875,
+   "pR": 15.625,
+   "score": 46.875
+  },
+  {
+   "index": 13,
+   "A": 2.008379890114138,
+   "R": 0.7401211110939142,
+   "pA": 3.125,
+   "pR": 84.375,
+   "score": 46.875
+  },
+  {
+   "index": 18,
+   "A": 3.30125170457204,
+   "R": 0.7648059247559431,
+   "pA": 84.375,
+   "pR": 96.875,
+   "score": 46.875
+  }
+ ],
+ "pick": 17
+}

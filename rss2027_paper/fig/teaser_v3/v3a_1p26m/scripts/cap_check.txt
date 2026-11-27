@@ -1,0 +1,52 @@
+standing right shoulder z from the film's first frame (SIMPLE ScaleBFM, before any command): 1.0760 m; pelvis z 0.7841
+
+== data3: 47545 one-hand segments, kept 46468 (not fell / lost, settled_end)
+  standing shoulder z at the command (in place, standing, first reach; 2000 drawn): n   2000 | p0.5 1.073 p5 1.074 p25 1.075 p50 1.075 p75 1.075 p95 1.076 p99.5 1.076 | max 1.077; FK check left hand max 0.0057 cm
+  all kept:
+    target z: n  46468 | p0.5 0.077 p5 0.188 p25 0.437 p50 0.752 p75 1.069 p95 1.324 p99.5 1.474 | max 1.500
+    landed z: n  46468 | p0.5 0.135 p5 0.234 p25 0.439 p50 0.726 p75 1.044 p95 1.322 p99.5 1.458 | max 1.565
+  right hand, kept:
+    target z: n  23193 | p0.5 0.077 p5 0.187 p25 0.435 p50 0.753 p75 1.068 p95 1.323 p99.5 1.473 | max 1.500
+    landed z: n  23193 | p0.5 0.156 p5 0.250 p25 0.442 p50 0.724 p75 1.036 p95 1.317 p99.5 1.452 | max 1.560
+  right hand, kept, standing:
+    target z: n  10498 | p0.5 0.074 p5 0.187 p25 0.427 p50 0.752 p75 1.068 p95 1.322 p99.5 1.473 | max 1.500
+    landed z: n  10498 | p0.5 0.156 p5 0.249 p25 0.432 p50 0.722 p75 1.036 p95 1.312 p99.5 1.449 | max 1.560
+
+== data3b: 43345 one-hand segments, kept 42755 (not fell / lost, settled_end)
+  standing shoulder z at the command (in place, standing, first reach; 2000 drawn): n   2000 | p0.5 1.073 p5 1.074 p25 1.075 p50 1.075 p75 1.075 p95 1.076 p99.5 1.076 | max 1.077; FK check left hand max 0.0057 cm
+  all kept:
+    target z: n  42755 | p0.5 0.109 p5 0.226 p25 0.510 p50 0.683 p75 0.934 p95 1.281 p99.5 1.448 | max 1.500
+    landed z: n  42755 | p0.5 0.154 p5 0.261 p25 0.497 p50 0.670 p75 0.908 p95 1.284 p99.5 1.450 | max 1.552
+  right hand, kept:
+    target z: n  21341 | p0.5 0.109 p5 0.231 p25 0.512 p50 0.688 p75 0.944 p95 1.288 p99.5 1.448 | max 1.499
+    landed z: n  21341 | p0.5 0.175 p5 0.275 p25 0.502 p50 0.672 p75 0.913 p95 1.287 p99.5 1.442 | max 1.551
+  right hand, kept, standing:
+    target z: n   9748 | p0.5 0.108 p5 0.227 p25 0.509 p50 0.686 p75 0.945 p95 1.286 p99.5 1.438 | max 1.493
+    landed z: n   9748 | p0.5 0.166 p5 0.272 p25 0.497 p50 0.669 p75 0.912 p95 1.283 p99.5 1.432 | max 1.551
+    data3b kind 1 right kept: target z n   5396 | p0.5 0.091 p5 0.195 p25 0.452 p50 0.760 p75 1.070 p95 1.320 p99.5 1.454 | max 1.499
+    data3b kind 2 right kept: target z n   5328 | p0.5 0.105 p5 0.193 p25 0.447 p50 0.757 p75 1.065 p95 1.316 p99.5 1.456 | max 1.492
+    data3b kind 3 right kept: target z n  10617 | p0.5 0.138 p5 0.294 p25 0.553 p50 0.666 p75 0.815 p95 1.195 p99.5 1.430 | max 1.499
+
+== pooled data3 + data3b, right hand, kept: 44534 segments; standing shoulder (median, FK) 1.0751 m, film 1.0760 m
+  target z: n  44534 | p0.5 0.088 p5 0.203 p25 0.473 p50 0.712 p75 1.014 p95 1.310 p99.5 1.462 | max 1.500
+  landed z: n  44534 | p0.5 0.165 p5 0.261 p25 0.472 p50 0.691 p75 0.982 p95 1.305 p99.5 1.449 | max 1.560
+  above shoulder +   0 cm (1.075 m): target   9244 (20.76 %), landed   8471 (19.02 %); standing among targets above 45 %
+  above shoulder +   5 cm (1.125 m): target   7719 (17.33 %), landed   7097 (15.94 %); standing among targets above 46 %
+  above shoulder +  10 cm (1.175 m): target   6190 (13.90 %), landed   5739 (12.89 %); standing among targets above 45 %
+  above shoulder +  15 cm (1.225 m): target   4693 (10.54 %), landed   4338 ( 9.74 %); standing among targets above 45 %
+  above shoulder +  20 cm (1.275 m): target   3200 ( 7.19 %), landed   2997 ( 6.73 %); standing among targets above 45 %
+  above shoulder +  25 cm (1.325 m): target   1787 ( 4.01 %), landed   1794 ( 4.03 %); standing among targets above 45 %
+  above shoulder +  30 cm (1.375 m): target    900 ( 2.02 %), landed    910 ( 2.04 %); standing among targets above 43 %
+  above shoulder +  35 cm (1.425 m): target    495 ( 1.11 %), landed    389 ( 0.87 %); standing among targets above 43 %
+  by target height band (right, kept): n, x p5-p95 (forward from the pelvis), y p5-p95, landed z median, direct error median (cm)
+    z 0.95-1.00: n  1631 | x 0.14..0.70 | y -0.46..+0.17 | landed z 0.955 | direct err 7.9 | standing 48 %
+    z 1.00-1.05: n  1566 | x 0.15..0.70 | y -0.44..+0.17 | landed z 1.008 | direct err 8.3 | standing 45 %
+    z 1.05-1.10: n  1537 | x 0.15..0.69 | y -0.46..+0.15 | landed z 1.059 | direct err 8.1 | standing 43 %
+    z 1.10-1.15: n  1522 | x 0.15..0.69 | y -0.46..+0.16 | landed z 1.116 | direct err 8.5 | standing 45 %
+    z 1.15-1.20: n  1485 | x 0.16..0.68 | y -0.46..+0.15 | landed z 1.170 | direct err 8.1 | standing 46 %
+    z 1.20-1.25: n  1492 | x 0.15..0.67 | y -0.47..+0.17 | landed z 1.221 | direct err 8.4 | standing 44 %
+    z 1.25-1.30: n  1448 | x 0.16..0.67 | y -0.42..+0.17 | landed z 1.270 | direct err 9.1 | standing 47 %
+    z 1.30-1.35: n  1357 | x 0.15..0.62 | y -0.42..+0.19 | landed z 1.321 | direct err 9.2 | standing 46 %
+    z 1.35-1.40: n   490 | x 0.09..0.61 | y -0.48..+0.24 | landed z 1.367 | direct err 9.8 | standing 44 %
+    z 1.40-1.45: n   354 | x 0.07..0.52 | y -0.40..+0.28 | landed z 1.403 | direct err 10.3 | standing 46 %
+    z 1.45-1.50: n   320 | x 0.07..0.49 | y -0.41..+0.28 | landed z 1.441 | direct err 10.3 | standing 40 %

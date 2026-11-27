@@ -1,0 +1,257 @@
+{
+ "placement": 15,
+ "scene_md5": "e765c259f2f4da59bccb53afd8f6ff70",
+ "main": {
+  "az-30_after3500ms": {
+   "az": -30,
+   "el": 45,
+   "d": 2.0,
+   "A": {
+    "head": 0.3176341730558598,
+    "hand": 0.8074712643678161,
+    "vase": 0.8775757575757576,
+    "in_frame": true
+   },
+   "R": {
+    "head": 0.29867256637168144,
+    "hand": 0.8107476635514018,
+    "vase": 0.8129251700680272,
+    "in_frame": true
+   },
+   "valid": false
+  },
+  "az-30_entry_end": {
+   "az": -30,
+   "el": 45,
+   "d": 2.0,
+   "A": {
+    "head": 0.7659574468085106,
+    "hand": 0.7662337662337663,
+    "vase": 0.8144611186903138,
+    "in_frame": true
+   },
+   "R": {
+    "head": 0.8068571428571428,
+    "hand": 0.7397849462365591,
+    "vase": 0.7189631650750341,
+    "in_frame": true
+   },
+   "valid": false
+  },
+  "az-40_after3500ms": {
+   "az": -40,
+   "el": 45,
+   "d": 2.0,
+   "A": {
+    "head": 0.3756786102062975,
+    "hand": 0.7374301675977654,
+    "vase": 0.8323353293413174,
+    "in_frame": true
+   },
+   "R": {
+    "head": 0.4141304347826087,
+    "hand": 0.7777777777777778,
+    "vase": 0.7918552036199095,
+    "in_frame": true
+   },
+   "valid": false
+  },
+  "az-40_entry_end": {
+   "az": -40,
+   "el": 45,
+   "d": 2.0,
+   "A": {
+    "head": 0.8762541806020067,
+    "hand": 0.7679324894514767,
+    "vase": 0.7196132596685083,
+    "in_frame": true
+   },
+   "R": {
+    "head": 0.9027932960893855,
+    "hand": 0.7489270386266095,
+    "vase": 0.669889502762431,
+    "in_frame": true
+   },
+   "valid": true
+  },
+  "az-50_after3500ms": {
+   "az": -50,
+   "el": 45,
+   "d": 2.0,
+   "A": {
+    "head": 0.3872017353579176,
+    "hand": 0.6869565217391305,
+    "vase": 0.7715674362089915,
+    "in_frame": true
+   },
+   "R": {
+    "head": 0.4006479481641469,
+    "hand": 0.7270471464019851,
+    "vase": 0.769406392694064,
+    "in_frame": true
+   },
+   "valid": false
+  },
+  "az-50_entry_end": {
+   "az": -50,
+   "el": 45,
+   "d": 2.0,
+   "A": {
+    "head": 0.9487750556792873,
+    "hand": 0.7442348008385744,
+    "vase": 0.6588072122052705,
+    "in_frame": true
+   },
+   "R": {
+    "head": 0.9578246392896781,
+    "hand": 0.7392241379310345,
+    "vase": 0.6449375866851595,
+    "in_frame": true
+   },
+   "valid": true
+  }
+ },
+ "close": {
+  "az-30": [
+   {
+    "d": 0.5,
+    "A": {
+     "hand": 0.8430438333787095,
+     "hand_touches_border": false,
+     "vase": 0.59152108601313,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.8350131161121083,
+     "hand_touches_border": false,
+     "vase": 0.5497941471013686,
+     "vase_touches_border": false
+    }
+   },
+   {
+    "d": 0.6,
+    "A": {
+     "hand": 0.8387237762237763,
+     "hand_touches_border": false,
+     "vase": 0.6291929591497841,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.8295629255435977,
+     "hand_touches_border": false,
+     "vase": 0.5687479242776486,
+     "vase_touches_border": false
+    }
+   },
+   {
+    "d": 0.7,
+    "A": {
+     "hand": 0.8321611253196931,
+     "hand_touches_border": false,
+     "vase": 0.6561849710982659,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.8260032102728732,
+     "hand_touches_border": false,
+     "vase": 0.5865895953757225,
+     "vase_touches_border": false
+    }
+   }
+  ],
+  "az-40": [
+   {
+    "d": 0.5,
+    "A": {
+     "hand": 0.8121406605161118,
+     "hand_touches_border": false,
+     "vase": 0.5358674238034534,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.8069204152249135,
+     "hand_touches_border": false,
+     "vase": 0.533086104994785,
+     "vase_touches_border": false
+    }
+   },
+   {
+    "d": 0.6,
+    "A": {
+     "hand": 0.8060426790619057,
+     "hand_touches_border": false,
+     "vase": 0.5589144623840605,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.8022623450076136,
+     "hand_touches_border": false,
+     "vase": 0.5505926816698162,
+     "vase_touches_border": false
+    }
+   },
+   {
+    "d": 0.7,
+    "A": {
+     "hand": 0.8011066707654473,
+     "hand_touches_border": false,
+     "vase": 0.5848384030418251,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.8000623830318153,
+     "hand_touches_border": false,
+     "vase": 0.5602280826799715,
+     "vase_touches_border": false
+    }
+   }
+  ],
+  "az-50": [
+   {
+    "d": 0.5,
+    "A": {
+     "hand": 0.7848750844024308,
+     "hand_touches_border": false,
+     "vase": 0.5093814308195134,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.773008725021109,
+     "hand_touches_border": false,
+     "vase": 0.5137392567485777,
+     "vase_touches_border": false
+    }
+   },
+   {
+    "d": 0.6,
+    "A": {
+     "hand": 0.7785954583683767,
+     "hand_touches_border": false,
+     "vase": 0.5264281900694073,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.7689475963620614,
+     "hand_touches_border": false,
+     "vase": 0.5292756718277274,
+     "vase_touches_border": false
+    }
+   },
+   {
+    "d": 0.7,
+    "A": {
+     "hand": 0.7772052137011215,
+     "hand_touches_border": false,
+     "vase": 0.5400098183603338,
+     "vase_touches_border": false
+    },
+    "R": {
+     "hand": 0.7668202764976959,
+     "hand_touches_border": false,
+     "vase": 0.5391411042944785,
+     "vase_touches_border": false
+    }
+   }
+  ]
+ }
+}

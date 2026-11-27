@@ -1,0 +1,487 @@
+{
+ "placement": 17,
+ "scene_md5": "a8872171eb835b34d4a07d31bfd3f4af",
+ "controller": "scalebfm",
+ "moments": {
+  "panels": {
+   "snapshot": "after1000ms",
+   "after_close_s": {
+    "A": 1.0,
+    "R": 1.0
+   }
+  },
+  "closeups_and_points": {
+   "snapshot": "entry_end",
+   "what": "the close command (simple_bench sends the close; the judgment's moment)"
+  }
+ },
+ "distances_cm": {
+  "A_close": 2.7079669792760654,
+  "R_close": 0.5140737920473749,
+  "A_row_palm_cm": 2.708,
+  "R_row_palm_cm": 0.514,
+  "R_correction_c_star_to_p_star": 4.0394669970427
+ },
+ "cameras": {
+  "main": {
+   "mjv": {
+    "type": "free",
+    "lookat": [
+     0.22631325886950282,
+     -0.06298978859994875,
+     0.85
+    ],
+    "azimuth_deg": 149.01551690263727,
+    "elevation_deg": -45.0,
+    "distance": 2.0,
+    "azimuth_from_heading_deg": -30.0,
+    "look_down_deg": 45.0,
+    "robot_heading_deg": -0.9844830973627181
+   },
+   "intrinsics": {
+    "fovy_deg": 45.0,
+    "width": 2400,
+    "height": 1600,
+    "fx": 1931.370849898476,
+    "fy": 1931.370849898476,
+    "cx": 1200.0,
+    "cy": 800.0,
+    "convention": "pinhole, square pixels; u right, v down; (0, 0) = the image's top-left corner, pixel (i, j) covers [i, i+1) x [j, j+1) (its centre is i + 0.5, j + 0.5); MuJoCo free camera, vis.global_.fovy; for the delivered image size (rendered at 2x and averaged 2 x 2: hi-res pixel coordinates = 2 x these)"
+   },
+   "extrinsics": {
+    "position_world": [
+     1.4387280941009521,
+     -0.7910352945327759,
+     2.2642135620117188
+    ],
+    "forward_world": [
+     -0.6062074303627014,
+     0.36402276158332825,
+     -0.7071067690849304
+    ],
+    "up_world": [
+     -0.6062074303627014,
+     0.36402276158332825,
+     0.7071067690849304
+    ],
+    "R_world_to_cam": [
+     [
+      0.5148059176331223,
+      0.8573067549580955,
+      0.0
+     ],
+     [
+      0.6062074303627014,
+      -0.36402276158332825,
+      -0.7071067690849304
+     ],
+     [
+      -0.6062074303627014,
+      0.36402276158332825,
+      -0.7071067690849304
+     ]
+    ],
+    "t_world_to_cam": [
+     -0.0625058352949785,
+     0.4409182230111206,
+     2.761163249693656
+    ],
+    "frame": "OpenCV camera frame: x right, y down, z forward; X_cam = R_world_to_cam @ X_world + t_world_to_cam",
+    "note": "mjv_updateScene writes two eye cameras (+-vis.global_.ipd / 2 along the right axis); a mono render uses their average (mjv_averageCamera): these are the average's",
+    "eye_cameras_pos": [
+     [
+      1.4212247133255005,
+      -0.8201837539672852,
+      2.2642135620117188
+     ],
+     [
+      1.4562314748764038,
+      -0.7618868947029114,
+      2.2642135620117188
+     ]
+    ]
+   },
+   "moment": "after1000ms",
+   "projection_check": [
+    {
+     "point": "p_star (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      1096.483171885663,
+      587.4828578794936
+     ],
+     "marker_centroid": [
+      1096.5,
+      587.5,
+      69
+     ],
+     "err_px": 0.02402160959619521
+    },
+    {
+     "point": "c_star (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      1098.2449191020758,
+      557.2622713868922
+     ],
+     "marker_centroid": [
+      1098.2464788732395,
+      557.2464788732394,
+      71
+     ],
+     "err_px": 0.015869353280943226
+    },
+    {
+     "point": "A_landing (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      1099.8109771241107,
+      605.7911785695948
+     ],
+     "marker_centroid": [
+      1099.7857142857142,
+      605.7857142857143,
+      77
+     ],
+     "err_px": 0.025847038557057396
+    },
+    {
+     "point": "R_landing (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      1100.1023066088796,
+      584.6582675356312
+     ],
+     "marker_centroid": [
+      1100.0945945945946,
+      584.581081081081,
+      74
+     ],
+     "err_px": 0.07757076724103788
+    }
+   ]
+  },
+  "closeup": {
+   "mjv": {
+    "type": "free",
+    "lookat": [
+     0.32072585690750993,
+     -0.21946333572288124,
+     1.2598506318972387
+    ],
+    "azimuth_deg": 149.01551690263727,
+    "elevation_deg": -45.0,
+    "distance": 0.7,
+    "azimuth_from_heading_deg": -30.0,
+    "look_down_deg": 45.0,
+    "robot_heading_deg": -0.9844830973627181
+   },
+   "intrinsics": {
+    "fovy_deg": 45.0,
+    "width": 1600,
+    "height": 1200,
+    "fx": 1448.528137423857,
+    "fy": 1448.528137423857,
+    "cx": 800.0,
+    "cy": 600.0,
+    "convention": "pinhole, square pixels; u right, v down; (0, 0) = the image's top-left corner, pixel (i, j) covers [i, i+1) x [j, j+1) (its centre is i + 0.5, j + 0.5); MuJoCo free camera, vis.global_.fovy; for the delivered image size (rendered at 2x and averaged 2 x 2: hi-res pixel coordinates = 2 x these)"
+   },
+   "extrinsics": {
+    "position_world": [
+     0.7450710535049438,
+     -0.4742792546749115,
+     1.7548253536224365
+    ],
+    "forward_world": [
+     -0.6062074303627014,
+     0.36402276158332825,
+     -0.7071067690849304
+    ],
+    "up_world": [
+     -0.6062074303627014,
+     0.36402276158332825,
+     0.7071067690849304
+    ],
+    "R_world_to_cam": [
+     [
+      0.5148059176331223,
+      0.8573067549580955,
+      0.0
+     ],
+     [
+      0.6062074303627014,
+      -0.36402276158332825,
+      -0.7071067690849304
+     ],
+     [
+      -0.6062074303627014,
+      0.36402276158332825,
+      -0.7071067690849304
+     ]
+    ],
+    "t_world_to_cam": [
+     0.023035821367802696,
+     0.6165328332769748,
+     1.8651649389395883
+    ],
+    "frame": "OpenCV camera frame: x right, y down, z forward; X_cam = R_world_to_cam @ X_world + t_world_to_cam",
+    "note": "mjv_updateScene writes two eye cameras (+-vis.global_.ipd / 2 along the right axis); a mono render uses their average (mjv_averageCamera): these are the average's",
+    "eye_cameras_pos": [
+     [
+      0.7275676727294922,
+      -0.5034276843070984,
+      1.7548253536224365
+     ],
+     [
+      0.7625744342803955,
+      -0.4451308250427246,
+      1.7548253536224365
+     ]
+    ]
+   },
+   "moment": "entry_end",
+   "projection_check": [
+    {
+     "point": "p_star (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      799.999979846587,
+      599.9999390157632
+     ],
+     "marker_centroid": [
+      800.0,
+      600.0,
+      208
+     ],
+     "err_px": 6.422800942377087e-05
+    },
+    {
+     "point": "c_star (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      799.9024291364635,
+      543.211318747799
+     ],
+     "marker_centroid": [
+      799.8969849246231,
+      543.213567839196,
+      199
+     ],
+     "err_px": 0.005890488492074935
+    },
+    {
+     "point": "A_landing (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      808.1373593723812,
+      636.6639262946434
+     ],
+     "marker_centroid": [
+      808.1991150442478,
+      636.6017699115044,
+      226
+     ],
+     "err_px": 0.08761951251070904
+    },
+    {
+     "point": "R_landing (a 4 mm emissive sphere at the point, the scene's geometry hidden; centroid of the changed pixels + 0.5)",
+     "projected": [
+      806.6020006932553,
+      595.9682398920214
+     ],
+     "marker_centroid": [
+      806.5642201834862,
+      596.0,
+      218
+     ],
+     "err_px": 0.04935657379945062
+    }
+   ]
+  }
+ },
+ "points": {
+  "p_star": {
+   "world": [
+    0.32072585690750993,
+    -0.21946333572288124,
+    1.2598506318972387
+   ],
+   "how": "the grasp point: simple_bench's entry goal (truth column: the placement's palm pose in the vase's frame, at the vase's simulated pose); the same in A and R (checked)",
+   "pixel": {
+    "main": {
+     "u": 1096.483171885663,
+     "v": 587.4828578794936,
+     "depth_m": 1.595998292740282
+    },
+    "closeup": {
+     "u": 799.999979846587,
+     "v": 599.9999390157632,
+     "depth_m": 0.6999999819862146
+    }
+   }
+  },
+  "c_star": {
+   "world": [
+    0.28607,
+    -0.19871,
+    1.25985
+   ],
+   "how": "R's entry command (the palm point it sent; R_D inversion on model D): row stages[entry].correct.cmd_w",
+   "pixel": {
+    "main": {
+     "u": 1098.2449191020758,
+     "v": 557.2622713868922,
+     "depth_m": 1.6245620641039251
+    },
+    "closeup": {
+     "u": 799.9024291364635,
+     "v": 543.211318747799,
+     "depth_m": 0.7285637533498577
+    }
+   }
+  },
+  "a_cmd": {
+   "world": [
+    0.32073,
+    -0.21946,
+    1.25985
+   ],
+   "how": "A's entry command (= p* up to float rounding: A sends the goal)",
+   "pixel": {
+    "main": {
+     "u": 1096.489158470662,
+     "v": 587.4848552440833,
+     "depth_m": 1.5959974422646999
+    },
+    "closeup": {
+     "u": 800.0103112303244,
+     "v": 600.0035481588276,
+     "depth_m": 0.6999991315106324
+    }
+   }
+  },
+  "A_landing": {
+   "world": [
+    0.3455836628317225,
+    -0.22993811800382127,
+    1.2622332642411058
+   ],
+   "how": "A's palm point at the close command (snapshot entry_end); |it - p*| = row palm_cm",
+   "pixel": {
+    "main": {
+     "u": 1099.8109771241107,
+     "v": 605.7911785695948,
+     "depth_m": 1.5754314714550293
+    },
+    "closeup": {
+     "u": 808.1373593723812,
+     "v": 636.6639262946434,
+     "depth_m": 0.6794331607009618
+    }
+   }
+  },
+  "R_landing": {
+   "world": [
+    0.3233361762421046,
+    -0.21732823214418026,
+    1.2637306772638106
+   ],
+   "how": "R's palm point at the close command (snapshot entry_end)",
+   "pixel": {
+    "main": {
+     "u": 1100.1023066088796,
+     "v": 584.6582675356312,
+     "depth_m": 1.5924495177219569
+    },
+    "closeup": {
+     "u": 806.6020006932553,
+     "v": 595.9682398920214,
+     "depth_m": 0.6964512069678894
+    }
+   }
+  }
+ },
+ "files": {
+  "A_full.png": {
+   "size": [
+    2400,
+    1600
+   ],
+   "camera": "main",
+   "moment": "after1000ms",
+   "void_pixels_hires": 0
+  },
+  "A_robot_layer_rgba.png": {
+   "size": [
+    2400,
+    1600
+   ],
+   "camera": "main",
+   "moment": "after1000ms",
+   "alpha": "the robot's visible pixels (occluders cut it out), 2 x 2 share"
+  },
+  "R_full.png": {
+   "size": [
+    2400,
+    1600
+   ],
+   "camera": "main",
+   "moment": "after1000ms",
+   "void_pixels_hires": 0
+  },
+  "R_robot_layer_rgba.png": {
+   "size": [
+    2400,
+    1600
+   ],
+   "camera": "main",
+   "moment": "after1000ms",
+   "alpha": "the robot's visible pixels (occluders cut it out), 2 x 2 share"
+  },
+  "A_hand_closeup.png": {
+   "size": [
+    1600,
+    1200
+   ],
+   "camera": "closeup",
+   "moment": "entry_end",
+   "void_pixels_hires": 0
+  },
+  "R_hand_closeup.png": {
+   "size": [
+    1600,
+    1200
+   ],
+   "camera": "closeup",
+   "moment": "entry_end",
+   "void_pixels_hires": 0
+  }
+ },
+ "render": {
+  "renderer": "mujoco 3.11.0 Renderer, MUJOCO_GL=egl",
+  "offsamples": 16,
+  "shadowsize": 4096,
+  "supersampling": "2x2 box average",
+  "geomgroups": [
+   1,
+   1,
+   1,
+   0,
+   0,
+   0
+  ],
+  "look": {
+   "headlight_ambient": 0.3,
+   "headlight_diffuse": 0.22,
+   "robot_top": 0.15,
+   "sun_key": 0.32,
+   "fill_left": 0.18,
+   "rim_back": 0.08,
+   "fill_dir": [
+    -0.6,
+    0.4,
+    -0.7
+   ],
+   "floor_rgb": 0.88,
+   "oak": [
+    0.7,
+    0.53,
+    0.36
+   ]
+  },
+  "hidden": "robot collision geoms (group 0), the chest logo mesh, all sites"
+ }
+}

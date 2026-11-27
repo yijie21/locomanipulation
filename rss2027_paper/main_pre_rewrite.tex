@@ -1,0 +1,245 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{times}
+\usepackage[numbers]{natbib}
+\usepackage{multicol}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[bookmarks=true]{hyperref}
+% Anonymity: keep all PDF metadata empty (the RSS template's \pdfinfo block was removed on purpose).
+\hypersetup{pdfauthor={},pdftitle={},pdfsubject={},pdfkeywords={},pdfcreator={},pdfproducer={}}
+
+% ---------------------------------------------------------------------------
+% Draft annotations. Set \draftfalse before submitting: all notes disappear.
+% Every number in the text carries a "% src:" comment pointing to
+% ~/research-notebook/paper/rss_status.md (section) and/or the experiment entry.
+\newif\ifdraft \drafttrue
+\newcommand{\dnote}[1]{\ifdraft{\color{red}\footnotesize[#1]}\fi}
+% ---------------------------------------------------------------------------
+
+\newcommand{\Ad}{\textsc{A}}   % direct execution
+\newcommand{\Sinv}{\textsc{S}} % self-model inversion
+\newcommand{\Gg}{\textsc{G}}   % inversion + guard
+\newcommand{\Rr}{\textsc{R}}   % inversion restricted to reachable commands
+\newcommand{\Croute}{\textsc{C}}   % collision-free cuRobo route, direct
+\newcommand{\CRr}{\textsc{CR}}   % cuRobo route + R
+
+\begin{document}
+
+\title{SelfAim: Learned Self-Models for Aiming Frozen Humanoid Whole-Body Controllers}
+
+\author{Author Names Omitted for Anonymous Review. Paper-ID [add your ID here]}
+
+\maketitle
+
+\begin{abstract}
+Humanoid whole-body controllers (WBCs) are increasingly reused as frozen motor layers: a planner or policy sends a hand target and the controller moves the whole body. The hand, however, does not stop where it was told. We study a simple, sensing-free remedy: learn a \emph{self-model} that predicts where a frozen controller will actually place the hand for a given command and state, and invert it at command time. We state four hypotheses and test them preliminarily on three frozen WBCs in three simulators.
+(H1)~Inversion makes the hand more accurate. On seven grasping tasks it brings the hand closer to the grasp point at closure for all three controllers, by a paired median of 1.57, 1.25 and 0.52\,cm.
+(H2)~Accuracy only partly turns into success. Inversion restricted to reachable commands raises the success rate from 15.4 to 36.9\%, from 4.0 to 10.4\% and from 10.2 to 13.3\% for the three controllers, but the third controller's gain comes entirely from one task.
+(H3)~Inversion is trustworthy only inside the model's training support. On kinematically unreachable commands the prediction error grows to about 20\,cm, and unconstrained inversion pushes commands there.
+(H4)~The self-model is tied to the controller, its command interface and the simulator setup, not to the body. Re-collecting one controller's data in a new simulator makes its model usable again on three of four grasping tasks (median prediction error 0.4--1.1\,cm); on the fourth, the table edge blocks the hand, a contact absent from the free-space training data.
+We detail the experiments that will settle each hypothesis.
+\end{abstract}
+% src (abstract numbers): status §1.3c lmlroute GT mask, reviewed (H1: paired R - A close-time hand, 7 tasks: -1.57 / -1.25 / -0.52 cm; H2: decision-set success A -> R 15.4 -> 36.9, 4.0 -> 10.4, 10.2 -> 13.3 %; HEFT all from candle 2/26); §1.3 + §1.3c end (~20 cm, 19.87 cm, mechanism still citable); §1.7 (B60, reviewed 16:40) per-task 0.36 / 0.40 / 1.07 cm pass, TabletopGraspMP 2.26 cm fails (table edge). Do NOT cite the pooled 0.7 vs 4.0 cm (status 16:40: report per task).
+
+\IEEEpeerreviewmaketitle
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+
+Learned humanoid whole-body controllers can now track kinematic references for walking, crouching and reaching~\cite{scalebfm,sonic,heft,amo,gr00twbc}. A natural way to build manipulation on top of them is to treat the controller as a frozen motor layer: a higher level decides where the hand should go, converts that into a whole-body reference, and lets the controller execute it. Retraining the controller for every task is expensive, and many controllers are released only as checkpoints.
+
+The catch is that a tracking controller trades hand accuracy against balance. With the controller frozen and commanded directly, the hand typically lands several centimeters from where it was told to go, by an amount that varies from reach to reach. Closed-loop correction needs a measurement of the hand, which a humanoid's head camera may not provide in the last centimeters of a reach.
+
+We ask whether a frozen controller can instead be \emph{aimed}: learn, from the controller's own rollouts, a self-model $f_\theta(s,c)\approx p$ that predicts the final hand position $p$ when command $c$ is issued in state $s$, and at run time choose the command whose \emph{predicted} outcome is the target. This needs no access to the controller's weights, no retraining, and no hand sensing during execution.
+
+The interesting question is not only whether this works but \emph{when it matters}. We therefore organize the paper around four hypotheses (Sec.~\ref{sec:hyp}) whose answers are informative either way, report preliminary evidence on three frozen controllers in three simulators (Sec.~\ref{sec:prelim}), and specify the experiments that will settle them (Sec.~\ref{sec:plan}). Our preliminary evidence already contains a negative result we consider useful: a more accurate hand does not by itself yield proportionally more successful grasps.
+
+% ===========================================================================
+\section{Related Work}
+% ===========================================================================
+% src: novelty report ~/research-notebook/novelty/2026-11-26-wbc-selfmodel-inversion.md (grade B) + independent review (B); key quotes spot-checked (TTCO l.215-232, 584-588; OSRAM l.278-283, 513-524; Li l.77-81; EgoHumanoid-V2 l.265-290; HERO l.338-347)
+\textbf{Acting through a learned model of oneself.} Learning control through a learned forward model goes back to the distal teacher~\cite{jordan1992}. Goal babbling learns inverse kinematics from a robot's own movements~\cite{rolf2010,saggriac}, and self-modeling robots learn models of their own bodies~\cite{bongard2006}. Closer to our setting, other work changes only the input of a fixed controller. Neural add-on blocks adapt the reference of a fixed feedback loop~\cite{zhou2017dnn}. Learned motion models of a black-box quadruped controller drive footstep planning~\cite{taouil2023}. OSRAM learns a closed-loop command--response model of a deployed policy and optimizes its references against it~\cite{osram}, and command adapters for frozen locomotion policies have been audited in simulation~\cite{li2026audit}. Keeping such optimization inside the model's data is a recognized concern in model-based optimization~\cite{mins,lagrassa2024,osram}.
+
+\textbf{Frozen humanoid controllers.} For humanoid behavior foundation models:
+\begin{itemize}
+\item TTCO optimizes the command of a frozen controller by sampling through closed-loop simulations of the controller and robot~\cite{ttco}.
+\item EgoHumanoid-V2 refines training labels offline with a learned local response model of a frozen tracker and fresh rollouts~\cite{egohumanoidv2}.
+\item Other work scores candidate motions by their executability under a frozen tracker~\cite{s3,texedo}, adds reference or action residuals for compliance and terrain~\cite{ila,graft}, or learns a tracker's dynamics in order to fine-tune it~\cite{humanoidndm}.
+\item For humanoid grasping, HERO corrects the commanded grasp with measured end-effector feedback~\cite{hero}.
+\end{itemize}
+We instead invert a learned endpoint model once per reach, from the body state at the command alone, for three frozen controllers. We then measure when the resulting accuracy becomes grasp success, where the inversion leaves the model's support, and what the model is tied to.
+
+% ===========================================================================
+\section{Problem Statement and Hypotheses}\label{sec:hyp}
+% ===========================================================================
+
+\textbf{Setting.} A frozen controller $\pi$ receives, at decision time $t$, a reach command $c$ (a hand target that our whole-body IK turns into a reference for $\pi$) and executes it from body state $s_t$. After the reach settles the right hand is at $p=\Phi_\pi(s_t,c)$; $\Phi_\pi$ is unknown and includes the controller, its command interface and the simulator. Given a target $p^\star$, \emph{direct execution} (\Ad) sends $c=p^\star$. We learn $f_\theta\approx\Phi_\pi$ and send
+\begin{equation}
+c^\star=\arg\min_{c\in\mathcal{C}}\;\lVert f_\theta(s_t,c)-p^\star\rVert ,
+\label{eq:inv}
+\end{equation}
+where $\mathcal{C}$ is either unconstrained (\Sinv) or restricted to commands that are kinematically reachable from $s_t$ (\Rr).
+
+\textbf{Hypotheses.} For each we state what would falsify it and what we learn either way.
+
+\emph{H1 (aim).} Inverting $f_\theta$ reduces the final hand error relative to \Ad\ for every controller, in the simulator where the data were collected, across varied target heights, distances and body postures, with no trials at the new condition. \emph{Falsified if} paired hand errors under \Sinv/\Rr\ are not lower than under \Ad, or if the reduction holds only in a narrow band of geometry. \emph{Either way:} whether a frozen WBC's placement error is a learnable function of state and command that generalizes across the workspace.
+
+\emph{H2 (payoff).} Hand accuracy turns into task success only partly, and which failures it removes depends on the controller and the task. \emph{Falsified if} success gains are proportional to the accuracy gains across tasks and controllers. \emph{Either way:} whether ``a better-aimed hand'' should be a design target for humanoid manipulation stacks built on frozen controllers, and what else must be fixed alongside it.
+
+% H2 revised 11-26 17:10: original "gains concentrate where placement misses dominate" NOT supported by lmlcmp3 E4 (status §1.3b); reverse not supported either.
+\emph{H3 (support).} The inversion is only as good as the model's coverage: unconstrained search drives $c^\star$ outside the training distribution, where $f_\theta$ is wrong and the hand overshoots; restricting $\mathcal{C}$ to reachable commands removes this. \emph{Falsified if} \Sinv's large errors are not concentrated on out-of-support commands.
+
+\emph{H4 (specificity).} $f_\theta$ models the controller \emph{as commanded in a given simulator}, not the body: it transfers when the command interface and simulator setup are unchanged and fails otherwise, even with an identical body model; re-collecting data in the target simulator restores accuracy. \emph{Either way:} what a ``self-model'' of a learned controller actually captures, and how much data a new deployment costs.
+
+% ===========================================================================
+\section{Method}\label{sec:method}
+% ===========================================================================
+% src (whole section): methods_extract.md -> data.py:244,258-266; models.py:199-263; train.py; selfmodel_data3/3b, train3/3b, lmlcmp, lmlcmp2
+\textbf{Robot, controllers and commands.} We use a Unitree G1 with Dex3 hands (29 body joints) and three frozen controllers: ScaleBFM~\cite{scalebfm}, SONIC~\cite{sonic} and HEFT~\cite{heft}. A reach command $c$ consists of a hand target point, a 6-D wrist orientation, a stand/squat flag and a squat pelvis height. At the moment of the command, our whole-body IK plans a reference from the \emph{measured} state, and the controller tracks that reference through its native reference interface (e.g.\ body keypoints for ScaleBFM, an encoder over future reference frames for SONIC).
+The hand point is 13\,cm ahead of the wrist; a reach has \emph{settled} once pelvis and both hands move slower than 2\,cm/s for 0.5\,s, with a 3\,s cap.
+
+\textbf{Self-model.} $f_\theta$ maps the state at the command and the command to the settled hand point and wrist orientation, both expressed in the measured pelvis-heading frame at the command time. The state contains three body-state snapshots (0.3, 0.2 and 0.1\,s before the command), the current hand pose, and a summary of the IK reference: its final joint configuration, the change from the current one, the planned pelvis pose and the planned duration. Two auxiliary heads predict fall and settle probabilities. The model is an ensemble of five MLPs ($4\times512$, SiLU) trained on bootstrap resamples. Each member predicts a residual on the command, and its last layer is zero-initialised, so an untrained model reproduces direct execution. The loss is a Huber loss (2\,cm) on position, a squared loss on the 6-D rotation, and cross-entropy on the auxiliary heads; we train with AdamW for 30k steps and select the checkpoint by validation median error.
+
+\textbf{Data.} All data come from the frozen controller in the target simulator. (i)~30k resets with two reaches each. About a third of the episodes start with a walk, and the rest start standing or squatting. Every reach is planned from the measured state once the previous one has settled. Targets are sampled inside an IK-probed reachable region, 0.05--1.5\,m high. (ii)~15k resets with four short reaches each, of the kind a grasp makes: the hand settles 5--12\,cm in front of the target and then enters slowly. (iii)~Mid-trajectory samples: states every 0.2\,s along a reach become additional starting points, labeled with the same final landing. Data are split by reset. Variant~F replaces measured velocities by finite differences of positions (Sec.~\ref{sec:prelim}).
+
+\textbf{Inversion.} Only the position target is changed; the wrist orientation is commanded as is. \Sinv\ starts at $c_0=p^\star$ and iterates $c_{k+1}=\mathrm{clip}\big(c_k+p^\star-f_\theta(s_t,c_k)\big)$ six times, re-planning the reference at each step. Of the seven candidates it sends the one minimizing $\lVert f_\theta-p^\star\rVert^2+\lambda\,\sigma^2$, where $\sigma$ is the ensemble spread and $\lambda=1$.\dnote{lambda only in code (lml\_tasks.py:82), not in entries}
+\Rr\ checks each candidate's IK error. If it exceeds 2\,cm, \Rr\ bisects the candidate back toward $p^\star$ (six halvings) until the error is within 2\,cm. \Rr\ is our default inversion. In grasping, the pre-grasp and the entry segment are each commanded once, with no re-correction after observing the result; the model is used for free-hand reaches before contact.
+
+\textbf{Benchmarks and protocol.} LocoManiLab~\cite{locomanilab} provides seven grasping tasks (candle, apple, bowl, salt shaker, statue in a cabinet, dumbbell, watering can). In each episode the robot looks once from its start pose, walks to a stance planned from that view, and makes one corrective walk if leg odometry shows it is still at least 10\,cm off. We run 90 jittered episodes per task. Every episode is run once per arm on the same machine with the same perception\footnote{In LocoManiLab, object segmentation uses the simulator's ground-truth object mask; depth, point clouds, grasp planning and decisions are computed as usual.} and grasp choice, and arms are compared paired by episode. Besides \Ad\ and \Rr, two arms follow a collision-free arm route planned with cuRobo~\cite{curobo}, executed directly (\Croute) or with \Rr\ (\CRr). Success means the object is lifted by 30\,cm (10\,cm for the statue) and held for 1\,s. Success is tested with exact McNemar tests and hand error with sign tests. SIMPLE~\cite{simple} and HumanoidArena~\cite{humanoidarena} (Isaac Lab~\cite{isaaclab}) serve as transfer targets.
+% src: hardgrasp:279-309 (tasks), lmlcmp:58 + hardgrasp:179 (success), lmlcmp statistics; status §1.3c (lmlroute: episodes 30-119, 90 per task, four arms A / R / C / CR on the same machine)
+% src (corrective step): selfmodel_hardgrasp_20261125:166-167 (leg odometry; >= 10 cm off the stance -> one more step), selfmodel_lmlcmp_20261126:146,165 (corrective-step decision; gait_heft); 5090 11-26 suggested adding it once E3 attributes SONIC's sweeps to it. Verified by 5090 11-26: hg_run.py:80-81, lc3_run.py:607-620 (one look at episode start; walk only if stance >= 15 cm or >= 12 deg away; WALK_FIX = 1, FIX_MIN = 0.10; no second look); same in lmlcmp3 and lmlroute. Status §1.8 (17:32 re-read): dumbbell left hand 57/81 (55 in corrective walk, 2 in first reach), watering can 54/58 (all 54 in corrective walk); phase = moment of first left-hand contact, movable-table original episodes (status 17:36, ac1c0352). Earlier 56 was wrong.
+
+% ===========================================================================
+\section{Preliminary Results}\label{sec:prelim}
+% ===========================================================================
+
+\subsection{H1: inversion makes the hand more accurate}
+% src: status §1.1 (all numbers in this subsection; independently reviewed)
+\emph{Grasping with varied geometry.} On the seven LocoManiLab~\cite{locomanilab} grasping tasks, \Rr\ brings the hand point closer to the grasp point at hand closure than \Ad\ for all three controllers, by a paired median of 1.57\,cm for ScaleBFM (95\% CI $[0.96,2.05]$), 1.25\,cm for SONIC ($[1.04,1.44]$) and 0.52\,cm for HEFT ($[0.36,0.77]$). On contact-free reaches the correction varies from reach to reach in step with the direct-execution error ($r=0.85$--$0.89$).\dnote{$r$ is from the earlier lmlcmp run (status §1.1); confirm with 5090 that it is still citable}
+% src: status §1.3c (lmlroute, GT mask, independently reviewed): close-time hand to grasp point (same definition as lmlcmp close_dist_cm, hand point = wrist_yaw_link + 13 cm), paired R - A medians, 7 tasks: ScaleBFM -1.57 [-2.05, -0.96] n 534; SONIC -1.25 [-1.44, -1.04] n 497; HEFT -0.52 [-0.77, -0.36] n 426. Decision set: -1.74 [-2.23, -1.12] n 499 sign p 1.0e-25; -1.43 [-1.72, -1.13] n 397 1.1e-22; -0.56 [-0.79, -0.37] n 397 5.7e-6. (5090 says 7-task sign p <= 3.4e-6, but not in status: not cited.) Only paired differences, no per-arm medians.
+% OLD (SAM 3, lmlcmp, no longer cited per status 19:57): 8.64 -> 3.84, 6.24 -> 4.42 cm; paired S - A -3.59 / -2.13 / -0.44 cm. HEFT 27-reach breakdown (status §1.1 19:43, unreviewed): world-frame pre-grasp landing 5.29 -> 2.60 (18/27); in place 18: 4.64 -> 1.88 (17/18); walked 9: 9.32 -> 10.25 (1/9), odometry offset after walk 9.8 cm (8.2-10.6) not seen by the model; body frame 4.4 -> 1.7 was inconsistent. lmlreal HEFT walked segments ~28 cm / 71 deg = arm stuck on furniture.
+% src: status §1.1; selfmodel_lmlcmp_20261126 (:449 HEFT 27 reaches), selfmodel_lmlcmp2_20261126
+
+\emph{Free space, varied geometry.} In a pilot with an earlier model and data recipe (same inversion principle, no reachability step), ScaleBFM reached 320 free-space targets spanning 0.35--1.30\,m ahead and 0.10--1.25\,m high, 10 per cell. The median error dropped from 5.47 to 1.21\,cm; the fraction within 2\,cm rose from 7\% to 76\% and within 5\,cm from 43\% to 95\% (paired difference $-4.10$\,cm, 95\% CI $[-4.43,-3.79]$).\dnote{not independently reviewed, not pre-registered (status §1.1); source: handoff selfwm-20261029.md ``11-09''. E1 re-runs it properly.}
+% src: status §1.1 (14:50 version) -> ~/code/loco/docs/handoff/selfwm-20261029.md ~l.369
+
+\emph{Fixed geometry.} SIMPLE~\cite{simple} is the boundary case. In its TabletopGrasp task the stance follows the object and the table edge clamps stance jitter, so every reach is nearly the same reach. For ScaleBFM behind a collision-free route planned with cuRobo~\cite{curobo}, the median settle error is 3.97\,cm uncorrected, 1.74\,cm with a constant offset, 1.28\,cm with the self-model, and 1.26\,cm when the command is aimed at the reference the motors actually track plus a constant. The last two tie (difference $-0.04$\,cm, 95\% CI $[-0.22,+0.40]$, $p=0.815$), even though the model arms had access to the true pelvis pose. With a single, fixed reach geometry, a calibration for that geometry is as good as the model. For SONIC no model contribution is shown; the comparison is underpowered.
+% src: selfmodel_precision3_20261125 结论 #1-#2 + 复核后的更正 #1, #2, #7, #9 ("ScaleBFM 成立；SONIC 证据不足"; model arms used true pelvis; jitter clamped at table edge); status §2 SIMPLE (14:50)
+% NOTE: status §2's "4.71->1.73 cm, outcome unchanged because controller corrects again" NOT used: selfmodel_s correction #1/#2 withdrew it.
+
+\subsection{H2: accuracy only partly becomes success}
+% src: status §1.3c (lmlroute, GT mask, independently reviewed; R vs A registered as LML main table in lmlroute revision 1)
+\begin{table}[t]
+\centering
+\caption{Successful episodes on the LocoManiLab decision set ($n$ paired episodes per arm). \Ad: direct execution; \Rr: inversion restricted to reachable commands; \Croute: collision-free cuRobo route; \CRr: route with \Rr. Last column: episodes won only by \Ad\ / only by \Rr; McNemar $p=9.8\times10^{-22}$, $1.1\times10^{-6}$ and $0.006$.}
+\label{tab:lml}
+\begin{tabular}{lrrrrrc}
+\toprule
+Controller & $n$ & \Ad & \Rr & \Croute & \CRr & \Ad/\Rr\ only \\
+\midrule
+ScaleBFM & 540 & 83 & 199 & 94 & 192 & 22/138 \\
+SONIC    & 450 & 18 & 47 & 47 & 55 & 4/33 \\
+HEFT     & 540 & 55 & 72 & 62 & 83 & 9/26 \\
+\bottomrule
+\end{tabular}
+\end{table}
+% src: status §1.3c table (ScaleBFM 83 (15.4 %) / 199 (36.9 %) / 94 (17.4 %) / 192 (35.6 %), +21.5 pp, 22/138, 9.84e-22; SONIC 18 (4.0) / 47 (10.4) / 47 (10.4) / 55 (12.2), +6.4, 4/33, 1.08e-6; HEFT 55 (10.2) / 72 (13.3) / 62 (11.5) / 83 (15.4), +3.1, 9/26, 0.00599). Decision set: ScaleBFM, HEFT 6 tasks 540 pairs (bowl out); SONIC 5 tasks 450 (bowl out, candle at ceiling). Rule from lmlcmp3: > 50 % fail before arms diverge -> out; A >= 72/90 -> ceiling.
+
+Table~\ref{tab:lml} reports successes on the decision set, which excludes tasks where more than half of the episodes fail before the arms diverge (the bowl) and tasks where \Ad\ already succeeds in at least 72 of 90 episodes (SONIC's candle). In this pre-registered main comparison, \Rr\ raises success over \Ad\ for all three controllers: from 15.4 to 36.9\% for ScaleBFM, from 4.0 to 10.4\% for SONIC and from 10.2 to 13.3\% for HEFT (McNemar $p\le0.006$). The gains are uneven across tasks. Counting episodes won by one arm only, ScaleBFM's \Rr\ wins most on the candle (65 vs.\ 0) and the salt shaker (31 vs.\ 3), less on the dumbbell (22 vs.\ 8) and the watering can (16 vs.\ 8); without the candle its gain remains significant (73 vs.\ 22, $p=1.5\times10^{-7}$, post hoc). HEFT's gain comes entirely from the candle (26 vs.\ 2), and on its other tasks \Rr\ does worse (0 vs.\ 7, $p=0.016$, post hoc). A more accurate hand thus pays off on some tasks and not on others, differently for each controller.\dnote{HEFT: walk-first training data use hg\_walk, its task episodes gait\_heft (status §3, 17:53); nowalk check of this point still open}
+% src: status §1.3c per-task R vs A (A-only / R-only): ScaleBFM candle 0/65, salt 3/31, dumbbell 8/22 (p 0.016), watering can 8/16 (0.15), apple 3/4; without candle 22/73 p 1.46e-7 (post hoc). SONIC watering can 1/11 (0.006), salt 2/11, dumbbell 0/6, apple 1/5. HEFT all from candle 2/26; without candle 7/0, p 0.0156 (salt 6/0) (post hoc). 7 tasks: ScaleBFM 200/84 (+18.4 pp), SONIC 128/92 (+5.7), HEFT 72/56 (+2.5).
+
+\emph{Routes.} Collision-free routes alone (\Croute) raise success significantly only for SONIC (from 4.0 to 10.4\%, as much as \Rr), and that gain comes mostly from the salt shaker. On the episodes where a route is used, adding \Rr\ to it (\CRr) does about as well as the better of \Croute\ and \Rr\ alone. The routes avoid furniture in planning, but the hand strays from them, by a median maximum of 6.4, 7.9 and 14.3\,cm for the three controllers. For ScaleBFM, routing trades contacts on the way for contacts near the target and missed grasps.
+% src: status §3 lmlroute (19:54, independently reviewed): C - A significant only for SONIC (+6.4, Holm p 4.9e-6; ScaleBFM +2.0 p 0.48, HEFT +1.3 p 0.19); post hoc: without salt shaker SONIC C - A 11/4, p 0.118 (n.s.); 'routes and self-model stack' NOT supported (on routed episodes CR ~ better of C and R; HEFT CR 12 vs C 15; HEFT R - A all from un-routed candle); HEFT CR - R +2.0 p 0.002 but fragile (11 pairs); 'SONIC gain from avoiding furniture' insufficient evidence; 'failures shift to near-target contacts and misses' ScaleBFM only (misses C 120 vs A 15); max hand deviation from route median 6.4 / 7.9 / 14.3 cm; arm-in-furniture-box 55-57 / 103-128 / 298-306.
+% NOTE: do NOT write 'combine' or 'stack' for route + self-model. Furniture-contact counts verified free of self-contact (faildiag 7cbf0f66, status §1.3c).
+
+In SIMPLE, success cannot reward ScaleBFM's aim at all, since the cuRobo route alone already succeeds in all 28 routed episodes within 45\,s.
+% src: selfmodel_s_20261124 复核后的更正 #2 (J 28/28); status §1.2 SIMPLE part still usable (19:57)
+% OLD (SAM 3, no longer cited per status 19:57): first-round table A/S/G/R 32/47/45/53, 19/31/27/30, 9/12/13/12; criterion text (+7.3 p 0.035 / +13.3 p 0.017); pooled p 0.008; 'six in ten HEFT reaches blocked by furniture'; fresh seeds R 117 vs A 61 of 450 (+12.4, [8.6, 16.3]); 'Where the gains come from' (lmlcmp3 failure-cause table). 5090 offered lmlroute A first-arm-contact counts (379/503, 84/422 + 149, 368/501) but they are not in the status file: not cited.
+
+\emph{Failures upstream of the reach.} The bowl task mostly fails before any reach command is sent: in 55 of 90 episodes no grasp survives planning. Our task layer builds the commanded wrist orientation from yaw and pitch alone, so the commanded palm is always horizontal, whereas about 70\% of the grasps proposed for the bowl are palm-down; the remaining side grasps would hit the table. The gap lies in the command parameterization, not in aim.\dnote{pending review, status §1.8 (measurement, not a method comparison); 55/90 is the offline GT-mask recount (controller-independent); replace with the per-controller counts of the formal lmlroute run}
+% src: status §1.8 17:05 (GT mask, lmlroute offline redo of 630 looks: bowl 55/90 plan failures, was 66 under SAM 3; paper should use formal-run per-controller counts when out); selfmodel_faildiag_20261126 开发阶段的发现 问题4 (SAM 3: bowl 66/90 ScaleBFM, SONIC 67, HEFT 66). Palm-down ~70 % holds under both masks (status §1.8 17:26: GT 70.2 % of the 55 failed, SAM 3 69.6 % same script; palm normal within 60 deg of straight down). Offline recomputation of lmlcmp3 records, plan mismatches 0.
+% NOTE: salt-shaker "SAM 3 finds no candidate" (status §1.8) dropped: LML now uses GT object masks (user 11-26, status 17:15), so it is no longer an LML failure cause. Do not explain this in the paper.
+
+\emph{Correcting the stance.} In SIMPLE we added a second look after the walk that registers the furniture point cloud and corrects the stance with an extra step. For SONIC this halves the median stance error, from 19.46 to 9.76\,cm, but successes within 45\,s do not rise (31 vs.\ 30 of 120, paired against a no-second-look group run alongside it), and within the official time limits they fall (2 vs.\ 24), since the second look, the extra step and the arm tuck add a median of 11.6\,s. ScaleBFM never needs the extra step, and the second look changes none of its arms significantly.
+% src: status §三 simple_relook_20261126 (19:50, independently reviewed, 88c65daf): ScaleBFM 120 eps no extra step, registration error median 0.05 cm; with second look vs main-metric old records (45 s) A 80 vs 83, J 93 vs 95, S 92 vs 94, kin_rr 93 vs 95, all n.s. SONIC stance offset median 19.46 -> 9.76 cm (p90 still 29 cm); A 31 vs 30 (look-only 36); official limit A 2 vs 24 (extra step + retraction +11.6 s); extra step bumps target 19 eps. Criterion: stop investing in stance. Main metric unchanged.
+% NOTE (5090 ~20:10): 31 vs 30 and 2 vs 24 are paired within the same run (SONIC CPU inference, 120 eps); NOT comparable to status §2 main table (29/18 = older GPU-inference records; CPU vs GPU 30 vs 29 p 1.0, 24 vs 18 p 0.345, run-to-run noise). 11.6 s = median extra time over 120 eps (second look + extra step + arm tuck).
+% NOTE: reviewer-endorsed reading = 'extra step halves stance error but success does not rise'. Do NOT write 'the gain is limited because the extra step is inaccurate' (post hoc, retracted).
+
+\subsection{H3: inversion must stay inside the training support}
+% src: status §3 (independently reviewed, B57)
+For ScaleBFM, the model's landing error is 0.7--1.7\,cm on IK-reachable commands but about 20\,cm on commands beyond the reachable boundary (IK error $>3$\,cm), which make up only 2--4\% of the training data. The 75 unreachable commands that \Sinv\ issued in one batch of grasping episodes have a landing error of 19.87\,cm. The model extrapolates wrongly on unreachable commands whoever chooses them: it predicts that the hand will stop short, so unconstrained inversion keeps pushing and the hand overshoots, which we observe for ScaleBFM on far targets. \Rr\ never issues such a command: it keeps the inversion inside the reachable set, and Table~\ref{tab:lml} compares it with \Ad.
+% src: status §1.3 (0.7-1.7, ~20 cm, 2-4 %), §1.3c end (mechanism still citable: model prediction error on commands, perception not involved; 19.87 cm n 75 from lmlcmp3 S). R vs S 117/104 NOT cited (SAM 3 success, no S arm under GT mask).
+% NOTE: do NOT write "R is better wherever S leaves the reachable set" (refuted on dumbbell, lmlcmp3 correction #1); do NOT use "R out-of-reach 2.14 cm" (invalid, correction #2).
+% src (mechanism "predicts the hand stops short"): selfmodel_lmlcmp2_20261126:383 (watering can, 16 S pre-grasps: hand lands 1.1 cm past command, D predicts 18 cm short)
+% NOTE: do NOT write "over-correction is common to all controllers" or "it overshoots because the target is unreachable" (retracted, status §4).
+
+\subsection{H4: the model is tied to controller, interface and simulator}\label{sec:h4}
+% src: status §1.4 (narrowed wording, 14:05 update), selfmodel_xfer_20261125, selfmodel_fdvel_20261126
+\begin{table}[t]
+\centering
+\caption{Transfer of a self-model trained in LocoManiLab: prediction error in the target setting divided by the model's own validation error. Usable as is: $\le 1.3$ with 95\% CI upper bound $\le 1.5$; $>1.5$: re-collect. Rows 1--2: original features; row 3: variant F (mean of 3 seeds). SIMPLE CIs: $[2.27,2.53]$, $[1.48,3.09]$, $[0.86,1.22]$.}
+\label{tab:xfer}
+\begin{tabular}{lccc}
+\toprule
+Target setting & ScaleBFM & SONIC & HEFT \\
+\midrule
+SIMPLE & 2.38 & 1.79 & 1.06 \\
+HumanoidArena & 6.62 & 5.23 & 5.49 \\
+HumanoidArena, F & 2.71 & 3.06 & 2.15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+% src: status §1.4 table
+
+The robot body is the same in LocoManiLab and SIMPLE (MJCF geometry, masses, joint parameters and torque limits), yet the model transfers only for HEFT, whose command interface is the same in both (Table~\ref{tab:xfer}; HEFT's ratio is limited to in-place reaches, and SONIC's covers only the 16\% of segments that neither fall nor fail to settle). For ScaleBFM and SONIC, both the command interface and the simulator's solver settings differ between the two benchmarks, and the model does not transfer. In HumanoidArena~\cite{humanoidarena}, the joint-velocity readings do not match the actual motion; computing velocities by finite differences of positions removes most of the gap and costs essentially nothing in LocoManiLab (ratio 0.97--1.02 to the original features). The remaining factor of about three for SONIC is unrelated to velocity inputs and still unexplained.
+
+\emph{Re-collection.} We re-collected ScaleBFM's data in SIMPLE with the same recipe and evaluated the new model on the real grasping episodes of our SIMPLE benchmark under direct execution (four tasks, 40 distinct layouts). On XMovePick, XMoveBendPick and BendPick, the median prediction error of the settled hand point is 0.36, 0.40 and 1.07\,cm, and the model passes the gate for direct use. On TabletopGraspMP it is 2.26\,cm, and the ratio's CI reaches far above the gate (1.20, $[1.04,16.0]$). In all 12 failed direct-execution episodes of that task, the table edge blocks the hand during the pre-grasp. A model trained on free-space reaches has never seen this contact and misses those reaches by 28--40\,cm: the support limit of H3, here in contact rather than in reach.
+% src: status §1.7 (B60, independently reviewed, 16:40: "只对三个任务成立", per-task table resampled over 40 layouts); selfmodel_simpledata_20261126 复核后的更正 #2, #3 (12 A-arm failures on TabletopGraspMP = hand blocked by table edge at pre-grasp; free-space-only data; 28-40 cm). One model (seed 0), ScaleBFM only.
+% NOTE: do NOT cite pooled 0.705 cm / 4.01 cm / 0.374x alone (status 16:40: report per task). 120 episodes = only 40 independent layouts (difficulty 0 and 1 nearly identical): do not quote 120 as independent.
+% NOTE: narrowed claim per status §1.4: tied to controller + interface + sim setup; body identical. Do NOT attribute to the interface alone. Per user (relayed 11-26): no text explaining/justifying experiments not run (no 2x2 as limitation/future work).
+
+\subsection{Data recipe}
+% src: status §1.5 (B51, B55)
+% NOTE (5090, 11-26 ~18:00): HEFT-only mismatch: LML data collection d3_collect uses hg_walk for all controllers (:550), but LML task episodes give HEFT gait_heft (lc3_run.py:199-214), so HEFT's walk-first training starts do not match its task-episode starts. Being checked in selfmodel_nowalk_20261126 stage 2 (HEFT first reach split walked / in place + in-support share), ~1-1.5 h. Write NOTHING about this until it lands; §1.5 unchanged for now.
+Adding data in which the hand first settles and then makes a short entry reduces the entry-phase error by 24--32\%. Adding mid-trajectory samples lowers the dataset error by a further 14--26\%. The learning curve has not flattened: the model trained on all data has 0.75--0.90 times the error of one trained on 30\%.
+
+% ===========================================================================
+\section{Experimental Plan}\label{sec:plan}
+% ===========================================================================
+Each experiment changes only the component that its hypothesis is about. All share the controllers, perception, grasp choice and episodes of the arms they are compared with, and are paired by episode.
+
+\textbf{E1 (H1): accuracy across the workspace.} Free-space reaches in place, direct execution against inversion, for all three controllers in all three simulators, each with a model trained on its own simulator's data. All controllers share one set of targets covering several heights, distances and lateral directions, from standing and squatting starts. We report the paired error reduction per cell; H1 is falsified if the reduction holds only in a narrow band.
+% src: status §三 16:57 (selfmodel_freespace_20261126, registered rev.1 81b09c38; LML part E2a started 16:17, done ~11-27 noon; HEFT in two steps rev.2 9a7365c3)
+\dnote{registered; LML part running, done $\sim$11-27 noon; SIMPLE and HA parts later}
+
+\textbf{E2 (H4): re-collection in the target simulator.} In SIMPLE, the re-collected ScaleBFM model passes the gate on three of four tasks (Sec.~\ref{sec:h4}). With it we compare direct execution, \Rr\ and \Sinv, and the cuRobo route corrected by the new model, on the same SIMPLE episodes, read per task and resampled by layout, and report the table-blocked layouts separately. On TabletopGraspMP, where the model fails the gate, success differences are not credited to the model. On the corrected commands we log predicted and measured landing points; the model counts as no longer valid there if its error ratio exceeds 1.3. In HumanoidArena we re-collect data for all three controllers with the same recipe and compare training from scratch with fine-tuning variant~F. The pre-registered gate for using a model directly is a real-episode error ratio $\le1.3$ with a CI upper bound $\le1.5$.
+% src: status §三 16:57 (simplecmp registered: A / R / S + route J with new-model correction; TabletopGrasp success diff not credited to the model); selfmodel_simpledata_20261126 (result, §1.7, B60) + 复核后的更正 #6 (selfmodel_simplecmp_20261126 design: keep S or E arm per lmlcmp3 更正 #8; per-task reading, per-layout resampling; blocked layouts separate; prediction vs measured on corrected commands; overturn if ratio > 1.3, or in-range < 80 %, or IK > 2 cm share rises); selfmodel_hadata_20261126, selfmodel_hadata_sonic_20261126; gate xfer:68-70
+\dnote{SIMPLE comparison (simplecmp) finished, under independent review: do not use its numbers yet; HA running}
+% NOTE (5090, 11-26): simplecmp raw numbers are in status §2 end / §3 but are NOT to be written into text or tables until the independent review passes; 5090 will say what can be written.
+
+\textbf{E3 (H2): failure diagnosis.} For the failures that aiming does not remove, we determine why SONIC's well-aimed hands still miss the grasp, how accurate the chosen grasps themselves are, and why HEFT's body drifts away during a reach. First measurements show that SONIC often moves the object before its hand closes, touching it with the left hand during the corrective walk in 62 of 81 such runs on the dumbbell and 53 of 58 on the watering can. The arm posture does not explain this, since both controllers walk with the same arm reference. SONIC overshoots its first walk by about 27\,cm, so its corrective walk starts with an in-place turn of about $160^\circ$, with the pelvis 23--28\,cm from the object; 103 of 126 corrective walks with such a turn moved the object, against 0 of 24 without it. ScaleBFM's corrective walks barely turn and keep 56--58\,cm from the object, and none of its 155 moved it; it moves the object only during the first reach (33 runs, right fingers).\dnote{independently reviewed (status §1.8, 18:28), measurements only; one scene (207); turn and proximity not separated; counts from SAM~3 runs; counts are runs (arm $\times$ episode): SONIC dumbbell 81 runs = 76 distinct episodes, ScaleBFM 33 runs = 24 episodes; ScaleBFM's 33 exist only under the corrected hand-arrival definition (0/312 under the pre-registered one)}
+% src: status §1.8 17:00; selfmodel_faildiag_20261126 修订4 的结果 (REVIEWED 18:28, unified rule = max-force body part in the 0.2 s before the object crosses 2 cm / 15 deg: dumbbell left hand 64/81 (62 in corrective walk), watering can 53/58 (all in corrective walk); 81 = runs, 76 distinct episodes; one scene 207, same coffee table, walk ~2.25 m. Likely cause per review: ~160 deg in-place turn in the corrective walk (SONIC first walk overshoots ~27 cm), not arm posture (identical arm reference, left wrist ~28 cm out); turning corrective walks 103/126 moved the object vs 0/24 non-turning; ScaleBFM corrective walks turn ~2 deg, 0/155; pelvis 23-28 cm vs 56-58 cm from object, turn vs proximity NOT separable. Do NOT write 'the arm sweeps the object'. Retract / no-turn test (status §1.8, ~20:00, under review): object still in place at hand arrival 0 % -> 73-86 %, but SONIC success still <= 17/139: do NOT write 'retracting fixes SONIC'. ScaleBFM 33 re-checked under unified rule (reviewer file exc_ph.json): all right hand, all first reach; dumbbell 28 (A 7, correction arms 21), watering can 5 (A 2, correction arms 3); 24 distinct episodes; 0/312 under the pre-registered hand-arrival definition. Earlier pre-review: SONIC dumbbell 81: left fingers 32, right fingers 24, legs->table 25; watering can 58: left 4, right 4, legs->table 50 (left hip 46); ScaleBFM 33 all right fingers first reach; legs->table 75: table moved 0.33 cm at onset, left hand touches object 0.58 / 0.78 s later; table vs hand share NOT separated, fixed-table rerun queued). Do NOT write the table push as the cause of the object moving.
+% src (17:32): fixed-table rerun d7bbf504 (armature 1e8 on 6 DoF, max disp <= 0.0025 cm): the 75 legs->table episodes still all moved before the hand arrived (dumbbell 25/25, watering can 50/50), all by the left hand in the corrective step; offset at hand arrival 38.5 -> 46.9 cm, 13.9 -> 14.0 cm. Re-read totals (17:36, ac1c0352): left hand dumbbell 57/81 (55 in corrective walk), watering can 54/58 (all in corrective walk).
+% NOTE (5090, 11-26 ~18:05): faildiag Q2 (grasp quality) result exists in status §1.8 (servo yardstick failed its SONIC positive control; perception grasps ~2.4-2.8 cm / 9 deg from nearest GT grasp; GT grasps with normal execution: ScaleBFM worse 31 vs 48 /156, p 0.033; RETRACTED 18:28: 'perceived grasp is not the bottleneck' -- offline distance has no resolving power; ScaleBFM GT-grasp deficit comes from pre-grasp object disturbance and stance/IK failures, p 0.29 after removing IK failures; only 'no evidence that perceived grasps are the bottleneck, and not enough to rule it out'; SONIC Q2 unusable (positive control 15/20 < 17/20)). Do NOT write into text yet. All faildiag (contact attribution, fixed table, Q2) under independent review: keep 'pending review' notes.
+% NOTE (5090, 11-26): 56 = left 32 + right 24, one body part per episode (max force in window), categories disjoint (32+24+25 = 81). If Method later describes LML's walk-to-stance + re-look + corrective re-step, add here: most of these contacts happen during the corrective re-step (dumbbell left hand 31/32, watering can legs->table 46/50). Otherwise leave out.
+For HEFT, they trace the drift to the whole-body reference we give it. During three reaches in HumanoidArena its pelvis moves about 15\,cm relative to the feet; replaying the same commands in LocoManiLab gives about 10\,cm. There, 3--11\% of the shift remains when the reference moves only the reaching arm and 21--50\% when it holds waist and legs together. Holding the waist alone or the legs alone leaves 73--89\%, and holding the reference pelvis leaves 90--100\%, that is, no effect. The shift thus comes from the joint motion of waist and legs in the reference, not from the reference pelvis; holding them, however, leaves the hand 5.6--16.8\,cm farther from the target. Shortening the reference does not prevent the drift: when 12 drifting long reaches are sped up, 10 still drift, only earlier. The drift comes from far, deep reaches themselves. In HumanoidArena, HEFT also walks short: it barely steps for displacements under 20\,cm and covers about 60\% of longer ones. The cause is the gait reference we give it there: replaying that reference in LocoManiLab reproduces the shortfall, and with HEFT's own gait reference it steps even for a few centimetres.\dnote{pending review, status §1.8 (16:55, 17:50; measurements only); faildiag still running; HA HEFT task episodes now use HEFT's own gait reference (user 11-26, from episode 200 on)}
+% src (17:50): status §1.8 (heft_walkstop_20261126 dev check, unreviewed): LML task episodes give HEFT its own gait_heft, HA task episodes (hr_real.py) use hg_walk for all three controllers (0.55 s/step, 6 cm lift); HEFT on hg_walk in LML: 0.20 m -> 0-4 cm, 0.50 m -> 0.57 of request, 1.00 m -> 0.72; with gait_heft it steps for a few cm. Note: data collection uses hg_walk for all controllers in LML and HA. Walk-stop line test results (heft_walkstop) NOT in the paper (no place in the plan yet, 5090 11-26).
+% src: status §三 selfmodel_faildiag_20261126 (user top priority); status §1.8 16:15 (HA ~15 cm [14-15], LML replay ~10 cm [9-10] same 3 HA commands; lock comparisons all in LML, 3 reps each; [16:15 'do not name component' superseded by 16:55 rev.3]; arm-only 3-11 %; waist-only / legs-only 11-27 %; walk <20 cm no step, long ~60 %; obs has reference future displacement only); faildiag 修订1, 修订2 (lock ratios 0.03/0.03/0.11; waist 0.73-0.89; legs 0.78-0.87). 16:55 rev.3: waist+legs held 21-50 %, pelvis-only 90-100 %, waist/legs alone 73-89 % (non-additive); held -> hand 5.6-16.8 cm farther (NOT a fix); duration refuted: sped-up 12 long reaches at 2.5/2.0/1.5 s still 10/12 drift, earlier (5.2 -> 3.1 s p50); cause = far/deep reaches themselves.
+
+\textbf{E4 (H2): routes and aim in HumanoidArena.} We run the four arms of Table~\ref{tab:lml} in HumanoidArena.
+% src: status §3 lmlroute (HA part not registered, not run; HA runs only on 4090/4090b after HA data collection and E2c)
+\dnote{HA routes: not registered, not run, no date}
+
+% ===========================================================================
+\section{Discussion}
+% ===========================================================================
+\textbf{What each outcome teaches.} If E1 shows the error reduction across the whole workspace, a single self-model aims a frozen controller everywhere it was trained, and H3 tells how to invert it safely. If the reduction holds only in parts of the workspace, the per-cell map shows where a frozen controller's placement error is learnable from state and command. Either way, E3 and E4 tell designers what a well-aimed hand still needs before it grasps reliably.
+
+% Limitations paragraph removed per user (relayed 11-26): no defensive writing about experiments not run.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

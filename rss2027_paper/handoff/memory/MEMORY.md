@@ -1,0 +1,4 @@
+- [No defensive writing](no-defensive-writing.md) — papers never explain/justify experiments we didn't run; state claims positively
+- [Best-paper skill first](bestpaper-skill-first.md) — bestpaper-writing skill is the first guideline for paper prose; don't revise until user says go
+- [RSS paper workflow](rss-paper-workflow.md) — numbers only from rss_status.md; experiments via 「5090 机器 SSH 连接」; draft at ~/Research/rss/paper; per-message updates PAUSED (batch update once 5090 finishes)
+- [SelfAim framing](selfaim-framing.md) — title SelfAim; user claim: no retraining, plug-in model for any WBC, cheap one-shot reach; H4 binding = engineering detail, not foregrounded

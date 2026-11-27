@@ -1,0 +1,91 @@
+{
+ "A": {
+  "group": "A",
+  "method": "alone",
+  "formal_success": false,
+  "replay_success": false,
+  "formal_reason": "hit_furniture",
+  "replay_reason": "hit_furniture",
+  "formal_host": "di-20261023170751-nd9kr",
+  "replay_host": "di-20261109112642-l6wzv",
+  "json_differences": [],
+  "seg_arrays": 91,
+  "seg_arrays_differing": [],
+  "close_frame_formal": 375,
+  "close_frame_replay": 375,
+  "close_dist_cm_formal": 6.461055439704763,
+  "close_dist_cm_replay": 6.461055439704763,
+  "close_dist_abs_diff_m": 0.0,
+  "close_obj_cm_formal": 9.928727511359002,
+  "close_obj_cm_replay": 9.928727511359002,
+  "close_obj_abs_diff_m": 0.0,
+  "hand_replay": [
+   -1.594594706497444,
+   1.0941825968142422,
+   0.4766475293144813
+  ],
+  "info_last_W_row_frame": 373,
+  "info_hand_W_row_float32": [
+   -1.5945823192596436,
+   1.0942063331604004,
+   0.47661077976226807
+  ],
+  "info_hand_close_minus_last_row_m": 4.54685317239907e-05,
+  "goal_formal": [
+   -1.63074797462821,
+   1.072569901806116,
+   0.525640961093083
+  ],
+  "goal_replay": [
+   -1.63074797462821,
+   1.072569901806116,
+   0.525640961093083
+  ],
+  "pass": true
+ },
+ "R": {
+  "group": "R",
+  "method": "reachable",
+  "formal_success": true,
+  "replay_success": true,
+  "formal_reason": "ok",
+  "replay_reason": "ok",
+  "formal_host": "di-20261023170751-nd9kr",
+  "replay_host": "di-20261109112642-l6wzv",
+  "json_differences": [],
+  "seg_arrays": 91,
+  "seg_arrays_differing": [],
+  "close_frame_formal": 360,
+  "close_frame_replay": 360,
+  "close_dist_cm_formal": 0.8359639660981456,
+  "close_dist_cm_replay": 0.8359639660981456,
+  "close_dist_abs_diff_m": 0.0,
+  "close_obj_cm_formal": 7.384540021551525,
+  "close_obj_cm_replay": 7.384540021551525,
+  "close_obj_abs_diff_m": 0.0,
+  "hand_replay": [
+   -1.6266496529016792,
+   1.0713948433577518,
+   0.5328316892850137
+  ],
+  "info_last_W_row_frame": 350,
+  "info_hand_W_row_float32": [
+   -1.6265652179718018,
+   1.0710172653198242,
+   0.5328412055969238
+  ],
+  "info_hand_close_minus_last_row_m": 0.00038702066133609506,
+  "goal_formal": [
+   -1.63074797462821,
+   1.072569901806116,
+   0.525640961093083
+  ],
+  "goal_replay": [
+   -1.63074797462821,
+   1.072569901806116,
+   0.525640961093083
+  ],
+  "pass": true
+ },
+ "pass": true
+}

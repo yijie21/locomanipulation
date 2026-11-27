@@ -1,0 +1,38 @@
+@ after3500ms: valid 123 of 195
+  el 35: -60... -50... -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+  el 40: -60... -50... -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+  el 45: -60... -50... -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+  el 50: -60... -50... -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+  el 55: -60ooo -50... -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+    az -60 el 45 d 2.0: A head 0.50 hand 0.65 vase 0.69 | R head 0.55 hand 0.65 vase 0.75
+    az -50 el 45 d 2.0: A head 0.39 hand 0.69 vase 0.77 | R head 0.40 hand 0.73 vase 0.77
+    az -40 el 45 d 2.0: A head 0.38 hand 0.74 vase 0.83 | R head 0.41 hand 0.78 vase 0.79
+    az -30 el 45 d 2.0: A head 0.32 hand 0.81 vase 0.88 | R head 0.30 hand 0.81 vase 0.81
+    az -20 el 45 d 2.0: A head 0.65 hand 0.81 vase 0.91 | R head 0.58 hand 0.82 vase 0.84
+    az -10 el 45 d 2.0: A head 0.97 hand 0.78 vase 0.94 | R head 0.98 hand 0.84 vase 0.87
+    az +0 el 45 d 2.0: A head 0.98 hand 0.78 vase 0.96 | R head 0.99 hand 0.84 vase 0.89
+    az +10 el 45 d 2.0: A head 0.99 hand 0.77 vase 0.98 | R head 0.98 hand 0.81 vase 0.91
+    az +20 el 45 d 2.0: A head 0.98 hand 0.74 vase 0.99 | R head 0.98 hand 0.79 vase 0.93
+    az +30 el 45 d 2.0: A head 0.99 hand 0.72 vase 0.99 | R head 0.98 hand 0.74 vase 0.94
+    az +40 el 45 d 2.0: A head 0.99 hand 0.71 vase 0.99 | R head 0.98 hand 0.70 vase 0.96
+    az +50 el 45 d 2.0: A head 0.99 hand 0.66 vase 0.99 | R head 0.98 hand 0.68 vase 0.97
+    az +60 el 45 d 2.0: A head 0.98 hand 0.64 vase 0.99 | R head 0.99 hand 0.73 vase 0.97
+@ entry_end: valid 158 of 195
+  el 35: -60.oo -50... -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30... +40ooo +50ooo +60ooo
+  el 40: -60ooo -50.oo -40... -30... -20... -10ooo +0ooo +10ooo +20ooo +30.oo +40ooo +50ooo +60ooo
+  el 45: -60ooo -50ooo -40ooo -30.oo -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+  el 50: -60ooo -50ooo -40ooo -30ooo -20... -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+  el 55: -60... -50ooo -40ooo -30ooo -20ooo -10ooo +0ooo +10ooo +20ooo +30ooo +40ooo +50ooo +60ooo
+    az -60 el 45 d 2.0: A head 0.98 hand 0.72 vase 0.61 | R head 0.98 hand 0.72 vase 0.60
+    az -50 el 45 d 2.0: A head 0.95 hand 0.74 vase 0.66 | R head 0.96 hand 0.74 vase 0.64
+    az -40 el 45 d 2.0: A head 0.88 hand 0.77 vase 0.72 | R head 0.90 hand 0.75 vase 0.67
+    az -30 el 45 d 2.0: A head 0.77 hand 0.77 vase 0.81 | R head 0.81 hand 0.74 vase 0.72
+    az -20 el 45 d 2.0: A head 0.44 hand 0.76 vase 0.90 | R head 0.46 hand 0.72 vase 0.81
+    az -10 el 45 d 2.0: A head 0.85 hand 0.73 vase 0.96 | R head 0.84 hand 0.71 vase 0.88
+    az +0 el 45 d 2.0: A head 0.98 hand 0.68 vase 0.99 | R head 0.99 hand 0.67 vase 0.94
+    az +10 el 45 d 2.0: A head 0.98 hand 0.63 vase 0.98 | R head 0.98 hand 0.61 vase 0.97
+    az +20 el 45 d 2.0: A head 0.99 hand 0.58 vase 0.99 | R head 0.98 hand 0.59 vase 0.99
+    az +30 el 45 d 2.0: A head 0.99 hand 0.55 vase 0.99 | R head 0.99 hand 0.57 vase 0.99
+    az +40 el 45 d 2.0: A head 0.99 hand 0.59 vase 0.99 | R head 0.98 hand 0.64 vase 0.99
+    az +50 el 45 d 2.0: A head 0.98 hand 0.72 vase 0.99 | R head 0.98 hand 0.72 vase 0.99
+    az +60 el 45 d 2.0: A head 0.99 hand 0.81 vase 0.99 | R head 0.98 hand 0.77 vase 0.99

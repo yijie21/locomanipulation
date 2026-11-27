@@ -1,0 +1,287 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{times}
+\usepackage[numbers]{natbib}
+\usepackage{multicol}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage[bookmarks=true]{hyperref}
+% Anonymity: keep all PDF metadata empty (the RSS template's \pdfinfo block was removed on purpose).
+\hypersetup{pdfauthor={},pdftitle={},pdfsubject={},pdfkeywords={},pdfcreator={},pdfproducer={}}
+\input{figures_preamble}
+
+% ---------------------------------------------------------------------------
+% Draft annotations. Set \draftfalse before submitting: all notes disappear.
+% \TODO{} (red, from figures_preamble) marks numbers still to be filled; it stays
+% visible until filled.
+% Every number in the text carries a "% src:" comment pointing to
+% ~/research-notebook/paper/rss_status.md (section) and/or the experiment entry.
+% Rewrite 11-26 (bestpaper-writing, Mode B): the pre-rewrite draft is
+% main_pre_rewrite.tex; the change table and removed material are in report.md.
+\newif\ifdraft \drafttrue
+\newcommand{\dnote}[1]{\ifdraft{\color{red}\footnotesize[#1]}\fi}
+% ---------------------------------------------------------------------------
+
+\newcommand{\Ad}{\textsc{A}}       % direct execution
+\newcommand{\Sinv}{\textsc{S}}     % unconstrained self-model inversion
+\newcommand{\Rr}{\textsc{R}}       % inversion restricted to reachable commands (SelfAim default)
+\newcommand{\Croute}{\textsc{C}}   % collision-free cuRobo route, direct
+\newcommand{\CRr}{\textsc{CR}}     % cuRobo route + R
+
+\begin{document}
+
+\title{SelfAim: Learned Self-Models for Aiming Frozen Humanoid Whole-Body Controllers}
+
+\author{Author Names Omitted for Anonymous Review. Paper-ID [add your ID here]}
+
+\maketitle
+
+\begin{abstract}
+Humanoid whole-body controllers (WBCs) are increasingly reused as frozen motor layers for loco-manipulation: a planner sends a hand target and the controller moves the whole body. The hand, however, lands away from where it was told. Retraining the controller, measuring the hand during the reach or simulating the controller at run time would each help, but each is costly or unavailable. We present SelfAim, which corrects the command of a frozen WBC instead of its weights. SelfAim learns, from the controller's own free-space reaches in simulation, a self-model that predicts where the hand will settle, and inverts it over reachable commands to choose each reach command once. It needs no task data and no hand sensing, so the same recipe applies to controllers with different command interfaces. In SIMPLE grasping, the self-model of the ScaleBFM controller predicts where the hand settles with a median error of 0.4 to 1.1\,cm on three tasks, and aiming with it outperforms direct execution, raising the successful episodes within 45\,s from 83 to 108. We state three hypotheses and the experiments that extend this evaluation to SONIC in SIMPLE and to all three controllers in HumanoidArena.
+\end{abstract}
+% src (abstract numbers): status §1.7 (B60, reviewed) per-task 0.36 / 0.40 / 1.07 cm on XMovePick / XMoveBendPick / BendPick (rounded to 0.4-1.1); status §二 ScaleBFM A 83 -> R_D 108 of 120 within 45 s (reviewed).
+% src ("no task data"): 5090 11-26 (simplecmp review): SIMPLE ScaleBFM model trained on data3 / data3b / mid resets 50,000,000-50,029,999 and 60,000,000-60,014,999 in the open-space scene; 0 resets in the task-episode range 90M-99M. Nuance: half of the walk-first resets draw their walk displacement from SIMPLE's approach box (stated in Method, Data).
+% 11-26 ~23:50 (user): LocoManiLab results are not reported for now ("包括论文，先移出"). The LML version of this draft is main_with_lml.tex.
+
+\IEEEpeerreviewmaketitle
+
+% ===========================================================================
+\section{Introduction}
+% ===========================================================================
+
+Learned humanoid whole-body controllers now track whole-body references for walking, crouching and reaching~\cite{scalebfm,sonic,heft,amo,gr00twbc}, and many are released as checkpoints. This makes them natural motor layers for loco-manipulation: a higher level decides where the hand should go, whole-body inverse kinematics (IK) turns the target into a reference, and the frozen controller executes it.
+
+The hand, however, does not land where it was told. A tracking controller trades hand accuracy against balance, and how far it misses depends on the body state and on the reach, so the miss changes from one reach to the next. In SIMPLE~\cite{simple} grasping episodes, the hand of the ScaleBFM controller~\cite{scalebfm} settles a median of 4.0\,cm from where it was commanded.
+% src: status §1.7 (B60, reviewed): direct-execution error on the same 235 reach segments of the 120 SIMPLE A episodes, median 4.01 cm.
+
+Three obvious remedies exist, and each is expensive for a frozen controller. Retraining or fine-tuning the controller for precision~\cite{humanoidndm} needs its training pipeline and produces a different controller. Correcting the reach with measured end-effector feedback~\cite{hero} needs a measurement of the hand, which a head camera can lose in the last centimeters of a reach. Optimizing each command by simulating the controller and robot in closed loop~\cite{ttco} needs a simulator and many rollouts at run time.
+
+The miss itself points to a cheaper route, because it repeats: in a given body state, a frozen controller sends the same command to nearly the same place, so a model of the controller can predict the miss before the reach and cancel it in the command. We therefore fix the command, not the controller. SelfAim learns, from the controller's own free-space reaches in simulation, a self-model that predicts where the hand will settle for a given body state and command, and inverts it at command time to send the command whose predicted landing is the target (Fig.~\ref{fig:teaser}). Because the model is accurate only on the kind of commands it was trained on, the inversion searches only kinematically reachable commands. Each reach is commanded once from the body state, with no hand sensing during execution, and the controller is a black box that only has to accept commands and report its body state.
+% src (insight evidence): status §1.7: on real SIMPLE episodes the re-collected model predicts the settled hand within 0.36-1.07 cm (three tasks) where direct execution misses by 4.01 cm, i.e. the miss is predictable from state and command. (LML evidence r = 0.85-0.89 removed with LML, 11-26.)
+
+Learning control through a learned forward model goes back to the distal teacher~\cite{jordan1992}. Closest to us in mechanism, OSRAM learns a closed-loop command--response model of a bipedal robot and its own policy and steers low-dimensional commands against it, measuring the response at run time~\cite{osram}. SelfAim instead aims through the whole-body reference interfaces of three released humanoid controllers, measures nothing about the hand at run time, and is judged by grasp success. Unlike TTCO~\cite{ttco}, it moves the simulation offline: the data are collected once per controller, and every later reach costs a few model evaluations and IK re-plans.
+% src: novelty report 2026-11-26-wbc-selfmodel-inversion.md (OSRAM full text: Tron1 biped, own policy, low-dim commands l.513-524, mocap response at run time l.330-331; TTCO closed-loop simulation sampling l.215-232).
+
+We build SelfAim for a Unitree G1 with three frozen controllers whose command interfaces differ, ScaleBFM~\cite{scalebfm}, SONIC~\cite{sonic} and HEFT~\cite{heft}. In SIMPLE, a model collected from ScaleBFM's free-space reaches predicts where the hand settles on real grasping episodes, none of which it saw in training, with a median error of 0.36 to 1.07\,cm on three of four tasks. Aiming with it removes a sideways offset of about 6\,cm with which the hand entered the grasp, and SelfAim outperforms direct execution in grasp success, raising ScaleBFM's successful episodes within 45\,s from 83 to 108 of 120. We organize the evaluation around three hypotheses on aim, success and deployment (Sec.~\ref{sec:hyp}) and specify the experiments that extend it to SONIC in SIMPLE and to all three controllers in HumanoidArena~\cite{humanoidarena} (Sec.~\ref{sec:plan}). Aiming a frozen controller thus costs one data collection per controller and leaves its weights untouched.
+% src: status §1.7 (0.36 / 0.40 / 1.07 cm, three of four SIMPLE tasks, real A episodes); status §二 ScaleBFM R_D (reviewed: fixes the ~6 cm sideways offset on entry, on those 10 layouts; 83 -> 108 within 45 s).
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % ---------------- (a) final render: same reach, direct vs SelfAim (fig/teaser_v3, placement 17, 1.0 s after close) ----------------
+  \node[anchor=south west, inner sep=0] at (0,0) {\includegraphics[height=4.5cm]{fig/teaser1_A.jpg}};
+  \node[anchor=south west, inner sep=0] at (3.73,0) {\includegraphics[height=4.5cm]{fig/teaser1_R.jpg}};
+  \node[anchor=north west, fill=bpPrior, text=white, font=\sffamily\scriptsize\bfseries, inner sep=2pt] at (0.06,4.44) {direct};
+  \node[anchor=north west, fill=bpOurs, text=white, font=\sffamily\scriptsize\bfseries, inner sep=2pt] at (3.79,4.44) {SelfAim};
+  \node[anchor=south west, fill=white, fill opacity=0.85, text opacity=1, font=\sffamily\scriptsize, inner sep=2pt] at (0.06,0.06) {vase knocked over};
+  \node[anchor=south west, fill=white, fill opacity=0.85, text opacity=1, font=\sffamily\scriptsize, inner sep=2pt] at (3.79,0.06) {vase grasped};
+  \node[font=\sffamily\footnotesize] at (3.68,-0.32) {(a) The same reach, two commands};
+  % ---------------- (b) aiming off the target: top view of the reach in (a), to scale (0.42 cm per cm) ----------------
+  \draw[black!40, line width=0.4pt, fill=bpLight!40, rounded corners=2pt] (7.75,0) rectangle (11.95,4.5);
+  \coordinate (P) at (9.95,2.35);    % grasp point p* (= A's command)
+  \coordinate (AL) at (10.39,3.40);  % A landing: +2.49 cm forward, 1.05 cm right
+  \coordinate (C) at (9.08,0.89);    % c*: 3.47 cm back, 2.08 cm left
+  \coordinate (RL) at (9.86,2.46);   % R landing: +0.26 forward, 0.21 left
+  \draw[black!60, dashed, line width=0.5pt] (P) circle (0.84);
+  \node[font=\sffamily\tiny, text=black!70, anchor=north west] at ($(P)+(0.50,-0.72)$) {2\,cm};
+  \draw[black!80, line width=0.6pt] ($(P)+(-0.09,0)$) -- ($(P)+(0.09,0)$) ($(P)+(0,-0.09)$) -- ($(P)+(0,0.09)$);
+  \node[font=\sffamily\scriptsize, anchor=west, align=left] at (10.86,2.2) {grasp\\point $p^\star$};
+  % direct execution: command at p*, palm lands 2.7 cm off
+  \draw[-{Latex[length=1.5mm]}, bpPrior, line width=0.8pt, shorten <=1mm, shorten >=1.2mm] (P) -- (AL);
+  \draw[bpPrior, line width=1.2pt] ($(AL)+(-0.1,-0.1)$) -- ++(0.2,0.2) ($(AL)+(-0.1,0.1)$) -- ++(0.2,-0.2);
+  \node[font=\sffamily\scriptsize, text=bpPrior, anchor=south, align=center] at ($(AL)+(0,0.14)$) {direct: lands 2.7\,cm off};
+  % SelfAim: command c* shifted against the predicted miss, palm lands 0.5 cm from p*
+  \draw[bpOurs, line width=0.7pt] (C) circle (0.12) ($(C)+(-0.22,0)$) -- ($(C)+(0.22,0)$) ($(C)+(0,-0.22)$) -- ($(C)+(0,0.22)$);
+  \draw[-{Latex[length=1.5mm]}, bpOurs, line width=0.8pt, shorten <=2.4mm, shorten >=1.2mm] (C) -- (RL);
+  \draw[bpOurs, line width=1.2pt] ($(RL)+(-0.1,-0.1)$) -- ++(0.2,0.2) ($(RL)+(-0.1,0.1)$) -- ++(0.2,-0.2);
+  \node[font=\sffamily\scriptsize, text=bpOurs, anchor=west, align=left] at ($(C)+(0.30,-0.05)$) {SelfAim\\command $c^\star$};
+  \node[font=\sffamily\scriptsize, text=bpOurs, anchor=east, align=right] at (8.98,3.15) {SelfAim:\\lands 0.5\,cm off};
+  % orientation and scale
+  \draw[-{Latex[length=1.2mm]}, black!60, line width=0.5pt] (7.98,0.25) -- (7.98,0.75);
+  \node[font=\sffamily\tiny, text=black!60, anchor=west] at (8.02,0.62) {forward};
+  \draw[black!60, line width=0.6pt] (11.35,0.25) -- (11.77,0.25);
+  \node[font=\sffamily\tiny, text=black!60, anchor=south] at (11.56,0.27) {1\,cm};
+  \node[font=\sffamily\footnotesize] at (9.85,-0.32) {(b) Aiming off the target (top view)};
+  % ---------------- (c) SIMPLE per-task success, ScaleBFM, within 45 s (Table I) ----------------
+  \begin{scope}[shift={(12.85,0.75)}]
+    \def\s{0.105} % cm per episode (of 30)
+    \draw[black!60, line width=0.4pt] (0,0) -- (4.15,0);
+    \draw[black!60, line width=0.4pt] (0,0) -- (0,3.3);
+    \foreach \t in {0,10,20,30} {\draw[black!60] (0,\t*\s) -- (-0.06,\t*\s) node[left, font=\sffamily\tiny] {\t};}
+    \node[font=\sffamily\tiny, rotate=90] at (-0.55,1.6) {successes of 30};
+    \foreach \x/\a/\r/\n in {0.55/10/30/BendPick, 1.55/18/18/Tabletop, 2.55/28/30/XMove, 3.55/27/30/XMoveBend} {
+      \fill[bpPrior!85] (\x-0.36,0) rectangle (\x-0.02,\a*\s);
+      \fill[bpOurs] (\x+0.02,0) rectangle (\x+0.36,\r*\s);
+      \node[font=\sffamily\tiny, text=bpPrior, anchor=south] at (\x-0.19,\a*\s) {\a};
+      \node[font=\sffamily\tiny, text=bpOurs, anchor=south] at (\x+0.19,\r*\s) {\r};
+      \node[font=\sffamily\tiny, anchor=north] at (\x,-0.03) {\n};
+    }
+    \fill[bpPrior!85] (0.35,3.55) rectangle ++(0.18,0.13); \node[font=\sffamily\tiny, anchor=west] at (0.55,3.615) {direct};
+    \fill[bpOurs] (1.35,3.55) rectangle ++(0.18,0.13); \node[font=\sffamily\tiny, anchor=west] at (1.55,3.615) {SelfAim};
+  \end{scope}
+  \node[font=\sffamily\footnotesize] at (14.9,-0.32) {(c) SIMPLE grasping, ScaleBFM};
+\end{tikzpicture}
+\caption{\textbf{SelfAim aims a frozen whole-body controller by aiming off the target.} (a)~ScaleBFM reaches for a vase twice from the same state, 1\,s after hand closure: commanded directly, it knocks the vase over; with SelfAim, it grasps it. Over 20 placements in this illustrative scene, direct execution knocks the vase over 19 times and SelfAim lifts it 18 times. (b)~Top view of this reach, to scale: commanded at the grasp point $p^\star$, the palm lands 2.7\,cm off; SelfAim commands $c^\star$ and the palm lands 0.5\,cm from $p^\star$. (c)~Successes within 45\,s on the four SIMPLE tasks (Table~\ref{tab:simple}).}
+% src (Fig. 1a/b): fig/teaser_v3/README.md + teaser_points.json (5090, 11-27): illustrative MuJoCo scene (primitives only), ScaleBFM + SIMPLE-recollected model (R_D inversion), grasp point 1.26 m, 20 fixed placements, rule written before running; classes A-miss/R-hit 16, both hit 2, both miss 2, A-hit/R-miss 0; placement 17 chosen by the median rule (A 2.708 cm, R 0.514 cm), re-run bit-identical; panels at 1.00 s after the close command, view az -30 / down 45 / 2.0 m. Counts (definitions fixed before counting): lifted A 1/20, R 18/20; fallen at 2 s A 19/20 (all knocked over on entry). R's literal "fallen" 2/20 (placements 2, 12: never touched, 0 deg tilt, base 0.15 mm below shelf top = contact penetration) not cited; the caption uses only A knocked-over 19 and lifted counts. 1.34 m variant run too (v3b_1p34m; A-miss/R-hit 11; lifts A 14, R 20); the figure uses 1.26 m for visual contrast (user 11-27).
+% src (Fig. 1b geometry, world, robot heading -1 deg): p* (0.32073, -0.21946, 1.25985); A landing = p* + (+2.49, -1.05, +0.24) cm (|.| 2.708); c* = p* + (-3.47, +2.08, 0) cm (|.| 4.04); R landing = p* + (+0.26, +0.21, +0.39) cm (|.| 0.514). Drawn top view, forward up, robot's left = left, 0.42 cm per cm; dashed circle = 2 cm hit radius.
+\label{fig:teaser}
+\end{figure*}
+% src (Fig. 1c): R_D per task within 45 s, status §二 (reviewed): BendPick 30, TabletopGrasp 18, XMovePick 30, XMoveBendPick 30. A per task within 45 s: status §三 simplecmp raw row (BendPick 10, TabletopGrasp 18, XMovePick 28, XMoveBendPick 27; sum 83 = §二 A). A per task verified in status §二.1 (reviewed 23:41): 10 / 18 / 28 / 27.
+% Fig. 1 history: v1 (LML candle ep 117) and v2 (LML salt ep 90) rejected by the user 11-26 (head not visible, low-key scene; then LML removed); files kept in fig/teaser, fig/teaser_v2.
+
+% ===========================================================================
+\section{Related Work}
+% ===========================================================================
+% src: novelty report ~/research-notebook/novelty/2026-11-26-wbc-selfmodel-inversion.md (grade B) + independent review (B); key quotes spot-checked (TTCO l.215-232, 584-588; OSRAM l.278-283, 513-524; Li l.77-81; EgoHumanoid-V2 l.265-290; HERO l.338-347)
+\textbf{Acting through a learned model of oneself.} Goal babbling learns inverse kinematics from a robot's own movements~\cite{rolf2010,saggriac}, and self-modeling robots learn models of their own bodies~\cite{bongard2006}. Other work changes only the input of a fixed controller: neural add-on blocks adapt the reference of a fixed feedback loop~\cite{zhou2017dnn}, learned motion models of a black-box quadruped controller drive footstep planning~\cite{taouil2023}, OSRAM optimizes the references of a deployed policy against a learned command--response model~\cite{osram}, and command adapters for frozen locomotion policies have been audited in simulation~\cite{li2026audit}. Keeping such optimization inside the model's data is a recognized concern in model-based optimization~\cite{mins,lagrassa2024,osram}.
+
+\textbf{Frozen humanoid controllers.} TTCO optimizes the command of a frozen humanoid controller by sampling closed-loop simulations of the controller and robot~\cite{ttco}, and EgoHumanoid-V2 refines training labels offline with a learned local response model of a frozen tracker and fresh rollouts~\cite{egohumanoidv2}. Other work scores candidate motions by their executability under a frozen tracker~\cite{s3,texedo}\TODO{cite SAW, arXiv 2409.10308, after reading it}, adds reference or action residuals for compliance and terrain~\cite{ila,graft}, or learns a tracker's dynamics to fine-tune it~\cite{humanoidndm}. For humanoid grasping, HERO corrects the commanded grasp with measured end-effector feedback~\cite{hero}. SelfAim leaves the controller's weights untouched, needs neither a simulator nor a hand measurement at run time, and aims each reach once from the body state at the command.
+
+% ===========================================================================
+\section{Problem Statement and Hypotheses}\label{sec:hyp}
+% ===========================================================================
+
+\textbf{Setting.} A frozen controller $\pi$ receives, at decision time $t$, a reach command $c$ (a hand target that our whole-body IK turns into a reference for $\pi$) and executes it from body state $s_t$. After the reach settles the right hand is at $p=\Phi_\pi(s_t,c)$; $\Phi_\pi$ is unknown and includes the controller, its command interface and the simulator. Given a target $p^\star$, \emph{direct execution} (\Ad) sends $c=p^\star$. SelfAim learns $f_\theta\approx\Phi_\pi$ and sends
+\begin{equation}
+c^\star=\arg\min_{c\in\mathcal{C}}\;\lVert f_\theta(s_t,c)-p^\star\rVert ,
+\label{eq:inv}
+\end{equation}
+where $\mathcal{C}$ is the set of commands that are kinematically reachable from $s_t$, because the model is trained only on such commands.
+
+\textbf{Hypotheses.} For each we state what would falsify it and what we learn either way.
+
+\emph{H1 (aim).} Inverting $f_\theta$ brings the settled hand closer to the target than \Ad\ for every controller, with no trials at the test condition. \emph{Falsified if} paired hand errors under SelfAim are not lower than under \Ad\ on a benchmark's tasks. \emph{Either way:} whether a frozen WBC's placement error is a learnable function of state and command.
+
+\emph{H2 (success).} Aiming raises grasp success over \Ad\ for every controller without task data, by an amount that depends on the task. \emph{Falsified if} SelfAim does not raise success over \Ad\ on a controller's pre-registered task set. \emph{Either way:} whether a better-aimed hand is worth building into manipulation stacks on frozen controllers.
+% H2 history: 11-26 rewrite, positive form confirmed by the user 11-26.
+
+\emph{H3 (deployment).} Moving SelfAim to a new controller or simulator costs one data collection with the same recipe: a model trained on data from the target setting passes the accuracy gate on real task episodes. \emph{Falsified if} a re-collected model fails the gate on most tasks of the target benchmark. \emph{Either way:} how much a new deployment costs.
+% H3 = former H4 (deployment cost; user 11-26). Former H3 (training support, S vs R) removed 11-26 with LML: its only evidence was LML (lmlcmp3); in SIMPLE R_D and S_D are bit-identical (the shrink never triggers, all targets in reach; simplecmp review, 5090 11-26). The reachable restriction stays as a design choice in Method.
+
+% ===========================================================================
+\section{Method}\label{sec:method}
+% ===========================================================================
+% src (whole section): methods_extract.md -> data.py:244,258-266; models.py:199-263; train.py; selfmodel_data3/3b, train3/3b, lmlcmp, lmlcmp2
+SelfAim consists of a self-model of the frozen controller and its inversion at command time (Fig.~\ref{fig:overview}).
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % (a) direct execution
+  \node[bp/panel] at (-0.55,0.75) {(a) Direct execution};
+  \node[bp/data, minimum width=1.25cm] (ta) at (0.1,0) {target $p^\star$};
+  \node[bp/frozen, minimum width=1.9cm] (wa) at (4.85,0) {frozen WBC $\pi$};
+  \draw[bp/flow] (ta) -- node[above, font=\sffamily\scriptsize] {$c=p^\star$} (wa);
+  \draw[black!70, dashed, line width=0.5pt] (6.85,0) circle (0.22);
+  \draw[bpPrior, line width=1.1pt] (7.12,0.18) -- ++(0.18,0.18) (7.12,0.36) -- ++(0.18,-0.18);
+  \draw[bp/flow] (wa) -- (6.55,0);
+  \node[bp/note, text=bpPrior] at (6.95,-0.42) {hand misses};
+  % (b) SelfAim
+  \node[bp/panel] at (-0.55,-0.85) {(b) SelfAim};
+  \node[bp/data, minimum width=1.25cm] (tb) at (0.1,-1.6) {target $p^\star$};
+  \node[bp/ours, minimum width=1.9cm] (inv) at (2.35,-1.6) {invert $f_\theta(s_t,c)$\\over reachable $c$};
+  \node[bp/frozen, minimum width=1.9cm] (wb) at (4.85,-1.6) {frozen WBC $\pi$};
+  \draw[bp/flow] (tb) -- (inv);
+  \draw[bp/flow] (inv) -- node[above, font=\sffamily\scriptsize] {$c^\star$} (wb);
+  \draw[black!70, dashed, line width=0.5pt] (6.85,-1.6) circle (0.22);
+  \draw[bpOurs, line width=1.1pt] (6.76,-1.69) -- ++(0.18,0.18) (6.76,-1.51) -- ++(0.18,-0.18);
+  \draw[bp/flow] (wb) -- (6.55,-1.6);
+  \node[bp/note, text=bpOurs] at (6.85,-2.02) {lands on target};
+  \node[bp/note] at (4.85,-2.08) {weights unchanged};
+  % offline learning
+  \node[bp/data, minimum width=2.0cm] (dat) at (0.0,-2.95) {controller's own\\free-space reaches};
+  \node[bp/ours, minimum width=1.9cm] (sm) at (2.35,-2.95) {self-model $f_\theta$};
+  \draw[bp/flow] (dat) -- (sm);
+  \draw[bp/flow] (sm) -- (inv);
+  \node[bp/note, anchor=west] at (3.45,-2.95) {offline, once per controller};
+\end{tikzpicture}
+\caption{\textbf{SelfAim overview.} (a)~Commanded directly, a frozen whole-body controller (grey) settles the hand next to the target $p^\star$ (orange cross). (b)~SelfAim learns a self-model $f_\theta$ (blue) once, offline, from the controller's own free-space reaches (green), and at run time inverts it over reachable commands so that the predicted landing of the sent command $c^\star$ is the target. The controller's weights are not changed.}
+\label{fig:overview}
+\end{figure}
+
+\textbf{Robot, controllers and commands.} We use a Unitree G1 with Dex3 hands (29 body joints) and three frozen controllers: ScaleBFM~\cite{scalebfm}, SONIC~\cite{sonic} and HEFT~\cite{heft}. A reach command $c$ consists of a hand target point, a 6-D wrist orientation, a stand/squat flag and a squat pelvis height. At the moment of the command, our whole-body IK plans a reference from the \emph{measured} state, and the controller tracks that reference through its native reference interface (e.g.\ body keypoints for ScaleBFM, an encoder over future reference frames for SONIC).
+The hand point is 13\,cm ahead of the wrist; a reach has \emph{settled} once pelvis and both hands move slower than 2\,cm/s for 0.5\,s, with a 3\,s cap.
+
+\textbf{Self-model.} $f_\theta$ maps the state at the command and the command to the settled hand point and wrist orientation, both expressed in the measured pelvis-heading frame at the command time. The state contains three body-state snapshots (0.3, 0.2 and 0.1\,s before the command), the current hand pose, and a summary of the IK reference: its final joint configuration, the change from the current one, the planned pelvis pose and the planned duration. Two auxiliary heads predict fall and settle probabilities. The model is an ensemble of five MLPs ($4\times512$, SiLU) trained on bootstrap resamples. Each member predicts a residual on the command, and its last layer is zero-initialised, so an untrained model reproduces direct execution. The loss is a Huber loss (2\,cm) on position, a squared loss on the 6-D rotation, and cross-entropy on the auxiliary heads; we train with AdamW for 30k steps and select the checkpoint by validation median error.
+
+\textbf{Data.} All data come from the frozen controller's free-space reaches in an empty scene of the target simulator, with no task episodes or scenes. (i)~30k resets with two reaches each. About a third of the episodes start with a walk, half of them with walk displacements drawn from the benchmark's approach region, and the rest start standing or squatting. Every reach is planned from the measured state once the previous one has settled. Targets are sampled inside an IK-probed reachable region, 0.05--1.5\,m high. (ii)~15k resets with four short reaches each, of the kind a grasp makes: the hand settles 5--12\,cm in front of the target and then enters slowly; adding them reduces the entry-phase error by 24--32\%. (iii)~Mid-trajectory samples: states every 0.2\,s along a reach become additional starting points, labeled with the same final landing, which lowers the dataset error by a further 14--26\%. Data are split by reset. Collecting the data takes \TODO{simulation time per controller} and training takes \TODO{GPU time}; the controller itself is never updated.
+% src: status §1.5 (B51, B55): (ii) entry-phase error -24-32 %, (iii) dataset error -14-26 %. Cost numbers: ask 5090 in the batch update (pending_updates.md).
+% src (empty scene, task-style walks): 5090 11-26 (simplecmp review): Env("open"), targets from the reach tables; half of the walk-first resets use task-style walks with displacement drawn from SIMPLE's approach box. (The "half of them" refers to the walk-first resets.)
+
+\textbf{Inversion.} Only the position target is changed; the wrist orientation is commanded as is. Starting at $c_0=p^\star$, the inversion iterates $c_{k+1}=\mathrm{clip}\big(c_k+p^\star-f_\theta(s_t,c_k)\big)$ six times, re-planning the reference at each step, and keeps the candidate minimizing $\lVert f_\theta-p^\star\rVert^2+\lambda\,\sigma^2$, where $\sigma$ is the ensemble spread and $\lambda=1$.\dnote{lambda only in code, not in the entries}
+Each candidate's IK error is checked, and if it exceeds 2\,cm the candidate is bisected back toward $p^\star$ (six halvings) until the error is within 2\,cm. In grasping, the pre-grasp and the entry segment are each commanded once, with no re-correction after observing the result; the model is used for free-hand reaches before contact.
+
+\textbf{Benchmarks and protocol.} SIMPLE~\cite{simple} provides four grasping tasks, BendPick, TabletopGraspMP, XMovePick and XMoveBendPick, with 30 official episodes each that share 40 distinct layouts. In each episode the robot looks once with its head RGB-D camera, plans a stance and a grasp from that view and grasps; success means the object is lifted, counted within 45\,s and within the official time limit. Every episode is run once per arm with the same perception and grasp choice, and arms are compared paired by episode. The simulation is paused while SelfAim computes its commands (for ScaleBFM a median of 3.3--6.7\,s per episode), and this time is not counted toward the official limits. Besides direct execution (\Ad) and SelfAim (\Rr), two arms follow a collision-free arm route planned with cuRobo~\cite{curobo}, executed directly (Route) or with a model-free correction that aims at the controller's own reference (Route+ref). Tasks on which \Ad\ succeeds in at least 24 of 30 episodes are reported but excluded from the pre-registered decision set, and success is tested with exact sign tests over layouts. A self-model is used directly in a new setting only if its prediction error on real task episodes is at most 1.3 times its own validation error, with a 95\% CI upper bound of at most 1.5. HumanoidArena~\cite{humanoidarena} (Isaac Lab~\cite{isaaclab}) completes the evaluation (Sec.~\ref{sec:plan}).
+% src (computation time, paused sim): status §二.1 (reviewed): ScaleBFM thinking median per episode XMovePick 3.3 s, XMoveBendPick 6.4 s, TabletopGrasp 6.7 s; official times exclude it (registered); 45 s unaffected (latest success 24.3 s). Counting it, R_D official on the three tasks 60 -> 22 (below A 55).
+% src: simple_rgbd_20261124 (SIMPLE official episodes, four grasp tasks x 30, perception column = one monocular RGB-D look, success = object lifted, 45 s and official limit); selfmodel_simpleheft_20261126:111-128 (40 layouts; ceiling A >= 24/30 excluded from the decision set; P1 exact two-sided sign test per layout); status §二 (arms J = cuRobo route, kin_rr = route + aim at the controller's own reference); gate: xfer:68-70, status §1.4.
+
+% ===========================================================================
+\section{Preliminary Results}\label{sec:prelim}
+% ===========================================================================
+
+\subsection{H1 and H3: one data collection aims ScaleBFM in SIMPLE}
+We collected ScaleBFM's data in SIMPLE with our recipe and evaluated the model on the real grasping episodes of our SIMPLE benchmark under direct execution, none of which it saw in training. Over these episodes direct execution leaves the hand a median of 4.0\,cm from the commanded point, while the model predicts where the hand settles with a median error of 0.36, 0.40 and 1.07\,cm on XMovePick, XMoveBendPick and BendPick, and so passes the gate on these three tasks. On TabletopGraspMP (2.26\,cm; ratio 1.20, 95\% CI $[1.04,16.0]$), the table edge blocks the hand during the pre-grasp in all 12 failed direct-execution episodes, a contact that free-space data never contain and that the model misses by 28--40\,cm.
+% src: status §1.7 (B60, independently reviewed, 16:40: per-task table resampled over 40 layouts; direct-execution error 4.01 cm on the same 235 segments); selfmodel_simpledata_20261126 复核后的更正 #2, #3 (12 A-arm failures on TabletopGraspMP = hand blocked by table edge at pre-grasp; free-space-only data; 28-40 cm). One model (seed 0), ScaleBFM only.
+% NOTE: do NOT cite pooled 0.705 cm / 0.374x alone (report per task). 120 episodes = only 40 independent layouts.
+
+Inverting the model removes a systematic miss. In the 20 BendPick episodes that direct execution fails, ScaleBFM's palm enters 5.5--6.9\,cm to the side of the grasp; with SelfAim's command the offset shrinks to 1.1--1.7\,cm and all 20 objects are lifted.
+% src: status §二.1 (reviewed, 23:41): BendPick, the 20 A failures enter with 5.5-6.9 cm sideways offset, R_D 1.1-1.7 cm (magnitude), all lifted; (HEFT SIMPLE results removed 11-26: its model was trained in LML; user: delete all LML-related content. Kept in main_simple_with_heft.tex.)
+
+\subsection{H2: aiming raises grasp success}
+\begin{table}[t]
+\centering
+\caption{\textbf{SIMPLE: successful episodes within 45\,s / within the official time limit} (120 episodes over four tasks and 40 layouts). \Ad: direct execution; Route: collision-free cuRobo route; Route+ref: the route with a model-free correction that aims at the controller's own reference; on XMovePick, XMoveBendPick and BendPick the planner finds no route and both route arms execute the direct reach. \Rr: SelfAim, with a model collected in SIMPLE; its official-limit counts exclude its computation time.}
+\label{tab:simple}
+\begin{tabular}{lcccc}
+\toprule
+Controller & \Ad & Route & Route+ref & \Rr \\
+\midrule
+ScaleBFM & 83/73 & 95/81 & 95/82 & \textbf{108}/78 \\
+SONIC    & 29/18 & 34/20 & 36/23 & {\color{red}?} \\
+\bottomrule
+\end{tabular}
+\end{table}
+% src: status §二 main-metric table (perception column, 45 s / official): ScaleBFM A 83/73, J 95/81, kin_rr 95/82, S 94/78 (not shown), R_D 108/78 (reviewed); SONIC A 29/18, J 34/20, kin_rr 36/23, S 33/17 (not shown), R_D pending (SIMPLE re-collected model, ~11-27 11:00 Beijing); HEFT row removed 11-26 (R_D used the LML-trained D_heft; user: delete LML-related content). S (route + earlier self-model jrefwm) omitted from the table: an earlier variant of our own model, not a competitor.
+
+SelfAim raises ScaleBFM's grasp success in SIMPLE (Table~\ref{tab:simple}, Fig.~\ref{fig:teaser}c): with the re-collected model, successes within 45\,s rise from 83 to 108 of 120. Direct execution fails in two ways. On BendPick the palm enters about 6\,cm to the side, and the corrected command recovers all 20 of these episodes (10 to 30 of 30). On TabletopGraspMP the table edge stops the hand in 12 episodes; the corrected command recovers none of them, while the cuRobo route recovers all 12. On the pre-registered decision set, these two tasks, SelfAim improves 8 of 20 layouts and worsens none (sign test, $p=0.0078$). Within the official time limits the difference shrinks to 5 episodes, since BendPick's 8\,s limit leaves every arm at zero.
+% src: status §二.1 (per-task, independently reviewed 23:41; reviewed wording used): BendPick 10/30 -> 30/30 at 45 s; TabletopGrasp 12 A failures stopped by the table edge, R_D recovers 0/12, routes recover 12/12 (J; kin_rr 12, S 11); P1 (BendPick + TabletopGrasp) +8/-0 over 20 layouts p 0.0078 (registered); BendPick alone +8/-0 over 10 layouts p 0.0078 (registered secondary). NOT to write: "each method fixes its own failure"; "the route clears the edge by avoiding the obstacle"; R_D vs J / kin_rr on XMovePick, XMoveBendPick, BendPick (planner IK_FAIL on all 90 episodes, execution = A). Post-hoc three-task subset (45 s +11/-0 p 0.00098; official +3/-0 p 0.25) not used. R_D vs route over four tasks (unregistered): 45 s 108 vs 95, layouts +11/-4 p 0.118; official 78 vs 81 / 82: read as complementary, not as R_D winning.
+% src: status §二 ScaleBFM R_D (reviewed): per task 45 s BendPick 30, TabletopGrasp 18, XMovePick 30, XMoveBendPick 30; +25 at 45 s, +5 at official (BendPick official limit 8 s, every arm 0). Status §3 simplecmp row: R_D vs A 45 s BendPick 30 vs 10, TabletopGrasp 18 vs 18 (identical per episode), XMovePick 30 vs 28, XMoveBendPick 30 vs 27; decision set 48/60 vs 28/60, layouts 8 up 0 down, p 0.0078. Route arms TabletopGrasp 45 s: J 30, kin_rr 30. Decision-set rule (A >= 24/30 excluded): selfmodel_simpleheft_20261126:118.
+% NOTE (pending 5090 verification, do not write yet): on the three non-TabletopGrasp tasks at 45 s, R_D 90/90 vs A / J / kin_rr / S 65/90 each (my arithmetic from totals); official 60 vs 55.
+
+% V-C (transfer ratios LML -> SIMPLE / HA) removed 11-26: user "直接把这个 locomanilab 的相关内容删掉". H3 evidence = ScaleBFM's SIMPLE-collected model passing the gate (V-A).
+
+% ===========================================================================
+\section{Experimental Plan}\label{sec:plan}
+% ===========================================================================
+The remaining experiments complete the comparison of SelfAim (\Rr) with direct execution (\Ad) for every benchmark and controller. All follow the protocol of Sec.~\ref{sec:method}: arms share the controllers, perception, grasp choice and episodes, and are compared paired by episode.
+
+\textbf{E1 (H1, H2, H3): SONIC in SIMPLE.} We re-collect SONIC's data in SIMPLE with the same recipe and complete Table~\ref{tab:simple} on the same 120 episodes, read per task and resampled by layout. Where a model fails the gate, as ScaleBFM's on TabletopGraspMP, success differences are not credited to it. On the corrected commands we log predicted and measured landing points; the model counts as no longer valid there if its error ratio exceeds 1.3.
+\dnote{SONIC R\_D expected $\sim$11-27 11:00 Beijing; SONIC data in place only, settle threshold 5\,cm/s (user-approved, status §3)}
+% src: status §二, §三 (scope note 20:07: SIMPLE ScaleBFM done, HEFT done, SONIC re-collected in place only); selfmodel_simpledata_20261126 复核后的更正 #6 (per-task reading, per-layout resampling; prediction vs measured on corrected commands; overturn if ratio > 1.3).
+
+\textbf{E2 (H1, H2, H3): HumanoidArena.} We re-collect data for all three controllers in HumanoidArena~\cite{humanoidarena} with the same recipe, check each model against the gate on real task episodes, and compare \Ad\ and \Rr\ on 60 seeds of each of the P\&PBox and DoubleDesk tasks. Direct execution reached HumanoidArena's official success in none of 20 smoke-test episodes, so by our pre-registered rule the primary metric is grasp-and-lift (the object raised by at least 5\,cm and held for 1\,s) within a threefold time limit, with official success reported alongside. A model that fails the gate is still run and marked.
+\dnote{registered (selfmodel\_hatask, 3844746d); expected (Beijing) ScaleBFM 11-27 09--12, HEFT 16--19, SONIC 11-27 22:00 to 11-28 04:00; HEFT task episodes use its own gait reference}
+% src: status §三 hatask smoke (609b3577): ScaleBFM A official 0/20, switch to grasp-and-lift (>= 5 cm, 1 s) for all three controllers per revision 1; official success secondary; smoke A grasp-and-lift 3/20.
+% src: status §三 scope note (HA: P&PBox + DoubleDesk, seeds 400-459, 60 each; official success with 3x time limit, official-limit success also reported, grasp-and-lift secondary; run even if the gate fails; switch rule if ScaleBFM A smoke <= 1/20); selfmodel_hadata_20261126, selfmodel_hadata_sonic_20261126.
+% Former E3 (free-space map, LML part E2a) removed 11-26: LML experiments stopped by the user.
+
+% ===========================================================================
+\section{Discussion}
+% ===========================================================================
+SelfAim divides the work of loco-manipulation on a frozen WBC in two: the controller keeps its balance and gait, and a learned model of where it puts the hand corrects every reach command. In SIMPLE this division already removes a systematic miss of ScaleBFM and raises its grasp success, at the cost of one data collection in that simulator. The model is trustworthy where its data are, which is why the inversion stays inside the reachable set. If E1 and E2 confirm H1 and H2 for SONIC in SIMPLE and for all three controllers in HumanoidArena, aiming becomes a reusable step for any manipulation stack built on released WBC checkpoints.
+
+% ---------------------------------------------------------------------------
+% Removed 11-26 ~23:50 (user: LocoManiLab results not reported for now): all LML results (Table I LML, Fig. 3 per-task, H1 LML hand error and r, free-space pilot, H3 training-support section and hypothesis, routes paragraph, intro route deviation), LML benchmark protocol, E3. Full LML version: main_with_lml.tex.
+% Removed in the 11-26 rewrite (text and numbers kept in main_pre_rewrite.tex; reasons in report.md):
+% SIMPLE fixed-geometry paragraph (3.97 / 1.74 / 1.28 / 1.26 cm; removal confirmed by the user 11-26), SIMPLE "route alone succeeds 28/28",
+% bowl palm-down paragraph, SIMPLE second-look stance paragraph, Table 2 (transfer ratios) with variant F
+% and velocity details, Data recipe subsection (kept as two clauses in Method), old E3 failure diagnosis
+% (SONIC turn / HEFT drift), old E4 routes in HA, old Discussion.
+% Still not to write (from earlier notes): Q2 grasp-quality claims; "retracting fixes SONIC"; HEFT gait mismatch
+% as text (internal dnote only); walkstop / nowalk results; constant-offset arm; 2x2 interface x solver.
+% ---------------------------------------------------------------------------
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+
+\end{document}

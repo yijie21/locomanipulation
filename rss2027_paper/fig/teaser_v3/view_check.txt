@@ -1,0 +1,19 @@
+entry_end A: t - t_close 0.000 s; palm vs snapshot max |d| 0 m
+entry_end R: t - t_close 0.000 s; palm vs snapshot max |d| 0 m
+after1000ms A: t - t_close 1.000 s; palm vs snapshot max |d| 0 m
+after1000ms R: t - t_close 1.000 s; palm vs snapshot max |d| 0 m
+main az -30 el 45 d 2.0 @ after1000ms: valid True | A head 0.98 hand 0.81 vase 0.91 in True | R head 0.95 hand 0.85 vase 0.74 in True
+main az -30 el 45 d 2.0 @ entry_end: valid True | A head 0.98 hand 0.88 vase 0.91 in True | R head 0.97 hand 0.79 vase 0.80 in True
+main az -40 el 45 d 2.0 @ after1000ms: valid True | A head 0.98 hand 0.75 vase 0.93 in True | R head 0.98 hand 0.80 vase 0.67 in True
+main az -40 el 45 d 2.0 @ entry_end: valid True | A head 0.98 hand 0.84 vase 0.88 in True | R head 0.98 hand 0.78 vase 0.70 in True
+main az -50 el 45 d 2.0 @ after1000ms: valid True | A head 0.98 hand 0.70 vase 0.93 in True | R head 0.98 hand 0.76 vase 0.60 in True
+main az -50 el 45 d 2.0 @ entry_end: valid True | A head 0.98 hand 0.80 vase 0.84 in True | R head 0.98 hand 0.76 vase 0.62 in True
+close-up az -30 d 0.5: A hand 0.87 vase 0.89* | R hand 0.82 vase 0.60   (* touches the border)
+close-up az -30 d 0.6: A hand 0.87 vase 0.93* | R hand 0.80 vase 0.63   (* touches the border)
+close-up az -30 d 0.7: A hand 0.87 vase 0.93 | R hand 0.80 vase 0.66   (* touches the border)
+close-up az -40 d 0.5: A hand 0.84 vase 0.77* | R hand 0.80 vase 0.55   (* touches the border)
+close-up az -40 d 0.6: A hand 0.84 vase 0.84 | R hand 0.79 vase 0.57   (* touches the border)
+close-up az -40 d 0.7: A hand 0.84 vase 0.86 | R hand 0.78 vase 0.58   (* touches the border)
+close-up az -50 d 0.5: A hand 0.81 vase 0.65* | R hand 0.79 vase 0.53   (* touches the border)
+close-up az -50 d 0.6: A hand 0.81 vase 0.72 | R hand 0.78 vase 0.54   (* touches the border)
+close-up az -50 d 0.7: A hand 0.81 vase 0.76 | R hand 0.77 vase 0.55   (* touches the border)

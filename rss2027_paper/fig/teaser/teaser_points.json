@@ -1,0 +1,555 @@
+{
+ "task": "IThorBathroomLiftCandleFromFloor",
+ "ep": 117,
+ "controller": "scalebfm",
+ "cameras": {
+  "main": {
+   "mjv": {
+    "type": "free",
+    "lookat": [
+     -1.1245911685162582,
+     0.9701930069063551,
+     0.31201272067078833
+    ],
+    "azimuth_deg": -25.172650861439223,
+    "elevation_deg": -30.0,
+    "distance": 2.0,
+    "azimuth_offset_from_heading_deg": 150.0,
+    "robot_heading_deg": -175.17265086143922
+   },
+   "intrinsics": {
+    "fovy_deg": 45.0,
+    "width": 3600,
+    "height": 2400,
+    "fx": 2897.056274847714,
+    "fy": 2897.056274847714,
+    "cx": 1800.0,
+    "cy": 1200.0,
+    "convention": "pinhole, square pixels; u right, v down; (0, 0) = the image's top-left corner, pixel (i, j) covers [i, i+1) x [j, j+1) (its centre is i + 0.5, j + 0.5); MuJoCo free camera, vis.global_.fovy"
+   },
+   "extrinsics": {
+    "position_world": [
+     -2.6921494007110596,
+     1.7069162130355835,
+     1.3120126724243164
+    ],
+    "forward_world": [
+     0.7837791442871094,
+     -0.36836159229278564,
+     -0.5
+    ],
+    "up_world": [
+     0.4525150954723358,
+     -0.21267366409301758,
+     0.8660253882408142
+    ],
+    "R_world_to_cam": [
+     [
+      -0.425347323024873,
+      -0.9050301854624649,
+      -1.350517919718186e-09
+     ],
+     [
+      -0.4525150954723358,
+      0.21267366409301758,
+      -0.8660253882408142
+     ],
+     [
+      0.7837791442871094,
+      -0.36836159229278564,
+      -0.5
+     ]
+    ],
+    "t_world_to_cam": [
+     0.39971215784891373,
+     -0.4450180844014753,
+     3.394819263938686
+    ],
+    "frame": "OpenCV camera frame: x right, y down, z forward; X_cam = R_world_to_cam @ X_world + t_world_to_cam",
+    "mjv_frustum": {
+     "near": 0.009565270505845547,
+     "far": 478.2635192871094,
+     "top": 0.003962064627557993,
+     "bottom": -0.003962064627557993,
+     "width": 0.0,
+     "center": 0.0
+    }
+   },
+   "void_pixels_composited_to_grey": {
+    "A_full": 0,
+    "R_full": 0,
+    "overlay_A_Rghost": 0
+   },
+   "projection_check": [
+    {
+     "point": "p_star moved towards the camera",
+     "projected": [
+      2043.556391961526,
+      1330.6948024602025
+     ],
+     "marker_centroid": [
+      2043.594696969697,
+      1330.7234848484848,
+      264
+     ],
+     "err_px": 0.04785345388319295
+    },
+    {
+     "point": "c_star moved towards the camera",
+     "projected": [
+      2083.0741784783077,
+      1263.7978308072736
+     ],
+     "marker_centroid": [
+      2083.1487455197134,
+      1263.7437275985662,
+      279
+     ],
+     "err_px": 0.09212709078465323
+    },
+    {
+     "point": "A_landing moved towards the camera",
+     "projected": [
+      1968.9731477085938,
+      1385.8792032437373
+     ],
+     "marker_centroid": [
+      1969.030612244898,
+      1385.7816326530613,
+      245
+     ],
+     "err_px": 0.11323512307374296
+    },
+    {
+     "point": "R_landing moved towards the camera",
+     "projected": [
+      2042.1981876763136,
+      1314.1441657298537
+     ],
+     "marker_centroid": [
+      2042.1768060836503,
+      1314.0817490494296,
+      263
+     ],
+     "err_px": 0.0659773786989855
+    }
+   ]
+  },
+  "closeup": {
+   "mjv": {
+    "type": "free",
+    "lookat": [
+     -1.6002761765267848,
+     1.045282786835375,
+     0.515042458662429
+    ],
+    "azimuth_deg": -25.172650861439223,
+    "elevation_deg": -30.0,
+    "distance": 0.6,
+    "azimuth_offset_from_heading_deg": 150.0,
+    "robot_heading_deg": -175.17265086143922
+   },
+   "intrinsics": {
+    "fovy_deg": 45.0,
+    "width": 3600,
+    "height": 2400,
+    "fx": 2897.056274847714,
+    "fy": 2897.056274847714,
+    "cx": 1800.0,
+    "cy": 1200.0,
+    "convention": "pinhole, square pixels; u right, v down; (0, 0) = the image's top-left corner, pixel (i, j) covers [i, i+1) x [j, j+1) (its centre is i + 0.5, j + 0.5); MuJoCo free camera, vis.global_.fovy"
+   },
+   "extrinsics": {
+    "position_world": [
+     -2.0705437660217285,
+     1.2662997245788574,
+     0.8150424361228943
+    ],
+    "forward_world": [
+     0.7837791442871094,
+     -0.36836159229278564,
+     -0.5
+    ],
+    "up_world": [
+     0.4525150954723358,
+     -0.21267366409301758,
+     0.8660253882408142
+    ],
+    "R_world_to_cam": [
+     [
+      -0.425347323024873,
+      -0.9050301854624649,
+      -1.350517919718186e-09
+     ],
+     [
+      -0.4525150954723358,
+      0.21267366409301758,
+      -0.8660253882408142
+     ],
+     [
+      0.7837791442871094,
+      -0.36836159229278564,
+      -0.5
+     ]
+    ],
+    "t_world_to_cam": [
+     0.26533922760421974,
+     -0.5004134700510683,
+     2.49682642206875
+    ],
+    "frame": "OpenCV camera frame: x right, y down, z forward; X_cam = R_world_to_cam @ X_world + t_world_to_cam",
+    "mjv_frustum": {
+     "near": 0.009565270505845547,
+     "far": 478.2635192871094,
+     "top": 0.003962064627557993,
+     "bottom": -0.003962064627557993,
+     "width": 0.0,
+     "center": 0.0
+    }
+   },
+   "void_pixels_composited_to_grey": {
+    "A_full": 0,
+    "R_full": 0,
+    "overlay_A_Rghost": 0
+   },
+   "projection_check": [
+    {
+     "point": "p_star moved towards the camera",
+     "projected": [
+      1739.3760318038292,
+      1253.7990164769212
+     ],
+     "marker_centroid": [
+      1739.4613496932516,
+      1253.7920245398773,
+      1630
+     ],
+     "err_px": 0.08560391018593501
+    },
+    {
+     "point": "c_star moved towards the camera",
+     "projected": [
+      1819.996284892912,
+      1062.8319970870534
+     ],
+     "marker_centroid": [
+      1820.0286432160804,
+      1062.8246231155779,
+      1990
+     ],
+     "err_px": 0.033187897396391164
+    },
+    {
+     "point": "A_landing moved towards the camera",
+     "projected": [
+      1576.743192025834,
+      1396.5037795450824
+     ],
+     "marker_centroid": [
+      1576.7834757834758,
+      1396.4779202279203,
+      1404
+     ],
+     "err_px": 0.04786946222611397
+    },
+    {
+     "point": "R_landing moved towards the camera",
+     "projected": [
+      1735.8699712775924,
+      1210.7538788424104
+     ],
+     "marker_centroid": [
+      1735.8831089351286,
+      1210.6640146878824,
+      1634
+     ],
+     "err_px": 0.09081940494499155
+    }
+   ]
+  }
+ },
+ "points": {
+  "p_star": {
+   "world": [
+    -1.63074797462821,
+    1.072569901806116,
+    0.525640961093083
+   ],
+   "how": "the grasp point: record plan.goal (world; the same in A and R; close_dist_cm is the hand's distance to it)",
+   "pixel": {
+    "main": {
+     "u": 2043.5563919615263,
+     "v": 1330.6948024602025,
+     "depth_m": 1.4587589744154916
+    },
+    "closeup": {
+     "u": 1739.3760318038292,
+     "v": 1253.7990164769212,
+     "depth_m": 0.5607661325455557
+    }
+   }
+  },
+  "c_star": {
+   "world": [
+    -1.658588391468556,
+    1.0687722220858562,
+    0.5793534874286501
+   ],
+   "how": "R's entry command (reaches k = 1, reach_no 2): p_cmd + Rz(yaw_cmd) cmd_h[:2], z = cmd_h[2] -- the command target in the heading frame placed at the pelvis pose of the command row (lrt_eval's tgt_w form); = ref_end_w up to the IK error",
+   "pixel": {
+    "main": {
+     "u": 2083.0741784783077,
+     "v": 1263.7978308072736,
+     "depth_m": 1.4114808925087583
+    },
+    "closeup": {
+     "u": 1819.9962848929122,
+     "v": 1062.8319970870534,
+     "depth_m": 0.5134880506388224
+    }
+   }
+  },
+  "c_star_ref_end_w": {
+   "world": [
+    -1.6585890076067635,
+    1.0687732014820541,
+    0.57935334187822
+   ],
+   "how": "alternative: R's entry reference end, FK of the planned reference (record ref_end_w)",
+   "pixel": {
+    "main": {
+     "u": 2083.0730516918024,
+     "v": 1263.7991241476125,
+     "depth_m": 1.4114801215957535
+    },
+    "closeup": {
+     "u": 1819.992792602074,
+     "v": 1062.8352505211112,
+     "depth_m": 0.5134872797258176
+    }
+   }
+  },
+  "c_star_rel_goal": {
+   "world": [
+    -1.6585365162579186,
+    1.069562356455829,
+    0.5793534874286501
+   ],
+   "how": "alternative: p* + R's correction (cmd_h - goal_h, heading frame, rotated by yaw_cmd): the command relative to the grasp point, without the odometry offset",
+   "pixel": {
+    "main": {
+     "u": 2081.611118752735,
+     "v": 1264.1059249909936,
+     "depth_m": 1.411230496062313
+    },
+    "closeup": {
+     "u": 1815.8450145124618,
+     "v": 1063.581105758181,
+     "depth_m": 0.5132376541923771
+    }
+   }
+  },
+  "a_cmd": {
+   "world": [
+    -1.6306101401683595,
+    1.0717099519848627,
+    0.525640961093083
+   ],
+   "how": "A's entry command (k = 1), same form as c_star (A commands the grasp point itself: cmd_h = goal_h)",
+   "pixel": {
+    "main": {
+     "u": 2044.914282280485,
+     "v": 1330.1698143032754,
+     "depth_m": 1.4591837786759354
+    },
+    "closeup": {
+     "u": 1743.1370131404071,
+     "v": 1252.4921733028973,
+     "depth_m": 0.5611909368059995
+    }
+   }
+  },
+  "A_landing": {
+   "world": [
+    -1.594594706497444,
+    1.0941825968142422,
+    0.4766475293144813
+   ],
+   "how": "A's hand point at the close (wrist_yaw_link + R @ (0.13, 0, 0)), replayed; |it - p*| = record close_dist_cm (bit-equal)",
+   "pixel": {
+    "main": {
+     "u": 1968.9731477085938,
+     "v": 1385.8792032437373,
+     "depth_m": 1.503630581116575
+    },
+    "closeup": {
+     "u": 1576.743192025834,
+     "v": 1396.503779545083,
+     "depth_m": 0.6056377392466392
+    }
+   }
+  },
+  "R_landing": {
+   "world": [
+    -1.6266496529016792,
+    1.0713948433577518,
+    0.5328316892850137
+   ],
+   "how": "R's hand point at the close, replayed; |it - p*| = record close_dist_cm (bit-equal)",
+   "pixel": {
+    "main": {
+     "u": 2042.1981876763136,
+     "v": 1314.1441657298537,
+     "depth_m": 1.4588086358164365
+    },
+    "closeup": {
+     "u": 1735.869971277593,
+     "v": 1210.7538788424104,
+     "depth_m": 0.5608157939465006
+    }
+   }
+  },
+  "object_A_close": {
+   "world": [
+    -1.5899385545651217,
+    1.007783930850123,
+    0.5253461306114939
+   ],
+   "how": "candle body origin at A's close (simulator), replayed; |hand - it| = record close_obj_cm",
+   "pixel": {
+    "main": {
+     "u": 2113.493467604202,
+     "v": 1264.680960680641,
+     "depth_m": 1.5147566254117706
+    },
+    "closeup": {
+     "u": 1938.7571200277937,
+     "v": 1098.652227104182,
+     "depth_m": 0.6167637835418347
+    }
+   }
+  },
+  "object_R_close": {
+   "world": [
+    -1.5899217921428934,
+    1.0077697763193822,
+    0.5253444854387274
+   ],
+   "how": "candle body origin at R's close, replayed",
+   "pixel": {
+    "main": {
+     "u": 2113.5003632779035,
+     "v": 1264.6626025128044,
+     "depth_m": 1.5147758000205858
+    },
+    "closeup": {
+     "u": 1938.7794875406698,
+     "v": 1098.6123022456436,
+     "depth_m": 0.6167829581506499
+    }
+   }
+  }
+ },
+ "distances_cm": {
+  "A_close_dist": 6.461055439704763,
+  "R_close_dist": 0.8359639660981456,
+  "R_correction_cm": 6.054984607981325,
+  "c_star_to_p_star": 6.061803911750098
+ },
+ "render": {
+  "renderer": "mujoco 3.3.1 Renderer, MUJOCO_GL=egl",
+  "offsamples": 16,
+  "shadowsize": 4096,
+  "geomgroups": [
+   0,
+   1,
+   1,
+   0,
+   0,
+   0
+  ],
+  "model_lights": 5,
+  "key_light": {
+   "diffuse": 0.35,
+   "specular": 0.05,
+   "ambient": 0.0,
+   "kind": "directional, castshadow, from above, tilted 25 deg towards the camera's side",
+   "tilt_deg": 25.0
+  },
+  "background": [
+   236,
+   236,
+   236
+  ],
+  "ghost_rgba": [
+   0.0,
+   0.4470588235294118,
+   0.6980392156862745,
+   0.4
+  ],
+  "ghost_emission": 0.25,
+  "size": [
+   3600,
+   2400
+  ],
+  "same_model_A_R": true
+ },
+ "files": {
+  "teaser_main_A_full.png": {
+   "size": [
+    2400,
+    3600,
+    3
+   ]
+  },
+  "teaser_main_R_full.png": {
+   "size": [
+    2400,
+    3600,
+    3
+   ]
+  },
+  "teaser_main_overlay_A_Rghost.png": {
+   "size": [
+    2400,
+    3600,
+    3
+   ]
+  },
+  "teaser_main_R_robot_layer_rgba.png": {
+   "size": [
+    2400,
+    3600,
+    4
+   ]
+  },
+  "teaser_closeup_A_full.png": {
+   "size": [
+    2400,
+    3600,
+    3
+   ]
+  },
+  "teaser_closeup_R_full.png": {
+   "size": [
+    2400,
+    3600,
+    3
+   ]
+  },
+  "teaser_closeup_overlay_A_Rghost.png": {
+   "size": [
+    2400,
+    3600,
+    3
+   ]
+  },
+  "teaser_closeup_R_robot_layer_rgba.png": {
+   "size": [
+    2400,
+    3600,
+    4
+   ]
+  }
+ }
+}
