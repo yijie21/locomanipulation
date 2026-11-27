@@ -563,6 +563,26 @@
   - **R 的模型**：按 hadata 的规则选，即评估 3 真实局上误差中位数较低的那个臂；干净伸手不到 10 下（样本不足）时，改按 HA val 选。数据 100 %，seed 0。评估 3 自己会打印选臂那一行，照它的结果用，不看闸门改。
   - **代码检查和正式运行**：`ht_codecheck.sh heft <臂>`，过了就用 `ht_formal.sh` 在四个槽位上跑。槽位分法和修订 4 相同：2a P&PBox 400–429，2b DoubleDesk 400–429，3a P&PBox 430–459，3b DoubleDesk 430–459。
   - **什么时候停下来报告**：检查没过，或者有局以"错误"结束。
+- **HEFT 的代码检查：通过**（`check/heft_codecheck.txt`）
+  - **怎么跑的**：01:19:59Z 在卡 3 上开跑，P&PBox 在槽位 3b，DoubleDesk 在槽位 3a，R 用 T_f1_s0（0cced537）。DoubleDesk 01:26Z 结束，P&PBox 01:27Z 结束。
+  - **评估 3 停过一次**：评估 3 第一次跑时卡在合并上报 FAIL（hadata 修订 2c）。用 eval_code2 只重跑了评估 3，选出臂以后才开始代码检查。
+  - 01:27:54Z 跑 `ht_codecheck.sh heft T`（1c23b874），各项结果：
+    - 两个任务都打印了 DONE，0 个 Traceback，0 局以"错误"结束；
+    - 两对的前缀 A == R 都是 True（P&PBox 937 帧，DoubleDesk 749 帧）；
+    - 4 份局记录里模型的 md5 都是 0cced537，FDVEL 都是 True；
+    - ht_equiv 逐部分读：
+      - 文本核对全是 True；
+      - 右手 3/3、左手 1/1 逐位相同；双手 0/0：P&PBox 这一局没走到夹紧，有 1 下命令没有记录段；
+      - 合成缩回 200/200，其中缩回过的 156 个；
+      - 除了预先说好的两类，没有别的 FAIL 行；
+    - 特征核对 FEAT CHECK PASS：3 段逐字节相同；
+    - asrun2 和 MD5 相同，没有 `__pycache__`。
+  - 最后一行：CODE CHECK PASS。ht_equiv 自己的总判定是 EQUIV FAIL，有 3 行 FAIL。
+  - 成功、抬高、落点都没读。
+- **HEFT 正式运行开跑**：01:28:06Z – 01:29:06Z 起了 4 个进程（`formal/launch.txt`）。
+  - 2a 跑 P&PBox 400–429，2b 跑 DoubleDesk 400–429，3a 跑 P&PBox 430–459，3b 跑 DoubleDesk 430–459；
+  - 4 个进程都打印了"asrun2 = MD5"。
+- **本机等待**：改成 run_in_background 跑的循环，没有到期时间。下面任何一种情况出现它就退出、叫醒我：进程退出、有 Traceback、有局以"错误"结束、前缀不同、asrun2 核对失败、采集分片失败、hold 被撤。
 
 ## 偏离
 
