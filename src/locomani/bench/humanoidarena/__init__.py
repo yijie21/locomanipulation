@@ -17,6 +17,7 @@ SPEC = BenchSpec(
         self_pose={"truth": PLANNED},
         controller_root={"truth": PLANNED},
         controller={"native": PLANNED},
+        sonic_vr_frame={},  # no SONIC here
     ),
     notes={
         "sensor=stereo": "IsaacLab could render a second camera; not planned yet",

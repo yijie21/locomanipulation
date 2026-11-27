@@ -18,6 +18,7 @@ SPEC = BenchSpec(
         self_pose={"truth": PLANNED, "odometry": PLANNED},
         controller_root={"truth": PLANNED, "odometry": PLANNED},
         controller={"scalebfm": PLANNED, "sonic": PLANNED, "native": PLANNED},
+        sonic_vr_frame={"robot": PLANNED},
     ),
     notes={
         "sensor=rgbd": "one 320x240 head camera with the simulator's depth image (the loops so far)",
@@ -27,5 +28,6 @@ SPEC = BenchSpec(
         "controller=native": "g1_backend's HEFT, LocoManiLab's own tracker (lml_selfmodel.py; no task bed)",
         "controller=amo": "not in g1_backend",
         "controller=gr00t_wbc": "not in g1_backend",
+        "sonic_vr_frame=reference": "g1_backend's SONIC takes its own VR frame; our Motor's switch does not reach it",
     },
 )

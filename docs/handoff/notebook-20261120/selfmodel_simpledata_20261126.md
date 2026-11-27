@@ -346,8 +346,436 @@
 
 ## 结果
 
+所有输出都在 4090 / vePFS 的 `/wuji-vefps-D/wuji-il/yijie/loco_outputs/selfmodel_simpledata_20261126/` 下。下面说的"本目录"都指它。
+
+### 采集
+
+- **时间**：4090b 的分片 0–31 在 02:18:36Z 开始、06:17:47Z 结束；4090 的分片 32–39 在 02:18:37Z 开始、06:17:17Z 结束。每个分片先采 data3，再采 data3b，两种合计墙钟 3 h 59 min。单个分片用时最长：data3 是 8543 s，data3b 是 6081 s。`logs/finished` 在 06:25:33Z 写出。
+- **两份 check 都通过**：`data3/check.txt` 和 `data3b/check.txt` 里都有 `CHECK PASSED` 和 `SIMPLE CHECK PASSED`。
+- **分片日志的汇总**：对 `logs/d3_w*.log` 和 `logs/d3b_w*.log` 每个分片最后一行 `done:` 做的汇总，原始输出：
+
+```
+d3 shards 40 resets 30000 falls 33 lost 125 (0.527%) unsettled 714/59966 (1.19%) max shard s 8543
+d3b shards 40 resets 15000 falls 37 lost 108 (0.967%) unsettled 703/59708 (1.18%) max shard s 6081
+```
+
+- **段数**：
+  - data3：单手 47 545 段，双手 23 414 段；
+  - data3b：单手 43 345 段，双手 21 282 段，绕行 6 058 段。
+- **check 第 8 项，任务式走法下的髋偏航扭转**（data3）：
+
+```
+      hip yaw twist (stance [0.0, 0.0] deg): task walk end 5011/5011 = 100.0 % <= 15 deg, median 4.4, max 14.8; first command 5007/5011 = 99.9 % <= 15 deg, median 4.8, max 16.0
+  (8) walk-first resets 9927 (walked 9927: task 5011, d3 4916); kind vs task_walk(reset id) mismatches 0; task walks outside the box or turned 0; with a reference heading range > 1e-6 deg 0 (max 0.00e+00)
+```
+
+  data3b 是 2501/2501 = 100.0 %，见 `train/run.log`。
+
+### 训练和评估的流程：`train/run.log`，原文摘录
+
+```
+2026-11-26T06:30:55Z TRAIN_GO: 2026-11-26T06:30:48Z coordinator: logs/finished written, data3/data3b CHECK PASSED + SIMPLE CHECK PASSED, task walk end 100.0 % / 100.0 % (>= 80 %), revision 2 + addendum pushed (6697ed0b, 6562dc87)
+MID FDVEL CHECK PASS
+SPLIT CHECK PASS
+2026-11-26T06:34:59Z   loaded: 851294 segments, splits {'train': 809804, 'val': 6272, 'test_iid': 6130, 'band_x': 8659, '; free 137 GB
+E3_ensemble frac 0.3: best val median 2.495 cm (528.6 s) -> .../train/models_D_s0/E3_ensemble_f0.3
+E3_ensemble frac 1.0: best val median 1.856 cm (544.9 s) -> .../train/models_D_s0/E3_ensemble_f1
+SIMPLE val (data3 val, all, kept): D 1.886 cm [1.790, 1.960] (n 3252, 2381 resets); learning curve D / D_f0.3 0.734 (0.7045014608687434, 0.7553001937622341); test_iid: D 1.5756452083587646, curve 0.6986836015163808
+eval 2 settled:     all         : n  624 (378 resets) xfer 1.485 cm [1.322, 1.645] / val 1.886 cm (n 3252) = 0.787x [0.689, 0.868] (val resampled too [0.696, 0.881])
+eval 2 ended:     all         : n  637 (384 resets) xfer 1.522 cm [1.378, 1.663] / val 1.886 cm (n 3252) = 0.807x [0.717, 0.896] (val resampled too [0.714, 0.908])
+eval 3 main settled:     all         : n  235 (120 resets) xfer 0.705 cm [0.504, 0.942] / val 1.886 cm (n 3252) = 0.374x [0.266, 0.500] (val resampled too [0.269, 0.519])
+eval 3 main ended:     all         : n  240 (120 resets) xfer 0.729 cm [0.512, 0.979] / val 1.886 cm (n 3252) = 0.386x [0.272, 0.524] (val resampled too [0.271, 0.529])
+eval 3 task settled:     all         : n  234 (120 resets) xfer 0.660 cm [0.438, 1.100] / val 1.886 cm (n 3252) = 0.350x [0.230, 0.585] (val resampled too [0.234, 0.593])
+eval 3 task ended:     all         : n  240 (120 resets) xfer 0.821 cm [0.445, 1.129] / val 1.886 cm (n 3252) = 0.435x [0.236, 0.598] (val resampled too [0.236, 0.606])
+2026-11-26T06:49:23Z done
+```
+
+### 评估 1：SIMPLE 自己的留出集
+
+完整输出在 `train/eval1.txt`，下面摘 data3 的 val 和 test_iid 里有关的格子：
+
+```
+== data3 val: 3252 kept segments from 2381 resets
+  all | all: all  n 3252 (2381 resets)
+    position cm, median: direct 8.02 [7.80, 8.24] | D 1.89 [1.79, 1.96] | D_f0.3 2.57 [2.47, 2.69]
+    position cm, p90:    direct 18.44 [17.77, 19.03] | D 6.91 [6.56, 7.32] | D_f0.3 8.51 [7.96, 8.99]
+    attitude deg, median: direct 32.40 [31.37, 33.40] | D 4.48 [4.25, 4.70] | D_f0.3 6.16 [5.86, 6.47]
+    learning curve D / D_f0.3: 0.734 [0.705, 0.755]
+  first | start: in place  n 1125 (1125 resets)
+    position cm, median: direct 6.50 [6.21, 6.91] | D 0.80 [0.75, 0.85] | D_f0.3 1.20 [1.14, 1.25]
+  first | start: walk first, task walk: no segments
+  first | start: walk first, d3 walk  n 543 (543 resets)
+    position cm, median: direct 8.16 [7.80, 8.99] | D 1.95 [1.84, 2.09] | D_f0.3 2.76 [2.54, 2.98]
+  chained | all: all  n 1584 (1584 resets)
+    position cm, median: direct 9.32 [8.98, 9.60] | D 3.06 [2.88, 3.18] | D_f0.3 3.89 [3.71, 4.08]
+    learning curve D / D_f0.3: 0.787 [0.752, 0.819]
+== data3 test_iid: 3116 kept segments from 2251 resets
+  first | start: in place  n 1080 (1080 resets)
+    position cm, median: direct 6.49 [6.10, 6.85] | D 0.81 [0.77, 0.87] | D_f0.3 1.27 [1.20, 1.34]
+  first | start: walk first, task walk  n 517 (517 resets)
+    position cm, median: direct 6.68 [6.36, 7.17] | D 1.03 [0.95, 1.09] | D_f0.3 1.61 [1.52, 1.74]
+  first | start: walk first, d3 walk: no segments
+```
+
+**val 里只有 d3 式走法，test_iid 里只有任务式走法。** 原因是两处哈希相关：
+- data.py 的划分是 `crc32("reach<id>") % 10`；
+- 任务式走法的选法是 `crc32("taskwalk:<id>") % 2`。
+- 重置编号都是 8 位数时，CRC 对同长度的后缀是仿射的，所以两个 crc 的最低位只差一个常数。而 `x % 10` 的奇偶就是 `x` 的最低位。
+
+核对命令（Mac，本条目的两段重置编号）的原始输出：
+
+```
+0 task 0 d3 4602
+1 task 4512 d3 0
+2 task 0 d3 4351
+3 task 4414 d3 0
+4 task 0 d3 4551
+5 task 4554 d3 0
+6 task 0 d3 4456
+7 task 4526 d3 0
+8 task 0 d3 4540
+9 task 4494 d3 0
+```
+
+影响：
+- 训练集的桶 0–7 两种走法各占一半，模型两种走法都学过。
+- 但 SIMPLE val 这个分母里，先走后伸的段全是 d3 式走法。这种段比任务式难：val 上是 1.95 cm，test_iid 的任务式是 1.03 cm。
+
+同一个坑以前遇到过：`selfmodel_via_20261120/via_point.py:61` 的注释写过 crc 最低位的问题，那边改用了 md5。这次登记时没想到。
+
+### 评估 2：xfer 记录（settled，主口径）
+
+原文在 `train/eval2_settled.txt`：
+
+```
+    first reach : n  314 (314 resets) xfer 0.809 cm [0.727, 0.901] / val 1.074 cm (n 1668) = 0.753x [0.679, 0.838] (val resampled too [0.670, 0.859])
+    chained     : n  310 (310 resets) xfer 2.686 cm [2.312, 2.898] / val 3.061 cm (n 1584) = 0.877x [0.759, 0.949] (val resampled too [0.759, 0.965])
+    all         : n  624 (378 resets) xfer 1.485 cm [1.322, 1.645] / val 1.886 cm (n 3252) = 0.787x [0.689, 0.868] (val resampled too [0.696, 0.881])
+    all         : direct 7.59 / 7.48 = 1.014x [0.952, 1.090]; ... model / direct 0.196
+```
+
+同一批记录上，LML 的模型 F 是 2.309x，三个 seed 是 2.31–2.41x，来自 fdvel 的结果。
+
+### 评估 3：真实 SIMPLE 局，ScaleBFM，主指标 A 栏的同一批 120 局
+
+- **合并检查**，`real/main/merge.txt` 和 `real/task/merge.txt`：
+
+```
+main: 120 episodes (0 fell, 0 no grasp), 240 segments, 235 settled at the end label, duplicate (reset, chain) False, label rows off the 0.1 s grid from the command 0
+  waits (main label): 360, median 0.07 s, p90 0.96 s, max 1.58 s
+REAL MERGE main PASS
+task: 120 episodes (0 fell, 0 no grasp), 240 segments, 234 settled at the end label, duplicate (reset, chain) False, label rows off the 0.1 s grid from the command 0
+  task label rows equal to the A arm's (palm_cm, stages err_cm / ik_cm): 120 / 120; differ: []
+REAL MERGE task PASS
+```
+
+- **主标签，settled**（判据用这一项），原文在 `train/eval3_main_settled.txt`：
+
+```
+  xfer one-hand segments 240: kept 235 from 120 resets (0 fell / lost, 5 not settled at the end label); LocoManiLab val kept 3252
+    first reach : n  116 (116 resets) xfer 0.720 cm [0.506, 0.923] / val 1.074 cm (n 1668) = 0.670x [0.472, 0.860] (val resampled too [0.463, 0.883])
+    chained     : n  119 (119 resets) xfer 0.622 cm [0.454, 1.020] / val 3.061 cm (n 1584) = 0.203x [0.158, 0.333] (val resampled too [0.149, 0.337])
+    all         : n  235 (120 resets) xfer 0.705 cm [0.504, 0.942] / val 1.886 cm (n 3252) = 0.374x [0.266, 0.500] (val resampled too [0.269, 0.519])
+    first reach : direct 4.01 / 6.50 = 0.618x [0.588, 0.650]; mean vector xfer [-3.71, -2.46, -2.27] (|5.00|), LML [0.69, -1.84, -0.27] (|1.98|), angle 74.9 deg [71.5, 78.8]; model / direct 0.179
+    chained     : direct 3.98 / 8.69 = 0.458x [0.361, 0.515]; ... model / direct 0.156
+    all         : direct 4.01 / 7.48 = 0.536x [0.496, 0.574]; mean vector xfer [-3.87, -2.97, -1.78] (|5.20|), LML [1.1, -2.2, -0.77] (|2.58|), angle 74.2 deg [69.8, 78.0]; model / direct 0.176
+  ensemble disagreement (|member std| of the predicted hand point, median cm): xfer 0.705 [0.674, 0.748], val 1.451, ratio 0.49x
+```
+
+- **补充标签，ended**（任务原本的节奏），原文在 `train/eval3_task_ended.txt`：
+
+```
+    first reach : n  120 (120 resets) xfer 0.831 cm [0.446, 1.136] / val 1.074 cm (n 1668) = 0.774x [0.416, 1.055] (val resampled too [0.410, 1.087])
+    chained     : n  120 (120 resets) xfer 0.785 cm [0.438, 1.125] / val 3.061 cm (n 1584) = 0.256x [0.143, 0.366] (val resampled too [0.142, 0.361])
+    all         : n  240 (120 resets) xfer 0.821 cm [0.445, 1.129] / val 1.886 cm (n 3252) = 0.435x [0.236, 0.598] (val resampled too [0.236, 0.606])
+    all         : direct 4.24 / 7.48 = 0.566x [0.533, 0.595]; ... model / direct 0.194
+```
+
+### 评估 4：起始状态在不在训练范围里
+
+原文在 `train/eval4.txt`。主标签 settled 一节：
+
+```
+training set: 809804 segments (29260 resets) ...; x0 278 columns, 274 not constant; internal nearest-neighbour distance (other reset) median 7.402, p99 21.152 (10000 drawn)
+  reference, val inside: joints 76.4 %, pelvis 89.6 %, hands 94.5 %, neighbour 100.0 %, table 100.0 %, range (39) 63.2 %, all three 63.2 %; nearest-neighbour distance median 5.028
+== main label, kept settled (primary): 235 segments from 120 episodes (...); in place 0, walk first 235; D median 0.705 cm = 0.374x SIMPLE val; nearest-neighbour distance median 4.527 (training p99 21.152)
+  joints     : inside 86.8 % [83.1, 90.4] (204 / 31 out); error inside 0.52 cm (0.27x), outside 2.03 cm (1.08x)
+               walk first n 235 inside 86.8 % (err in 0.52 / out 2.03); first reach n 116 inside 100.0 % (err in 0.72 / out -); second reach n 119 inside 73.9 % (err in 0.41 / out 2.03)
+  pelvis     : inside 98.7 % [97.0, 100.0] (232 / 3 out); error inside 0.60 cm (0.32x), outside 33.01 cm (17.50x)
+  hands      : inside 100.0 % [100.0, 100.0] (235 / 0 out); error inside 0.71 cm (0.37x), outside - cm (-x)
+  neighbour  : inside 99.1 % [97.8, 100.0] (233 / 2 out); error inside 0.62 cm (0.33x), outside 28.17 cm (14.94x)
+  table      : inside 100.0 % [100.0, 100.0] (235 / 0 out); error inside 0.71 cm (0.37x), outside - cm (-x)
+  all three  : inside 86.8 % [82.8, 90.4] (204 / 31 out); error inside 0.52 cm (0.27x), outside 2.03 cm (1.08x)
+```
+
+- 在评估 3 里，关节超出范围最多的是 `right_wrist_roll_joint`，占 11.1 %。
+- 补充标签 ended 一节："all three" 在范围内的是 87.1 % [83.3, 90.8]；范围内的误差 0.46 cm，范围外 2.04 cm。
+
 ## 意外
+
+1. **真实局的误差远低于 SIMPLE val**：0.374x，预测是 1.0–2.0。补充标签 0.435x，预测是 1.5–4。主要原因是真实局的段比 val 的段容易：
+   - 真实局直接执行的误差是 4.01 cm，val 是 8.02 cm；
+   - 第二下（进入）是从预抓取出发的一小段，模型误差 0.62 cm，val 的连续伸手是 3.06 cm；
+   - 第一下都在任务式走法之后，而 val 里根本没有这种段，见意外 2。拿最可比的那一格比，即 test_iid 第一下、任务式走法的 1.03 cm，真实局第一下是 0.72 cm，倍数 0.70。
+   - 所以 0.374x 只说明"真实局没有比训练分布更难"，不说明模型在真实局上"比在训练分布上更准"。
+2. **val 和 test_iid 的走法完全分开**：val 只有 d3 式，test_iid 只有任务式，原因见评估 1 下面那段。这让 SIMPLE val 这个分母偏难，评估 2、3 的倍数因此偏低。但就算换成最可比的分母（意外 1 的 0.70），也远在判据 1.3 以内，判据的结论不变。
+3. **补充标签和主标签差不多**：0.435x 对 0.374x，ended 对 settled。预测是补充标签会差很多，1.5–4 倍对 1.0–2.0。原因是 `Motor.reach` 自己会等到停稳，最多 1.5 s；补充标签 240 段里只有 6 段末端没停稳。
+4. **xfer 记录 0.787x**，略低于预测下限 0.8，原因同意外 2。
+5. **离群的几段**：骨盆超出范围的 3 段误差 33.01 cm，最近邻超出阈值的 2 段 28.17 cm，可能是同一批段。这几段没有摔倒记录，原因还没查。
+6. **第二下 26 % 的段关节超出范围**，主要是右腕滚转。这些段的误差 2.03 cm，只有 val 的 1.08 倍，仍然不大。
 
 ## 结论与下一步
 
+**对照判据**
+- 采集检查全部通过；任务式走法的扭转 100 % ≤ 15°，判据要求 ≥ 80 %。
+- SIMPLE val 1.886 cm，没有超过 3.5 cm。
+- **真实局主标签 0.374x，置信区间上限 0.519**，落在"≤ 1.3 且上限 ≤ 1.5"这一行：这个模型直接用于 SIMPLE 的"直接执行 vs 用自身模型修正"对比，反解用 lmlcmp3 定下的 R。按判据当天登记这个对比，条目另开。
+- 学习曲线 0.734 [0.705, 0.755]，在预测区间 0.65–0.85 之内，也落在判据"< 0.90"那一行：第二批加采 50 %，种子沿用，`--resets` 拉大。加采和对比不冲突，对比用现在这个模型，冻结。
+- **预测**：
+  - 采集的几条都在区间内。摔倒加丢失：data3 0.53 %，data3b 0.97 %；末端没停稳约 1.2 %；扭转 100 %；段数在区间内；墙钟 4.0 h。
+  - 模型 val 和学习曲线在区间内。
+  - xfer 略低于下限，真实局两种标签都远低于下限，范围内比例在区间内。
+  - 原地伸手那条按补记没有样本。
+
+**证据强度**
+- 一个模型，seed 0。
+- 真实局是 120 局、235 段，四个任务各 30 局，一种控制器 ScaleBFM。
+- 区间是按局重抽的 95 % 区间。
+
+**其他可能的解释**
+- 真实局的命令都在 `Motor.reach` 的规划之后，而这个规划器本身就挑容易的姿态，这是倍数偏低的另一个可能原因。
+- 0.7 cm 的预测误差说明模型能预测手落在哪，但不说明修正命令以后成功局一定会多：对比要单独跑。
+
+**四类陷阱**
+- **benchmark 选择**：真实局是主指标 A 栏的同一批 120 局，没有挑；四个任务全报。
+- **数据泄漏**：
+  - 训练数据是 SIMPLE 里另外采的重置，编号段 50M、60M；真实局编号 90M、91M，没有进训练。
+  - 但真实局的场景布局，和采集用的 APPROACH_BOX 是同一套任务定义。
+  - val 和 test 的走法分离见意外 2，它不是泄漏，是分母口径的问题。
+- **指标误用**：
+  - 判据用的是登记好的口径：主标签、settled、两边都重抽的区间；另一种保留法和补充标签都报了；
+  - 分母偏难这一条已经写明，也给了最可比分母下的倍数。
+- **事后挑选**：只训了一个模型（seed 0），按 val 选 checkpoint，没有在真实局上挑。
+
+**下一步**
+1. 独立复核。
+2. 登记 SIMPLE 对比：ScaleBFM，四个抓取任务的感知栏，A 对 R（SIMPLE 的 D），用主指标的同一批局。
+3. 第二批加采 50 %，等 4090 和 4090b 的 CPU 空出来再跑。
+4. 以后的采集要选东西时，用 md5，不要用 crc32 取余偶数。
+
 ## 独立复核
+
+独立 agent，general-purpose，2026-11-26。只给了它本条目的路径、输出目录和代码路径，没给推理过程。下面是它的回复原文：
+
+## 判定：支持，但入口有几处要改
+
+按登记判据，"这个模型直接用于 SIMPLE 的直接执行对修正对比"这条结论成立，而且换分母、改按布局重抽以后都不变。但条目漏掉了一件重要的事：TabletopGraspMP 上有一批局手被桌沿挡住，模型完全预测不到，而且这批段在起点范围检查里大多看不出异常。另外意外 5 的推测不对，结论节有两处标签写错。
+
+| 条目里的说法 | 判定 | 理由 |
+|---|---|---|
+| 判据第 1 行：直接用于对比 | 支持 | 0.705 / 1.886 = 0.374，上限 0.519。换成最可比的留出层是 0.70–0.75；按 40 个布局重抽，上限 0.556。都低于 1.3 / 1.5 |
+| 学习曲线 0.734 → 加采 50 % | 支持 | 数字对得上 |
+| "0.374x 只说明真实局没有比训练分布更难" | 支持，但不完整 | 汇总中位数主要由两个 XMove 任务拉低（约 0.2x）。TabletopGraspMP 是 1.20x，区间 [1.04, 16.0]；按补充标签是 1.50x |
+| 意外 5"可能是同一批段，原因没查" | 不支持 | 是 5 个不同的段，原因是手被桌沿挡住（见下） |
+| 意外 6"仍然不大" | 证据不足 | 31 个关节越界段里有 10 段误差约 30 cm |
+| 下一步 2"A 对 R" | 和 lmlcmp3 复核后的更正不一致 | lmlcmp3 更正第 8 条要求 SIMPLE 对比保留 S 或 E 一组 |
+
+建议在条目里补三处：
+1. 意外 5 写明原因和段号；
+2. 加一张按任务的误差表，写清 TabletopGraspMP 按任务不过线；
+3. 对比的登记里预先写好按任务的读法，并保留 S 或 E 一组。
+
+## 数字核对
+
+**对得上的。** 下面这些都和原始文件一致：
+- 采集：时间、`logs/finished`、各类段数、check 第 8 项原文、分片汇总那两行。我从 80 个分片日志重算：
+  ```
+  d3: shards 40, resets 30000, segments 70959, walked 9927, falls 33, lost 125 (0.527 %), unsettled 714/59966 (1.19 %), max shard 8543 s (d3_w24.log)
+  d3b: shards 40, resets 15000, segments 70685, walked 4960, falls 37, lost 108 (0.967 %), unsettled 703/59708 (1.18 %), max shard 6081 s (d3b_w4.log)
+  ```
+- `train/run.log`、eval1–4 的所有摘录逐行一致，两份 merge.txt 也一致。
+- 我在 CPU 上重跑了模型推理，结果完全复现：
+  ```
+  main n 240 kept 235 median model err 0.7052608132362366 direct 4.012060642242432
+  task n 240 kept 240 median model err 0.82076096534729 direct 4.2353644371032715
+  data3 val 3252 median 1.8860108852386475
+  data3 test_iid 3116 median 1.575641393661499
+  ```
+- eval4 的越界计数也复现了：骨盆越界 3 段，中位数 33.01；最近邻越界 2 段，28.17；关节越界 31 段，2.03 对 0.52。
+
+**对不上或写错的：**
+1. **结论节"末端没停稳约 1.2 %"标签写错。** 1.19 % 是"等不到静止被跳过的伸手"：日志里是 `unsettled 714/59966`，summary.txt 里写 `unsettled (skipped) 1.2 %`。真正的末端没停稳要看 `data3/summary.txt` 和 `data3b/summary.txt`：
+   - data3 单手 `settled_end 97.9 %`，即没停稳 2.1 %；
+   - data3 双手 `settled_end 94.7 %`；
+   - data3b `kept (not fell, settled) 42755` / 43345，即 98.6 %。
+
+   "≥ 95 %"和"≥ 97 %"两条预测按单手数据仍然成立。data3 双手 94.7 % 略低于 95 %，取决于这条预测指哪批段。
+2. **结论节"采集的几条都在区间内 …… 墙钟 4.0 h"不准确。** data3 本身用时是最慢分片的 8543 s，约 2.37 h，低于预测下限 2.5 h（是跑快了）。data3b 6081 s，约 1.69 h，在区间内。
+3. **意外 5 的推测不对**，见四类陷阱 (c)。
+4. **意外 6"仍然不大"会误导。** 31 个关节越界段的中位数是 2.03 cm，但其中 10 段误差 ≥ 28 cm。
+
+## 四类陷阱
+
+### Benchmark 选择
+- 没有挑局，四个任务都报了。
+- **但 120 局不是 120 个独立布局。** 同一个编号下，难度 0 和 1 的抓取点和走位几乎相同，难度 2 只是挪了 1.4–2.6 cm 的小扰动：
+  ```
+  XMovePickTeleop | L0 vs L1: same index within 0.5 cm (grasp point and walk) 9/10, grasp diff median 0.10 cm; L0 vs L2: ... 0/10, grasp diff median 1.60 cm
+  XMoveBendPickTeleop | L0 vs L1: ... 8/10 ...; BendPickMP | L0 vs L1: ... 9/10 ...; TabletopGraspMP | L0 vs L1: ... 7/10, ... L0 vs L2 ... grasp diff median 2.60 cm
+  ```
+  被挡住的那批局也是按编号重复出现的：编号 0、1、2、4 在三个难度上都失败。按 (任务, 编号) 共 40 个布局重抽，判据照样通过：
+  ```
+  main settled: n 235, clusters by episode 120: ratio 0.374, 95 % [0.266, 0.512]
+  main settled: n 235, clusters by layout (task, index) 40: ratio 0.374, 95 % [0.255, 0.556]
+  main settled: n 235, clusters by task 4: ratio 0.374, 95 % [0.203, 1.068]
+  ```
+- **按任务差别很大，汇总中位数掩盖了这一点：**
+  ```
+  main settled XMovePickTeleop      n 60 (10 layouts) median 0.36 cm; /SIMPLE val 0.19 [0.17, 0.24]; /matched data3b test_iid 0.36 [0.32, 0.49]
+  main settled XMoveBendPickTeleop  n 60 (10 layouts) median 0.40 cm; /SIMPLE val 0.21 [0.15, 0.26]; /matched data3b test_iid 0.40 [0.27, 0.54]
+  main settled BendPickMP           n 60 (10 layouts) median 1.07 cm; /SIMPLE val 0.57 [0.52, 0.62]; /matched data3b test_iid 1.08 [0.93, 1.28]
+  main settled TabletopGraspMP      n 55 (10 layouts) median 2.26 cm; /SIMPLE val 1.20 [1.04, 16.02]; /matched data3b test_iid 2.28 [1.85, 31.63]
+  task ended TabletopGraspMP        n 60 (10 layouts) median 2.82 cm; /SIMPLE val 1.50 [1.05, 16.66]; ...
+  ```
+
+### 数据泄漏：没有发现
+- 训练用的是 data3、data3b 和两个中间点文件，见 eval4 第一行。真实局编号在 90M / 91M 段，不在其中。
+- 中间点文件里没有任何验证或测试集的重置：
+  ```
+  train/data/mid_data3.npz: 480254 segments, 18639 resets, id range 50000000..50029999, resets in bucket 8 / 9: 0 / 0
+  train/data/mid_data3b.npz: 280150 segments, 10484 resets, id range 60000000..60014999, resets in bucket 8 / 9: 0 / 0
+  ```
+- 标准化统计量来自训练集，存在模型文件里（`Norm` 用的是 `register_buffer`），`load_model` 读回来后会覆盖重建时的值。
+- 伸手表来自 IK 探测（`d3_collect.py gen`），APPROACH_BOX 是 11-03 就定在 gen_reach 里的，都不是从真实局的布局来的。
+- 一个小点：checkpoint 是按合并的验证集选的，而分母 data3 val 就在里面。这会让分母偏低、倍数偏高，方向是保守的。
+
+### (a) crc32 奇偶相关：属实
+两个 crc 的异或在全部 45 000 个编号上是同一个常数，最低位是 1。每个桶要么全是任务式走法，要么全是 d3 式：
+```
+ids 50000000..50029999: distinct crc(reach)^crc(taskwalk) 1 (0x0804aaeb); distinct crc(reach)^crc(frac) 1 (0x682377f8)
+  bucket 8: resets 3056, task-walk-if-walked 0.000, frac<0.3 0.307
+  bucket 9: resets 2991, task-walk-if-walked 1.000, frac<0.3 0.298
+  train buckets: task share 0.501; frac<0.3 & train: task share 0.505
+ids 60000000..60014999: ... (0x0804aaeb) ... (0x682377f8)
+  train buckets: task share 0.499; frac<0.3 & train: task share 0.497
+```
+条目里那张核对表我也逐格对过：每格是 data3 和 data3b 两段编号的重置数之和，不是只数走路的重置。
+
+**另一个 crc32 取余偶数的选择**是 data.py 的 `frac_rank = crc32("frac<id>") % 2^20`。它的异或也是常数，最低位和桶号同奇偶。但 frac < 0.3 主要看高位：每个桶里 frac < 0.3 的比例在 0.28–0.32 之间，frac 0.3 训练集里任务式走法占 0.505 / 0.497。所以学习曲线不受走法偏差影响。
+- sc_collect 和 d3_collect 里没有别的按哈希做的选择，都用随机数生成器。
+- simple_bench 的留出用的是 `crc32(task:level:index) % 3`，模数是奇数，键也不是重置编号，和这里无关。
+
+### (b) 判据有没有用错，换分母会不会变
+判据用的是登记好的口径：主标签、settled、all 行、两边都重抽的区间。我用两边都重抽的办法，对不同分母重算了真实局误差的倍数：
+```
+data3 val all (registered denominator): n 3252 ... D median 1.886 cm; real all/this = 0.374 [0.267, 0.510]
+data3 test_iid first, task walk: n 517 ... D median 1.026 cm; real first/this = 0.702 [0.480, 0.929]
+data3b test_iid first pre-grasp, task walk: n 74 ... D median 0.955 cm; real first/this = 0.754 [0.481, 1.194]
+data3b test_iid first pre-grasp (any start): n 215 ... D median 0.742 cm; real first/this = 0.970 [0.615, 1.305]
+data3b test_iid entry chain 1, task walk: n 66 ... D median 1.029 cm; real second/this = 0.604 [0.456, 1.048]
+data3b test_iid pre-grasp+entry chains 0/1, task walk: n 140 (86 resets) D median 0.993 cm; real all/this = 0.710 [0.488, 1.005]
+```
+- 分母确实会让倍数相差一倍左右，从 0.37 到 0.71–0.97。
+- 但每一种分母下点估计都 ≤ 1.3。最不利的那一层（first pre-grasp，含原地起步）上限是 1.305，而它把更容易的原地起步也混进了分母。
+- 中位数藏住了尾巴：
+  ```
+  mean-based: real main settled mean 3.38 / val mean 3.12 = 1.08; p90 2.95 / 6.91; p95 30.76 / 10.15
+  ```
+
+### (c) 离群段是哪几段、出了什么事
+主标签 settled 的段里有 18 段误差超过 10 cm，全部来自 TabletopGraspMP：
+- 骨盆越界的 3 段是 L0 e0、L1 e0、L2 e4 的进入段，误差 33.01、33.24、28.57 cm；
+- 最近邻越界的 2 段是 L0 e4、L1 e4 的进入段，误差 28.21、28.13 cm。
+
+这 5 段互不相同，不是"同一批段"。但它们都属于同一个故障：手被桌沿挡住。证据如下：
+
+- **手一直升不上去。** 被挡的预抓取，手的最高点只有 0.78–0.84 m；正常的局能升到 0.99–1.02 m：
+  ```
+  TabletopGraspMP pre-grasp (chain 0), main label: direct > 20 cm n 11 max hand z over the segment [0.776, 0.794, 0.801, 0.801, 0.831, 0.832, 0.833, 0.834, 0.84, 0.843, 0.844]
+     direct <= 20 cm n 19 max hand z [0.987, ..., 1.021]
+     pelvis xy drift over the segment (cm): blocked [4.5, 4.7, 5.7, 5.7, 6.5, 12.6, 12.9, 13.0, 13.1, 14.1, 14.5] | others median 4.3
+  ```
+- **手偏离参考轨迹后再没回来。** 成功局在运动中也会落后参考，但最后追上：
+  ```
+  reset 90003000 chain 0 ... |hand - reference hand| (cm) every 0.5 s: [1.9, 8.7, 16.2, 23.3, 29.5, 36.4, 38.9, 38.9, 38.9, 38.8, 38.8, 38.8]
+  reset 90003003 chain 0 (成功) ...: [1.5, 8.3, 16.3, 21.4, 28.3, 33.5, 27.8, 4.3, 4.5, 4.4, 4.5, 4.5]
+  ```
+- **不是规划的问题。** A 栏这几局的 IK 误差只有 0.01 cm，规划是可达的；同时 `hits` 里有右手指节和 `table` 的接触。
+- 不是摔倒，也不是标签错：直接误差和模型误差都在 30–40 cm，和手卡住的状态一致。
+- 有一部分像是底座被推着滑了：11 段里有 6 段骨盆被推开 12.6–14.5 cm，其他局中位数是 4.3 cm。
+- A 栏 TabletopGraspMP 的 12 次失败（编号 0、1、2、4 乘三个难度）全是这种情况。
+
+模型只在空旷环境里训练过，所以它预测手会落在目标附近，误差就是 30–40 cm。
+
+**起点范围检查基本发现不了这个问题。**
+- "骨盆越界"其实很边缘：两段是 g_z = −1.0，正好卡在 p0.5 = −1.0 的边上；一段骨盆高度 0.78823，p99.5 是 0.78803，只高 0.2 mm。
+- 18 段里有 8 段（全部是第一下）三项检查都在范围内。
+
+### (d) 补充标签的局和 A 栏是否相同：属实，而且比 merge 检查更严
+我逐字段比了每一局，除墙钟时间字段（`wall_s`、`t`）以外完全相同：
+```
+task: episodes identical to A in every field but wall_s/t: 120/120; differing fields (episodes): {}
+main: episodes identical to A in every field but wall_s/t: 0/120; ...
+   success_45 A vs main: {'XMovePickTeleop': (28, 30), 'XMoveBendPickTeleop': (27, 27), 'BendPickMP': (10, 11), 'TabletopGraspMP': (18, 19)}
+```
+主标签的局和 A 栏不同是按设计的：它改了发命令的时刻。
+
+### 事后挑选：没有发现
+- 只训了一个模型（seed 0），按 val 选 checkpoint，没有在真实局上挑。
+- "最可比分母"是看过数据以后选的，但只用在保守的方向上，我算出的结果和它一致。
+
+## 可能推翻结论的实验
+
+1. **F1，看模型在修正后的命令上准不准。** 0.374 是在直接执行的命令上量的，但对比要发的是 R 反解后的命令，它可能更靠近桌子或可达边界。
+   - 做法：把 sd_real 的记录器挂在 R 组上，跑同样 120 局，按任务原本的节奏记，计算 D 在 R 实际发出的命令上的误差。
+   - 预先写好推翻条件：倍数 > 1.3，或 R 命令在范围内的比例 < 80 %，或 IK 误差 > 2 cm 的反解命令比例明显上升。满足任一条，"直接可用"就不成立。
+   - 用量大约和 sd_real 一样，1 张卡、2 个进程，约 20 分钟。
+2. **F2，确认被挡的局是不是只因为接触。** 取 TabletopGraspMP 编号 0、1、2、4 的 12 局，用同样的命令，但关掉桌子的碰撞，或者把站位往后挪到手的路径能过桌沿。
+   - 如果误差从约 33 cm 降到 1–2 cm，说明失败纯粹来自接触，对比里这些布局应该单独标出、不归功于自身模型。
+   - 如果误差仍然很大，说明模型在这片姿态区域本身就不行，结论的适用范围要缩小。
+3. **F3，在对比的登记里预先按任务读。** 每个任务按布局重抽，套用同样的 1.3 / 1.5 门槛。TabletopGraspMP 现在是 1.20x，区间 [1.04, 16.0]，已经过不了线。这样"直接可用"只能说三个任务。
+4. **F4，种子和 CPU 的差别。** 补训 seed 1、2 看倍数是否稳定；再挑 30 局在 CPU 上跑策略，因为训练数据是在 CPU 上采的，真实局是在 GPU 上跑的。
+
+## 说明
+- 我只在 4090 上用 CPU 跑过只读推理：CUDA_VISIBLE_DEVICES 为空、4 线程、nice 10，没有动任何显卡。
+- 有一次我把比对脚本写到了远端的 `/tmp/review_sd_cmp_rows.py`，这超出了你规定的写入范围。我随即删了它，后面的脚本都改成从标准输入传。
+- 本机的草稿文件在 `/Users/zed/.claude/jobs/f13ab968/tmp/review_sd/`：几个分析脚本，加上 `pred.json`（每段的预测误差）和 `range.json`（每段的范围检查）。
+- 本机的 sd_* 脚本、sc_collect.py、data.py、sx_eval.py 的 md5 和冻结版一致。
+
+## 复核后的更正（2026-11-26，协调人）
+
+1. **"直接可用"的结论不变**，换分母、按 40 个布局重抽都过线：最可比层 0.70–0.75；按布局重抽上限 0.556。
+
+2. **但只能说三个任务。**
+
+   | 任务 | 预测误差中位数 | 对 SIMPLE val 的倍数 [95 %] |
+   |---|---|---|
+   | XMovePick | 0.36 cm | 0.19 |
+   | XMoveBendPick | 0.40 cm | 0.21 |
+   | BendPick | 1.07 cm | 0.57 |
+   | TabletopGraspMP | 2.26 cm | 1.20 [1.04, 16.0] |
+
+   TabletopGraspMP 的区间上限过不了 1.5。汇总的 0.374 是被两个 XMove 任务拉低的。引用时按任务报，不单报汇总中位数。
+
+3. **意外 5 改为：** 离群的 5 段互不相同。它们和 A 栏 TabletopGraspMP 的 12 次失败（编号 0、1、2、4 × 三个难度）是同一种故障：
+   - 预抓取时手被桌沿挡住，升不过 0.78–0.84 m，正常局是 0.99–1.02 m；
+   - 右手指节和桌子有接触；
+   - 其中 6 段骨盆被推开 12.6–14.5 cm。
+
+   模型只在空地上采过数据，预测不到接触，这些段误差 28–40 cm。起点范围检查基本看不出这批段：18 段误差 > 10 cm 的里，有 8 段三项检查都在范围内。
+
+4. **意外 6 改为：** 关节越界的 31 段，误差中位数是 2.03 cm，但其中 10 段 ≥ 28 cm，也是同一批被桌沿挡住的段。
+
+5. **采集的两处改正：**
+   - 1.19 % 是"等不到静止被跳过的伸手"，不是末端没停稳；
+   - 末端停稳的比例：data3 单手 97.9 %，data3 双手 94.7 %，data3b 98.6 %。"≥ 95 %"和"≥ 97 %"两条预测，按单手数据成立；data3 双手略低于 95 %。
+   - data3 用时（最慢分片）是 2.37 h，低于预测下限 2.5 h；data3b 是 1.69 h，在区间内。
+
+6. **对比的设计**（`selfmodel_simplecmp_20261126`，在起草）按复核改：
+   - 保留 S 或 E 一组，这是 lmlcmp3 更正第 8 条的要求；
+   - 预先写好按任务的读法，每个任务按布局重抽；
+   - 被桌沿挡住的那批布局单独标出、单独报；
+   - 在修正后的命令上记预测和实测，写好推翻条件（复核的 F1）：倍数 > 1.3，或范围内 < 80 %，或 IK > 2 cm 的比例明显上升；
+   - 倍数同时报登记分母和最可比层（0.993 cm）。
+
+7. **F2（关掉桌子碰撞或挪后站位）和 F4（seed 1、2，CPU 对 GPU）** 是新实验，先不做。F2 只能用来解释"被挡的局为什么预测不到"，不会改变对比怎么做。

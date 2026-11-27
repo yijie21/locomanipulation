@@ -18,6 +18,7 @@ SPEC = BenchSpec(
         self_pose={"truth": PLANNED, "odometry": PLANNED},
         controller_root={"truth": PLANNED},
         controller={"native": PLANNED},
+        sonic_vr_frame={},  # no SONIC here
     ),
     notes={
         "sensor=rgbd": "the paper's strict views are 84x84; resolution and depth to check in TODO 49.5",

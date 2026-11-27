@@ -169,10 +169,305 @@
 - 冒烟结果不计入任何统计。
 - 用时：R 组每局最长 74 s（其中思考 49 s），其余各组和 lmlcmp 相近。估计正式运行约 85–90 分钟。
 
-## 结果
+## 结果（2026-11-26，执行 agent 的报告；原文由我从 4090 读取）
+
+**冻结和运行**
+- 修订 1：71216382。FROZEN_UTC 为 2026-11-26T00:03:12Z。
+- 代码 md5：lc2_run 7f3d1e1c、lc2_check 6ebfec2f、lc2_eval ae881c04。输入清单和 303 个"那一眼"文件，与 lmlcmp 的 asrun 逐行相同。
+- 正式运行：00:04Z 到 01:20Z，共 2604 局。三个控制器都是 CHECK PASSED，跑完后代码 md5 不变。
+- 冒烟时另在 ScaleBFM 的浇水壶和哑铃上加跑了 8 局设计种子（`smoke_far/`），目的是让"部分缩回"真的触发一次。这件事已写进修订 1。
+
+**一致性**：三个控制器的 A、S 和 lmlcmp 逐局相同，217/217。成功、失败原因、合手距离和伸手次数都一样。
+
+**判定集**：三个控制器都是蜡烛、苹果、雕像柜、哑铃、浇水壶。碗和盐瓶在两组分开之前就分别失败了 73 % 和 67 %，按新规则排除。
+
+**评估输出原文**（`<控制器>/eval.txt` 第 23–37 行；A 直接执行，S 原反解，G 加护栏，R 缩回可达）：
+
+```
+[scalebfm] eval.txt md5 fe4d67da
+  decision set (candle, apple, statue_cab, dumbbell, wcan): 150 pairs
+    G vs A: success G 41 (27.3 %) A 30 (20.0 %) diff +7.3 pp | A-only 4 G-only 15 McNemar exact p 0.0192 | WIN False
+       close-time hand to the grasp point, paired G - A: median +0.00 cm, 95 % CI [-0.15, +0.00], n 116, G closer in 50, sign p 0.000767, Wilcoxon p 2.62e-06; medians G 5.79 A 8.86 cm
+    G vs S: success G 41 (27.3 %) S 41 (27.3 %) diff +0.0 pp | S-only 4 G-only 4 McNemar exact p 1
+       close-time hand to the grasp point, paired G - S: median +0.00 cm, 95 % CI [+0.00, +0.50], n 115, G closer in 14, sign p 1.11e-05, Wilcoxon p 1.56e-05; medians G 5.79 S 3.77 cm
+    R vs S: success R 47 (31.3 %) S 41 (27.3 %) diff +4.0 pp | S-only 3 R-only 9 McNemar exact p 0.146
+       close-time hand to the grasp point, paired R - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 115, R closer in 25, sign p 0.358, Wilcoxon p 0.144; medians R 3.40 S 3.77 cm
+    S vs A: success S 41 (27.3 %) A 30 (20.0 %) diff +7.3 pp | A-only 6 S-only 17 McNemar exact p 0.0347
+  all 7 tasks (candle, apple, bowl, salt, statue_cab, dumbbell, wcan): 210 pairs
+    G vs A: success G 45 (21.4 %) A 32 (15.2 %) diff +6.2 pp | A-only 5 G-only 18 McNemar exact p 0.0106
+       close-time hand to the grasp point, paired G - A: median +0.00 cm, 95 % CI [-0.02, +0.00], n 133, G closer in 56, sign p 0.000752, Wilcoxon p 8.15e-06; medians G 6.11 A 8.64 cm
+    G vs S: success G 45 (21.4 %) S 47 (22.4 %) diff -1.0 pp | S-only 6 G-only 4 McNemar exact p 0.754
+       close-time hand to the grasp point, paired G - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 133, G closer in 19, sign p 5.06e-05, Wilcoxon p 1.13e-05; medians G 6.11 S 3.84 cm
+    R vs S: success R 53 (25.2 %) S 47 (22.4 %) diff +2.9 pp | S-only 3 R-only 9 McNemar exact p 0.146
+       close-time hand to the grasp point, paired R - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 132, R closer in 29, sign p 0.457, Wilcoxon p 0.155; medians R 3.45 S 3.84 cm
+[heft] eval.txt md5 177539af
+  decision set (candle, apple, statue_cab, dumbbell, wcan): 150 pairs
+    G vs A: success G 13 (8.7 %) A 9 (6.0 %) diff +2.7 pp | A-only 1 G-only 5 McNemar exact p 0.219 | WIN False
+       close-time hand to the grasp point, paired G - A: median +0.00 cm, 95 % CI [-0.24, +1.21], n 93, G closer in 39, sign p 0.824, Wilcoxon p 0.0372; medians G 12.61 A 8.18 cm
+    G vs S: success G 13 (8.7 %) S 12 (8.0 %) diff +0.7 pp | S-only 0 G-only 1 McNemar exact p 1
+       close-time hand to the grasp point, paired G - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 86, G closer in 27, sign p 1, Wilcoxon p 0.519; medians G 12.61 S 11.98 cm
+    R vs S: success R 12 (8.0 %) S 12 (8.0 %) diff +0.0 pp | S-only 0 R-only 0 McNemar exact p 1
+       close-time hand to the grasp point, paired R - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 91, R closer in 7, sign p 1, Wilcoxon p 1; medians R 11.98 S 11.98 cm
+    S vs A: success S 12 (8.0 %) A 9 (6.0 %) diff +2.0 pp | A-only 1 S-only 4 McNemar exact p 0.375
+  all 7 tasks (candle, apple, bowl, salt, statue_cab, dumbbell, wcan): 210 pairs
+    G vs A: success G 13 (6.2 %) A 9 (4.3 %) diff +1.9 pp | A-only 1 G-only 5 McNemar exact p 0.219
+       close-time hand to the grasp point, paired G - A: median +0.00 cm, 95 % CI [-0.21, +0.11], n 111, G closer in 47, sign p 0.917, Wilcoxon p 0.072; medians G 15.58 A 11.49 cm
+    G vs S: success G 13 (6.2 %) S 12 (5.7 %) diff +0.5 pp | S-only 0 G-only 1 McNemar exact p 1
+       close-time hand to the grasp point, paired G - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 104, G closer in 32, sign p 0.807, Wilcoxon p 0.827; medians G 15.58 S 17.69 cm
+    R vs S: success R 12 (5.7 %) S 12 (5.7 %) diff +0.0 pp | S-only 0 R-only 0 McNemar exact p 1
+       close-time hand to the grasp point, paired R - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 109, R closer in 10, sign p 0.629, Wilcoxon p 0.963; medians R 15.66 S 17.69 cm
+[sonic] eval.txt md5 5489f499
+  decision set (candle, apple, statue_cab, dumbbell, wcan): 150 pairs
+    G vs A: success G 27 (18.0 %) A 19 (12.7 %) diff +5.3 pp | A-only 2 G-only 10 McNemar exact p 0.0386 | WIN False
+       close-time hand to the grasp point, paired G - A: median -0.09 cm, 95 % CI [-0.84, +0.00], n 117, G closer in 60, sign p 0.000107, Wilcoxon p 1.4e-06; medians G 4.43 A 5.68 cm
+    G vs S: success G 27 (18.0 %) S 27 (18.0 %) diff +0.0 pp | S-only 2 G-only 2 McNemar exact p 1
+       close-time hand to the grasp point, paired G - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 117, G closer in 7, sign p 6.24e-07, Wilcoxon p 3.53e-09; medians G 4.43 S 3.63 cm
+    R vs S: success R 28 (18.7 %) S 27 (18.0 %) diff +0.7 pp | S-only 0 R-only 1 McNemar exact p 1
+       close-time hand to the grasp point, paired R - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 117, R closer in 10, sign p 0.0051, Wilcoxon p 2.64e-05; medians R 4.29 S 3.63 cm
+    S vs A: success S 27 (18.0 %) A 19 (12.7 %) diff +5.3 pp | A-only 2 S-only 10 McNemar exact p 0.0386
+  all 7 tasks (candle, apple, bowl, salt, statue_cab, dumbbell, wcan): 210 pairs
+    G vs A: success G 27 (12.9 %) A 19 (9.0 %) diff +3.8 pp | A-only 2 G-only 10 McNemar exact p 0.0386
+       close-time hand to the grasp point, paired G - A: median +0.00 cm, 95 % CI [-0.61, +0.00], n 132, G closer in 63, sign p 0.000188, Wilcoxon p 2.12e-06; medians G 5.48 A 6.24 cm
+    G vs S: success G 27 (12.9 %) S 31 (14.8 %) diff -1.9 pp | S-only 6 G-only 2 McNemar exact p 0.289
+       close-time hand to the grasp point, paired G - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 132, G closer in 8, sign p 1.57e-08, Wilcoxon p 2.95e-09; medians G 5.48 S 4.42 cm
+    R vs S: success R 30 (14.3 %) S 31 (14.8 %) diff -0.5 pp | S-only 2 R-only 1 McNemar exact p 1
+       close-time hand to the grasp point, paired R - S: median +0.00 cm, 95 % CI [+0.00, +0.00], n 132, R closer in 11, sign p 0.00126, Wilcoxon p 5.94e-06; medians R 4.81 S 4.42 cm
+```
+
+**成功数（7 个任务）**
+
+| 控制器 | A | S | G | R |
+|---|---|---|---|---|
+| ScaleBFM | 32 | 47 | 45 | 53 |
+| SONIC | 19 | 31 | 27 | 30 |
+| HEFT | 9 | 12 | 13 | 12 |
+
+**失败原因（7 个任务，A / S / G / R）**
+- ScaleBFM：
+  - 卡家具 68 / 20 / 51 / 41
+  - 站位/IK 56 / 85 / 56 / 55
+  - 抓空 5 / 6 / 9 / 9
+- SONIC：
+  - 卡家具 59 / 51 / 63 / 61
+  - 站位/IK 37 / 52 / 36 / 39
+  - 抓空 41 / 23 / 32 / 27
+- HEFT：
+  - 卡家具 96 / 88 / 92 / 88
+  - 抓空 12 / 24 / 13 / 24
+
+**护栏触发**（按抖动局）
+- ScaleBFM：缩修正量 126 次，退回 122 次。主要在雕像柜 38、哑铃 38、浇水壶 34、碗 9。
+- HEFT：退回 108 次。
+
+**护栏为什么几乎总是退回**（执行 agent 从局记录读出）
+- ScaleBFM 在远处目标上，S 实际执行的修正量中位数很大：浇水壶 19.1 cm、哑铃 15.4 cm、雕像柜 26.8 cm。
+- 对 S 选中的命令，D 预测的偏差只有 1.9、1.5、0.5 cm。缩到 10 cm 以后，D 预测的偏差变成 7.3、7.8、8.3 cm，于是几乎全部退回直接命令。
+- 结果是：远处目标上 G 等于 A，越过目标的比例也回到 A 的 2 %；近处的蜡烛上 G 等于 S，退回 0 次。
+- HEFT 不一样：A 自己在浇水壶上就越过目标，中位数 +20.9 cm，S 是往回拉。浇水壶上 D 对 S 选中的命令预测要差 13.1 cm；G 退回以后，又回到了 A 那样越过目标。
+
+**R 组在 ScaleBFM 上最好**
+- 7 个任务上，R 53 局，S 47，A 32。
+- 浇水壶：R 8 局，S 2，A 3。R 对 S，只有 R 成功的 6 局，p 0.031。
+- 越过目标的只有 2 %。浇水壶上执行的修正量中位数 1.2 cm。
+- 登记里没有 R 对 A 这一项，下面的数只作线索。判定集上：
+  - ScaleBFM 47 对 30，+11.3 个百分点，p 0.0009；
+  - SONIC 28 对 19，p 0.023；
+  - HEFT 12 对 9，p 0.38。
+
+**对照判据**
+
+| 判据 | ScaleBFM | SONIC | HEFT |
+|---|---|---|---|
+| G 对 A 赢（≥ 10 个百分点，p < 0.05） | 否：+7.3，p 0.019 | 否：+5.3，p 0.039 | 否：+2.7，p 0.22 |
+| G 比 S 多 ≥ 4 局，且浇水壶 G ≥ 6/30 | 否（G − S = −2，浇水壶 2/30） | 否 | 否 |
+| G 和 S 相差在 ±3 局以内 | 是（−2） | — | 是（+1） |
+| G 比 S 少 ≥ 4 局 | — | 是（−4，全部来自被排除的碗；判定集上 G − S = 0） | — |
+| R 清掉 IK 标签，但越过目标仍 ≥ 50 %，成功不比 S 多 3 局 | 否：IK 标签清掉了，越过目标只有 2 %，R − S = +6 | 否：IK 标签没清掉 | 否：越过目标只有 2 %，R − S = 0 |
+| HEFT：G − A 合手距离区间含 0 | — | — | 是：中位数 0.00 cm，区间 [−0.24, +1.21] |
+| A 或 S 和 lmlcmp 逐局不同 | 否 | 否 | 否 |
+
+SONIC 的"G 比 S 少 ≥ 4 局"是按 7 个任务算的，这个口径是看结果前定的。但这 4 局全部来自被排除的碗：碗上 12 下伸手都先缩、后退回。判定集上 G − S = 0。照字面读，护栏挡掉了有用的修正；不过这只发生在一个不进判定的任务上。
+
+**预测对照**
+- A、S 的数和预测完全一致。
+- G 的成功数：ScaleBFM 45，没中（预测 50–60）；SONIC 27，没中（29–36）；HEFT 13，中（12–18）。
+- R 的成功数：ScaleBFM 53，没中，比预测上限高 1（44–52）；SONIC 30，中；HEFT 12，中。
+- ScaleBFM 蜡烛 G 18 局、退回 0 次，中。浇水壶 G 4–9 局，没中，实际 2 局。
+- 护栏触发次数远超预测：ScaleBFM 缩修正量 126、退回 122，预测是 15–40、10–35；HEFT 退回 108，预测 20–50。触发集中的任务猜对了。
+- HEFT 的 G − A 合手距离预测 −0.5 到 −2.5 cm，实际 0，没中，因为 G 多数退回了直接命令。
+- 赢的可能：ScaleBFM 预测约五成，结果没赢。
+
+**和计划不一样的地方**：没有新的。有三处细节在修订 1 里事先写明了：目标本身也够不着时，R 执行目标；冒烟多跑了 8 局；G 对 S 按 7 个任务算。
 
 ## 意外
 
-## 结论与下一步
+1. **护栏几乎总是退回，所以 G 在远处目标上就等于直接执行。** 原因是：把修正量缩到 10 cm 以后，D 预测还会差 7–8 cm，过了 3 cm 的退回线。可见远处目标上 D 认为要修 15–27 cm 才够，10 cm 的上限太紧。
+2. **缩回可达（R）在 ScaleBFM 上最好**，7 个任务 53 局。浇水壶从 2 局回到 8 局，蜡烛保住了。这和假设 3 相反：在 ScaleBFM 上，问题确实出在命令推出了可达范围。缩回以后手不再越过目标，越过的只有 2 %。
+3. **lmlcmp 复核说"浇水壶是修正过头、不是够不着"，这次被 R 推翻了一半。** 只要把每一步的候选命令限制在 IK 可达范围内，浇水壶就回来了。所以越过目标，是因为 IK 解不到命令时手跑到了别处，不是 D 本身预测错了。
+4. **HEFT 的问题不在反解。** G 多数退回了直接命令，结果和 A 一样；R 和 S 一样。
+
+## 结论与下一步（待复核）
+
+- **按登记的主比较（G 对 A），三个控制器都没赢。** 护栏的设计（10 cm 上限、3 cm 退回线）在远处目标上太紧，几乎总是退回直接命令。
+- **ScaleBFM：缩回可达（R）是最好的反解**，判定集上对 A 是 +11.3 个百分点，p 0.0009。但这是登记以外的比较，只能当线索。要换一批新种子单独登记一轮确认，才能当结论。
+- **SONIC**：四种做法都差不多，判定集 19–28 局。手更准，但成功数提升有限。瓶颈要另查。
+- **HEFT**：反解怎么改都帮不上。问题在任务里的卡家具，以及模型本身。
+- **下一步**：登记一轮确认。用新的抖动种子，每个任务 30 局，主比较定为 R 对 A，三个控制器都跑。R 如果在新种子上对 A 仍然达到"赢"，以后 ScaleBFM 的反解就用 R。
+- **证据强度**：每个控制器 1 次运行，判定集 150 对，模型只用 D 的 seed 0。R 的结果是事后看到的。
+- **其他可能的解释**：R 的提升可能部分来自"缩回以后命令更接近直接命令"。浇水壶上 R 执行的修正量中位数只有 1.2 cm，也就是说 R 在浇水壶上基本就是直接执行，而 A 在浇水壶上只有 3 局。这一点要查：R 赢回来的局，命令和 A 到底差多少。
+- **四类陷阱**：
+  - benchmark 选择：判定集按新规则定，构造上四组相同；
+  - 数据泄漏：没有；
+  - 指标误用：主比较没换，R 对 A 标为事后；
+  - 事后挑选：四组都报了，R 最好这一点是事后看到的，要用新种子确认。
 
 ## 独立复核
+
+（2026-11-26，独立 agent，只读；以下是要点，原意照录）
+
+**总体**：数字全对得上。论断 1、4 站得住，但读法要改。论断 2 的数字对，"R 是最好的反解"证据不够。论断 3 前半对、后半错。论断 5 方向对，但主比较要改。
+
+条目里有一处会误导：浇水壶 R 的"修正量中位数 1.2 cm"只算了预抓取，进入段中位数是 14.6 cm。所以 R 在浇水壶上并不是"基本等于直接执行"。"其他可能的解释"那一段就是建立在这个误读上的。
+
+**1. 数字核对**
+
+从原始局记录自己配对、重算：
+
+| 比较 | 结果 | 只有一组成功的局 | p |
+|---|---|---|---|
+| ScaleBFM 判定集 G 对 A | 41 对 30 | G 15，A 4；G 的 15 局里 10 局是蜡烛 | 0.0192 |
+| ScaleBFM 判定集 R 对 A | 47 对 30 | R 21，A 4 | 0.00091 |
+| 浇水壶 R 对 S | 8 对 2 | R 6（第 3、13、14、17、21、23 局），S 0 | 0.031 |
+
+- 其他数字也都对上：各任务成功数、失败原因、触发次数、预抓取修正量和 D 预测偏差、HEFT 浇水壶 13.06 cm、SONIC 和 HEFT 的 R 对 A、md5、FROZEN_UTC、局数、A/S 逐局一致。
+- R 发出的命令只要和 A（29 次预抓取）或 S（67 局）相同，结果就逐位相同。所以 R 多做的 IK 规划没有副作用。
+- 条目不准确的两处：
+  - "执行的修正量中位数"都只算了预抓取，没有写明；
+  - HEFT 失败原因漏了站位/IK 一行，A / S / G / R 是 38 / 32 / 38 / 32。
+
+**2. 四类陷阱**
+
+*R 为什么好*
+
+浇水壶上 R 赢、A 输的 5 局：
+
+| 局 | 预抓取修正 A / R | 进入段修正 A / R | 合手距离 A / R | A 失败原因 |
+|---|---|---|---|---|
+| 3 | 0 / 0（目标 IK 3.0 cm，R 等于 A） | 0 / 9.6 | 12.8 / 6.4 | 站位/IK |
+| 13 | 0 / 0.2 | 0 / 16.0 | 13.9 / 2.8 | 卡家具 |
+| 14 | 0 / 13.2 | 0 / 14.1 | 6.9 / 2.3 | 抓空 |
+| 21 | 0 / 11.0 | 0 / 15.3 | 14.0 / 3.0 | 抓空 |
+| 23 | 0 / 1.2 | 0 / 14.5 | 12.8 / 2.7 | 卡家具 |
+
+- **R 赢 A 靠进入段。** A 的进入段差 5.6 cm 就停了，R 修了 10–16 cm，正好落到目标上。
+- **R 赢 S 靠的是预抓取没推过头。**
+  - S 的预抓取，16/21 次命令 IK 解不到，手越过目标约 17 cm；12/21 局在预抓取时碰到了壶，这 12 局一局都没成功。
+  - S 的这些失败多记成"站位/IK"，其实合手距离只有 2–8 cm，这个标签盖住了真正的原因。
+  - R 的预抓取只有 2 局碰到壶。
+- **"目标本身也够不着就执行目标"这条规则不是 R 的收益来源。** 它只参与了浇水壶 R 赢的 1 局，却参与了哑铃 R 输给 S 的全部 3 局（第 7、23、29 局）。净效果略为负。
+- **收益集中在少数局上。**
+  - R 对 A 只有 R 成功的 21 局：蜡烛 10（R、S、G 三组完全相同），浇水壶 5，哑铃 4 对 3，苹果 2 对 1。
+  - R 对 S 净多 6 局，全在浇水壶。
+  - 去掉蜡烛，R 对 A 是 11 对 4，p 0.12。
+
+*假设 3 被推翻：哪个说法对*
+
+ScaleBFM 上没碰家具的伸手，落点和 D 预测之差（中位数）：
+
+| 命令的 IK 误差 | 落点和 D 预测之差 |
+|---|---|
+| ≤ 2 cm | 0.7–0.9 cm |
+| 2–3 cm | 1.2–1.7 cm |
+| S 推过可达边界的命令（> 3 cm，24 次） | 19.6 cm |
+
+- 浇水壶 16 次 S 预抓取：沿前进方向，手落在命令点前方 1.1 cm，D 却预测手会比命令点短 18 cm。
+- "越过目标""命令被推出可达范围""D 预测错"说的是同一批伸手，两轮的说法各对一半：
+  - 上一轮复核说"修正过头、D 在远处预测错"，描述对；但由此推出"缩回可达没用"（即假设 3），错了。
+  - 这一轮作者说"问题在可达范围"，对；但"不是 D 预测错""手跑到了别处"都不对：手其实到了命令点，错的是 D 的预测。
+- 出问题的是被反解推过边界的命令，不是"远处"本身：直接命令本身略够不着时（A 组 6 次，没碰家具），D 照样准，误差 1.3 cm。
+- D 的训练数据里，IK 误差 > 3 cm 的伸手只占 3.6 %（data3）和 1.6 %（data3b）。
+- 为什么 IK 解不到时手反而到了命令点，局记录分不出来，因为没存参考动作的终点。
+
+*护栏的读法*
+- 缩到 10 cm 以后，D 预测的偏差约为 0.8 × (S 的修正量 − 10 cm)。所以 S 只要想修超过约 14 cm，几乎一定退回。
+
+  | S 的修正量 | 退回 |
+  |---|---|
+  | 10–13 cm | 4/12 |
+  | 13–16 cm | 18/21 |
+  | 16–20 cm | 40/41 |
+  | > 20 cm | 51/52 |
+
+- 这在跑之前就能算出来：G 在预抓取上缩了 63 次，正好等于 lmlcmp 里 S 预抓取修正量 > 10 cm 的次数。
+- 问题是按修正量大小设防，管错了对象：
+  - R 在浇水壶进入段修了 15 cm，SONIC 在碗上修了 20–40 cm，D 都预测准了，也都有用；
+  - 退回线用的正是 D 自己的预测，所以 G 本来就检验不了假设 1。
+
+*SONIC 的 G 比 S 少 4 局*
+- 碗只有 8 局走到了伸手。A 的落点比目标短 20–46 cm；S 修了 19–42 cm，落点误差 3–9 cm，成功 4/8。
+- G 在碗上 12 下伸手全部先缩后退回，0/8；R 2/8。
+- 判据行事先定好按 7 个任务算，所以按登记成立。碗剩下的这 8 局配对仍然有效，不该因为"不进判定"就打折扣。
+- 合理读法：按登记成立，证据很少（1 个任务 4 对，p 0.125），方向和 ScaleBFM 一致：护栏挡掉的是又大又对的修正。
+
+*事后比较*
+- 合并层面能做 36 个比较（6 对组 × 判定集/7 个任务 × 3 个控制器），按任务分开还有 126 个。
+- Holm 校正 36 个，ScaleBFM 判定集 R 对 A 校正后 p 0.032，仍然显著。但它测的主要是"用 D 反解比直接执行好"。
+- 真正属于 R 自己的部分：
+  - R 对 S 9 对 3，p 0.146；
+  - 浇水壶 R 对 S p 0.031，按 7 个任务校正是 0.22，按 126 个是 1。
+
+**3. 确认实验**
+
+*种子和组别*
+- 新的抖动局 30–119，每个任务 90 局。要先补拍 630 个"那一眼"，会用 4090 上的 SAM 3 和 GraspGen-X。
+- 判定集在新种子上用同一条规则（只算两组分开之前的失败）重算。
+- 组别：
+  - ScaleBFM：A、S、R，再加一组 E：预抓取直接执行，进入段用原反解、不缩回；
+  - SONIC：A、S、R；
+  - HEFT：A、R。
+
+*主比较*：ScaleBFM 判定集，两个比较做 Holm 校正。
+- P1：R 对 A，提高 ≥ 10 个百分点且 p < 0.05；
+- P2：R 对 S，R 多且 p < 0.05。
+
+| 结果 | 结论 |
+|---|---|
+| P1、P2 都成立 | ScaleBFM 改用 R |
+| 只有 P1 成立 | 反解比直接好，但 R 和 S 分不出来 |
+| P1 不成立 | 这次的提高有一部分是运气 |
+
+*检出概率*
+- R 对 S，450 对：真实效果和这次一样时约 75 %，只有这次三分之二时约 43 %。
+- R 对 A：卡住的是"≥ 10 个百分点"这条线，约 75 %；真实提高只有约 8 个百分点时约 15 %。
+
+*机制检验*（次要）
+- M1：S 发出的、IK 误差 > 3 cm、没碰家具的命令，落点和 D 预测之差中位数应 ≥ 10 cm，R 发出的应 ≤ 3 cm。前者 ≤ 5 cm 就推翻论断 3 的机制。
+- M2：R − E ≥ 4 局，说明进入段也要缩回。两者相差在 ±3 局以内、且 E 比 S 多 ≥ 4 局，说明好处在"预抓取别推过头"，论断 3 要降级。
+- M3：浇水壶 S 预抓取碰壶 ≥ 40 %，R ≤ 15 %；碰过壶的局成功率 ≤ 10 %。
+- 推翻论断 2：判定集 R − S ≤ 0，或浇水壶 R − S ≤ 2 局。
+
+*成本*：ScaleBFM 2520 局约 55 分钟，SONIC 1890 局约 87 分钟，HEFT 1260 局约 25 分钟；合计约 2.8 小时 CPU，另加拍"那一眼"和冒烟、冻结约 30 分钟。
+
+**4. 判定**
+
+| 论断 | 判定 | 理由 |
+|---|---|---|
+| 1. 按主比较都没赢；护栏太紧，远处几乎总退回 | 支持（读法要改） | 这是 10 cm 上限和用 D 自己预测的退回线合起来的必然结果，事先可算；按修正量设防管错了对象 |
+| 2. R 在 ScaleBFM 上最好，只是线索 | 数字支持；"R 最好"证据不足 | 21 对里 10 对是三组相同的蜡烛；R 比 S 多的 6 局全在浇水壶，R 对 S p 0.146 |
+| 3. 假设 3 被推翻，问题是命令被推出了可达范围 | 前半支持，后半不支持 | 越过目标的就是被推出可达范围的命令，D 在上面错了约 20 cm，手其实到了命令点 |
+| 4. HEFT 的问题不在反解 | 支持（"模型本身"那半句不支持） | 预抓取 76 次退回里 75 次手碰着家具；没碰家具时 D 只差 1.9 cm |
+| 5. 换新种子确认，主比较 R 对 A | 部分支持，要改 | R 对 A 主要测"反解比直接好"，要加 R 对 S 作共同主比较，再加 E 组检验机制 |
+
+## 复核后的更正（2026-11-26）
+
+1. **收回"其他可能的解释"那一段。** 浇水壶上 R 的修正量中位数 1.2 cm 只算了预抓取，进入段是 14.6 cm。R 赢 A 靠进入段修准了，赢 S 靠预抓取没推过头、没碰到壶。
+2. **"R 最好"降为线索。** R 对 A 显著（Holm 校正后 p 0.032），但测的主要是"反解比直接好"。R 自己的贡献，即 R 对 S，是 9 对 3、p 0.146，全在浇水壶。去掉蜡烛，R 对 A 也不显著（11 对 4，p 0.12）。
+3. **意外 3 更正为**：反解把命令推过了 IK 可达边界，D 在这些命令上错了约 20 cm（在可达命令上只差 1 cm 左右），手其实到了命令点，所以越过了目标。原因是 D 的训练数据里这类命令只占 2–4 %。"手跑到了别处""不是 D 预测错"都收回。合起来的说法是：**D 只在可达的命令上可靠，反解要留在这个范围里。**
+4. **护栏的读法更正为**：按修正量大小设防管错了对象，而且退回线用的是 D 自己的预测，检验不了假设 1。这个结果事先就能从 lmlcmp 算出来，登记时没算。
+5. **SONIC 碗**：按登记，"护栏挡掉有用修正"这一格成立，但证据很少（4 对）。
+6. **HEFT**：问题不在反解，也不在模型本身。没碰家具时 D 只差 1.9 cm，退回的 76 次里 75 次手碰着家具。收回"问题在模型或任务"里的"模型"。失败原因补上站位/IK 38 / 32 / 38 / 32。
+7. **下一步**：按复核的设计另行登记确认轮 `selfmodel_lmlcmp3_20261126`：
+   - 新种子 30–119；
+   - ScaleBFM A/S/R/E，SONIC A/S/R，HEFT A/R；
+   - 共同主比较 P1（R 对 A）和 P2（R 对 S），做 Holm 校正；
+   - 机制检验 M1–M3。

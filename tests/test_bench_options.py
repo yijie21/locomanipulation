@@ -139,6 +139,13 @@ class CapabilityTables(unittest.TestCase):
             r = resolve("simple", [f"controller={ctrl}", *view])
             self.assertEqual(r.planned, (), (ctrl, view))
 
+    def test_simple_takes_heft(self):
+        # wired 2026-11-25 (backends.heft): READY on the bed, simple_bench gets controller "heft"
+        r = resolve("simple", ["controller=heft"])
+        self.assertEqual(r.planned, ())
+        self.assertEqual(S.bed_settings(r.options)["controller"], "heft")
+        self.assertTrue(r.options.signature().endswith("/root-odometry/heft"), r.options.signature())
+
     def test_every_table_covers_every_axis_and_every_value_is_a_known_choice(self):
         choices = {f: BenchOptions.__dataclass_fields__[f].metadata["choices"] for f in AXES}
         for name in BENCHES:
@@ -161,7 +168,7 @@ class SimpleBed(unittest.TestCase):
     def test_the_switches_map_onto_simple_benchs_own_settings(self):
         bed = S.bed_settings(resolve("simple").options)
         self.assertEqual(bed, dict(column="perception", cloud="cloud_blind", look="look_dump_blind", controller="scalebfm",
-                                   root="odo"))  # fmt: skip
+                                   root="odo", sonic_vr_frame="robot"))  # fmt: skip
         bed = S.bed_settings(resolve("simple", ["sensor=stereo", "controller=sonic"]).options)
         self.assertEqual((bed["column"], bed["cloud"], bed["look"], bed["controller"]),
                          ("perception", "cloud_eyes_final", "look_dump_eyes", "sonic"))  # fmt: skip
@@ -182,6 +189,41 @@ class SimpleBed(unittest.TestCase):
         with redirect_stdout(io.StringIO()), redirect_stderr(err):
             self.assertEqual(bed_cli.main(["--bench-set", "controller=amo"]), 2)
         self.assertIn("planned", err.getvalue())
+
+
+class SonicVrFrame(unittest.TestCase):
+    # simple_sonic_vrref_20261126 (2026-11-26): the frame of SONIC's VR hand targets, a switch on SONIC only
+    def test_the_default_is_robot_and_leaves_every_signature_and_bed_as_it_was(self):
+        r = resolve("simple", ["controller=sonic", "sensor=rgbd"])
+        self.assertEqual(r.options.sonic_vr_frame, "robot")
+        self.assertEqual(r.options.signature(), "simple/perception-rgbd/pose-odometry/root-odometry/sonic")
+        self.assertEqual(S.bed_settings(r.options)["sonic_vr_frame"], "robot")
+        self.assertEqual(r.planned, ())
+
+    def test_reference_shows_in_the_signature_and_reaches_the_bed(self):
+        r = resolve("simple", ["controller=sonic", "sensor=rgbd", "sonic_vr_frame=reference"])
+        self.assertEqual(r.options.signature(), "simple/perception-rgbd/pose-odometry/root-odometry/sonic-vr-reference")
+        self.assertEqual(S.bed_settings(r.options)["sonic_vr_frame"], "reference")
+        self.assertEqual(r.explicit, ("controller", "sensor", "sonic_vr_frame"))
+        self.assertEqual(r.record()["options"]["sonic_vr_frame"], "reference")
+
+    def test_it_belongs_to_sonic(self):
+        with self.assertRaisesRegex(ValueError, "applies to controller=sonic only"):
+            resolve("simple", ["sonic_vr_frame=reference"])
+        with self.assertRaisesRegex(ValueError, "not in"):
+            resolve("simple", ["controller=sonic", "sonic_vr_frame=world"])
+        r = resolve("simple", ["sonic_vr_frame=robot"])  # the default, explicit: fine on any controller
+        self.assertEqual(r.options.signature(), "simple/perception-rgbd/pose-odometry/root-odometry/scalebfm")
+
+    def test_a_record_without_it_still_loads_as_robot(self):
+        d = resolve("simple", ["controller=sonic"]).options.to_dict()
+        del d["sonic_vr_frame"]
+        self.assertEqual(BenchOptions.from_dict(d).sonic_vr_frame, "robot")
+
+    def test_reference_signatures_are_apart(self):
+        sigs = {resolve("simple", ["controller=sonic", f"sonic_vr_frame={v}", *view]).options.signature()
+                for v in O.SONIC_VR_FRAMES for view in ([], ["target=truth"], ["sensor=stereo"])}  # fmt: skip
+        self.assertEqual(len(sigs), 2 * 3)
 
 
 class Signatures(unittest.TestCase):

@@ -58,6 +58,69 @@ Q, GRAV, HEIGHT = slice(0, 29), slice(58, 61), 64  # S layout (env.py)
 # trained before keeps its own feature, plan_invert.plan_features reads the same switch, and wrist_invert.export stamps
 # the pickle (.qfix) so check_qfix can refuse a model fed the other feature.
 QFIX = os.environ.get("REACHWM_QFIX", "0") == "1"
+# REACHWM_FDVEL=1 (2026-11-26, selfmodel_fdvel_20261126): x0's velocity inputs from the record's own positions instead
+# of the simulator's velocity readings (HumanoidArena's joint_vel and root angular velocity do not match the motion of a
+# standing robot; selfmodel_xfer_20261125). In each of x0's three S rows (S[k0], S[k0-1], S[k0-2]):
+#   joint velocities (S 29:58)                       backward difference of the joint angles (S 0:29) / ROW_S
+#   pelvis angular velocity (S 61:64, pelvis frame)  log(R_prev^T R) / ROW_S, R = Rz(yaw) Ry(pitch) Rx(roll) from W's yaw
+#                                                    and S's gravity in the pelvis frame (as models.pelvis_R)
+# ROW_S is the collectors' row interval (a row every TICKS = 5 frames at 50 Hz; C's time since the command steps by it).
+# S holds no pelvis linear velocity (height only), and nothing else in x0 or u is a velocity. The difference of S[k0-2]
+# reads the row before it inside the same segment: the collectors write three rows (PRE_S = 0.3 s) before the command,
+# so k0 = 3; like the history rows themselves, nothing is filled in when that row is missing (asserted). LocoManiLab's
+# and every other host's record go through the same function (derive -> fdvel_x0). Off: x0 is bit-identical to before.
+FDVEL = os.environ.get("REACHWM_FDVEL", "0") == "1"
+ROW_S = 0.1
+S_DIM, DQ, ANGVEL = 65, slice(29, 58), slice(61, 64)  # S layout (env.py)
+# x0's velocity columns, S[k0], S[k0-1], S[k0-2] in turn: 3 x 29 joint velocities and 3 x 3 angular velocities
+X0_DQ_COLS = np.concatenate([np.arange(s * S_DIM + DQ.start, s * S_DIM + DQ.stop) for s in range(3)])
+X0_ANGVEL_COLS = np.concatenate([np.arange(s * S_DIM + ANGVEL.start, s * S_DIM + ANGVEL.stop) for s in range(3)])
+
+
+def pelvis_rot(yaw: np.ndarray, g: np.ndarray) -> np.ndarray:
+    """Pelvis rotations (N, 3, 3) from the yaw (W[:, 3], env.yaw_of) and gravity in the pelvis frame (S[:, GRAV]):
+    Rz(yaw) Ry(pitch) Rx(roll), exact for env.yaw_of's yaw (models.pelvis_R; the X0_REF block above)."""
+    g = np.asarray(g, np.float64)
+    g = g / np.linalg.norm(g, axis=1, keepdims=True)
+    th, ph, yw = np.arcsin(np.clip(g[:, 0], -1, 1)), np.arctan2(-g[:, 1], -g[:, 2]), np.asarray(yaw, np.float64)
+    cz, sz, cy, sy, cx, sx = np.cos(yw), np.sin(yw), np.cos(th), np.sin(th), np.cos(ph), np.sin(ph)
+    return np.stack([np.stack([cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx], -1),
+                     np.stack([sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx], -1),
+                     np.stack([-sy, cy * sx, cy * cx], -1)], -2)  # fmt: skip
+
+
+def so3_log(R: np.ndarray) -> np.ndarray:
+    """Rotation vectors (N, 3) of rotations (N, 3, 3) below pi: angle from atan2 (accurate near 0), axis from the skew
+    part."""
+    v = np.stack([R[:, 2, 1] - R[:, 1, 2], R[:, 0, 2] - R[:, 2, 0], R[:, 1, 0] - R[:, 0, 1]], -1)
+    s2 = np.linalg.norm(v, axis=1)  # 2 sin(angle)
+    th = np.arctan2(s2, np.trace(R, axis1=1, axis2=2) - 1.0)
+    k = np.where(s2 > 1e-12, th / np.maximum(s2, 1e-300), 0.5)
+    return v * k[:, None]
+
+
+def fd_rows(S: np.ndarray, W: np.ndarray, rows: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Velocities at global rows `rows` from the row before each: joint angle differences / ROW_S (N, 29) and the
+    pelvis-frame angular velocity log(R_prev^T R) / ROW_S (N, 3)."""
+    rows = np.asarray(rows)
+    dq = (S[rows, Q].astype(np.float64) - S[rows - 1, Q]) / ROW_S
+    Rp, Rc = pelvis_rot(W[rows - 1, 3], S[rows - 1, GRAV]), pelvis_rot(W[rows, 3], S[rows, GRAV])
+    w = so3_log(np.einsum("nji,njk->nik", Rp, Rc)) / ROW_S
+    return dq, w
+
+
+def fdvel_x0(D: dict, x0: np.ndarray) -> np.ndarray:
+    """REACHWM_FDVEL's x0: `x0` (D's segments) with its 96 velocity columns (X0_DQ_COLS, X0_ANGVEL_COLS) replaced by
+    fd_rows of S[k0], S[k0-1], S[k0-2]; every other column unchanged."""
+    n, k0 = D["n_steps"].astype(int), D["k0"].astype(int)
+    assert k0.min() >= 3, f"the difference of S[k0-2] needs the row before it in the segment (k0 >= 3), min k0 {k0.min()}"
+    r0 = np.r_[0, np.cumsum(n)[:-1]] + k0
+    out = np.array(x0, np.float32, copy=True)
+    for s in range(3):
+        dq, w = fd_rows(D["S"], D["W"], r0 - s)
+        out[:, s * S_DIM + DQ.start : s * S_DIM + DQ.stop] = dq
+        out[:, s * S_DIM + ANGVEL.start : s * S_DIM + ANGVEL.stop] = w
+    return out
 
 
 def s_to_mujoco() -> np.ndarray:
@@ -203,6 +266,8 @@ def derive(D: dict) -> None:
                         D["ref_s"]].astype(np.float32)  # fmt: skip
     if APPROACH:
         D["x0"] = np.c_[D["x0"], walk_features(D["walk"])].astype(np.float32)
+    if FDVEL:
+        D["x0"] = fdvel_x0(D, D["x0"])
     # odometry of every transition t -> t+1 (zero on each segment's last row), world pelvis rows
     O = np.zeros((len(W), 4), np.float32)
     d = hv(W[1:, :3] - W[:-1, :3], W[:-1, 3])

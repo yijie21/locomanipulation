@@ -58,6 +58,28 @@ plan2.py's Q and names), the rest of the body held at the reference pose of the 
 is sent as usual. The stage records joint_path_cm, joint_dur_s and joint_gap_deg (the reference's arm against the plan's
 start, faded out along the path).
 
+--relook (2026-11-26, simple_relook_20261126; perception column, sensor=rgbd; off by default, and off nothing changes): a
+second look at the stance (relook.py): the head camera's depth in the replica, its furniture registered onto the start
+look's furniture (look_dump_blind without the target and the robot) with the odometry as the prior, the pelvis belief
+replaced by the result; when the target's place in the body frame is more than --relook-step-cm from its planned place,
+a step back to the planned stance (--relook-extra-s more walking time, the walk's end reading nothing of the simulator),
+leg odometry over it, and another look; at most --relook-steps steps. The grasp, the route's goal and every column's
+command then come from that pose. A row's "relook": each look's prior, estimate, the furniture's constraint, the
+decision and the step, and (record only) the errors against the simulator; "bel" is the final belief, the odometry's is
+"relook.bel_odo". --relook-only ends the episode there (development).
+
+--correct <model D dir> (2026-11-26, selfmodel_simplecmp_20261126; method direct, ScaleBFM; off by default, and off
+nothing changes): the pregrasp's and the entry's straight commands go through lmlcmp3's inversion on the SIMPLE-trained
+self model D before they are sent (--correct-rule R: candidates shrunk to IK <= 2 cm; S: no shrink; dryR: R recorded,
+the goal sent); a joint-path pregrasp (--joint) is sent as it is with D's prediction of it recorded. Each such stage gets
+"correct" (candidates, choice, D's prediction, the landing); the record goes to --correct-out. scmp_correct.py.
+
+--joint-dur <json> (2026-11-26, selfmodel_simplecmp2_20261126 V1; with --joint; off by default, and off nothing changes): the
+joint-path pregrasp is retimed to the episode's duration in the file ("<task>_L<level>_e<index>": seconds, or another
+plan whose reach_joints duration at this command is taken, live): reach_joints' speed is the path's jaw arc length over
+that duration (the same arc reach_joints times), so its leg lasts that long; the path itself is unchanged. The stage
+records joint_dur_set (the asked duration, the arc, the speed, the other plan). scmp2_jdur.py.
+
 Success is SIMPLE's (episodes.lifted), checked at every motor tick. A row records when it first held, counted from the end
 of the settle, so one run gives both the official time limit (LIMIT_S) and HITCH's 45 s.
 
@@ -73,7 +95,8 @@ target=perception, sensor=rgbd (the replica's MuJoCo look, cloud_blind), self_po
 (BFM_ROOT=odo), controller=scalebfm; the rows recorded from 11-20 to 11-24 are sensor=stereo (cloud_eyes_final). They replace --column (target), --cloud (sensor: stereo cloud_eyes_final, rgbd cloud_blind) and the
 REACH_CONTROLLER / BFM_ROOT variables: the controller and the root go to env.Env explicitly, the two variables are set
 from the switches for modules that still read them, and one already set to something else stops the run. Every row
-carries the resolved switches under "bench".
+carries the resolved switches under "bench". sonic_vr_frame (2026-11-26, simple_sonic_vrref_20261126) picks the frame of
+SONIC's VR hand targets, SonicMotorConfig.vr_frame: robot (the default, every SONIC row before it) or reference.
 """
 
 import argparse
@@ -215,6 +238,180 @@ def held_out(task: str, ep: dict, k: int) -> bool:
     return zlib.crc32(f"{task}:{ep['level']}:{ep['index']}".encode()) % k == 0
 
 
+def step_walk(m, forward: float, left: float, turn: float, extra_s: float, idle_end: bool = False, face: str = "fixed"):
+    """--relook's step: gen_reach.open_walk (the heading kept, then the turn, the stop correction off) with extra_s more
+    time before the walk ends, and its end test reading nothing of the simulator (stop_tolerance -1: it ends at the
+    profile's end + settle_s + extra_s). A relative command: forward and left in the robot's heading (the world goal is
+    formed from the simulator's pelvis as open_walk's is; the motor's walk starts its path there and its pelvis
+    estimate was anchored there at the walk's last stand, so only the relative step reaches the controller).
+    idle_end (SONIC, --relook-idle-end): end earlier, once the reference has reached its end pose and SONIC's planner
+    command has been IDLE for settle_s -- the motor's own rule, its pelvis estimate within stop_radius of the goal.
+    face "travel" (--relook-face travel): turn toward the step first when it is off the heading by more than the
+    motor's face_travel_deg, walk forward, turn back (Motor.walk_to's face "travel" with face_travel_min_m 0)."""
+    import dataclasses
+
+    from locomani.backends.scalebfm.motor import Outcome
+
+    yaw = m.yaw()
+    c, s = math.cos(yaw), math.sin(yaw)
+    goal = m.sim.d.qpos[:2] + np.array([c * forward - s * left, s * forward + c * left])
+    cfg = m.cfg
+    m.cfg = dataclasses.replace(cfg, stop_ki=0.0, stop_timeout=cfg.settle_s + extra_s, stop_tolerance=-1.0,
+                                face_travel_min_m=0.0 if face == "travel" else cfg.face_travel_min_m)
+    run0 = m._run
+
+    def run(name, update, timeout):
+        since = [None]
+
+        def upd(t):
+            out = update(t)
+            if out is not None:
+                return out
+            r, r_end = m.ref(t), m.ref(t + 1e3)
+            done = np.array_equal(r.pos, r_end.pos) and np.array_equal(r.quat, r_end.quat)
+            cmd = getattr(m, "cmd", None)
+            if done and cmd is not None and cmd.movement.mode == 0:  # sonic_onnx.runtime.IDLE
+                since[0] = t if since[0] is None else since[0]
+                if t - since[0] >= m.cfg.settle_s - 1e-9:
+                    return Outcome(True, "relook step: idle")
+            else:
+                since[0] = None
+            return None
+
+        return run0(name, upd, timeout)
+
+    if idle_end:
+        m._run = run
+    try:
+        return m.walk_to(goal, yaw + turn, face=face)
+    finally:
+        m.cfg = cfg
+        if idle_end:
+            del m._run
+
+
+TUCK = (0.30, 0.30, 0.0, 0.60, 0.0, 0.0, 0.0)  # --relook-tuck: one arm's 7 joints (shoulder pitch back, roll out, elbow)
+
+
+def tuck_arms(m, seconds: float, hold: float = 0.3):
+    """--relook-tuck: bring both arms to TUCK (the hands by the hips, off a table in front) over `seconds`, standing,
+    before a step; the walk then carries that arm pose (Motor.walk_to keeps the reference's joints)."""
+    from locomani.backends.scalebfm.motor import Outcome, Pose
+    from locomani.primitives.g1_joints import ARM_MJ
+
+    start = m.ref(m.t)
+    q = start.joints.copy()
+    for side, sgn in (("left", 1.0), ("right", -1.0)):
+        q[ARM_MJ[side]] = [TUCK[0], sgn * TUCK[1], sgn * TUCK[2], TUCK[3], sgn * TUCK[4], TUCK[5], sgn * TUCK[6]]
+    goal = Pose(start.pos.copy(), start.quat.copy(), q, np.zeros(29))
+    at, total = m._blend([start, goal], [seconds])
+    m._stand(start)
+    m.ref = at
+    t_0 = m.t
+    return m._run("posture", lambda t: Outcome(True) if t - t_0 >= total + hold - 1e-9 else None, total + hold + 1.0)
+
+
+def relook_stage(a, env, m, odo, bel: dict, r0: dict, p0, yaw0: float, walk, t0: float) -> dict:
+    """--relook (relook.py): look, register, step when the stance is off, look again; `bel` ends as the last look's
+    pose (pb, yb) tied to the simulator's pelvis then (pt, yt). The decisions read the looks and the odometry only;
+    fields ending in _true are the record."""
+    import relook as RL
+    import see as SEE
+
+    sim = env.sim
+    rk = dict(step_cm=a.relook_step_cm, max_steps=a.relook_steps, extra_s=a.relook_extra_s, coarse=not a.relook_no_coarse,
+              turn=not a.relook_no_turn, max_step=a.relook_max_step, settle_s=a.relook_settle_s, idle_end=a.relook_idle_end, face=a.relook_face, back=a.relook_back, tuck=a.relook_tuck, tuck_hold=a.relook_tuck_hold,
+              looks=[])  # fmt: skip
+    f = EP.OUT / a.look / f"{r0['name']}.npz"
+    if not f.exists():
+        rk["why"] = f"no look dump {a.look}"
+        return rk
+    t_ = time.time()
+    cl = np.load(EP.OUT / a.cloud / f"{r0['name']}.npz")
+    body = RL.Body(sim.m, sim.qadr)
+    ref = RL.Reference(dict(np.load(f)), cl["mask"], np.asarray(cl["pts"], float), body, r0["joints"], r0["L"])
+    kin = SEE.HeadKin(sim.m, sim.qadr)
+    R0 = E.rot_z(yaw0)
+    plan = np.asarray(p0[:2], float) + (R0 @ np.r_[walk, 0.0])[:2]  # where the walk was to end (the planned stance)
+    g = np.asarray(r0["Tg_seen"][:2, 3], float)  # the grasp as the start look saw it
+    want = (R0.T @ np.r_[g - plan, 0.0])[:2]  # its place in the planned stance's frame
+    rk.update(plan=np.round(plan, 4).tolist(), want_cm=(100 * want).round(2).tolist(), n_ref=len(ref.P))
+    for k in range(a.relook_steps + 1):
+        pb_, yb_ = np.asarray(bel["pb"], float).copy(), float(bel["yb"])
+        kept = {} if os.environ.get("RELOOK_DUMP") else None
+        p_c, y_c, rec = RL.localize(env, ref, kin, body, pb_, yb_, not a.relook_no_coarse, kept)
+        have = (RL.rot_z(y_c).T @ np.r_[g - p_c[:2], 0.0])[:2]
+        off = have - want
+        pt_, Rt_ = env.pelvis()
+        yt_ = E.yaw_of(Rt_)
+        rec.update(t=round(float(m.t - t0), 2), prior=[*np.round(pb_, 4).tolist(), round(yb_, 5)],
+                   est=[*p_c.tolist(), y_c], off_cm=(100 * off).round(2).tolist(), off_n_cm=round(100 * float(np.linalg.norm(off)), 2),
+                   prior_err_true_cm=round(100 * float(np.linalg.norm(pb_[:2] - pt_[:2])), 2),
+                   prior_err_true_deg=round(math.degrees(E.wrap(yb_ - yt_)), 3),
+                   est_err_true_cm=(100 * (R0.T @ np.r_[p_c[:2] - pt_[:2], 0.0])[:2]).round(2).tolist(),
+                   est_err_true_deg=round(math.degrees(E.wrap(y_c - yt_)), 3),
+                   z_err_true_cm=[round(100 * float(pb_[2] - pt_[2]), 2), round(100 * float(rec.get("h_feet", np.nan) - pt_[2]), 2),
+                                  round(100 * float(p_c[2] - pt_[2]), 2)],  # odometry, feet, estimate
+                   stance_err_true_cm=(100 * (R0.T @ np.r_[pt_[:2] - plan, 0.0])[:2]).round(2).tolist(),
+                   yaw_err_true_deg=round(math.degrees(E.wrap(yt_ - yaw0)), 3))  # fmt: skip
+        mv = np.linalg.norm(sim.d.xpos - r0["xpos"], axis=1)  # record: has anything but the robot moved since the start
+        mv[r0["robot"]] = 0.0
+        mv[0] = 0.0
+        tgt_mv, mv[r0["target"]] = float(mv[r0["target"]]), 0.0
+        rec.update(scene_moved_true_cm=[round(100 * float(mv.max()), 2), sim.m.body(int(mv.argmax())).name],
+                   target_moved_true_cm=round(100 * tgt_mv, 2))  # fmt: skip
+        if kept is not None:  # development: the look and its inputs, to replay the registration offline
+            os.makedirs(os.environ["RELOOK_DUMP"], exist_ok=True)
+            np.savez_compressed(f"{os.environ['RELOOK_DUMP']}/{a.controller}_{r0['name']}_k{k}.npz", P_lev=kept["P_lev"], h=kept["h"],
+                                pb=pb_, yb=yb_, pt=pt_, yt=yt_, joints0=r0["joints"], L0=r0["L"], name=r0["name"],
+                                qadr=sim.qadr)  # fmt: skip
+        if k > 0:  # the step before this look: what it was told and what it did (heading frame of the start; record)
+            d_true = (R0.T @ np.r_[pt_[:2] - rk["looks"][-1]["_pt"], 0.0])[:2]
+            rk["looks"][-1]["step_done_true_cm"] = (100 * d_true).round(2).tolist()
+        rec["_pt"] = pt_[:2].copy()
+        bel.update(pb=p_c, yb=y_c, pt=pt_, yt=yt_)
+        rk["looks"].append(rec)
+        if k == a.relook_steps or 100 * float(np.linalg.norm(off)) <= a.relook_step_cm or m.fell_at is not None:
+            break
+        d = (RL.rot_z(y_c).T @ np.r_[plan - p_c[:2], 0.0])[:2]
+        d = d * min(1.0, a.relook_max_step / max(float(np.linalg.norm(d)), 1e-9))
+        turn = 0.0 if a.relook_no_turn else float(np.clip(E.wrap(yaw0 - y_c), -math.radians(20), math.radians(20)))
+        rec["step"] = [round(float(d[0]), 4), round(float(d[1]), 4), round(turn, 5)]
+        rec["step_h_cm"] = (100 * (R0.T @ RL.rot_z(y_c) @ np.r_[d, 0.0])[:2]).round(2).tolist()  # in the start's heading
+        t_s = m.t
+        if a.relook_settle_s > 0:  # stand still first: the step and its odometry start from rest
+            m.hold(a.relook_settle_s)
+        odo.begin()  # the odometry from the look on: over the arms' tuck too
+        if a.relook_tuck > 0 and not rk.get("tucked"):  # the hands off the table before the first step
+            tuck_arms(m, a.relook_tuck, a.relook_tuck_hold)
+            rk["tucked"] = True
+        k_tr, est0 = len(m.trace), np.asarray(getattr(m.pol, "root_est", None) if getattr(m.pol, "root_est", None) is not None else [np.nan] * 3, float)
+        if a.relook_back > 0:  # back off first (SONIC's hands drag on the table when it steps beside it), then the rest
+            step_walk(m, -a.relook_back, 0.0, 0.0, a.relook_extra_s, a.relook_idle_end, a.relook_face)
+            bx, by, bth = odo.odo.pose()  # what the odometry says the back-off did
+            rem = (RL.rot_z(-float(bth)) @ np.r_[d[0] - bx, d[1] - by, 0.0])[:2]
+            step_walk(m, float(rem[0]), float(rem[1]), turn - float(bth), a.relook_extra_s, a.relook_idle_end, a.relook_face)
+        else:
+            step_walk(m, float(d[0]), float(d[1]), turn, a.relook_extra_s, a.relook_idle_end, a.relook_face)
+        odo.on = False
+        if kept is not None:  # development: the step's ticks (the simulator's pelvis, the motor's reference and command)
+            tr = m.trace[k_tr:]
+            np.savez_compressed(f"{os.environ['RELOOK_DUMP']}/{a.controller}_{r0['name']}_k{k}_step.npz", est0=est0,
+                                robot=np.array([r["robot"] for r in tr]), ref=np.array([r["ref_pelvis"] for r in tr]),
+                                t=np.array([r["t"] for r in tr]), mode=np.array([r["mode"] for r in tr]),
+                                joints=np.array([r["joints"] for r in tr]), wrists=np.array([r["wrists"] for r in tr]),
+                                sonic=np.array([r.get("sonic", np.zeros(1)) for r in tr]), d=d, turn=turn,
+                                odo=np.array(odo.odo.pose()))  # fmt: skip
+        rec["step_s"] = round(float(m.t - t_s), 2)
+        dx, dy, dth = odo.odo.pose()
+        bel.update(pb=p_c + RL.rot_z(y_c) @ np.r_[dx, dy, 0.0], yb=y_c + float(dth))
+    for r in rk["looks"]:
+        r.pop("_pt", None)
+    rk.update(steps=sum("step" in r for r in rk["looks"]), wall_s=round(time.time() - t_, 1),
+              t_end=round(float(m.t - t0), 2))  # fmt: skip
+    return rk
+
+
 def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> dict:
     import approach_eval as AE
     import plan_invert as PI
@@ -225,7 +422,7 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
     sid = sample_id(a, task, ep, rep) if rep is not None else None
     info = EP.build(ep)
     os.environ["REACH_SCENE_DIR"] = info["dir"]
-    env = E.Env("open", controller=a.controller, root=a.root)
+    env = E.Env("open", controller=a.controller, root=a.root, sonic_vr_frame=a.sonic_vr_frame)
     m, sim = env.m, env.sim
     rec = GR.Recorder(env)
     b = sim.m.body(info["target"]).id
@@ -347,6 +544,11 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
 
         odo = LO.TickFeed(env)
         odo.begin()
+        if a.relook:  # the readings at the start: the start look's own body is left out of its furniture with them
+            import relook as RL
+
+            relook0 = dict(joints=sim.d.qpos[sim.qadr].copy(), L=RL.level_R(RL.gravity(env)), name=name, Tg_seen=Tg_seen,
+                           xpos=sim.d.xpos.copy(), robot=robot, target=b)  # the last three: the record's scene check
     Tg = grasp_now()
     stance = Tg[:2, 3] - (R0 @ np.r_[a.stand, a.side_off, 0.0])[:2]
     if rep is not None:  # --collect: the stance moved by up to --jitter ahead and to the side (the sample's own draw)
@@ -382,6 +584,19 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
         row["odo_deg"] = round(math.degrees(bel["yb"] - bel["yt"]), 2)
         row["bel"] = dict(pb=np.round(bel["pb"], 5).tolist(), yb=round(float(bel["yb"]), 6),
                           pt=np.round(bel["pt"], 5).tolist(), yt=round(float(bel["yt"]), 6))  # fmt: skip
+        if a.relook:
+            look["phase"] = "relook"
+            live[0] = True  # record: the robot's contacts with the scenery over the looks and steps (row "hits", phase relook)
+            row["relook"] = relook_stage(a, env, m, odo, bel, relook0, p0, yaw0, walk, t0)
+            live[0] = False
+            row["relook"]["bel_odo"] = row["bel"]
+            row["bel"] = dict(pb=np.round(bel["pb"], 5).tolist(), yb=round(float(bel["yb"]), 6),
+                              pt=np.round(bel["pt"], 5).tolist(), yt=round(float(bel["yt"]), 6))  # fmt: skip
+            p1, Rp1 = env.pelvis()
+            if a.relook_only:
+                return dict(row, stages=[], palm_cm=None, success_end=False, success_45=False, success_official=False,
+                            t_success=None, fell=m.fell_at, t=round(float(m.t - t0), 2), controller=a.controller,
+                            hits=[[*k, round(100 * v, 2)] for k, v in sorted(hits.items())])  # fmt: skip
     Tg = grasp_now()  # truth: the second look, from the stance; perception: the start's look, by odometry
     o_look = look["at"] = sim.d.xpos[b].copy()
     gw = Tg[:3, 3]
@@ -483,6 +698,8 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
                 s.update(pred_err=round(pe, 3))
             target = np.r_[st_["p"][:2] + (st_["Rh"] @ np.r_[t_h[:2], 0.0])[:2], t_h[2]]
             s["shift_cm"] = round(100 * float(np.linalg.norm(target - goal_w)), 3)
+        if getattr(a, "correct", "") and invert and via is None and stage in a.corr.stages:  # --correct (simplecmp)
+            target, s["correct"] = a.corr.command(stage, goal_w, rot_w, pz, kw)
         servo = method == "servo"
         if via is not None:  # a planned path's jaw points and wrist rotations up to the last leg (--avoid)
             kw = dict(kw, via=list(via["p"]), via_rot=list(via["R"]))
@@ -516,8 +733,18 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
             name = f"{task}_L{ep['level']}_e{ep['index']}"
             pl = np.load(Path(str(via["src"])) / f"plan_{name}.npz")
             jn = [str(n) for n in pl["names"]]
+            jsp = kw.get("speed")
+            if getattr(a, "joint_dur", ""):  # --joint-dur (simplecmp2 V1): the path retimed to the asked duration
+                sys.path.insert(0, str(HERE.parent / "selfmodel_simplecmp2_20261126"))
+                import scmp2_jdur as JDUR
+
+                jsp, s["joint_dur_set"] = JDUR.speed_for(m, side, pl["Q"], [MUJOCO_JOINT_NAMES.index(n) for n in jn], jn,
+                                                         a.joint_dur, name)  # fmt: skip
+            if getattr(a, "correct", ""):  # --correct: D's prediction of the path's end recorded; the path as it is
+                s["correct"] = a.corr.joint(stage, goal_w, rot_w, pl["Q"], [MUJOCO_JOINT_NAMES.index(n) for n in jn],
+                                            jsp)  # fmt: skip
             out = m.reach_joints(
-                side, pl["Q"], [MUJOCO_JOINT_NAMES.index(n) for n in jn], speed=kw.get("speed"), servo=servo
+                side, pl["Q"], [MUJOCO_JOINT_NAMES.index(n) for n in jn], speed=jsp, servo=servo
             )
             s.update(joint_src=str(via["src"]), joint_names=jn, joint_path_cm=out.info.get("path_cm"),
                      joint_dur_s=out.info.get("dur_s"), joint_gap_deg=out.info.get("start_gap_deg"))  # fmt: skip
@@ -535,6 +762,8 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
         p, Rm = m.jaw_centre(side)
         s.update(err_cm=round(100 * float(np.linalg.norm(p - goal_w)), 3), err_deg=round(angle_deg(rot_w, Rm), 2),
                  miss=(100 * (p - goal_w)).round(2).tolist(), obj_cm=moved())  # fmt: skip
+        if "correct" in s:  # --correct: the landing beside D's prediction (record only)
+            a.corr.landed(s["correct"], p, Rm)
         if trace is not None:  # the wanted and the settled jaw pose, world (mm; rotation matrix rows)
             s.update(goal_mm=(1000 * goal_w).round(1).tolist(), jaw_mm=(1000 * p).round(1).tolist(),
                      rot_want=np.asarray(rot_w).round(4).tolist(), rot_jaw=np.asarray(Rm).round(4).tolist())  # fmt: skip
@@ -576,11 +805,14 @@ def episode(ep: dict, method: str, a, models: dict, rep: int | None = None) -> d
 
 def switches(a) -> None:
     """Resolve the run switches once (locomani.bench) and set this bed's own settings from them: a.column, a.cloud,
-    a.controller, a.root, and the record every row carries. REACH_CONTROLLER and BFM_ROOT are set from the switches for
-    the modules that still read them; one already set to another value is an error, not a silent second source."""
+    a.controller, a.root, a.sonic_vr_frame (None unless SONIC; 2026-11-26), and the record every row carries.
+    REACH_CONTROLLER and BFM_ROOT are set from the switches for the modules that still read them; one already set to
+    another value is an error, not a silent second source."""
     r = BO.resolve(a.bench or "simple", a.bench_set)
     bed = BS.bed_settings(r.options)
     a.column, a.cloud, a.controller, a.root = bed["column"], bed["cloud"], bed["controller"], bed["root"]
+    a.look = bed["look"]  # the cached look's dump (--relook's first look)
+    a.sonic_vr_frame = bed["sonic_vr_frame"] if a.controller == "sonic" else None
     a.bench_record = r.record()
     for var, value in (("REACH_CONTROLLER", a.controller), ("BFM_ROOT", a.root)):
         if os.environ.get(var, value) != value:
@@ -642,12 +874,47 @@ def main() -> None:
     ap.add_argument("--holdout", type=int, default=3, help="--collect: layouts with crc32 % this == 0 are left out")
     ap.add_argument("--skip-done", default="", help="--collect: a rows dir; the task's stances already in any of its files are "
                     "skipped (a stance's run is fixed by its id, so a stopped collection is completed, not redone)")  # fmt: skip
+    ap.add_argument("--relook", action="store_true", help="perception column, sensor=rgbd: a second look at the stance, "
+                    "the pose from the furniture's registration, a step when the stance is off (relook.py; the docstring)")  # fmt: skip
+    ap.add_argument("--relook-step-cm", type=float, default=8.0, help="--relook: step when the target's place in the body "
+                    "frame is farther than this from its planned place")  # fmt: skip
+    ap.add_argument("--relook-steps", type=int, default=2, help="--relook: at most this many steps")
+    ap.add_argument("--relook-extra-s", type=float, default=1.0, help="--relook: s of walking time added to a step")
+    ap.add_argument("--relook-max-step", type=float, default=0.4, help="--relook: m, a step's length at most")
+    ap.add_argument("--relook-settle-s", type=float, default=0.0, help="--relook: s standing still before a step")
+    ap.add_argument("--relook-tuck", type=float, default=0.0,
+                    help="--relook: s to bring both arms to TUCK (hands by the hips) before the first step; 0: no")
+    ap.add_argument("--relook-tuck-hold", type=float, default=0.3, help="--relook-tuck: s to stand after the tuck")
+    ap.add_argument("--relook-back", type=float, default=0.0,
+                    help="--relook: m a step first walks straight back, then to the planned stance (by the odometry)")
+    ap.add_argument("--relook-face", choices=("fixed", "travel"), default="fixed",
+                    help="--relook: a step keeps the heading (fixed) or turns toward the step, walks and turns back")
+    ap.add_argument("--relook-idle-end", action="store_true",
+                    help="--relook, SONIC: a step ends once SONIC's planner has idled settle_s (else at the timeout)")
+    ap.add_argument("--relook-no-turn", action="store_true", help="--relook: a step keeps the heading (no turn back)")
+    ap.add_argument("--relook-no-coarse", action="store_true", help="--relook: the ICP from the odometry, no coarse search")
+    ap.add_argument("--relook-only", action="store_true", help="--relook: the episode ends after the looks (development)")
+    ap.add_argument("--correct", default="", help="(selfmodel_simplecmp_20261126) model D's directory (E3_ensemble_f1): the "
+                    "straight reaches' commands through lmlcmp3's inversion on it (scmp_correct.py); off by default")  # fmt: skip
+    ap.add_argument("--correct-rule", choices=("R", "S", "dryR"), default="R",
+                    help="--correct: R (shrunk to IK <= 2 cm), S (no shrink), dryR (R recorded, the goal sent)")
+    ap.add_argument("--correct-stages", default="pregrasp,entry", help="--correct: the straight reaches it changes")
+    ap.add_argument("--correct-point", choices=("palm", "p13"), default="palm",
+                    help="--correct: the hand point the inversion aims (the palm from D's pose, or D's 13 cm point)")
+    ap.add_argument("--correct-out", default="", help="--correct: the record's dir (data/, log/)")
+    ap.add_argument("--correct-template", default="", help="--correct: a data3-layout npz D is rebuilt on (shapes only)")
+    ap.add_argument("--correct-arm-id", type=int, default=0, help="--correct: the arm's number in the record's reset ids")
+    ap.add_argument("--joint-dur", default="", help="--joint: a json {episode name: s}, the joint-path pregrasp retimed to "
+                    "that duration (selfmodel_simplecmp2_20261126 V1); empty: off")  # fmt: skip
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     switches(a)
     assert not (a.comp and a.shift), "--comp or --shift, not both"
     assert not (a.collect and a.stance_jitter), "--collect moves the stance by --jitter"
     assert not (a.joint and (a.comp or a.shift or not a.avoid)), "--joint goes with --avoid alone"
+    assert not a.joint_dur or a.joint, "--joint-dur goes with --joint"
+    assert not a.relook or (a.column == "perception" and a.cloud == "cloud_blind"), "--relook: perception, sensor=rgbd"
+    assert not a.relook_only or a.relook, "--relook-only goes with --relook"
     if a.collect:
         assert a.film and a.method == "direct" and not (a.avoid or a.comp or a.shift or a.clear), (
             "--collect: --film, direct"
@@ -672,6 +939,12 @@ def main() -> None:
     elif a.method == "lookup":
         models["lookup"] = Lookup(a.lookup_data, a.k, a.lookup_cache)
         print("lookup tables", models["lookup"].n, flush=True)
+    a.corr = None
+    if a.correct:  # selfmodel_simplecmp_20261126: off, nothing of scmp_correct is imported
+        sys.path.insert(0, str(HERE.parent / "selfmodel_simplecmp_20261126"))
+        import scmp_correct as CORR
+
+        a.corr = CORR.install(sys.modules[__name__], a)
     eps = EP.episodes(a.task)
     if "-" in a.episodes:
         i0, i1 = map(int, a.episodes.split("-"))

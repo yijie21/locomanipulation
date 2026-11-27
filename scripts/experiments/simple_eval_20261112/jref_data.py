@@ -23,6 +23,15 @@ route = layout, so the bootstrap resamples layouts. Bench rows: bucket 9, route 
 (one path each), and --subset keeps all of them, those of the layouts the data saw, or those it left out.
 range: the check's joints at the command against the training paths' 0.5-99.5 % band, joint by joint (29), as
 bench_via_table.py does for the via data.
+
+--frame root (selfmodel_rootframe_20261125; the default, --frame true, is the above, unchanged): the motor's reference as it
+is (its own root ref[0:7], not carried onto the true pelvis), everything in the heading frame of that root at the command
+(origin at the root's xy, x ahead, heights as they are), the labels the real spheres minus the reference's as before, and
+no simulator truth in x (Belief.of):
+  S3  as it is (the measured joints and joint velocities, the gravity reading, the gyro, the leg odometry's pelvis height);
+  W   replaced by the believed pelvis (xy and heading: the stance anchor, which the reference root is; height: S3's) and
+      the right jaw centre by the measured joints from it, with the gravity reading's tilt;
+  J   replaced by the wrist's attitude the same way.
 """
 
 from __future__ import annotations
@@ -65,6 +74,47 @@ def r6m(r) -> np.ndarray:
     return VM.r6m(r)
 
 
+def yaw_of(R) -> float:
+    return float(np.arctan2(R[1, 0], R[0, 0]))
+
+
+class Belief:
+    """--frame root: what the robot itself knows of its pelvis and right jaw at the command.
+
+    S3 is kept as it is: the measured joints and joint velocities, the gravity reading, the gyro and the pelvis height
+    the controller is told (simple_bench.py runs BFM_ROOT=odo: env.self_state's height is leg_odo.OdoRoot's, the stance
+    anchor plus the leg odometry since; not the simulator's). The believed pelvis: xy and heading the stance anchor
+    (the row's bel: after the walk the belief the goals are placed by stops, and the motor anchors its reference root
+    there, so the root is bel.pt, yt), height S3's, tilt the gravity reading; the jaw centre and the wrist by the scene
+    robot's kinematics from it with the measured joints."""
+
+    def __init__(self, fk: ArmFK):
+        import mujoco
+
+        self.fk, self.mj = fk, mujoco
+
+    @staticmethod
+    def level(grav) -> np.ndarray:  # leg_odo.level: body -> level frame (rows: forward on the floor, left, up)
+        up = -np.asarray(grav, float)
+        up /= np.linalg.norm(up)
+        x = np.array([1.0, 0.0, 0.0]) - up[0] * up
+        x /= np.linalg.norm(x)
+        return np.stack([x, np.cross(up, x), up])
+
+    def of(self, S3, root) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """S3 (3, 65) as recorded, root the reference root at the command (7) -> S3, the believed W (pelvis xyz, yaw, right
+        jaw centre) and J (the right wrist's first two columns), world."""
+        S3 = np.asarray(S3, float)
+        yaw = yaw_of(quat_R(root[3:7]))
+        Rz = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
+        p = np.r_[root[0], root[1], S3[0, 64]]
+        q = np.zeros(4)
+        self.mj.mju_mat2Quat(q, (Rz @ self.level(S3[0, 58:61])).reshape(-1))
+        _, jaw = self.fk.spheres("right", p, q, S3[0, :29], "meta", np.zeros(len(FINGERS)))  # no finger moves the jaw
+        Rw = self.fk.d.xmat[self.fk.wrist["right"]].reshape(3, 3)
+        return S3, np.r_[p, yaw, jaw], np.r_[Rw[:, 0], Rw[:, 1]]
+
+
 def samples(rows_files: list[str]):
     """-> (row, stage, phase, t_cmd, dur) for every usable reach."""
     for f in rows_files:
@@ -79,6 +129,7 @@ def samples(rows_files: list[str]):
 
 def build(a) -> None:
     fk = ArmFK(Path(a.scene))
+    bel = Belief(fk) if a.frame == "root" else None
     from locomani.primitives.g1_joints import MUJOCO_JOINT_NAMES
 
     link = list(fk.links)
@@ -110,20 +161,29 @@ def build(a) -> None:
             n_skip["short"] += 1
             continue
         W, J = np.asarray(s["W"], float), np.asarray(s["J"], float)
+        S3 = np.asarray(s["S3"], float)
+        j0 = int(np.argmin(np.abs(T - t_cmd)))  # the film's frame at the command
+        if bel is not None:  # --frame root: the robot's own S3, W and J, the reference root's heading frame
+            S3, W, J = bel.of(S3, RF[j0, 0:7].astype(float))
         p0, yaw = W[:3], float(W[3])
         Rh = np.array([[np.cos(yaw), -np.sin(yaw), 0.0], [np.sin(yaw), np.cos(yaw), 0.0], [0.0, 0.0, 1.0]])
         head = lambda x: np.c_[(x[..., :2].reshape(-1, 2) - p0[:2]) @ Rh[:2, :2], x[..., 2].reshape(-1)].reshape(
             x.shape
         )  # noqa: E731
         Xa = np.array([fk.spheres("right", q[0:3], q[3:7], q[qa], "mj", q[fa])[0] for q in QP])
-        j0 = int(np.argmin(np.abs(T - t_cmd)))  # the reference pelvis carried onto the true one at the command
-        Rt, Rr = quat_R(QP[j0, 3:7]), quat_R(RF[j0, 3:7])
-        Ra, pa = Rt @ Rr.T, QP[j0, 0:3] - Rt @ Rr.T @ RF[j0, 0:3]
         XR, jaw_e, Rw_e = [], None, None
-        for f in RF:
-            x, jw = fk.spheres("right", f[0:3], f[3:7], f[7:36], "mj", f[36:43])
-            XR.append(x @ Ra.T + pa)
-            jaw_e, Rw_e = Ra @ jw + pa, Ra @ fk.d.xmat[fk.wrist["right"]].reshape(3, 3)
+        if bel is None:  # the reference pelvis carried onto the true one at the command
+            Rt, Rr = quat_R(QP[j0, 3:7]), quat_R(RF[j0, 3:7])
+            Ra, pa = Rt @ Rr.T, QP[j0, 0:3] - Rt @ Rr.T @ RF[j0, 0:3]
+            for f in RF:
+                x, jw = fk.spheres("right", f[0:3], f[3:7], f[7:36], "mj", f[36:43])
+                XR.append(x @ Ra.T + pa)
+                jaw_e, Rw_e = Ra @ jw + pa, Ra @ fk.d.xmat[fk.wrist["right"]].reshape(3, 3)
+        else:  # --frame root: the motor's reference as it is
+            for f in RF:
+                x, jw = fk.spheres("right", f[0:3], f[3:7], f[7:36], "mj", f[36:43])
+                XR.append(x)
+                jaw_e, Rw_e = jw, fk.d.xmat[fk.wrist["right"]].reshape(3, 3).copy()
         XR = head(np.array(XR))
         RT = T - t_cmd
         t10 = 0.1 * np.arange(int(np.floor((T[-1] - t_cmd) / 0.1 + 1e-9)) + 1)
@@ -135,7 +195,6 @@ def build(a) -> None:
         R0 = Rh.T @ r6m(J)
         Rg = Rh.T @ Rw_e
         tgt = head(jaw_e[None])[0]
-        S3 = np.asarray(s["S3"], float)
         rows["x"].append(np.r_[
             S3.ravel(), jaw, R0[:, 0], R0[:, 1], tgt, Rg[:, 0], Rg[:, 1], np.zeros(48 + 96 + 16), 0.0, SPEED, 0.0, 0.0, 1.0, dur,
             ref[::3, key].ravel(),
@@ -204,6 +263,9 @@ def main() -> None:
     b.add_argument("rows", nargs="+")
     b.add_argument("--subset", choices=("all", "seen", "held"), default="all")
     b.add_argument("--holdout", type=int, default=3)
+    b.add_argument("--frame", choices=("true", "root"), default="true",
+                   help="true: the reference carried onto the true pelvis, its heading frame (as before); root: the motor's "
+                   "reference as it is, the reference root's heading frame, no simulator truth in x")  # fmt: skip
     r = sub.add_parser("range")
     r.add_argument("check")
     r.add_argument("train", nargs="+")

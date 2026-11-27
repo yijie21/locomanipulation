@@ -18,10 +18,15 @@ One selector per mutually exclusive choice (docs/reference/standards.md, "Interf
     self_pose        truth | odometry         where the skill believes the pelvis is: the simulator's, or leg odometry
     controller_root  truth | odometry         the pelvis position ScaleBFM is told (its policy input holds one): the
                                                simulator's, or leg odometry re-anchored at every stand (the loops so far)
-    controller       scalebfm | sonic | amo | gr00t_wbc | native
+    controller       scalebfm | sonic | amo | gr00t_wbc | heft | native
                                              the whole-body controller under our Motor layer (ScaleBFM; SONIC v1.1 in
-                                             process; AMO's or NVIDIA's GR00T-WBC legs and waist with our arm solver),
-                                             or the benchmark's own controller
+                                             process; AMO's or NVIDIA's GR00T-WBC legs and waist with our arm solver;
+                                             LocoManiLab's HEFT from its ONNX file), or the benchmark's own controller
+    sonic_vr_frame   robot | reference        controller=sonic only (2026-11-26, simple_sonic_vrref_20261126): the
+                                               frame of SONIC's VR 3-point hand targets (SonicMotorConfig.vr_frame):
+                                               the pelvis the robot believes it has, so SONIC is asked for the
+                                               reference's world wrist poses; or the reference pose's own pelvis (the
+                                               teleop sender's convention); in the signature only when not `robot`
 
 Resolution happens once, in this order: the code defaults below, the benchmark's profile
 `configs/bench/<bench>.yaml`, then explicit `--bench-set key=value` overrides (an explicit value equal to the
@@ -52,7 +57,8 @@ SENSORS = ("none", "stereo", "rgbd")
 DEPTH_NOISE = ("none", "realsense")
 SELF_POSE = ("truth", "odometry")
 CONTROLLER_ROOT = ("truth", "odometry")
-CONTROLLERS = ("scalebfm", "sonic", "amo", "gr00t_wbc", "native")
+CONTROLLERS = ("scalebfm", "sonic", "amo", "gr00t_wbc", "heft", "native")
+SONIC_VR_FRAMES = ("robot", "reference")
 
 
 @dataclass(frozen=True)
@@ -78,6 +84,9 @@ class BenchOptions:
     controller: str = field(
         default="scalebfm", metadata={"choices": CONTROLLERS}
     )  # the whole-body controller under our Motor layer, or the benchmark's own controller
+    sonic_vr_frame: str = field(
+        default="robot", metadata={"choices": SONIC_VR_FRAMES}
+    )  # controller=sonic only: SONIC's VR hand targets in the believed pelvis' frame (robot) or the reference's
 
     def to_dict(self) -> dict:
         return config_to_dict(self, SCHEMA_VERSION)
@@ -97,11 +106,15 @@ class BenchOptions:
         return apply_overrides(self, overrides)
 
     def signature(self) -> str:
-        """`simple/perception-stereo/pose-odometry/root-odometry/scalebfm`; rgbd adds its noise (`rgbd-realsense`)."""
+        """`simple/perception-stereo/pose-odometry/root-odometry/scalebfm`; rgbd adds its noise (`rgbd-realsense`),
+        SONIC a VR frame other than robot (`sonic-vr-reference`)."""
         seen = "truth" if self.target == "truth" else f"perception-{self.sensor}"
         if self.sensor == "rgbd" and self.depth_noise != "none":
             seen += f"-{self.depth_noise}"
-        return f"{self.bench}/{seen}/pose-{self.self_pose}/root-{self.controller_root}/{self.controller}"
+        controller = self.controller
+        if self.sonic_vr_frame != "robot":
+            controller += f"-vr-{self.sonic_vr_frame}"
+        return f"{self.bench}/{seen}/pose-{self.self_pose}/root-{self.controller_root}/{controller}"
 
 
 def consistency_errors(o: BenchOptions) -> list[str]:
@@ -113,15 +126,21 @@ def consistency_errors(o: BenchOptions) -> list[str]:
         errors.append("target=perception needs sensor=stereo or sensor=rgbd")
     if o.depth_noise != "none" and o.sensor != "rgbd":
         errors.append(f"depth_noise={o.depth_noise} applies to sensor=rgbd only (got sensor={o.sensor})")
+    if o.sonic_vr_frame != "robot" and o.controller != "sonic":
+        errors.append(
+            f"sonic_vr_frame={o.sonic_vr_frame} applies to controller=sonic only (got controller={o.controller})"
+        )
     return errors
 
 
 def applicable(o: BenchOptions) -> list[tuple[str, str]]:
     """The (axis, value) choices a benchmark has to support for `o`: no sensor under target=truth, no depth noise
-    without rgbd."""
+    without rgbd, no SONIC VR frame without SONIC."""
     out = []
-    for axis in ("target", "sensor", "depth_noise", "self_pose", "controller_root", "controller"):
+    for axis in ("target", "sensor", "depth_noise", "self_pose", "controller_root", "controller", "sonic_vr_frame"):
         if (axis == "sensor" and o.sensor == "none") or (axis == "depth_noise" and o.sensor != "rgbd"):
+            continue
+        if axis == "sonic_vr_frame" and o.controller != "sonic":
             continue
         out.append((axis, getattr(o, axis)))
     return out
@@ -229,7 +248,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         action="append",
         default=[],
         metavar="KEY=VALUE",
-        help="override one option: target, sensor, depth_noise, self_pose, controller_root, controller",
+        help="override one option: target, sensor, depth_noise, self_pose, controller_root, controller, sonic_vr_frame",
     )
 
 

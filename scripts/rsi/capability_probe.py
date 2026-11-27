@@ -169,10 +169,12 @@ def probe_scene() -> Path:
 
 
 class Probe:
-    def __init__(self, kind: str, controller: str = "scalebfm", sonic=None, scene_dir=None, dynamics: str = "scene"):
-        """`controller` "scalebfm" (the default), "amo", "gr00t_wbc", or "sonic": SONIC v1.1 in process (backends.sonic_onnx), same scene,
-        robot, joint order and Motor interface; `sonic` its SonicConfig (None: the defaults). `scene_dir`: the sim's
-        scene instead of walk_mars (the whole-body IK keeps walk_mars' robot); `dynamics`: SonicSim's joint dynamics."""
+    def __init__(self, kind: str, controller: str = "scalebfm", sonic=None, scene_dir=None, dynamics: str = "scene",
+                 heft=None):  # fmt: skip
+        """`controller` "scalebfm" (the default), "amo", "gr00t_wbc", "sonic": SONIC v1.1 in process (backends.sonic_onnx), or
+        "heft": LocoManiLab's HEFT from its ONNX file (backends.heft), same scene, robot, joint order and Motor interface;
+        `sonic` / `heft` their SonicConfig / HeftConfig (None: the defaults). `scene_dir`: the sim's scene instead of
+        walk_mars (the whole-body IK keeps walk_mars' robot); `dynamics`: SonicSim's joint dynamics."""
         sys.path[:0] = [str(REPO / "src")]
         from locomani.backends.scalebfm import runtime as R
         from locomani.backends.scalebfm.config import ScaleBfmBackendConfig
@@ -190,6 +192,14 @@ class Probe:
             policy = SonicPolicy(meta["joint_names"], sonic)
             sim = SonicSim(meta, backend=backend, dynamics=dynamics)
             self.m = SonicMotor(sim, policy, MotorConfig(), model_xml=str(WALK / "scene_locomani.xml"))
+        elif controller == "heft":  # HEFT tracks the motor's whole-body reference as qpos frames (backends.heft)
+            from locomani.backends.heft.motor import HeftMotor
+            from locomani.backends.heft.runtime import HeftPolicy, HeftSim
+
+            meta = json.load(open(R.META))
+            policy = HeftPolicy(meta["joint_names"], heft)
+            sim = HeftSim(meta, policy.cfg, backend=backend)
+            self.m = HeftMotor(sim, policy, MotorConfig(), model_xml=str(WALK / "scene_locomani.xml"))
         elif controller == "amo":  # AMO's legs and waist, our arm IK per tick (backends.amo); AMO's own motor defaults
             from locomani.backends.amo.motor import AmoMotor
             from locomani.backends.amo.runtime import AmoPolicy, AmoSim

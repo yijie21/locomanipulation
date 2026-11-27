@@ -67,15 +67,19 @@ def wrap(a: float) -> float:
 class Env:
     """One worker's simulator: the grip-probe scene under ScaleBFM, stepped at 10 Hz."""
 
-    def __init__(self, scene: str = "grip", controller: str | None = None, root: str | None = None):
+    def __init__(self, scene: str = "grip", controller: str | None = None, root: str | None = None,
+                 sonic_vr_frame: str | None = None):  # fmt: skip
         """scene "grip": the probe's table and box (the minimal proof); "open": walk_mars with nothing on the floor
         (the generalised world model's data, gen_data2.py). `controller` and `root` (2026-11-24, TODO 38.11): an entry
-        that resolved the run switches (locomani.bench) passes them; None reads REACH_CONTROLLER / BFM_ROOT as before."""
+        that resolved the run switches (locomani.bench) passes them; None reads REACH_CONTROLLER / BFM_ROOT as before.
+        `sonic_vr_frame` (2026-11-26, simple_sonic_vrref_20261126): SONIC only, SonicMotorConfig.vr_frame ("robot",
+        "reference"); None keeps the motor's default ("robot")."""
         import capability_probe as cap
 
         self.cap = cap
         # REACH_CONTROLLER (2026-11-16): "scalebfm" (default), "sonic" -- SONIC v1.1 in process (backends.sonic_onnx) --
-        # or "amo" (backends.amo: AMO's legs and waist, our arm solver; 2026-11-23),
+        # "amo" (backends.amo: AMO's legs and waist, our arm solver; 2026-11-23) or "heft" (backends.heft: LocoManiLab's
+        # whole-body tracker; 2026-11-25),
         # same scene, robot, joint order and Motor, so the self-model data of the two compare column for column
         self.controller = controller or os.environ.get("REACH_CONTROLLER", "scalebfm")
         sonic = None
@@ -88,6 +92,13 @@ class Env:
             assert where in ("gpu", "cpu", "allcpu"), where
             sonic = SonicConfig(device_id=-1 if where == "allcpu" else 0, nets_on_cpu=where == "cpu",
                                 threads=int(os.environ.get("REACH_SONIC_THREADS", "1")))  # fmt: skip
+        heft = None
+        if self.controller == "heft":
+            # REACH_HEFT_DELAY (2026-11-25): HeftConfig.ref_delay_s, s the reference is read behind the motor's clock;
+            # 0 (default) the motor's reference from now on, 0.16 as LocoManiLab's motion buffer
+            from locomani.backends.heft.runtime import HeftConfig
+
+            heft = HeftConfig(ref_delay_s=float(os.environ.get("REACH_HEFT_DELAY", "0")))
         # REACH_SCENE_DIR: the sim's scene directory instead of walk_mars (2026-11-16: NVIDIA's own G1 + Dex3);
         # REACH_SONIC_DYN: SonicSim's joint dynamics, "scene" or "training"
         self.probe = cap.Probe(
@@ -96,6 +107,7 @@ class Env:
             sonic=sonic,
             scene_dir=os.environ.get("REACH_SCENE_DIR") or None,
             dynamics=os.environ.get("REACH_SONIC_DYN", "scene"),
+            heft=heft,
         )
         if self.controller == "amo":
             # REACH_AMO_HEIGHT_MAX (2026-11-23): the cap on AMO's base-height command, m (AmoConfig.height_max). Default
@@ -113,6 +125,10 @@ class Env:
             self.probe.m.sonic = dataclasses.replace(
                 self.probe.m.sonic, interface=os.environ.get("REACH_SONIC_IFACE", self.probe.m.sonic.interface)
             )
+        if sonic_vr_frame is not None:
+            assert self.controller == "sonic", f"sonic_vr_frame={sonic_vr_frame} with controller {self.controller}"
+            assert sonic_vr_frame in ("robot", "reference"), sonic_vr_frame
+            self.probe.m.sonic = dataclasses.replace(self.probe.m.sonic, vr_frame=sonic_vr_frame)
         self.m, self.sim, self.R = self.probe.m, self.probe.sim, self.probe.R
         # REACH_HAND_OFF (2026-11-19): the hand point in the wrist-yaw frame, "x,y,z" in m, instead of the Dex1 pad
         # centre (runtime.OFF); SIMPLE's Dex3 palm is "0.0415,0,0" (simple_eval_20261112/pick.py PALM)

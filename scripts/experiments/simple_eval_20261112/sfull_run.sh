@@ -9,7 +9,8 @@
 #   arm and task on the routed episodes; jref_data.py build of JR (the model's error, metric 6) and range; table_sfull.
 # <out dir> is new: the source bench's step1, step2, try_act02, via and films_JR are linked (read only), JR's rows copied
 # (ONLY="30,48": those episode numbers only, the trial); nothing is written into the source. Env as bench_via.sh
-# (BENCH_REPO, SIMPLE_ROOT, SIMPLE_EVAL_OUT, SIMPLE_LEVELS, BENCH_SET, REACH_SONIC_NETS); CONST_LOO=1 leaves the
+# (BENCH_REPO, SIMPLE_ROOT, SIMPLE_EVAL_OUT, SIMPLE_LEVELS, BENCH_SET, REACH_SONIC_NETS); SF_BENCH_EXTRA (2026-11-26,
+# simple_relook_20261126): more simple_bench.py options for the arms' runs (e.g. --relook); CONST_LOO=1 leaves the
 # const and c_t files' episodes of the episode's own layout out (development episodes; by goal distance, as before) and
 # c_rr's of the episode's own position (by name); J_ARM (default J) and S_CHOICE
 # (the old S's choice.jsonl) for the table; ARM_PAR (default 3), PLAN_PAR (default 6). Progress: <out>/run.log.
@@ -26,7 +27,7 @@ DATA=${DATA:-$W/outputs/simple_eval_20261112/jrefwm_20261124/data_$CTRL}
 export PYTHONPATH=src OMP_NUM_THREADS=1 MUJOCO_GL=egl REACH_HAND_OFF=0.0415,0,0 REACHWM_GOAL_REF=1 SIMPLE_ROOT=$S
 SETS="--bench-set controller=$CTRL"; for kv in ${BENCH_SET:-}; do SETS="$SETS --bench-set $kv"; done
 BED=$($PY -m locomani.bench.simple $SETS) || exit 2; eval "$BED"; CL=$O/$BED_CLOUD
-ARMS="SF const kinc kin_rr kinc_rr"
+ARMS=${SF_ARMS:-"SF const kinc kin_rr kinc_rr"}  # SF_ARMS (2026-11-26, simple_relook_20261126): fewer arms
 [ -e $D ] && { echo "$D exists: a run was made there"; exit 2; }
 for f in $CONST $CTRACK $CTRACK_RR; do [ -s $f ] || { echo "no $f"; exit 2; }; done
 SRC=$(realpath $SRC); P=$D/P
@@ -97,7 +98,7 @@ log "running $TASKS_EPS"
 run_arm() {  # run_arm <arm> <GPU>
   local arm=$1 g=$2 te
   for te in $TASKS_EPS; do
-    BENCH_EXTRA="--film-ref" BENCH_TASKS=${te%%:*} BENCH_EPISODES=${te#*:} S_DIR=$P/$arm S_ARM=$arm BENCH_GPU=$g BENCH_GPUS=$g \
+    BENCH_EXTRA="--film-ref ${SF_BENCH_EXTRA:-}" BENCH_TASKS=${te%%:*} BENCH_EPISODES=${te#*:} S_DIR=$P/$arm S_ARM=$arm BENCH_GPU=$g BENCH_GPUS=$g \
       bash $E/bench_via.sh $D $CTRL none S 0 29
   done
 }

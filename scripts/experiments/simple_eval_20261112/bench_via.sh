@@ -40,6 +40,8 @@ BED=$($PY -m locomani.bench.simple $SETS) || exit 2; eval "$BED"
 CL=$O/$BED_CLOUD; LOOK=$O/$BED_LOOK
 mkdir -p $D/rows $D/rows_ep $D/logs $D/step1 $D/step2 $D/try_act02 $D/via $D/asrun
 log() { echo "[$(date -u +%T)] $*" >> $D/pipeline.log; }
+# BENCH_PLAN_PAR (2026-11-26, simple_relook_20261126): the planner processes at a time (cuRobo, ~1 GB of GPU memory each);
+# default 4, as before.
 # BENCH_EXTRA, BENCH_EPISODES (2026-11-24, selfmodel_precision_20261124): more simple_bench.py options for every arm (the
 # stance jitter), and an episode list ("31,33,40") in place of E0-E1 for the arms. Unset: as before.
 ARGS="$SETS --trace --episodes ${BENCH_EPISODES:-$E0-$E1} ${BENCH_EXTRA:-}"
@@ -86,7 +88,7 @@ if [ "$STEP" = plan ] || [ "$STEP" = all ]; then
   done > $D/logs/prep.txt
   log "step 2a: $(ls $D/step2/prep_*.npz 2>/dev/null | wc -l) prep files"
   for T in $TASKS; do
-    seq $E0 $E1 | xargs -P 4 -I@ sh -c "cd $S && $SP -I $W/$C/plan2.py $S $D/step1 $D/step2 @ --task $T --cloud-dir $CL --diag 2>/dev/null | grep '^{'"
+    seq $E0 $E1 | xargs -P ${BENCH_PLAN_PAR:-4} -I@ sh -c "cd $S && $SP -I $W/$C/plan2.py $S $D/step1 $D/step2 @ --task $T --cloud-dir $CL --diag 2>/dev/null | grep '^{'"
   done > $D/plan_rows.jsonl
   log "step 2b: $(wc -l < $D/plan_rows.jsonl) rows, planned $(grep -c '"ok": true' $D/plan_rows.jsonl)"
   ln -sf $D/step2/prep_*.npz $D/try_act02/ 2>/dev/null
@@ -96,7 +98,7 @@ for l in open('$D/plan_rows.jsonl'):
     r = json.loads(l)
     if 'skip' not in r and not r['ok']:
         print(r['name'].rsplit('_L', 1)[0], r['ep'])
-" | xargs -P 4 -L1 sh -c "cd $S && $SP -I $W/$C/plan2.py $S $D/step1 $D/try_act02 \$1 --task \$0 --cloud-dir $CL --act 0.02 2>/dev/null | grep '^{'" > $D/plan_rows_act02.jsonl
+" | xargs -P ${BENCH_PLAN_PAR:-4} -L1 sh -c "cd $S && $SP -I $W/$C/plan2.py $S $D/step1 $D/try_act02 \$1 --task \$0 --cloud-dir $CL --act 0.02 2>/dev/null | grep '^{'" > $D/plan_rows_act02.jsonl
   log "step 2b retry at 2 cm: $(wc -l < $D/plan_rows_act02.jsonl) rows, planned $(grep -c '"ok": true' $D/plan_rows_act02.jsonl)"
   $PY -I $C/via2.py $D/via 0.01 $D/step2 $D/try_act02 > $D/logs/via.txt 2>&1 || log "FAIL via2"
   log "step 2c: $(ls $D/via/via_*.npz 2>/dev/null | wc -l) via files"

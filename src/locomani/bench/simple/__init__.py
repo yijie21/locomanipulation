@@ -28,7 +28,8 @@ SPEC = BenchSpec(
         depth_noise={"none": READY},
         self_pose={"truth": READY, "odometry": READY},
         controller_root={"odometry": READY},
-        controller={"scalebfm": READY, "sonic": READY, "amo": PLANNED, "gr00t_wbc": PLANNED},
+        controller={"scalebfm": READY, "sonic": READY, "heft": READY, "amo": PLANNED, "gr00t_wbc": PLANNED},
+        sonic_vr_frame={"robot": READY, "reference": READY},
     ),
     notes={
         "target=truth": "the target's pose read from the simulator at the start and again at the stance (column truth)",
@@ -44,9 +45,18 @@ SPEC = BenchSpec(
         "controller_root=odometry": "BFM_ROOT=odo, leg odometry (leg_odo.OdoRoot): the self models' data settings",
         "controller_root=truth": "simple_bench refuses it: every self model here was trained with BFM_ROOT=odo",
         "controller=sonic": "SONIC v1.1 in process (backends.sonic_onnx; TODO 38.8, 38.10)",
+        "controller=heft": "LocoManiLab's HEFT (g1_backend heft/pmg) from its ONNX file (backends.heft; 2026-11-25): "
+        "the Motor's whole-body reference as qpos frames, walks on gait_heft.HEFT (hg_walk's footstep plan, step shapes "
+        "tuned toward the LAFAN walks HEFT was trained on; 2026-11-26); the scene's joint dynamics "
+        "with HEFT's PD, reset in LocoManiLab's stance (HEFT's own default wedges the Dex3 thumbs in the hips); it reads "
+        "no pelvis position, so controller_root only feeds the odometry; wired and smoke-tested, no evaluation yet",
         "controller=amo": "env.py runs AMO's legs and waist with our arm solver; never run on this bed",
         "controller=gr00t_wbc": "env.py runs NVIDIA's GR00T-WBC legs and waist with our arm solver; never run on this bed",
         "controller=native": "the replica is driven by joint targets; SIMPLE's own whole-body controller is not wired",
+        "sonic_vr_frame=robot": "SonicMotorConfig.vr_frame \"robot\": the hand targets in the believed pelvis' frame, "
+        "the reference's world wrist poses (the default since 2026-11-16, and of every SONIC number here until 11-26)",
+        "sonic_vr_frame=reference": "SonicMotorConfig.vr_frame \"reference\": the hand targets in the reference pose's "
+        "own pelvis, no loop through the pelvis estimate (simple_sonic_vrref_20261126)",
     },
     couples={"target=truth": ("self_pose", "truth"), "target=perception": ("self_pose", "odometry")},
 )
@@ -54,8 +64,8 @@ SPEC = BenchSpec(
 
 def bed_settings(options) -> dict:
     """simple_bench's own settings for resolved options: the column, the cached look and its dump, the controller,
-    BFM_ROOT. The truth column reads no look; it keeps simple_bench's old default (cloud_blind) so rows stay as they
-    were."""
+    BFM_ROOT, SONIC's VR frame. The truth column reads no look; it keeps simple_bench's old default (cloud_blind) so
+    rows stay as they were."""
     if options.bench != "simple":
         raise ValueError(f"simple_bench runs bench=simple, not {options.bench}")
     cloud, look = LOOKS.get(options.sensor, LOOKS["rgbd"])
@@ -65,4 +75,5 @@ def bed_settings(options) -> dict:
         look=look,
         controller=options.controller,
         root={"odometry": "odo", "truth": "true"}[options.controller_root],
+        sonic_vr_frame=options.sonic_vr_frame,
     )

@@ -24,7 +24,7 @@ READY, PLANNED = "ready", "planned"
 STATUSES = (READY, PLANNED)
 
 # the option axes a capability table covers, in the order a signature lists them (options.py owns their choices)
-AXES = ("target", "sensor", "depth_noise", "self_pose", "controller_root", "controller")
+AXES = ("target", "sensor", "depth_noise", "self_pose", "controller_root", "controller", "sonic_vr_frame")
 
 
 @dataclass(frozen=True)

@@ -143,6 +143,8 @@ ADT_DATA = os.path.join(
 SCALEBFM_CHECKPOINT = os.path.join(
     WORKSPACE, "models", "scalebfm", "humanoid_transformer_m_22200.pt"
 )  # HF WeishuaiZeng/ScaleBFM step 22200, the only checkpoint ever used (setup.md step 11); ScaleBfmBackendConfig's ""
+# HEFT PMG (LocoManiLab's g1_backend checkpoints/heft/pmg: policy.onnx, policy.yaml, policy.json), HeftConfig's default
+HEFT_POLICY_DIR = os.path.join(WORKSPACE, "models", "heft", "pmg")
 TMP = os.environ.get("LOCOMANI_TMP", os.path.join(WORKSPACE, "tmp"))  # session logs, exporter sessions, instance locks
 
 
