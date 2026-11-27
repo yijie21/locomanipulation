@@ -274,7 +274,7 @@ git -C scripts/rsi add knowledge && git commit -m "knowledge: gso single / biman
 
 **7.4 跑完之后：封存集和视频**
 
-三种模式都一样。下面按模式 3 写：`$R/a` 是单手沙盒，`$R/b` 是双手沙盒；模式 1、2 换成各自的沙盒（如 `$S1`），只跑对应的一行。命令都在主仓库根目录下跑，先执行第 0 节。
+三种模式都一样。下面按模式 3 写：`$R/a` 是单手沙盒，`$R/b` 是双手沙盒；模式 1、2 换成各自的沙盒（如 `$S1`），只跑对应的一行。命令都在主仓库根目录下跑，先执行第 0 节。11-27 起封存集自动跑（TODO 55.4）：模式 3 的 `alternate.py run` 在运行结束（两边都停、迭代数或时间到；blocked 不算）后按 a、b 顺序各跑一次 `sealed.py <族> --all`，`alternate.json` 的 `sealed` 和事件记下 final、ok/n、rc、missing，`alternate.py status` 的 `sealed:` 行显示；模式 1 / 2 的 `loop.py run` 正常停下时也自动跑（账本 `sealed` 行，输出在 `loop/sealed.log`；异常停、pause、`--stub`、重放、`--alternating` 不跑）。下面的手工命令只在没有 `sealed` 记录或 `missing` 非空时补跑，已经跑完的版本会跳过。11-27 之前结束的运行（gso-alt-seed，封存集 11-25 已手工跑过）再执行一次同样的 `alternate.py run` 命令，会把结果记进 `alternate.json`（已写的局跳过），不会再跑迭代。
 
 ```bash
 R=$LOCOMANI_WORKSPACE/code/rsi-scene/gso-alt-a
@@ -378,7 +378,7 @@ pgrep -af 'rsi/(alternate|loop|sealed)\.py'                    # 应当没有输
 
 封存集要等内环结束才抽，所以还在跑时不要做第 3 步。`blocked: yes`，或 `run.log` 最后一行是错误，说明运行中途停了：按 7.3 查完原因，再跑同一条 `run` 命令接着跑完。
 
-第 3 步，跑封存集（7.4）。`--all` 让每一轮的现任都有封存集成绩，Table 2 才有每一列；两条可以同时跑：
+第 3 步，封存集（7.4）。11-27 起运行结束时驱动已自动跑过（`--all`，Table 2 的每一列）：`alternate.py status $R` 的 `sealed:` 行有两族的结果就直接到第 4 步只确认 `missing` 为空。没有这一行（11-27 之前结束的运行）或 `missing` 非空时再手工补跑，两条可以同时跑：
 
 ```bash
 (cd $R/a && nohup setsid $PY scripts/rsi/sealed.py gso_single_grasp --all > sealed.log 2>&1 &)

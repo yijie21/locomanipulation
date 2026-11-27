@@ -181,10 +181,17 @@ class Sync(unittest.TestCase):
 class FakeRunner:
     """Records the calls; `loops` maps a family to the exit code and an optional stop reason per call."""
 
-    def __init__(self, run: Path, stops=None, rc=None, gate=None, build_error=False, tests_fail=False):
+    def __init__(self, run: Path, stops=None, rc=None, gate=None, build_error=False, tests_fail=False, sealed_ok=True):
         self.run, self.calls = run, []
         self.stops, self.rc, self.gate, self.build_error = stops or {}, rc or {}, gate, build_error
-        self.tests_fail = tests_fail
+        self.tests_fail, self.sealed_ok = tests_fail, sealed_ok
+
+    def sealed(self, sb: Path, family: str, tag: str):
+        self.calls.append(("sealed", family))
+        assert sb == self.run / ("a" if family == "fa" else "b")
+        if not self.sealed_ok:
+            return 1, {}
+        return 0, dict(final="03_x", versions={"03_x": dict(ok=5, n=10), "seed": dict(ok=1, n=10)}, missing={})
 
     def loop(self, sb: Path, family: str, tag: str) -> int:
         self.calls.append(("loop", family))
@@ -242,9 +249,10 @@ class Driver(unittest.TestCase):
             git_clean = subprocess.run(["git", "status", "--porcelain"], cwd=run / "b", capture_output=True,
                                        text=True).stdout  # fmt: skip
         self.assertEqual(why, "1 iterations done")
-        # fa's half: loop, build, sync into fb (fa changed pick.py); fb's half: loop, build, nothing to merge back
+        # fa's half: loop, build, sync into fb (fa changed pick.py); fb's half: loop, build, nothing to merge back;
+        # the run has ended: both sealed sets (TODO 55.4)
         self.assertEqual(r.calls, [("loop", "fa"), ("build", "fa"), ("tests", "fb"), ("sync", "fb"), ("loop", "fb"),
-                                   ("build", "fb")])  # fmt: skip
+                                   ("build", "fb"), ("sealed", "fa"), ("sealed", "fb")])  # fmt: skip
         self.assertEqual((st["iter"], st["turn"], st["phase"]), (1, 0, "loop"))
         self.assertEqual([(s["from"], s.get("accepted"), s.get("skipped")) for s in syncs],
                          [("fa", True, None), ("fb", None, "the merge changes nothing")])  # fmt: skip
@@ -417,6 +425,84 @@ class Limits(unittest.TestCase):
         self.assertIn("--alternating", cmd)
         self.assertEqual(cmd[cmd.index("--stop-rate") + 1], "0.8")
         self.assertEqual(cmd[cmd.index("--max-iters") + 1], "1")
+
+    def test_the_sealed_set_runs_for_both_families_once_the_run_has_ended_and_not_when_blocked(self):
+        """TODO 55.4 (user 2026-11-27): a then b, kept in the state and as events, shown by status; a blocked run
+        has no result to seal."""
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            r = FakeRunner(run, rc={"fa": 3})
+            self.assertTrue(AL.run_all(run, 1, r).startswith("blocked"))
+            self.assertNotIn(("sealed", "fa"), r.calls)
+            r2 = FakeRunner(run)
+            self.assertEqual(AL.run_all(run, 1, r2), "1 iterations done")
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            shown = AL.status(run)
+        self.assertEqual(r2.calls[-2:], [("sealed", "fa"), ("sealed", "fb")])
+        rec = st["sealed"]["fa"]
+        self.assertEqual((rec["rc"], rec["final"], rec["ok"], rec["n"], rec["missing"]), (0, "03_x", 5, 10, {}))
+        ev = [e for e in st["events"] if e.get("step") == "sealed"]
+        self.assertEqual([(e["family"], e["final"], e["ok"], e["n"]) for e in ev],
+                         [("fa", "03_x", 5, 10), ("fb", "03_x", 5, 10)])  # fmt: skip
+        self.assertEqual(st["events"][-1]["step"], "end")
+        self.assertIn("sealed: fa: 03_x 5/10 (exit 0); fb: 03_x 5/10 (exit 0)", shown)
+
+    def test_run_again_on_an_ended_run_fills_in_only_an_incomplete_sealed_set(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            r = FakeRunner(run, sealed_ok=False)
+            self.assertEqual(AL.run_all(run, 1, r), "1 iterations done")
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            self.assertEqual((st["sealed"]["fa"]["rc"], st["sealed"]["fa"]["final"]), (1, None))
+            st["sealed"]["fb"] = dict(rc=0, final="02_y", ok=4, n=10, missing={})  # as if fb's had completed
+            AL.jdump(run / AL.STATE_FILE, st)
+            r2 = FakeRunner(run)
+            self.assertEqual(AL.run_all(run, 1, r2), "1 iterations done")  # no half runs again: the run had ended
+            st = json.loads((run / AL.STATE_FILE).read_text())
+            finals = (st["sealed"]["fa"]["final"], st["sealed"]["fb"]["final"])
+            del st["sealed"]  # a run that ended before this phase existed (gso-alt-seed)
+            AL.jdump(run / AL.STATE_FILE, st)
+            r3 = FakeRunner(run)
+            AL.run_all(run, 1, r3)
+        self.assertEqual(r2.calls, [("sealed", "fa")])
+        self.assertEqual(finals, ("03_x", "02_y"))
+        self.assertEqual(r3.calls, [("sealed", "fa"), ("sealed", "fb")])
+
+    def test_a_sealed_set_is_complete_only_with_exit_0_a_final_version_and_nothing_missing(self):
+        self.assertFalse(AL.sealed_done(None))
+        self.assertFalse(AL.sealed_done(dict(rc=0, final="03_x", missing={"03_x": ["a_s1"]})))
+        self.assertFalse(AL.sealed_done(dict(rc=1, final="03_x", missing={})))
+        self.assertFalse(AL.sealed_done(dict(rc=0, final=None, missing={})))
+        self.assertTrue(AL.sealed_done(dict(rc=0, final="03_x", ok=5, n=10, missing={})))
+
+    def test_stub_loop_args_skip_the_sealed_set(self):
+        with tempfile.TemporaryDirectory() as d:
+            run = fake_run(Path(d))
+            r = FakeRunner(run)
+            r.loop_args = ["--stub"]
+            AL.run_all(run, 1, r)
+            st = json.loads((run / AL.STATE_FILE).read_text())
+        self.assertNotIn(("sealed", "fa"), r.calls)
+        self.assertEqual([e.get("skipped") for e in st["events"] if e.get("step") == "sealed"], ["stub", "stub"])
+        self.assertEqual(st.get("sealed"), {})
+
+    def test_the_runner_runs_sealed_py_in_the_familys_sandbox_and_reads_its_summary(self):
+        from unittest import mock
+
+        seen = []
+        fake = lambda cmd, **kw: seen.append((cmd, kw)) or subprocess.CompletedProcess(cmd, 0)  # noqa: E731
+        with tempfile.TemporaryDirectory() as d:
+            run = Path(d)
+            summary = run / "a" / AL.HIDDEN / "fa" / "sealed" / "summary.json"
+            summary.parent.mkdir(parents=True)
+            summary.write_text(json.dumps(dict(final="03_x", versions={"03_x": dict(ok=5, n=10)}, missing={})))
+            with mock.patch.object(AL.subprocess, "run", fake):
+                rc, s = AL.Runner(run).sealed(run / "a", "fa", "sealed_a_fa")
+            logged = (run / "logs" / "sealed_a_fa.log").exists()
+        self.assertEqual((rc, s["final"]), (0, "03_x"))
+        self.assertEqual(seen[0][0][1:], ["scripts/rsi/sealed.py", "fa", "--all"])
+        self.assertEqual(seen[0][1]["cwd"], run / "a")
+        self.assertTrue(logged)
 
 
 class Cli(unittest.TestCase):

@@ -945,6 +945,61 @@ class DriftStreak(unittest.TestCase):
             self.assertEqual(self.lp.stop_reason(self.meta), why)
 
 
+class SealedAtStop(unittest.TestCase):
+    """TODO 55.4 (user 2026-11-27): a standalone loop that stops normally runs the sealed set itself and records the
+    summary; not after an abnormal stop, on a pause, on --stub, in a replay or under --alternating."""
+
+    def setUp(self):
+        from unittest import mock
+
+        self.lp = _scene_loop()
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        root = Path(self.d.name)
+        (root / "pool_diag").mkdir()
+        hid = root / "outputs" / "scene_rsi_20261016_hidden" / "fam"
+        hid.mkdir(parents=True)
+        self.summary = hid / "sealed" / "summary.json"
+        script = (f"import json, pathlib; p = pathlib.Path({str(self.summary)!r}); p.parent.mkdir(parents=True, "
+                  "exist_ok=True); p.write_text(json.dumps(dict(final='03_x', versions={'03_x': dict(ok=7, n=10), "
+                  "'seed': dict(ok=1, n=10)}, missing={})))")  # fmt: skip
+        self.cmds = []
+        for p in (mock.patch.multiple(self.lp, STATE=root / "state", LOOP=root, HIDDEN=hid, GATE_DIR=hid / "gate",
+                                      accept_pool=lambda: root,
+                                      sealed_cmd=lambda: self.cmds.append(1) or [sys.executable, "-c", script]),
+                  mock.patch.dict(os.environ)):  # fmt: skip
+            p.start()
+            self.addCleanup(p.stop)
+        os.environ.pop("RSI_MAX_WALL_H", None)
+        (root / "state").mkdir()
+
+    def run_loop(self, why, **ns) -> int:
+        from argparse import Namespace
+        from unittest import mock
+
+        with mock.patch.object(self.lp, "iterate", lambda n, meta, stub: why):
+            return self.lp.cmd_run(Namespace(**{"max_iters": 3, "reprobe": None, "stub": False, **ns}))
+
+    def test_a_normal_stop_runs_the_sealed_set_and_records_the_summary(self):
+        self.assertEqual(self.run_loop("the incumbent wins 38/40 >= 95%: sealed set"), 0)
+        es = self.lp.entries()
+        self.assertEqual([e["step"] for e in es[-2:]], ["stop", "sealed"])
+        row = es[-1]
+        self.assertEqual((row["rc"], row["final"], row["ok"], row["n"], row["missing"]), (0, "03_x", 7, 10, {}))
+        self.assertTrue(self.summary.exists() and (self.lp.STATE / "sealed.log").exists())
+        self.assertEqual(self.cmds, [1])
+
+    def test_not_after_an_abnormal_stop_a_pause_a_stub_a_replay_or_when_alternating(self):
+        self.assertEqual(self.run_loop("role call failed: reviewer"), 3)
+        self.assertEqual(self.run_loop(None), 0)  # --max-iters used up: a pause, the run goes on
+        self.assertEqual(self.run_loop("manager: stop", stub=True), 0)
+        self.assertEqual(self.run_loop("manager: stop", stop_after="review"), 0)
+        self.assertEqual(self.run_loop("manager: stop", alternating=True), 0)
+        self.assertEqual(self.cmds, [])
+        self.assertNotIn("sealed", [e["step"] for e in self.lp.entries()])
+        self.assertFalse(self.summary.exists())
+
+
 class ManagerHistory(unittest.TestCase):
     """TODO 36.7 (user 2026-10-22): the Manager reads the last two iterations' ledger rows in full and each earlier
     iteration as one line (32.12's iteration 5 Manager context: 93 -> 42 KB)."""

@@ -44,6 +44,12 @@ A loop that stops abnormally (exit 3: a role call failed, the audit voided two i
 gate error blocks the run: `run` exits and says why; fix it and run again. A build that keeps no entry or fails is
 recorded and the run goes on. The state (`alternate.json`: iteration, turn, phase, hours) is saved after every phase,
 so `run` resumes where it stopped.
+Once the run has ended for any reason but a block, each family's sealed set runs in its sandbox, a then b
+(`sealed.py <family> --all`, TODO 55.4, user 2026-11-27), with a `sealed` event each (the final version, its wins,
+the exit code, `missing`) and `alternate.json`'s `sealed`, which `status` shows: the number the run is judged by
+exists when it ends. `run` on an ended run fills in a family's sealed set that is not complete (sealed.py skips the
+rounds already written), so `run` again on an ended run from before this (gso-alt-seed, whose set was run by hand)
+records it without rerunning the rounds; `--loop-args` with `--stub` skips the sealed set.
 
 `publish` puts the run's entries into the repository's library (replacing those of the run's two families); commit
 it yourself.
@@ -360,6 +366,19 @@ class Runner:
         except ValueError:
             return r.returncode, {}
 
+    def sealed(self, sb: Path, family: str, tag: str) -> tuple[int, dict]:
+        """`sealed.py <family> --all` in the family's sandbox (TODO 55.4): (exit code, its summary.json, or {}). The
+        processes and GPUs are sealed.py's own defaults (RSI_PROCS, RSI_GPUS)."""
+        with (self.run / "logs" / f"{tag}.log").open("a") as log:
+            cmd = [str(SIM_PY), "scripts/rsi/sealed.py", family, "--all"]
+            env = {**os.environ, "PYTHONPATH": str(sb / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")}
+            rc = subprocess.run(cmd, cwd=sb, env=env, stdout=log, stderr=subprocess.STDOUT).returncode
+        p = sb / HIDDEN / family / "sealed" / "summary.json"
+        try:
+            return rc, json.loads(p.read_text()) if p.exists() else {}
+        except ValueError:
+            return rc, {}
+
 
 # -- init, the state machine ----------------------------------------------------------------------------------------
 
@@ -499,6 +518,36 @@ def done(st: dict, iters: int, max_hours: float | None = None) -> str | None:
     return None
 
 
+def sealed_done(rec: dict | None) -> bool:
+    """A family's sealed set is complete: sealed.py exited 0, named a final version and no version lacks rounds."""
+    return bool(rec) and rec.get("rc") == 0 and rec.get("final") is not None and not rec.get("missing")
+
+
+def collect(run: Path, st: dict, runner) -> None:
+    """TODO 55.4 (user 2026-11-27, ported from main's A2): once the run has ended (not blocked), each family's sealed
+    set runs in its sandbox, a then b (`runner.sealed`, sealed.py --all), and `st["sealed"][family]` with a `sealed`
+    event keep the exit code, the final version with its wins and `missing`. A family whose set is complete
+    (sealed_done) is not run again, so `run` on an ended run -- one from before this phase too (gso-alt-seed) --
+    fills in what is missing (sealed.py skips the rounds already written). `--stub` among the loop's arguments skips
+    it: a stub loop has no incumbent worth the rounds. The time it takes does not count as the run's hours."""
+    recs = st.setdefault("sealed", {})
+    stub = "--stub" in getattr(runner, "loop_args", ())
+    for i, fam in enumerate(st["families"]):
+        if sealed_done(recs.get(fam)):
+            continue
+        if stub:
+            event(st, family=fam, step="sealed", skipped="stub")
+            continue
+        t0 = time.time()
+        rc, summary = runner.sealed(run / SIDES[i], fam, f"sealed_{SIDES[i]}_{fam}")
+        final = summary.get("final")
+        v = (summary.get("versions") or {}).get(final) or {}
+        recs[fam] = dict(rc=rc, final=final, ok=v.get("ok"), n=v.get("n"), missing=summary.get("missing") or {},
+                         seconds=round(time.time() - t0, 1))  # fmt: skip
+        event(st, family=fam, step="sealed", **recs[fam])
+        jdump(run / STATE_FILE, st)
+
+
 def run_all(run: Path, iters: int, runner, max_hours: float | None = None) -> str:
     st = json.loads((run / STATE_FILE).read_text())
     if st["blocked"]:  # a run again after the cause was fixed
@@ -510,6 +559,8 @@ def run_all(run: Path, iters: int, runner, max_hours: float | None = None) -> st
         step(run, st, runner)
         st["active_s"] = st.get("active_s", 0.0) + time.time() - t0  # the hours both families ran, together
         jdump(run / STATE_FILE, st)
+    if not why.startswith("blocked"):
+        collect(run, st, runner)  # TODO 55.4: the sealed set of both families once the run has ended
     event(st, step="end", why=why)
     jdump(run / STATE_FILE, st)
     return why
@@ -562,6 +613,10 @@ def status(run: Path) -> str:
              f"stopped: {st['stopped'] or 'none'}; blocked: {st['blocked'] or 'no'}; "
              f"run {st.get('active_s', 0.0) / 3600:.1f} h",
              f"library: {len(KN.entries(run / 'knowledge'))} entries; syncs: {len(KN.jl(run / 'knowledge' / KN.SYNCS))}"]  # fmt: skip
+    if st.get("sealed"):  # TODO 55.4
+        lines.append("sealed: " + "; ".join(
+            f"{f}: {r.get('final')} {r.get('ok')}/{r.get('n')} (exit {r.get('rc')}"
+            + (f", missing {r['missing']}" if r.get("missing") else "") + ")" for f, r in st["sealed"].items()))  # fmt: skip
     lines += [json.dumps(e, ensure_ascii=False)[:300] for e in st["events"][-10:]]
     return "\n".join(lines)
 

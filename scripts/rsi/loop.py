@@ -2926,6 +2926,7 @@ BOOKKEEPING_STEPS = (
     "pause",
     "settings",
     "diag_pool",
+    "sealed",
 )  # rows a stopped run's ledger can gain without an iteration
 
 
@@ -3024,6 +3025,37 @@ def is_abnormal(why: str) -> bool:
     return why.startswith(("role call failed", "gate error", "audit:")) or "named off-limits" in why
 
 
+def sealed_cmd() -> list[str]:
+    """`sealed.py <family> --all` for this checkout (a test replaces it); the processes and GPUs are sealed.py's own
+    defaults (RSI_PROCS, RSI_GPUS)."""
+    return [str(SIM_PY), str(HERE / "sealed.py"), FAMILY, "--all"]
+
+
+def run_sealed() -> dict:
+    """TODO 55.4 (user 2026-11-27, ported from main's A2): the sealed set runs by itself when a standalone `loop.py
+    run` stops normally, so the number a run is judged by exists when the run ends (gso-alt-seed's two families
+    stopped on 2026-11-25 and theirs was run by hand from the runbook six hours later). `sealed.py <family> --all`
+    runs in this checkout
+    with its output in <loop>/sealed.log; a `sealed` ledger row carries its exit code, the final version with its
+    wins, and `missing` (rounds a version lacks: run sealed.py by hand, it skips what is written). Not after an
+    abnormal stop (the incumbent may be wrong), on --stub, in a replay (--stop-after, --engineer-from, --reprobe),
+    under --alternating (alternate.py runs it for both families once the run has ended) or on a pause (--max-iters
+    done: the run goes on)."""
+    log = STATE / "sealed.log"
+    cmd = sealed_cmd()
+    print(f"sealed set: {' '.join(cmd)} (log {log})", flush=True)
+    with log.open("a") as fh:
+        rc = subprocess.run(cmd, cwd=REPO, stdout=fh, stderr=subprocess.STDOUT,
+                            env=dict(os.environ, PYTHONPATH=str(REPO / "src"))).returncode  # fmt: skip
+    s = jload(HIDDEN / "sealed" / "summary.json", {}) or {}
+    final = s.get("final")
+    v = (s.get("versions") or {}).get(final) or {}
+    row = dict(step="sealed", rc=rc, final=final, ok=v.get("ok"), n=v.get("n"), missing=s.get("missing"), log=str(log))
+    ledger(row)
+    print(f"sealed set: exit {rc}, final {final} {v.get('ok')}/{v.get('n')}, missing {s.get('missing') or 'none'}")
+    return row
+
+
 class Terminated(BaseException):
     pass
 
@@ -3088,11 +3120,16 @@ def _run(a, efforts: dict) -> int:
     iters = a.max_iters
     STOP_AFTER = getattr(a, "stop_after", None)
     EFFORT.update(efforts)
+    replay = STOP_AFTER is not None or getattr(a, "engineer_from", None) is not None or a.reprobe is not None
 
     def finish(why: str) -> int:
         ledger(dict(step="stop", reason=why))
         print("stop:", why)
-        return 3 if is_abnormal(why) else 0
+        if is_abnormal(why):
+            return 3
+        if not (a.stub or ALTERNATING or replay):  # TODO 55.4: the sealed set after a normal stop (run_sealed)
+            run_sealed()
+        return 0
 
     if getattr(a, "engineer_from", None) is not None:  # one iteration: the Engineer and the gate on a recorded decision
         try:

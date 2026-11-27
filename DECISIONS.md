@@ -3158,3 +3158,22 @@ A800 上跑了三批，都用 32.12 第 1 轮那版技能，汇总在 `outputs/s
 - 1030 实例里的纸箱 1.2 → 0.3 kg：`prepare_logistics_scene.carton_mass` 把纸箱的 `<inertial>` 质量和惯量按目录上限缩小，场景文件 `semantic.mass_kg` 和 `gso.carton_mass_kg` 跟着写；物流间自己的场景（不带 `--gso-seed`）仍是 1.2 kg。
 - 依据：抱举探针（`scripts/rsi/probe_hug_lift.py`）里双手在任何质量下都能把手举到 1.3 m，箱子能否跟着上去取决于质量：主库 0.3 kg 才能把箱底举过箱沿，s1 RSI 的最终技能 0.8 kg，1.5 kg 都不行；而装箱的最后一步是抱起纸箱加里面的物体。
 - s0–s9 十个实例已重建（旧的在 `outputs/scene_discovery/_backup_mass1.5_20261107/`），任务族只有说明里的纸箱质量变了；十个 Unreal 关卡同日重建（`build_scene.sh <实例> --unreal`，source.json 的场景哈希与新 XML 一致）。这是一次人工干预：之前的 RSI 结果（gso_pack_all_s1）是在旧质量下跑的。
+
+
+## 2026-11-27 main 分支的四条 RSI 机制移进 henry-dev，封存集改为停止时自动跑（用户 /grill-me Q1–Q11 “按照建议执行”，Q2 “单元测试 + stub 冒烟测试”；TODO 55）
+
+### 目标与约束的变化
+- henry-dev 的 RSI 与 main 分叉后各自演进。这次只移 main 上与 henry-dev 流程不冲突、且能用单元测试验证的四条（A 类）；不跑真实 RSI，不跑封存集，不整体合并 main。
+
+### 决策
+- 封存集的触发：单独内环正常停下即跑 `sealed.py <族> --all`；异常停（现任可能不对）、pause（运行还要继续）、`--stub`、重放（`--stop-after` / `--engineer-from` / `--reprobe`）、`--alternating` 不跑。交替运行由 `alternate.py` 在运行结束（非 blocked）后按 a、b 顺序各跑一次，只补不完整的族，所以已结束的运行（gso-alt-seed）再 `run` 一次即补跑。`--all` 固定开（报告 Table 2 每一列都要）；procs / gpus 用 sealed.py 的默认。
+- 哨兵漂移是 void 不是拒绝：不计调用数、不拉黑、不更新候补池、不补第二枪；连续两次异常停（退出 3），因为确定性仿真只在床变了时漂移。
+- 越界重跑只给 Reviewer / Manager / Composer 一次机会，提示里点名越界类别和路径；第二次仍越界照旧作废并计入连续作废。Engineer 的越界仍只作废草稿。
+- 提示词池数以真实池为准，没有 50 / 60 兜底；池还没抽时就是 0。
+- 记录编号用 TODO 55，避开 main 的 41–54。
+
+### 被否决的方案（及原因）
+- 用真实运行验证（例如对 gso-alt-seed 再执行一次 `alternate.py run`，把它 11-25 手工跑的封存集记进状态）：用户 Q2 只要单元测试 + stub 冒烟。
+- 漂移 void 也拉黑哈希 / 计入调用数：漂移说明床变了，不是候选的错。
+- 越界后无限重跑、或 Engineer 也重跑：第二次仍越界说明不是手滑；Engineer 的越界只损失一份草稿，不值一次调用。
+- 整体合并 main 的 RSI：16 个文件文本冲突，9 个文件被 main 移进 `scene/`，规则编号 36–41 撞号，main 的新核心在 scene 族上只跑过假后端测试。

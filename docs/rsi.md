@@ -183,7 +183,7 @@ SUM=$S/outputs/scene_rsi_20261016_hidden/grasp_atomic_past/sealed/summary.json
 python3 -c "import json,sys; s=json.load(open(sys.argv[1])); print(s['final'], s['versions'])" $SUM
 ```
 
-做什么：在封存集（50 局）上跑种子和每一版被接受的现任，`versions` 是各版本的成功数、`final` 是最终版本的名字。空种子的族到这里为止：写不回主仓库，结果以 `summary.json` 为准，记进方案页和 STATE。
+做什么：在封存集（50 局）上跑种子和每一版被接受的现任，`versions` 是各版本的成功数、`final` 是最终版本的名字。11-27 起内环正常停下时（不是异常停、pause、`--stub`、重放或 `--alternating`）`loop.py` 已自动跑过这一步，账本有 `sealed` 行（rc、final、ok/n、missing），输出在 `loop/sealed.log`；上面的手工命令只在 `missing` 非空时补跑（TODO 55.4）。空种子的族到这里为止：写不回主仓库，结果以 `summary.json` 为准，记进方案页和 STATE。
 
 (b) 种子技能目录的族（`pick_single`）还要写回和登记：
 
