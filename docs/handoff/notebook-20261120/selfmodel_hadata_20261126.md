@@ -902,6 +902,64 @@ SONIC 的训练用同一套脚本，采集根目录换成 `selfmodel_hadata_soni
 6. **真实局的局数**：ScaleBFM 的目录里每个任务 20 局（200–219），HEFT 每个任务 40 局（200–239）。hd_real 在 200–239 里有几局就取几局，局数写进 merge.txt。
 7. **双手段一行的单手段对照**：用 d3 和 d3b 同一划分的单手段合起来，每个文件也单独报。第 3 节只说"同一划分的单手段"，这里把它补具体。
 
+### 修订 2c：评估 3 合并真实局时，放过"跑丢"的那一段（eval_code2）（2026-11-27 约 01:30Z，HEFT 的评估 3 出数之前）
+
+- **写这一节时知道什么**：
+  - HEFT 的 10 个模型 23:43:24Z 训完；评估 1、评估 2 在 23:44–23:45Z 跑完，输出在 `train/heft/eval/`，里面的数没读；
+  - 评估 3 在第一步合并真实局时就停了，一个数都没出过；
+  - SONIC 的模型还没训。
+- **报错原文**（`train/heft/eval/logs/eval3.raw`，23:45:55Z，STATUS 是 "FAIL eval 3"）：
+
+```
+heft_doubledesk: 40 episodes (seeds 200-239, 40 seeds), 0 without segments, 80 segments merged; keys left out (not in every episode): []
+REAL MERGE heft_doubledesk PASS
+heft_ppbox: 40 episodes (seeds 200-239, 40 seeds), 0 without segments, 156 segments merged; keys left out (not in every episode): []
+ppbox_s208_r0: chain 3 beyond the log's 3 reaches
+ppbox_s210_r0: chain 3 beyond the log's 3 reaches
+ppbox_s211_r0: chain 2 beyond the log's 2 reaches
+ppbox_s217_r0: chain 3 beyond the log's 3 reaches
+ppbox_s225_r0: chain 2 beyond the log's 2 reaches
+ppbox_s229_r0: chain 1 beyond the log's 1 reaches
+ppbox_s231_r0: chain 3 beyond the log's 3 reaches
+REAL MERGE heft_ppbox FAIL
+REAL MERGE FAIL: stop
+```
+
+- **出问题的 7 局**：HEFT P&PBox 的 s208、s210、s211、s217、s225、s229、s231（都是 r0）。
+- **原因**：这 7 局都以 "lost" 结束：d3 在一下伸手的途中判机器人"跑丢"，hr_real 就在这一下里结束了这一局。
+  - 这一下的段已经存进了数据，标着 lost=True、fell=True。
+  - 但局记录只在一下伸手做完以后才把它加进伸手列表，所以列表里少了这一下。
+  - hd_real 的合并核对要求每一段的 chain 都在这个列表里，于是报 FAIL。
+  - 每局正好多出一段，就是它的最后一段。
+- **为什么以前没碰到**：ScaleBFM 的 40 局真实局（两个任务各 20 局）和 HEFT DoubleDesk 的 40 局，都没有以 lost 结束的局，全是 "reaches done"。评估的流水线测试用的也是 ScaleBFM 的数据。
+- **改法**（协调方 11-27 同意："这次修的是核对代码的一个漏洞，不是改判据"）：
+  - **放过的条件**：多出来的那一段，下面三条同时满足才放过：
+    1. 它是这一局的最后一段：文件里的最后一段，chain 也是最大的；
+    2. 这一局以 lost 结束；
+    3. 这一段标着 lost。
+  - **放过以后**：这一段不进合并。按 t3b_eval 的 kept（没摔倒、没跑丢），它本来也会被筛掉。三条里缺任何一条，照旧报 FAIL。
+  - **这 7 局其余的段**：lost 之前的伸手照常合并，照常过筛选。不整局去掉。
+  - **怎么去掉这一段**：照 hd_touch 的做法，按每段、每行、每个参考行三种长度分别取。三种长度里有两个相同就报错，不猜。
+  - **记录**：merge.txt 里每局多一行，写明哪一段没合并；开头一行加上"没合并的段数"。
+- **eval_code2**：
+  - 从 eval_code 原样拷过来，只换 hd_real.py；
+  - 另加 `hd_eval3.sh`，只跑评估 3：核对 eval_code2 的 MD5 和 asrun_train 的 MD5.check，确认训练是 done、`real/DONE` 在，然后照 hd_eval.sh 里评估 3 那几行原样跑；
+  - diff 和 md5 冻结以后补在本节末尾。
+- **只重跑评估 3**：评估 1、2 不读真实局，不重跑。
+  - 失败那次评估 3 留下的东西（`eval/real/`、`logs/eval3.raw`）先挪到 `eval/stale/eval3_fail_20261126T234555Z/`。
+  - 评估 1、2 的输出原地不动。
+- **两项核对**（协调方要求，原始输出贴在本节末尾）：
+  1. 这 7 段一个都没进合并后的文件，所以也没进评估 3；
+  2. 这 7 局在 lost 之前的伸手都进了合并：列出一共几段，其中 kept 几段、干净伸手几段，被筛掉几段、为什么被筛掉。
+  - 另外加一项：合并文件里其余 33 局的段，要和失败那次合并出来的逐字节相同。
+- **冻结之前的测试**：只调 hd_real 的 merge，不建模型，也不算任何评估的数。输出写到 /tmp，看完就删。
+- **SONIC**：真实局里如果也有 lost 局，用同一份 eval_code2，不再另改（协调方 11-27）。
+- **漏看了 1 小时 25 分钟**（照实记下）：
+  - 本机等待用的是 Monitor，30 分钟就到期。它 23:31Z 到期，我没有重新挂上。
+  - 评估 3 在 23:45:55Z 停下，我到 01:11Z 协调方提醒时才看到。
+  - 这段时间里训练早已结束；4 个 hold 着的槽位都空着：3b 从 23:09Z 起，其余三个大约从 00:45Z 起。
+  - 之后改成不会到期的后台等待：用 run_in_background 跑一个循环，状态一变就退出，退出时叫醒我。
+
 ## 结果
 
 ### ScaleBFM：训练和评估 1–3（2026-11-26）
