@@ -62,6 +62,7 @@
    "scripts/rsi/gate.py",
    "scripts/rsi/verdict.py",
    "scripts/rsi/merge.py",
+   "scripts/rsi/hit_rate.py",
    "scripts/rsi/diag_pool.py",
    "scripts/rsi/try.py",
    "scripts/rsi/scene_round.py",

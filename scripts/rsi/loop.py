@@ -82,6 +82,7 @@ import design as DS  # noqa: E402
 import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
+import hit_rate as HR  # noqa: E402
 import merge as MG  # noqa: E402
 import records as RC  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides, stage_of  # noqa: E402
@@ -3236,6 +3237,7 @@ def _run(a, efforts: dict) -> int:
     def finish(why: str) -> int:
         ledger(dict(step="stop", reason=why))
         print("stop:", why)
+        write_hit_rate()
         if is_abnormal(why):
             return 3
         if not (a.stub or ALTERNATING or replay):  # TODO 55.4: the sealed set after a normal stop (run_sealed)
@@ -3264,10 +3266,20 @@ def _run(a, efforts: dict) -> int:
             except RoleFailed as e:
                 why = f"role call failed: {e}"
             n += 1
+            write_hit_rate()
         if why:
             return finish(why)
     ledger(dict(step="pause", reason=f"--max-iters {a.max_iters} done"))  # resume() counts the time until the next run
     return 0
+
+
+def write_hit_rate() -> None:
+    """TODO 56.4: the roles' hit-rate funnel (hit_rate.compute) to loop/hit_rate.json, after every iteration and at a
+    stop; a failure to count it never stops the run."""
+    try:
+        jdump(STATE / "hit_rate.json", HR.compute(STATE))
+    except Exception as e:  # noqa: BLE001
+        print(f"hit rate not written: {type(e).__name__}: {e}")
 
 
 def cmd_redraw(a) -> int:
@@ -3339,6 +3351,7 @@ def cmd_status(_a) -> int:
     parked = jload(STATE / "parked.json", {})
     for cid, p in parked.items():
         print(f"parked {cid}: {p['task']} ({p['scope']}, {len(p['starts'])} diag starts, {p['kind']})")
+    print(HR.line(HR.compute(STATE)))  # TODO 56.4: the roles' funnel so far
     try:  # while a role runs the hidden directory has mode 000 (hidden_locked): no acceptance line, not a crash
         inc = jload(GATE_DIR / "incumbent.json")
         v = unparked_view(Path(inc["rounds"])) if inc else None

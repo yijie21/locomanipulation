@@ -74,6 +74,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(HERE)]
 
+import hit_rate as HR  # noqa: E402
 import knowledge as KN  # noqa: E402
 import sandbox as SB  # noqa: E402
 import writeback as WB  # noqa: E402
@@ -619,6 +620,10 @@ def status(run: Path) -> str:
         lines.append("sealed: " + "; ".join(
             f"{f}: {r.get('final')} {r.get('ok')}/{r.get('n')} (exit {r.get('rc')}"
             + (f", missing {r['missing']}" if r.get("missing") else "") + ")" for f, r in st["sealed"].items()))  # fmt: skip
+    for fam, side in zip(st["families"], SIDES):  # TODO 56.4: each family's roles' funnel from its loop's ledger
+        loop = run / side / VISIBLE / fam / "loop"
+        if (loop / "ledger.jsonl").exists():
+            lines.append(f"{fam} {HR.line(HR.compute(loop))}")
     lines += [json.dumps(e, ensure_ascii=False)[:300] for e in st["events"][-10:]]
     return "\n".join(lines)
 
