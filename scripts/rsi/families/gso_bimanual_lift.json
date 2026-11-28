@@ -31,6 +31,7 @@
  "max_wall_h": 20.0,
  "max_run_iters": 5,
  "compose": "program",
+ "stop_no_progress": 2,
  "pool_per_task": {
   "diag": 3,
   "accept": 10,

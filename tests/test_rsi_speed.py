@@ -299,6 +299,7 @@ class RunFlags(unittest.TestCase):
             lp.resolve_settings(none, {}, False),
             dict(
                 compose="llm",
+                stop_no_progress=0,
                 candidates=3,
                 scoped_review=False,
                 max_wall_h=6.0,
@@ -318,6 +319,7 @@ class RunFlags(unittest.TestCase):
                 lp.resolve_settings(none, old, True),
                 dict(
                     compose="llm",
+                    stop_no_progress=0,
                     candidates=1,
                     scoped_review=True,
                     max_wall_h=5.0,

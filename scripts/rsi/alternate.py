@@ -36,10 +36,12 @@ When it stops (user 2026-11-18), whichever comes first:
 - `--iters` iterations are done (5: five halves of each family);
 - the run has been running `--max-hours` (default 20), both families together: the time the driver ran, summed over
   its runs (the time it stood stopped does not count), checked before each phase, so a phase under way finishes;
-- both families have reached the stop rate (`--stop-rate`, default 0.95 since 2026-11-24, 0.8 before: the incumbent wins that share of the
-  family's acceptance pool). Each family's loop runs with `--alternating`: the stop rate is its only stop (no gate-call
-  cap, no wall clock, no iteration cap, no Manager stop). A family that reached it stops -- its halves are skipped,
-  nothing is merged into it, its entries stay -- and the other goes on.
+- both families have stopped: at the stop rate (`--stop-rate`, default 0.95 since 2026-11-24, 0.8 before: the
+  incumbent wins that share of the family's acceptance pool), or for no progress (the family file's
+  `stop_no_progress` iterations in a row without a gate call judged on the full pool; TODO 56.3, user 2026-11-27, the
+  gso families: 2). Each family's loop runs with `--alternating`: those are its only stops (no gate-call cap, no wall
+  clock, no iteration cap, no Manager stop). A family that stopped -- its halves are skipped, nothing is merged into
+  it, its entries stay -- and the other goes on.
 A loop that stops abnormally (exit 3: a role call failed, the audit voided two iterations in a row, a crash) or a
 gate error blocks the run: `run` exits and says why; fix it and run again. A build that keeps no entry or fails is
 recorded and the run goes on. The state (`alternate.json`: iteration, turn, phase, hours) is saved after every phase,

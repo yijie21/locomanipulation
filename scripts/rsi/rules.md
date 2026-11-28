@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 31, 2026-11-27)
+# Rules for the scene RSI loop (TODO 27, version 32, 2026-11-27)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -120,7 +120,10 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     56.1, user 2026-11-27) gives each task's wins, losses and the Holm-corrected one-sided p that the candidate is
     worse on it (`regress` when significant at 0.05); it is a report for the roles and the human, never a reason to
     reject -- a candidate that lifts the pool while a task regresses is still accepted, and the Reviewer's next
-    hypothesis should start from that task.
+    hypothesis should start from that task. A family file's `stop_no_progress` (version 32, TODO 56.3, user
+    2026-11-27; the gso families: 2) stops the loop, normally, after that many iterations in a row in which no gate
+    call was judged on the full pool (a stage-1 rejection, a void call and a `keep` are no progress; the audit's
+    voided iterations are not counted) -- in an alternating run that is the family's own stop, like its stop rate.
 
 26. When task-wide parks cover more than half the acceptance pool, the gate judges on an acceptance pool of the same
     size drawn afresh from the tasks that are not parked (new seeds; drawn again whenever that set changes), so a

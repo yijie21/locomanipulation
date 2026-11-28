@@ -98,8 +98,9 @@ WALL_DEFAULT_H = 6.0
 MAX_WALL_H = float(os.environ.get("RSI_MAX_WALL_H", WALL_DEFAULT_H))  # cmd_run resolves it again (resolve_settings)
 MAX_GATE_CALLS = 12
 # `run --alternating` (scripts/rsi/alternate.py, user 2026-11-18): the driver holds the iteration and time limits; the
-# only stop of a family is its stop rate. No gate-call cap, no wall clock, no run-iteration cap, no Manager stop, no
-# unparked view; the audit's void streak and a failed role call still stop it as failures.
+# only stops of a family are its stop rate and its no-progress stop (STOP_NO_PROGRESS, TODO 56.3). No gate-call cap,
+# no wall clock, no run-iteration cap, no Manager stop, no unparked view; the audit's void streak, the sentinel
+# drift streak and a failed role call still stop it as failures.
 ALTERNATING = False
 # iterations one run takes across its resumes; None = no cap (`--max-iters` only bounds one invocation). A family file
 # may set `max_run_iters`, `max_wall_h` and `stop_rate` (every logistics room family: 5, 20 h, 95 % since 2026-11-24;
@@ -131,6 +132,15 @@ SECOND_SHOT = SECOND_SHOT_DEFAULT  # this run's (`run --second-shot / --no-secon
 # `run --compose` overrides it; a resumed run keeps its recorded value.
 COMPOSE_DEFAULT = "llm"
 COMPOSE = COMPOSE_DEFAULT  # this run's (`run --compose llm|program`, resolve_settings)
+# TODO 56.3 (user 2026-11-27, main's TODO 54): the loop stops, normally, after this many iterations in a row without
+# progress -- no gate call of the iteration judged on the full pool (a void call, a dry run and a stage-1 rejection
+# are not progress; an accepted or rejected full-pool verdict is) -- over the iterations the audit did not void,
+# since the run's last `stop` row (a `pause` does not reset it); 0 = never (no_progress_stop). A family file sets
+# `stop_no_progress` (the two gso families: 2; gso-alt-seed's single hand ran iterations 3 and 4 without a candidate
+# past stage 1, 2026-11-25); in an alternating run it is the family's own stop, like its stop rate. A stub run's gate
+# calls are void, so a stub run of such a family stops after that many iterations.
+STOP_NO_PROGRESS_DEFAULT = 0
+STOP_NO_PROGRESS = STOP_NO_PROGRESS_DEFAULT  # this run's (`run --stop-no-progress N`, resolve_settings)
 # TODO 33.23 (plan section 3.8, D21; user 2026-10-23): the diagnostic pool is re-drawn when the incumbent fails fewer
 # than DIAG_MIN_FAILS of its starts (run C's incumbent was 30/30 on it while 19 of 90 hidden-pool starts failed, so the
 # roles saw no failure at all): fresh starts from the family's diagnostic seed range, the incumbent runs on them, the
@@ -574,10 +584,9 @@ def run_iters(es: list[dict], meta: dict | None) -> set[int]:
     return {e["iter"] for e in es if isinstance(e.get("iter"), int) and str(e.get("t", "")) >= t0}
 
 
-def voided_in_a_row(es: list[dict]) -> list[int]:
-    """The latest iterations, oldest first, that the audit voided (`void_iter` rows), counted back one by one from the
-    newest iteration in the ledger until one that was not voided or has no rows. An iteration a re-probe (`void`) or
-    re-audit (`reaudit`) row takes up again after its void_iter row is not void any more."""
+def void_status(es: list[dict]) -> dict[int, bool]:
+    """{iteration: voided by the audit}: a `void_iter` row voids it; a later re-probe (`void`) or re-audit (`reaudit`)
+    row takes it up again; every other row of an iteration counts it as not voided."""
     status: dict[int, bool] = {}
     for e in es:
         if "iter" not in e or not isinstance(e["iter"], int):
@@ -589,11 +598,43 @@ def voided_in_a_row(es: list[dict]) -> list[int]:
             status[n] = False
         else:
             status.setdefault(n, False)
+    return status
+
+
+def voided_in_a_row(es: list[dict]) -> list[int]:
+    """The latest iterations, oldest first, that the audit voided (void_status), counted back one by one from the
+    newest iteration in the ledger until one that was not voided or has no rows."""
+    status = void_status(es)
     out, n = [], max(status, default=-1)
     while status.get(n):
         out.append(n)
         n -= 1
     return out[::-1]
+
+
+def progressed(es: list[dict], n: int) -> bool:
+    """TODO 56.3: iteration n made progress -- one of its gate calls (the composed candidate's or the second shot's)
+    was judged on the full pool: a `result`, accepted or not. A void call, a dry run and a stage-1 rejection are not."""
+    return any(e.get("step") == "gate" and e.get("iter") == n and not e.get("void") and not e.get("dry_run")
+               and (e.get("accepted") or e.get("result")) for e in es)  # fmt: skip
+
+
+def no_progress_stop(es: list[dict]) -> str | None:
+    """TODO 56.3 (user 2026-11-27, main's TODO 54): the stop after STOP_NO_PROGRESS iterations in a row without
+    progress (progressed), over the iterations with a review row since the run's last `stop` row (a `pause` does
+    not reset the count) that the audit did not void (void_status). None when STOP_NO_PROGRESS is 0 or the streak
+    is shorter. A normal stop: the sealed set runs."""
+    if STOP_NO_PROGRESS <= 0:
+        return None
+    last_stop = max((i for i, e in enumerate(es) if e.get("step") == "stop"), default=-1)
+    since = es[last_stop + 1 :]
+    voided = void_status(since)
+    iters = sorted({e["iter"] for e in since if e.get("step") == "review" and isinstance(e.get("iter"), int)})
+    tail = [n for n in iters if not voided.get(n)][-STOP_NO_PROGRESS:]
+    if len(tail) < STOP_NO_PROGRESS or any(progressed(since, n) for n in tail):
+        return None
+    return (f"no progress: iterations {', '.join(map(str, tail))} had no candidate past stage 1 "
+            f"({STOP_NO_PROGRESS} in a row)")  # fmt: skip
 
 
 def drift_voids_in_a_row(es: list[dict]) -> int:
@@ -630,7 +671,10 @@ def stop_reason(meta: dict) -> str | None:
             return f"the incumbent wins {here}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
     elif accepted and accepted[-1]["result"]["candidate_ok"] >= STOP_RATE * n_accept:
         return f"the incumbent wins {accepted[-1]['result']['candidate_ok']}/{n_accept} >= {STOP_RATE:.0%}: sealed set"
-    if ALTERNATING:  # the stop rate is the family's only stop; the driver holds the rest
+    why = no_progress_stop(es)  # TODO 56.3: the family's own stop in an alternating run too, like its stop rate
+    if why:
+        return why
+    if ALTERNATING:  # the stop rate and the no-progress stop are the family's only stops; the driver holds the rest
         return None
     gates = run_gates(es, meta)
     if len(gates) >= MAX_GATE_CALLS:
@@ -3053,8 +3097,10 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
     fam_stop = spec.get("stop_rate") or STOP_RATE_DEFAULT
     fam_wall, fam_iters = spec.get("max_wall_h") or WALL_DEFAULT_H, spec.get("max_run_iters")
     fam_compose = spec.get("compose") or COMPOSE_DEFAULT  # TODO 56.2: the gso families compose by program
+    fam_no_progress = spec.get("stop_no_progress") or STOP_NO_PROGRESS_DEFAULT  # TODO 56.3: the gso families 2
     return dict(
         compose=str(pick(getattr(a, "compose", None), "compose", fam_compose)),
+        stop_no_progress=int(pick(getattr(a, "stop_no_progress", None), "stop_no_progress", fam_no_progress)),
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", fam_wall)),
@@ -3155,7 +3201,7 @@ def cmd_run(a) -> int:
 
 def _run(a, efforts: dict) -> int:
     global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT, MAX_RUN_ITERS
-    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX, ALTERNATING, COMPOSE
+    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX, ALTERNATING, COMPOSE, STOP_NO_PROGRESS
     ALTERNATING = bool(getattr(a, "alternating", False))
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
@@ -3167,7 +3213,7 @@ def _run(a, efforts: dict) -> int:
     DIAG_MIN_FAILS, DIAG_TARGET_FAILS = cfg["diag_min_fails"], cfg["diag_target_fails"]
     DIAG_DRAW_MAX = cfg["diag_draw_max"]
     MAX_RUN_ITERS = None if cfg["max_run_iters"] is None else int(cfg["max_run_iters"])
-    COMPOSE = cfg["compose"]
+    COMPOSE, STOP_NO_PROGRESS = cfg["compose"], cfg["stop_no_progress"]
     if not cfg["stop_rate"] > 0:
         raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
     if COMPOSE not in ("llm", "program"):
@@ -3328,6 +3374,9 @@ def main(argv=None) -> int:
                    "the drafts are in, then it is stopped (default 10; 0 waits; a resumed run keeps its value; TODO 37.3)")  # fmt: skip
     r.add_argument("--second-shot", action=argparse.BooleanOptionalAction, default=None, help="after the gate rejects "
                    "the composed candidate, gate the best unsent draft in the same iteration (default on; TODO 37.4)")  # fmt: skip
+    r.add_argument("--stop-no-progress", dest="stop_no_progress", type=int, default=None, help="stop after this many "
+                   "iterations in a row without a gate call judged on the full pool (0 never; default the family "
+                   "file's `stop_no_progress`, else 0; a resumed run keeps its recorded value unless given; TODO 56.3)")  # fmt: skip
     r.add_argument("--compose", choices=("llm", "program"), default=None, help="how the drafts become the gate's "
                    "candidate: the Composer (llm), or a 3-way merge of the positive drafts with the Composer only on a "
                    "conflict (program; TODO 56.2). Default: the family file's `compose`, else llm; a resumed run keeps "
@@ -3342,8 +3391,9 @@ def main(argv=None) -> int:
         choices=("review", "probe"),
         help="replays: end the iteration after the Reviewer or after the Prober (TODO 32.6)",
     )
-    r.add_argument("--alternating", action="store_true", help="scripts/rsi/alternate.py's runs: the stop rate is the "
-                   "only stop; no gate-call cap, wall clock, run-iteration cap or Manager stop (user 2026-11-18)")  # fmt: skip
+    r.add_argument("--alternating", action="store_true", help="scripts/rsi/alternate.py's runs: the stop rate and the "
+                   "no-progress stop are the only stops; no gate-call cap, wall clock, run-iteration cap or Manager "
+                   "stop (user 2026-11-18)")  # fmt: skip
     r.add_argument("--effort", action="append", default=[], metavar="ROLE=LEVEL",
                    help="claude --effort for a role (reviewer, manager, engineer, composer), e.g. engineer=medium (TODO 32.8)")  # fmt: skip
     r.add_argument("--engineer-from", type=Path, help="replays: the next iteration takes this recorded iteration's "
