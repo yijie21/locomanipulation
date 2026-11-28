@@ -1,4 +1,4 @@
-# Rules for the scene RSI loop (TODO 27, version 30, 2026-11-27)
+# Rules for the scene RSI loop (TODO 27, version 31, 2026-11-27)
 
 With the family's plan (the sections of its file's `plan` the prompts include), the only human knowledge the loop
 reads (plan D11). It is distilled from the project's notes and the warehouse loop's rules. Every rule says where it is
@@ -158,6 +158,12 @@ file; it, or a change to a family plan's text, is committed and counted as one h
     - a mechanism Reviewers proposed in two or more iterations and no Engineer was given is built first, unless the
       Manager writes why not; the Manager links repeats to earlier ids (prompt; the driver counts them);
     - at most two iterations in a row reopen a park; after two, `reopen` is not offered (code).
+    Under the family file's `compose: program` (`run --compose program`; version 31, TODO 56.2, user 2026-11-27; the
+    gso families) the program composes first: the drafts that fix more diagnostic starts than they break, the largest
+    net first, are folded into one package by a 3-way merge against their base (scripts/rsi/merge.py), their sets
+    merged the same way; one positive draft goes to the gate as it stands. The Composer is called only when a
+    draft's edits overlap another's (its working copy then holds the clean part of the merge, the context names the
+    conflicts) or when no draft is positive (code). The compose ledger row says who decided (`by`, `mode`).
 
 29. The sandbox holds the experience library (scripts/rsi/experience, TODO 32.10): one entry per family that finished
     before, without this family's own or those its file's `library_exclude` names (code: sandbox.py), and the outer

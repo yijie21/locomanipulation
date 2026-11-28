@@ -30,6 +30,7 @@
  "stop_rate": 0.95,
  "max_wall_h": 20.0,
  "max_run_iters": 5,
+ "compose": "program",
  "pool_per_task": {
   "diag": 3,
   "accept": 10,
@@ -67,6 +68,7 @@
    "scripts/rsi/family.py",
    "scripts/rsi/gate.py",
    "scripts/rsi/verdict.py",
+   "scripts/rsi/merge.py",
    "scripts/rsi/diag_pool.py",
    "scripts/rsi/try.py",
    "scripts/rsi/scene_round.py",

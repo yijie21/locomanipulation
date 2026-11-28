@@ -298,6 +298,7 @@ class RunFlags(unittest.TestCase):
         self.assertEqual(
             lp.resolve_settings(none, {}, False),
             dict(
+                compose="llm",
                 candidates=3,
                 scoped_review=False,
                 max_wall_h=6.0,
@@ -316,6 +317,7 @@ class RunFlags(unittest.TestCase):
             self.assertEqual(
                 lp.resolve_settings(none, old, True),
                 dict(
+                    compose="llm",
                     candidates=1,
                     scoped_review=True,
                     max_wall_h=5.0,

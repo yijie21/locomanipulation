@@ -82,6 +82,7 @@ import design as DS  # noqa: E402
 import diag_pool as DP  # noqa: E402
 import digest as DG  # noqa: E402
 import family as F  # noqa: E402
+import merge as MG  # noqa: E402
 import records as RC  # noqa: E402
 from gate import GATE_RULE, candidate_hash, drop_limit, overrides, stage_of  # noqa: E402
 
@@ -121,6 +122,15 @@ ENGINEER_LATE_MIN = ENGINEER_LATE_MIN_DEFAULT  # this run's (`run --engineer-lat
 # to the gate in the same iteration (one more gate call, 3-5 min, instead of another 60-80 min iteration)
 SECOND_SHOT_DEFAULT = True
 SECOND_SHOT = SECOND_SHOT_DEFAULT  # this run's (`run --second-shot / --no-second-shot`, resolve_settings)
+# TODO 56.2 (user 2026-11-27, main's TODO 54 F8): how the drafts become the gate's one candidate. "llm": the Composer
+# (TODO 32.9) as before. "program": the drafts with more diagnostic starts fixed than broken, best first, are folded
+# into one package by a 3-way merge against their base (merge.py, compose_by_program); one positive draft goes as it
+# stands; the Composer is called only when a draft's edits overlap another's (the clean part of the merge is then its
+# working copy) or when no draft is positive. A family file sets `compose` (the two gso families: program; gso-alt-seed
+# 2026-11-25: the Composer took 2-10 min and $1-4 an iteration, and 8 of its 9 decisions were a plain merge or adopt);
+# `run --compose` overrides it; a resumed run keeps its recorded value.
+COMPOSE_DEFAULT = "llm"
+COMPOSE = COMPOSE_DEFAULT  # this run's (`run --compose llm|program`, resolve_settings)
 # TODO 33.23 (plan section 3.8, D21; user 2026-10-23): the diagnostic pool is re-drawn when the incumbent fails fewer
 # than DIAG_MIN_FAILS of its starts (run C's incumbent was 30/30 on it while 19 of 90 hidden-pool starts failed, so the
 # roles saw no failure at all): fresh starts from the family's diagnostic seed range, the incumbent runs on them, the
@@ -2664,11 +2674,49 @@ def wait_drafts(threads: dict, stops: dict, poll: float = 2.0) -> list:
     return late
 
 
+def positive_drafts(cands: list[dict]) -> list[dict]:
+    """The drafts with more diagnostic starts fixed than broken, the largest net first, fewer broken on ties, then the
+    lower draft number (second_shot_pick's order)."""
+    ok = [c for c in cands if "fixed" in c and len(c["fixed"]) > len(c.get("broken") or [])]
+    return sorted(ok, key=lambda c: (-(len(c["fixed"]) - len(c["broken"])), len(c["broken"]), c["number"]))
+
+
+def compose_by_program(src: Path, cands: list[dict], wc: Path) -> tuple[str, dict, dict | None]:
+    """TODO 56.2 (user 2026-11-27, main's TODO 54 F8; `--compose program`): the positive drafts (positive_drafts),
+    best first, folded into one package at `wc` by a 3-way merge against the base `src` (merge.merge_drafts; the
+    parameter sets merged the same way). Returns (mode, extra, decision):
+        "adopt"          one positive draft: it goes to the gate as it stands (decision like the Composer's `adopt`)
+        "merge"          two or more, every one applied cleanly: `wc` is the package, decision like a Composer `merge`
+        "conflict"       a positive draft's edits overlap another's: the Composer decides, `wc` holding the clean part
+        "none_positive"  no draft is positive: the Composer decides as before (keep is the likely answer)
+    `extra` (merged_cleanly, conflicts, merged_set) goes into the Composer's context and the compose ledger row."""
+    pos = positive_drafts(cands)
+    if not pos:
+        return "none_positive", {}, None
+    res = MG.merge_drafts(src / "skills", overrides(src),
+                          [(c["number"], Path(c["dir"]) / "skills", overrides(Path(c["dir"]))) for c in pos], wc)  # fmt: skip
+    extra = dict(merged_cleanly=res["merged"], conflicts={str(k): v for k, v in res["conflicts"].items()},
+                 merged_set=res["set"])  # fmt: skip
+    flips_of = lambda c: f"draft {c['number']}: {len(c['fixed'])} fixed, {len(c['broken'])} broken"  # noqa: E731
+    if res["conflicts"]:
+        return "conflict", extra, None
+    if len(pos) == 1:
+        c = pos[0]
+        return "adopt", extra, dict(decision="adopt", adopted=c["number"], mechanism=c["mechanism"],
+                                    notes=f"program: the one draft with positive diagnostic flips goes as it stands ({flips_of(c)})")  # fmt: skip
+    return "merge", extra, dict(decision="merge", merged=res["merged"], set=res["set"],
+                                mechanism="program merge of drafts " + ", ".join(str(k) for k in res["merged"]) + ": "
+                                + "; ".join(c["mechanism"] for c in pos),
+                                notes="program: 3-way merge against the base of " + "; ".join(flips_of(c) for c in pos)
+                                + "; no overlapping edits, the sets merged")  # fmt: skip
+
+
 def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stub) -> str | None:
     """TODO 32.9 (Harness2's contrastive compose step): CANDIDATES Engineers build the Manager's hypotheses in parallel,
     each in its own copy of the incumbent's skills package (`cand_k/skills`); every valid candidate runs on the
     diagnostic pool; the Composer merges what those rounds support into one candidate, adopts one, or keeps the
-    incumbent; only that one candidate reaches the gate, so the gate's test stays one test per call."""
+    incumbent -- or, under `--compose program` (TODO 56.2), the program merges the positive drafts and the Composer is
+    called only on a conflict; only that one candidate reaches the gate, so the gate's test stays one test per call."""
     known = {h["id"]: h for h in hyps["hypotheses"]}
     ids = [h for h in (dec.get("hypotheses") or []) if h in known] or [dec.get("hypothesis")]
     ids = [h for h in ids if h in known] or [hyps["hypotheses"][0]["id"]]
@@ -2765,38 +2813,50 @@ def multi_engineer_step(n, it_dir, inc, hyps, pr, dec, common, base_changes, stu
     for c in cands:
         c.update(flips(base, Path(c["diag"])))
     jdump(it_dir / "candidates.json", cands)
-    # the Composer
+    # the Composer -- or the program (TODO 56.2, compose_by_program), the Composer only on a conflict
     wc = it_dir / "compose" / "skills"
     if wc.parent.exists():
         shutil.rmtree(wc.parent)
     shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    ctx = it_dir / "composer_context.json"
-    jdump(ctx, context(inc, dict(hypotheses=[known[h] for h in dict.fromkeys(ids)], candidates=cands,
-                                 incumbent_diag=str(base), manager=dec, base=base_brief(bentry),
-                                 candidate_pool=pool_view(inc, base))))  # fmt: skip
-    prompt = fill((HERE / "prompts" / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc))
-    stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
-    note = ""
-    for attempt in (1, 2):  # TODO 55.3: a first leak is rerun once (rerun_after_leak) on a fresh working copy
-        comp, acct = claude("composer", prompt + note, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent",
-                            stub_c if stub else None)  # fmt: skip
-        samples: dict[str, str] = {}
-        leaks = transcript_leaks(acct["session"], samples)
-        stray = revert_strays(base_changes)
-        put_skills(Path(inc["dir"]) / "skills")
-        jdump(it_dir / "composer.json", comp)
-        if not leaks or attempt == 2:
-            break
-        first = [it_dir / f for f in ("composer_prompt.md", "composer_raw.json", "composer.json")]
-        note = rerun_after_leak(n, "composer", dict(acct, stray=stray), leaks, samples, it_dir / "compose", *first)
-        shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    program = COMPOSE == "program"
+    mode, extra, comp = compose_by_program(src, cands, wc) if program else ("llm", {}, None)
+    leaks, stray = [], []
+    if comp is not None:  # the program decided: no model call, nothing to audit
+        acct = dict(cost_usd=0.0, session=None, seconds=0.0)
+        jdump(it_dir / "composer.json", dict(comp, by="program", mode=mode))
+    else:
+        ctx = it_dir / "composer_context.json"
+        jdump(ctx, context(inc, dict(hypotheses=[known[h] for h in dict.fromkeys(ids)], candidates=cands,
+                                     incumbent_diag=str(base), manager=dec, base=base_brief(bentry),
+                                     candidate_pool=pool_view(inc, base), compose_mode=mode, **extra)))  # fmt: skip
+        prompt = fill(
+            (HERE / "prompts" / "composer.md").read_text(), CONTEXT=ctx, ITER=it_dir, **dict(common, SKILLS=wc)
+        )
+        stub_c = dict(decision="adopt", adopted=cands[0]["number"], notes="stub")
+        note = ""
+        for attempt in (1, 2):  # TODO 55.3: a first leak is rerun once (rerun_after_leak) on a fresh working copy
+            comp, acct = claude("composer", prompt + note, COMPOSER_SCHEMA, it_dir, "NotebookEdit,Agent",
+                                stub_c if stub else None)  # fmt: skip
+            samples: dict[str, str] = {}
+            leaks = transcript_leaks(acct["session"], samples)
+            stray = revert_strays(base_changes)
+            put_skills(Path(inc["dir"]) / "skills")
+            jdump(it_dir / "composer.json", comp)
+            if not leaks or attempt == 2:
+                break
+            first = [it_dir / f for f in ("composer_prompt.md", "composer_raw.json", "composer.json")]
+            note = rerun_after_leak(n, "composer", dict(acct, stray=stray), leaks, samples, it_dir / "compose", *first)
+            if program:  # the fresh working copy holds the clean part of the merge again
+                compose_by_program(src, cands, wc)
+            else:
+                shutil.copytree(src / "skills", wc, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     numbers = {
         c["number"] for c in cands
     }  # the drafts a merge kept (knowledge.draft_verdicts credits their gate verdict)
     merged = sorted({k for k in comp.get("merged") or [] if k in numbers}) if comp["decision"] == "merge" else None
     ledger(dict(step="compose", iter=n, decision=comp["decision"], adopted=comp.get("adopted"), merged=merged, notes=comp["notes"],
                 mechanism=comp.get("mechanism", ""), set=comp.get("set"), stray=stray, void=bool(leaks or stray),
-                leaks=leaks, **acct))  # fmt: skip
+                leaks=leaks, by="program" if mode in ("adopt", "merge") else "llm", mode=mode, **extra, **acct))  # fmt: skip
     if leaks or stray:  # its working copy leaves the visible tree as a voided draft does
         hide_void(n, it_dir / "compose")
         if leaks:
@@ -2992,7 +3052,9 @@ def resolve_settings(a, meta: dict, resuming: bool) -> dict:
     spec = family_spec() if FAMILY else {}
     fam_stop = spec.get("stop_rate") or STOP_RATE_DEFAULT
     fam_wall, fam_iters = spec.get("max_wall_h") or WALL_DEFAULT_H, spec.get("max_run_iters")
+    fam_compose = spec.get("compose") or COMPOSE_DEFAULT  # TODO 56.2: the gso families compose by program
     return dict(
+        compose=str(pick(getattr(a, "compose", None), "compose", fam_compose)),
         candidates=max(1, int(pick(getattr(a, "candidates", None), "candidates", CANDIDATES))),
         scoped_review=bool(pick(True if getattr(a, "scoped_review", None) else None, "scoped_review", SCOPED)),
         max_wall_h=float(env_wall) if env_wall else float(pick(None, "max_wall_h", fam_wall)),
@@ -3093,7 +3155,7 @@ def cmd_run(a) -> int:
 
 def _run(a, efforts: dict) -> int:
     global STOP_AFTER, CANDIDATES, SCOPED, MAX_WALL_H, STOP_RATE, ENGINEER_LATE_MIN, SECOND_SHOT, MAX_RUN_ITERS
-    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX, ALTERNATING
+    global DIAG_MIN_FAILS, DIAG_TARGET_FAILS, DIAG_DRAW_MAX, ALTERNATING, COMPOSE
     ALTERNATING = bool(getattr(a, "alternating", False))
     prior = jload(STATE / "meta.json")
     resuming = bool(prior and "started" in prior)
@@ -3105,8 +3167,11 @@ def _run(a, efforts: dict) -> int:
     DIAG_MIN_FAILS, DIAG_TARGET_FAILS = cfg["diag_min_fails"], cfg["diag_target_fails"]
     DIAG_DRAW_MAX = cfg["diag_draw_max"]
     MAX_RUN_ITERS = None if cfg["max_run_iters"] is None else int(cfg["max_run_iters"])
+    COMPOSE = cfg["compose"]
     if not cfg["stop_rate"] > 0:
         raise SystemExit(f"--stop-rate must be > 0 (got {cfg['stop_rate']})")
+    if COMPOSE not in ("llm", "program"):
+        raise SystemExit(f"compose must be llm or program (got {COMPOSE!r}; the family file's `compose` or --compose)")
     changed = settings_changes(cfg, meta, resuming)
     if changed:
         ledger(dict(step="settings", **changed))
@@ -3263,6 +3328,10 @@ def main(argv=None) -> int:
                    "the drafts are in, then it is stopped (default 10; 0 waits; a resumed run keeps its value; TODO 37.3)")  # fmt: skip
     r.add_argument("--second-shot", action=argparse.BooleanOptionalAction, default=None, help="after the gate rejects "
                    "the composed candidate, gate the best unsent draft in the same iteration (default on; TODO 37.4)")  # fmt: skip
+    r.add_argument("--compose", choices=("llm", "program"), default=None, help="how the drafts become the gate's "
+                   "candidate: the Composer (llm), or a 3-way merge of the positive drafts with the Composer only on a "
+                   "conflict (program; TODO 56.2). Default: the family file's `compose`, else llm; a resumed run keeps "
+                   "its recorded value unless given")  # fmt: skip
     for flag, key, text in (("--diag-min-fails", "diag_min_fails", "re-draw the diagnostic pool when the incumbent fails "
                              "fewer than this many of its starts (default 10; 0 never; TODO 33.23)"),
                             ("--diag-target-fails", "diag_target_fails", "... until this many fail (default 15)"),
