@@ -22,7 +22,7 @@
 - 我们做到冒烟为止；什么时候跑 RSI 内环由用户决定。
 - 用户 11-18：内环有三种模式，单手单独跑、双手单独跑、两个任务族交替并共享知识和代码（第 7 节）。
 
-决策记录在 TODO 40.22；11-27 从 main 分支移进内环的四条机制（哨兵漂移作废验收门调用、提示词里的池大小按真实池数、Reviewer / Manager / Composer 越界先重跑一次、停止时自动跑封存集）在 TODO 55；代码在分支 `henry-dev`。
+决策记录在 TODO 40.22；11-27 从 main 分支移进内环的四条机制（哨兵漂移作废验收门调用、提示词里的池大小按真实池数、Reviewer / Manager / Composer 越界先重跑一次、停止时自动跑封存集）在 TODO 55，同日下午再移的四条（一个判定函数 + 按任务 Holm 回归只报告、程序三方合并草稿、连续无进展就停、各角色命中率漏斗）在 TODO 56；代码在分支 `henry-dev`。
 
 **现状（2026-11-17）**
 
@@ -130,7 +130,7 @@ $PY scripts/scene_feasibility.py --scene outputs/scene_discovery/logistics_room_
 ## 5. 检查代码
 
 ```bash
-make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/test_gso_catalog.py tests/test_gso_gallery.py tests/test_gso_preview.py tests/test_rsi_knowledge.py tests/test_rsi_alternate.py"; echo "exit $?"
+make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/test_gso_catalog.py tests/test_gso_gallery.py tests/test_gso_preview.py tests/test_rsi_knowledge.py tests/test_rsi_alternate.py tests/test_rsi_verdict.py tests/test_rsi_merge.py tests/test_rsi_compose_program.py tests/test_rsi_no_progress.py tests/test_rsi_hit_rate.py"; echo "exit $?"
 ```
 
 做什么：
@@ -139,7 +139,7 @@ make test TESTS="tests/test_gso_scene_pick.py tests/test_gso_family.py tests/tes
 - 挑选页的数据和保存。
 - 任务族：默认抬 0.20 m、`--lift` 改高度、最后 5 s 判、主库起点、方案文件在沙盒的保留列表里。
 - 知识库：共享文件的读写、按来源任务族替换、`tag`、`KNOWLEDGE.md` 的全文和标注、重建时沿用未变的机制。
-- 交替驱动：三方合并和冲突、参数覆盖值写进常数、轮流和续跑、一方停下、异常阻塞、同步被拒、结束后的封存集阶段和补跑；`gate.py` 的不变差规则；`loop.py sync` 的账本行。
+- 交替驱动：三方合并和冲突、参数覆盖值写进常数、轮流和续跑、一方停下、异常阻塞、同步被拒、结束后的封存集阶段和补跑；`gate.py` 的不变差规则；`loop.py sync` 的账本行。11-27 的四条（TODO 56）：`verdict.py` 的四种判决和按任务 Holm 报告、`merge.py` 的三方合并和四种冲突、`compose: program` 的采用 / 合并 / 冲突 / 没有正草稿、连续无进展停的计数和设置来源、命中率漏斗的计数和两处 status 行。
 - 目录、图库和预览的原有测试。
 
 约 1 分钟。
@@ -189,13 +189,13 @@ cd $S1 && $PY scripts/rsi/loop.py status gso_single_grasp; cd -      # 看进度
 
 做什么：和 1030 runbook 第 5 节一样：建沙盒、抽池，然后在后台跑内环，直到满足终止条件。`--fresh` 让沙盒既不带知识库也不带经验库，这次运行不继承任何以前的知识。
 - **池**：按任务数分配（用户 11-18），默认每个任务诊断 3 局、验收 10 局、封存 10 局（用户 11-24；之前是 3 / 4 / 5）：单手 20 个任务是 60 / 200 / 200 局，双手 8 个任务是 24 / 80 / 80 局。诊断池只喂 Reviewer 看失败局，补抽会把失败局补到 15 局，所以保持小；验收池决定验收门的判决，32 局的池里两三局接触随机翻转就能左右结果，放大到 200 / 80 局；封存集只在结束后跑一次，决定报告区间的宽度。验收池至少比验收门第一阶段（`gate.py` 的 `STAGE1`，30 局）多 1 局。局数记在任务族文件的 `pool_per_task` 和各池的 `n` 里，建沙盒、内环和封存集都从这里读（角色提示词里的池大小和每任务局数则从沙盒里实际抽到的池数出来，11-27 起；以前读这里的 `n`）；要改就用 `PYTHONPATH=src $PY scripts/rsi/gso_family.py outputs/scene_discovery/logistics_room_gso_single --per-task diag=3 accept=10 sealed=10` 重写任务族（可以只给其中几项），提交后再建沙盒。池种子：单手 9000000 / 9100000 / 9200000，双手 9500000 / 9600000 / 9700000。
-- **终止条件**（模式 1 / 2 的内环）：验收池上赢到 95 %、跑满 20 小时、做满 5 轮或验收门调用满 12 次，先满足哪条就停，正常停下后自动跑封存集（7.4）；连续两次验收门调用因哨兵局对不上现任记录而作废时异常停（退出码 3，第 10 节）；模式 3 由 `alternate.py` 的 `--max-hours`（默认 20 小时）统一计时，见 7.3（用户 11-24；之前是 80 % 和 5 小时。同一天物流间的其他任务族也改成了同样的池局数和终止条件，见 `docs/rsi_logistic_room_1030.md` 第 4 节）。只想先试一轮，加 `--max-iters 1`。
+- **终止条件**（模式 1 / 2 的内环）：验收池上赢到 95 %、跑满 20 小时、做满 5 轮或验收门调用满 12 次，先满足哪条就停，正常停下后自动跑封存集（7.4）；连续 2 轮没有候选过验收门第一阶段也正常停（族文件 `stop_no_progress: 2`，命令行 `--stop-no-progress` 优先，0 关；作废的轮不计，11-27）；连续两次验收门调用因哨兵局对不上现任记录而作废时异常停（退出码 3，第 10 节）；模式 3 由 `alternate.py` 的 `--max-hours`（默认 20 小时）统一计时，见 7.3（用户 11-24；之前是 80 % 和 5 小时。同一天物流间的其他任务族也改成了同样的池局数和终止条件，见 `docs/rsi_logistic_room_1030.md` 第 4 节）。只想先试一轮，加 `--max-iters 1`。
+- **合成候选（11-27 起）**：两族文件写了 `compose: program`：三份草稿里多赢多于少赢的（诊断池上修好的起点多于弄坏的）先由程序三方合并进现任（`merge.py`，`git merge-file`，参数覆盖按键合并），只有一份就直接采用，合并干净就直接送验收门、不调 Composer（账本 `compose` 行 `by: program`、`mode: adopt | merge`，`composer.json` 记 `by: program`，费用 0）；同一处都改、同一参数两个值、都新增同一文件、一方删一方改这些冲突，或没有正草稿时，才调 Composer（上下文带 `compose_mode` 和冲突位置，工作副本是现任代码）。`--compose llm` 回到每轮都调 Composer（其他任务族的默认）。gso-alt-seed 的 9 轮按记录重放：5 轮不必调 Composer（省约 10 USD、23 分钟），4 轮冲突；程序合并出的包和 Composer 的不同，过不过验收门要真跑才知道（TODO 56.2）。
 - **起点（11-24 起）**：主库的技能包就是 gso-alt-a 写回的最终现任（7.5），验收池上单手 70/80、双手 28/32（87.5 %），这也是把停止线从 80 % 提到 95 % 的原因：新的验收池是 200 / 80 局，95 % 就是单手赢 190 局、双手赢 76 局，第一次验收门不会直接停下。模式 2 同样。
-- 11-24 从 fdf6d850 各建一个 `--fresh` 沙盒跑过一轮桩迭代（`--stub --max-iters 1`，角色不调用模型，池和验收门真实）：两边都走完 diag_pool → review → probe → manager → engineer → compose → gate → pause，诊断池单手 45/60、双手 19/24；沙盒内的技能包测试通过。
-- 11-24 晚（3390cc92，池 3 / 10 / 10、停止线 95 %）再冒烟：模式 3 一个桩迭代（7.3 的命令），单手诊断池 60 局全跑（现任 45/60，补抽后摘要 45/60），双手 24 局全跑（补抽把 8 局通过的换成 8 局失败的新起点，摘要 13/24，原池 21/24），验收池抽到 200 / 80 局，两次同步都是 `the merge changes nothing`，日志无报错；同一沙盒里把双手现任在同一诊断池上再跑一遍，24 局逐局结果一致。模式 1 用 `gso_all_s0` 跑一个桩迭代，63 局全跑（现任 22/63），链路走完。注意第 0 节的 `RSI_GPUS=0` 不设时，内环默认把仿真分片轮流派到 GPU 0 和 1，本机设备 1 是核显，派过去的分片找不到 CUDA，直接退出，诊断池只跑了一部分（单手 33/60、双手 8/24、gso_all 37/63 局），账本里没有任何报错；摘要里的 `N/24` 是补抽之后的数，不是成功率。
+- 11-24 从 fdf6d850 各建一个 `--fresh` 沙盒跑过一轮桩迭代（`--stub --max-iters 1`，角色不调用模型，池和验收门真实）：两边都走完 diag_pool → review → probe → manager → engineer → compose → gate → pause，诊断池单手 45/60、双手 19/24；沙盒内的技能包测试通过。11-24 晚（3390cc92，池 3 / 10 / 10、停止线 95 %）再冒烟：模式 3 一个桩迭代（7.3 的命令），单手诊断池 60 局全跑（现任 45/60，补抽后摘要 45/60），双手 24 局全跑（补抽把 8 局通过的换成 8 局失败的新起点，摘要 13/24，原池 21/24），验收池抽到 200 / 80 局，两次同步都是 `the merge changes nothing`，日志无报错；同一沙盒里把双手现任在同一诊断池上再跑一遍，24 局逐局结果一致。模式 1 用 `gso_all_s0` 跑一个桩迭代，63 局全跑（现任 22/63），链路走完。注意第 0 节的 `RSI_GPUS=0` 不设时，内环默认把仿真分片轮流派到 GPU 0 和 1，本机设备 1 是核显，派过去的分片找不到 CUDA，直接退出，诊断池只跑了一部分（单手 33/60、双手 8/24、gso_all 37/63 局），账本里没有任何报错；摘要里的 `N/24` 是补抽之后的数，不是成功率。
 - 场景目录必须在本机 `outputs/scene_discovery/` 下（第 3 节）。规则第 30 条照旧：技能代码里不能出现物体名字。
 
-得到什么：账本 `$S1/outputs/scene_rsi_20261016/gso_single_grasp/loop/ledger.jsonl`，`stop` 行写着停下的原因；正常停下时它后面还有一行 `sealed`（封存集的退出码、最终版本 `final`、`ok` / `n`、`missing`），输出在 `loop/sealed.log`。
+得到什么：账本 `$S1/outputs/scene_rsi_20261016/gso_single_grasp/loop/ledger.jsonl`，`stop` 行写着停下的原因；正常停下时它后面还有一行 `sealed`（封存集的退出码、最终版本 `final`、`ok` / `n`、`missing`），输出在 `loop/sealed.log`。`gate` 行的 `result.per_task`（第一阶段在 `stage1.per_task`）是按任务的回归检验：每件物体上候选赢 / 输的局数、候选更差的单侧符号检验 p、跨任务 Holm 校正后的 `p_holm`，`regress` 为真表示显著更差——只报告，不是拒绝理由（11-27；每任务 10 局时要一个任务 9 输 0 赢才会被标）。`loop/hit_rate.json` 每轮更新各角色的命中率漏斗（Reviewer 假设探后多修 / 多坏、Engineer 草稿筛后多修、Composer 决定由程序还是模型做、验收门过第一阶段 / 接受的次数），`status` 最后一行是同样内容。
 
 跑完记录知识；封存集在内环正常停下时已自动跑过（上一段的 `sealed` 行，11-27 起），第三条只在没有这一行（异常停、pause 后续跑）或 `missing` 非空时补跑：
 
@@ -227,7 +227,7 @@ $PY scripts/rsi/alternate.py status $R0      # blocked: no；最后一条事件 
 rm -rf $R0
 ```
 
-做什么：用桩跑一个完整的迭代，角色和建库都不调用模型；诊断池、Prober 和同步验收仍是真实仿真，约 5–10 分钟。桩的候选不过验收门，两边现任不变，所以两次同步都是 `the merge changes nothing`，只查整条链走不走得通。冒烟目录用完就删。
+做什么：用桩跑一个完整的迭代，角色和建库都不调用模型；诊断池、Prober 和同步验收仍是真实仿真，约 5–10 分钟。桩的候选不过验收门，两边现任不变，所以两次同步都是 `the merge changes nothing`，只查整条链走不走得通。冒烟目录用完就删。桩的验收门行是 `void`，不算进展，所以 `--iters` 给 2 以上时两族都会在第 3 个迭代开头以 `no progress: iterations 0, 1 had no candidate past stage 1 (2 in a row)` 停下（7.1 的 `stop_no_progress`），运行随之结束，封存集按 `--stub` 跳过（`alternate.json` 事件 `sealed` `skipped: stub`，`end` 的 `why` 是 `both families have stopped: …`）。11-27 从 e98dd148 这样跑过（`--iters 3`）：13 分钟，两个迭代走完、第 3 个迭代两族各一行 `stop`，5 次同步都是 `the merge changes nothing`；桩草稿没有正翻转，`compose` 行都是 `mode: none_positive` 交给（桩）Composer；`status` 每族一行 `hit rate:`（Reviewer 2 探过、Engineer 6 份、Composer adopt 2、验收门 0/0）；日志无报错。
 
 正式运行：
 
@@ -257,11 +257,11 @@ CUDA_VISIBLE_DEVICES=0 nohup setsid $PY scripts/rsi/alternate.py run $R --iters 
   1. 跑完 `--iters` 个迭代（5：单手 5 轮、双手 5 轮）。
   2. 整个运行跑满 `--max-hours` 小时（默认 20，用户 11-24 晚；之前是 15，再之前 10），算两边合计的时间：驱动实际在跑的时间累加，驱动停着的时间不算。每个阶段开始前检查，正在跑的阶段会跑完。
   3. 两边都在各自的验收池上赢到 `--stop-rate`（默认 0.95：单手 200 局赢 190 局，双手 80 局赢 76 局；11-24 前是 0.8）。只有一方赢到时，这一方停下：跳过它的半轮，也不再往它合并代码，它的条目继续给对方用；另一方接着跑。
-- 两边的内环都带 `--alternating` 运行：每个任务族只按停止线停下，不再因为它自己的 5 小时、5 轮、12 次验收门或 Manager 决定停而停；Manager 决定停时只结束这一轮。
+- 两边的内环都带 `--alternating` 运行：每个任务族只按停止线或连续 2 轮无进展（`stop_no_progress`，7.1，11-27）停下，不再因为它自己的 5 小时、5 轮、12 次验收门或 Manager 决定停而停；Manager 决定停时只结束这一轮。
 - 一方的内环出错（角色调用失败、审计连续两轮作废、连续两次哨兵漂移作废验收门调用、崩溃）或同步验收出错，不算跑完，整个运行停下，`run.log` 最后一行写着原因；查完再跑同一条 `run` 命令，从停下的那一步接着跑。建库得到 0 条或失败只记录，不停。
 - 每个阶段做完都存一次状态（`$R/alternate.json`），中途停了再跑 `run` 会接着跑。同一个运行目录同时只能有一个驱动。跑完 `--iters` 个迭代后想多跑几个，就用更大的 `--iters` 再跑同一条 `run` 命令，从下一个迭代接着跑。要给每一次 `loop.py run` 加参数，用 `--loop-args`，例如 `--loop-args "--candidates 3"`。
 
-得到什么：`$R/knowledge/knowledge.jsonl`（两边的条目）、`sync.jsonl`（每次合并的文件、冲突、多赢 / 少赢、接受与否）、`$R/logs/`（每个半轮的内环和同步验收日志，结束后两族的封存集日志 `sealed_<a|b>_<族>.log`）；结束后 `alternate.json` 的 `sealed` 记两族封存集的结果（7.4）。一个迭代约 2 小时：两轮内环各约 45 分钟，两次建库各 10–15 分钟，两次同步验收各 10–20 分钟。
+得到什么：`$R/knowledge/knowledge.jsonl`（两边的条目）、`sync.jsonl`（每次合并的文件、冲突、多赢 / 少赢、接受与否）、`$R/logs/`（每个半轮的内环和同步验收日志，结束后两族的封存集日志 `sealed_<a|b>_<族>.log`）；结束后 `alternate.json` 的 `sealed` 记两族封存集的结果（7.4）；每个沙盒的 `loop/hit_rate.json` 和 `alternate.py status` 里每族一行 `hit rate:` 是各角色提案的命中率漏斗（7.1，11-27）。一个迭代约 2 小时：两轮内环各约 45 分钟，两次建库各 10–15 分钟，两次同步验收各 10–20 分钟。
 
 跑完把知识发布到主仓库；封存集已在结束时自动跑过，再按第 7.4 节出视频：
 
@@ -290,7 +290,7 @@ tail -n 4 $R/a/sealed.log $R/b/sealed.log      # 末尾打印出 summary（最�
 - 已经跑完的版本会跳过：中途停了，或以后想补 `--all`，再跑同一条命令只补没跑的版本。
 - 第 0 节的 `RSI_GPUS=0` 要设好：不设时 `sealed.py` 用 GPU 0 和 1，而 SRA0889 上 EGL 设备 1 是核显。
 
-得到什么：`$R/a/$H/gso_single_grasp/sealed/summary.json`（双手在 `$R/b/$H/gso_bimanual_lift/sealed/`）。`versions` 里每一版有成功局数 `ok`、总局数 `n`、置信区间和按任务（每件物体）的 `per_task`；`final` 是最终版本的目录名，`final_vs_seed` 是它和种子的配对比较。每局的 `.json` 和轨迹 `.npz` 在 `sealed/<版本>/` 下。2026-11-19 在 SRA0889 上：最终加种子，单手约 6 分钟、双手约 2 分钟；`--all` 再补 3 个中间版本，两条同时跑约 20 分钟。
+得到什么：`$R/a/$H/gso_single_grasp/sealed/summary.json`（双手在 `$R/b/$H/gso_bimanual_lift/sealed/`）。`versions` 里每一版有成功局数 `ok`、总局数 `n`、置信区间和按任务（每件物体）的 `per_task`；`final` 是最终版本的目录名，`final_vs_seed` 是它和种子的配对比较（11-27 起含 `per_task`：按任务的回归检验，同 7.1 的 `gate` 行）。每局的 `.json` 和轨迹 `.npz` 在 `sealed/<版本>/` 下。2026-11-19 在 SRA0889 上：最终加种子，单手约 6 分钟、双手约 2 分钟；`--all` 再补 3 个中间版本，两条同时跑约 20 分钟。
 
 MuJoCo 视频（等封存集跑完）：
 
@@ -476,4 +476,5 @@ bash scripts/stop_unreal.sh
 - `alternate.py init` 报 `<目录> exists`：换一个运行目录。报 `its sandbox has no scripts/rsi/knowledge.py`：把 `knowledge.py` 提交，任务族文件的 `sandbox.keep` 里也要有它，再 `init`。
 - `alternate.py run` 报 `another alternate.py (pid N) is running on this directory`：已经有一个驱动在跑，用 `status` 看进度。报 `no alternate.json in <目录>`：这个目录没 `init` 过。
 - `run.log` 最后一行以 `blocked` 开头（退出码 3）：一方的内环或同步验收出错。看 `status` 和 `$R/logs/` 里最后一个日志，修好后再跑同一条 `run` 命令。原因是 `gate error: sentinel drift in 2 gate calls in a row` 时，是哨兵局（现任已经跑过的局）重跑结果变了，验收门把那两次调用作废（账本 `gate` 行 `void`、`reason` 以 `sentinel:` 开头，不计调用次数、不拉黑候选）：说明场景、资产或依赖在运行中变了，先查清再 `run`（11-27）。账本里的 `rerun` 行是 Reviewer / Manager / Composer 第一次越界后换新会话重跑了一次，提示词里点名了越界的路径（第一次的文件在隐藏树 `void/iter_NN/first/`）；重跑再越界才 `void_iter`，照旧计入连续作废。
+- 账本 `stop` 行的 `reason` 以 `no progress:` 开头：连续 2 轮没有候选过验收门第一阶段（`stop_no_progress`，7.1），是正常停，封存集已自动跑；要接着跑，用更大的 `--stop-no-progress N`（0 关）再执行同一条 `run` 命令，计数从这个 `stop` 行之后重新开始。模式 3 里这是一族自己的停，另一族接着跑。
 - 其余（GL、Unreal 编辑器、物理副本的路径）同 1030 runbook 第 10 节。
